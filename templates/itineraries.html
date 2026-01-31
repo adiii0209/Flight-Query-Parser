@@ -1,0 +1,1686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Itineraries - Flight Itinerary Builder</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --primary: #2563eb;
+  --primary-dark: #1e40af;
+  --secondary: #0ea5e9;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --bg-main: #f8fafc;
+  --bg-card: #ffffff;
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --border: #e2e8f0;
+  --shadow: rgba(15, 23, 42, 0.08);
+  --shadow-lg: rgba(15, 23, 42, 0.15);
+  --sidebar-width: 280px;
+  --primary-dark-mode: #3b82f6;
+  --primary-dark-dark-mode: #2563eb;
+  --secondary-dark-mode: #38bdf8;
+  --success-dark-mode: #22c55e;
+  --danger-dark-mode: #f87171;
+  --warning-dark-mode: #fbbf24;
+  --bg-main-dark-mode: #0f172a;
+  --bg-card-dark-mode: #1e293b;
+  --text-primary-dark-mode: #f1f5f9;
+  --text-secondary-dark-mode: #94a3b8;
+  --border-dark-mode: #334155;
+  --shadow-dark-mode: rgba(0, 0, 0, 0.3);
+  --shadow-lg-dark-mode: rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] {
+  --primary: var(--primary-dark-mode);
+  --primary-dark: var(--primary-dark-dark-mode);
+  --secondary: var(--secondary-dark-mode);
+  --success: var(--success-dark-mode);
+  --danger: var(--danger-dark-mode);
+  --warning: var(--warning-dark-mode);
+  --bg-main: var(--bg-main-dark-mode);
+  --bg-card: var(--bg-card-dark-mode);
+  --text-primary: var(--text-primary-dark-mode);
+  --text-secondary: var(--text-secondary-dark-mode);
+  --border: var(--border-dark-mode);
+  --shadow: var(--shadow-dark-mode);
+  --shadow-lg: var(--shadow-lg-dark-mode);
+}
+
+body {
+  font-family: 'Outfit', sans-serif;
+  background: var(--bg-main);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Sidebar Styles */
+.sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: var(--sidebar-width);
+  height: 100vh;
+  background: linear-gradient(180deg, #1e40af 0%, #1e3a8a 100%);
+  color: white;
+  padding: 2rem 0;
+  box-shadow: 4px 0 20px var(--shadow-lg);
+  z-index: 1000;
+  transition: transform 0.3s ease;
+}
+
+.sidebar-header {
+  padding: 0 1.5rem 2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-logo {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sidebar-tagline {
+  font-size: 0.875rem;
+  opacity: 0.8;
+  font-weight: 300;
+}
+
+.sidebar-user {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1rem 1.5rem;
+  margin: 1.5rem 1rem;
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+}
+
+.user-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+}
+
+.user-email {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.sidebar-nav {
+  padding: 1rem 0;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1.5rem;
+  color: rgba(255, 255, 255, 0.8);
+  text-decoration: none;
+  transition: all 0.3s ease;
+  border-left: 3px solid transparent;
+  font-weight: 500;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border-left-color: white;
+}
+
+.nav-item.active {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  border-left-color: white;
+}
+
+.nav-icon {
+  font-size: 1.2rem;
+  width: 24px;
+  text-align: center;
+}
+
+.sidebar-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.logout-btn {
+  width: 100%;
+  padding: 0.875rem;
+  background: rgba(239, 68, 68, 0.2);
+  border: 2px solid rgba(239, 68, 68, 0.3);
+  color: white;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.logout-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.5);
+  transform: translateY(-2px);
+}
+
+/* Main Content */
+.main-content {
+  margin-left: var(--sidebar-width);
+  min-height: 100vh;
+  padding: 2rem;
+}
+
+.page-header {
+  background: var(--bg-card);
+  padding: 2rem;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px var(--shadow);
+  margin-bottom: 2rem;
+  border: 1px solid var(--border);
+}
+
+.page-title {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: var(--primary);
+}
+
+.page-subtitle {
+  font-size: 1rem;
+  color: var(--text-secondary);
+}
+
+.page-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+/* Itinerary Cards */
+.itineraries-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 1.5rem;
+}
+
+.itinerary-card {
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  padding: 1.5rem;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.itinerary-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(180deg, var(--primary), var(--secondary));
+}
+
+.itinerary-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px var(--shadow-lg);
+  border-color: var(--primary);
+}
+
+.itinerary-card.draft::before {
+  background: linear-gradient(180deg, var(--warning), #f97316);
+}
+
+.itinerary-card.approved::before {
+  background: linear-gradient(180deg, var(--success), #059669);
+}
+
+.itinerary-card.cancelled::before {
+  background: linear-gradient(180deg, var(--danger), #dc2626);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.card-status {
+  display: inline-block;
+  padding: 0.375rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.card-status.draft {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.card-status.approved {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.card-status.cancelled {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.card-date {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.card-info {
+  margin: 1rem 0;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.info-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.amount-value {
+  font-size: 1.25rem;
+  color: var(--primary);
+}
+
+.card-customer {
+  background: var(--bg-main);
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin: 1rem 0;
+  font-size: 0.875rem;
+}
+
+.customer-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.customer-type {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.card-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.card-btn {
+  flex: 1;
+  padding: 0.625rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+}
+
+.card-btn.primary {
+  background: var(--primary);
+  color: white;
+}
+
+.card-btn.primary:hover {
+  background: var(--primary-dark);
+  transform: translateY(-2px);
+}
+
+.card-btn.success {
+  background: var(--success);
+  color: white;
+}
+
+.card-btn.success:hover {
+  background: #059669;
+  transform: translateY(-2px);
+}
+
+.card-btn.danger {
+  background: var(--danger);
+  color: white;
+}
+
+.card-btn.danger:hover {
+  background: #dc2626;
+  transform: translateY(-2px);
+}
+
+.card-btn.secondary {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 2px solid var(--border);
+}
+
+.card-btn.secondary:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  transform: translateY(-2px);
+}
+
+/* Button Styles */
+.btn {
+  padding: 0.875rem 2rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: 'Outfit', sans-serif;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  color: white;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+}
+
+.btn-secondary {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 2px solid var(--border);
+}
+
+.btn-secondary:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  transform: translateY(-2px);
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.3s ease;
+}
+
+.modal-overlay.active {
+  display: flex;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-content {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 2rem;
+  max-width: 800px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(50px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--border);
+}
+
+.modal-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  background: var(--bg-main);
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+  background: var(--border);
+  transform: rotate(90deg);
+}
+
+.modal-body {
+  margin: 1.5rem 0;
+}
+
+.detail-section {
+  background: var(--bg-main);
+  padding: 1.5rem;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+}
+
+.detail-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--primary);
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.detail-value {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.flight-cards-preview {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.flight-preview-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+  position: relative;
+}
+
+.flight-preview-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+}
+
+.itinerary-text {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 1.5rem;
+  border-radius: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.875rem;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 1rem;
+  padding-top: 1.5rem;
+  border-top: 2px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.modal-actions .btn,
+.modal-actions .card-btn {
+  flex: 1;
+  min-width: 150px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: var(--bg-card);
+  border-radius: 16px;
+  border: 2px dashed var(--border);
+}
+
+.empty-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.3;
+}
+
+.empty-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.empty-text {
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+}
+
+.notification {
+  position: fixed;
+  top: 2rem;
+  right: 2rem;
+  background: var(--bg-card);
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px var(--shadow-lg);
+  border-left: 4px solid var(--success);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  z-index: 3000;
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.notification.error {
+  border-left-color: var(--danger);
+}
+
+.notification.warning {
+  border-left-color: var(--warning);
+}
+
+.loading {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Mobile Styles */
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  .main-content {
+    margin-left: 0;
+    padding: 1rem;
+  }
+
+  .mobile-menu-btn {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    color: white;
+    border: none;
+    border-radius: 50%;
+    font-size: 1.5rem;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.5);
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .itineraries-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-actions {
+    flex-direction: column;
+  }
+
+  .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (min-width: 769px) {
+  .mobile-menu-btn {
+    display: none;
+  }
+}
+
+/* Skyscanner Style Flight Card */
+.sk-flight-card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  font-family: 'Outfit', sans-serif;
+}
+
+.sk-header {
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fff;
+}
+
+.sk-airline-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sk-airline-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.sk-airline-name {
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.sk-route-summary {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  text-align: center;
+}
+
+.sk-time-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.sk-time-group.left {
+  align-items: flex-start;
+}
+
+.sk-time {
+  font-size: 1.5rem;
+  font-weight: 400;
+  color: #0f172a;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.sk-code {
+  font-size: 0.875rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.sk-duration-graphic {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 140px;
+}
+
+.sk-duration-text {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.sk-line {
+  width: 100%;
+  height: 2px;
+  background: #cbd5e1;
+  position: relative;
+  border-radius: 2px;
+}
+
+.sk-line::after {
+  content: '✈';
+  position: absolute;
+  right: -6px;
+  top: -9px;
+  color: #64748b;
+  font-size: 14px;
+  transform: rotate(90deg);
+  background: #fff;
+  padding-left: 4px;
+}
+
+.sk-line::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+
+.sk-stops-text {
+  font-size: 0.75rem;
+  color: #ef4444;
+  margin-top: 6px;
+  font-weight: 500;
+}
+
+.sk-stops-text.direct {
+  color: #10b981;
+}
+
+/* Expanded Details */
+.sk-details {
+  padding: 1.5rem;
+  background: #fff;
+}
+
+.sk-segment-wrapper {
+  position: relative;
+  padding-left: 1rem;
+}
+
+.sk-segment-info {
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sk-seg-airline {
+  font-size: 0.875rem;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sk-timeline-row {
+  display: flex;
+  gap: 1.5rem;
+  position: relative;
+  min-height: 40px;
+}
+
+.sk-tl-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 20px;
+  position: relative;
+}
+
+.sk-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #cbd5e1;
+  background: #fff;
+  z-index: 2;
+  flex-shrink: 0;
+}
+
+.sk-line-v {
+  width: 2px;
+  background: #e2e8f0;
+  flex-grow: 1;
+  position: absolute;
+  top: 12px;
+  bottom: -12px;
+  left: 50%;
+  transform: translateX(-1px);
+  z-index: 1;
+}
+
+.sk-timeline-row:last-child .sk-line-v {
+  display: none;
+}
+
+.sk-tl-content {
+  flex: 1;
+  padding-bottom: 1.5rem;
+}
+
+.sk-tl-time {
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 1rem;
+  width: 60px;
+  display: inline-block;
+}
+
+.sk-tl-loc {
+  color: #334155;
+  font-size: 1rem;
+}
+
+.sk-tl-meta {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-top: 0.5rem;
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.sk-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Layover Block */
+.sk-layover {
+  background: #f1f5f9;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0 1.5rem 2.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #0f172a;
+  font-size: 0.875rem;
+  border-left: 3px solid #ef4444;
+  position: relative;
+}
+
+.sk-layover-time {
+  font-weight: 600;
+  color: #ef4444;
+}
+
+.sk-layover-text {
+  color: #ef4444;
+  font-weight: 500;
+}
+
+/* Fares Footer */
+.sk-fares {
+  padding: 1rem 1.5rem;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.sk-fare-item {
+  background: #fff;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  flex: 1;
+  min-width: 140px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.sk-fare-type {
+  font-size: 0.75rem;
+  color: #64748b;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  letter-spacing: 0.05em;
+}
+
+.sk-fare-price {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #2563eb;
+}
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <div class="sidebar-logo">
+        ✈️ Flight Builder
+      </div>
+      <button class="dark-mode-toggle" id="darkModeToggle" aria-label="Toggle dark mode">
+        <span class="dark-mode-icon">🌙</span>
+        <span class="dark-mode-icon" style="display: none;">☀️</span>
+      </button>
+    </div>
+    <div class="sidebar-tagline">Manage Your Itineraries</div>
+  </div>
+
+  <div class="sidebar-user" id="sidebarUser">
+    <div class="user-name">Loading...</div>
+    <div class="user-email"></div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <a href="/" class="nav-item">
+      <span class="nav-icon">🏠</span>
+      <span>Create Itinerary</span>
+    </a>
+    <a href="/itineraries" class="nav-item active">
+      <span class="nav-icon">📋</span>
+      <span>My Itineraries</span>
+    </a>
+  </nav>
+
+  <div class="sidebar-footer">
+    <button class="logout-btn" onclick="logout()">
+      <span>🚪</span>
+      <span>Logout</span>
+    </button>
+  </div>
+</aside>
+
+<!-- Mobile Menu Button -->
+<button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+
+<!-- Main Content -->
+<main class="main-content">
+  <div class="page-header">
+    <h1 class="page-title">📋 My Itineraries</h1>
+    <p class="page-subtitle">View, manage, and share your flight itineraries</p>
+    <div class="page-actions">
+      <a href="/" class="btn btn-primary">
+        ✈️ Create New Itinerary
+      </a>
+      <button class="btn btn-secondary" onclick="refreshItineraries()">
+        🔄 Refresh
+      </button>
+    </div>
+  </div>
+
+  <div id="itinerariesContainer">
+    <div class="empty-state">
+      <div class="empty-icon">📋</div>
+      <h2 class="empty-title">Loading itineraries...</h2>
+    </div>
+  </div>
+</main>
+
+<!-- View Modal -->
+<div id="viewModal" class="modal-overlay">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 class="modal-title">📄 Itinerary Details</h3>
+      <button class="modal-close" onclick="closeViewModal()">✕</button>
+    </div>
+    <div class="modal-body" id="viewModalBody">
+      <!-- Content will be populated dynamically -->
+    </div>
+    <div class="modal-actions" id="viewModalActions">
+      <!-- Actions will be populated dynamically -->
+    </div>
+  </div>
+</div>
+
+<script>
+let currentUser = null;
+let allItineraries = [];
+let currentViewingItinerary = null;
+
+// Load data on page load
+window.addEventListener('DOMContentLoaded', async () => {
+  await checkAuth();
+  await loadItineraries();
+  initializeDarkMode();
+});
+
+// Dark mode functionality
+function initializeDarkMode() {
+  const savedTheme = localStorage.getItem('theme') || 'light';
+  const darkModeToggle = document.getElementById('darkModeToggle');
+  
+  // Apply saved theme
+  document.documentElement.setAttribute('data-theme', savedTheme);
+  updateDarkModeToggle(savedTheme);
+  
+  // Add click event listener
+  darkModeToggle.addEventListener('click', toggleDarkMode);
+}
+
+function toggleDarkMode() {
+  const currentTheme = document.documentElement.getAttribute('data-theme');
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  
+  document.documentElement.setAttribute('data-theme', newTheme);
+  localStorage.setItem('theme', newTheme);
+  updateDarkModeToggle(newTheme);
+}
+
+function updateDarkModeToggle(theme) {
+  const darkModeToggle = document.getElementById('darkModeToggle');
+  const icons = darkModeToggle.querySelectorAll('.dark-mode-icon');
+  
+  if (theme === 'dark') {
+    icons[0].style.display = 'none';  // Moon icon
+    icons[1].style.display = 'block'; // Sun icon
+  } else {
+    icons[0].style.display = 'block';  // Moon icon
+    icons[1].style.display = 'none';  // Sun icon
+  }
+}
+
+async function checkAuth() {
+  try {
+    const response = await fetch('/api/user');
+    if (!response.ok) {
+      // Not logged in - redirect to login
+      setTimeout(() => {
+        window.location.href = '/login';
+      }, 2000);
+      showNotification('Please login first to view itineraries', 'warning');
+      document.querySelector('.main-content').innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">🔐</div>
+          <h2 class="empty-title">Login Required</h2>
+          <p class="empty-text">Please login to view your itineraries. Redirecting to login page...</p>
+          <a href="/login" class="btn btn-primary">🔐 Go to Login</a>
+        </div>
+      `;
+      return;
+    }
+    
+    const user = await response.json();
+    currentUser = user;
+    updateSidebarUser(user);
+  } catch (error) {
+    console.error('Auth check failed:', error);
+    setTimeout(() => {
+      window.location.href = '/login';
+    }, 2000);
+    showNotification('Authentication error. Redirecting to login...', 'error');
+    document.querySelector('.main-content').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">❌</div>
+        <h2 class="empty-title">Authentication Error</h2>
+        <p class="empty-text">Please login again. Redirecting to login page...</p>
+        <a href="/login" class="btn btn-primary">🔐 Go to Login</a>
+      </div>
+    `;
+  }
+}
+
+function updateSidebarUser(user) {
+  const sidebarUser = document.getElementById('sidebarUser');
+  sidebarUser.innerHTML = `
+    <div class="user-name">${user.full_name || user.username}</div>
+    <div class="user-email">${user.email}</div>
+  `;
+}
+
+async function logout() {
+  if (!confirm('Are you sure you want to logout?')) return;
+  
+  try {
+    await fetch('/api/logout', { method: 'POST' });
+    showNotification('Logged out successfully', 'success');
+    setTimeout(() => window.location.href = '/', 1000);
+  } catch (error) {
+    showNotification('Logout failed', 'error');
+  }
+}
+
+async function loadItineraries() {
+  try {
+    const response = await fetch('/api/itineraries');
+    if (!response.ok) {
+      throw new Error('Failed to load itineraries');
+    }
+    
+    const data = await response.json();
+    allItineraries = data.itineraries;
+    renderItineraries();
+  } catch (error) {
+    console.error('Error loading itineraries:', error);
+    document.getElementById('itinerariesContainer').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">❌</div>
+        <h2 class="empty-title">Failed to Load Itineraries</h2>
+        <p class="empty-text">Please try refreshing the page</p>
+        <button class="btn btn-primary" onclick="refreshItineraries()">🔄 Retry</button>
+      </div>
+    `;
+  }
+}
+
+function renderItineraries() {
+  const container = document.getElementById('itinerariesContainer');
+  
+  if (allItineraries.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📋</div>
+        <h2 class="empty-title">No Itineraries Yet</h2>
+        <p class="empty-text">Create your first flight itinerary to get started</p>
+        <a href="/" class="btn btn-primary">✈️ Create Itinerary</a>
+      </div>
+    `;
+    return;
+  }
+  
+  const grid = document.createElement('div');
+  grid.className = 'itineraries-grid';
+  
+  allItineraries.forEach(itinerary => {
+    const card = document.createElement('div');
+    card.className = `itinerary-card ${itinerary.status}`;
+    
+    const createdDate = new Date(itinerary.created_at).toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
+    
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="card-status ${itinerary.status}">${itinerary.status}</span>
+        <span class="card-date">${createdDate}</span>
+      </div>
+      
+      <div class="card-info">
+        <div class="info-row">
+          <span class="info-label">Flights</span>
+          <span class="info-value">${itinerary.flights_count} flight${itinerary.flights_count !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Markup</span>
+          <span class="info-value">₹${itinerary.markup ? itinerary.markup.toLocaleString('en-IN') : '0'}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Total Amount</span>
+          <span class="info-value amount-value">₹${itinerary.total_amount ? itinerary.total_amount.toLocaleString('en-IN') : '0'}</span>
+        </div>
+      </div>
+      
+      ${itinerary.customer ? `
+        <div class="card-customer">
+          <div class="customer-name">${itinerary.customer.name}</div>
+          <div class="customer-type">${itinerary.billing_type === 'corporate' ? '🏢 Corporate' : '👤 Passenger'}</div>
+        </div>
+      ` : ''}
+      
+      <div class="card-actions">
+        <button class="card-btn primary" onclick="viewItinerary('${itinerary.id}')">
+          👁️ View
+        </button>
+        <button class="card-btn danger" onclick="deleteItinerary('${itinerary.id}')">
+          🗑️ Delete
+        </button>
+      </div>
+    `;
+    
+    grid.appendChild(card);
+  });
+  
+  container.innerHTML = '';
+  container.appendChild(grid);
+}
+
+async function refreshItineraries() {
+  showNotification('Refreshing itineraries...', 'warning');
+  await loadItineraries();
+  showNotification('Itineraries refreshed', 'success');
+}
+
+async function viewItinerary(id) {
+  try {
+    const response = await fetch(`/api/itineraries/${id}`);
+    if (!response.ok) {
+      throw new Error('Failed to load itinerary');
+    }
+    
+    const itinerary = await response.json();
+    currentViewingItinerary = itinerary;
+    
+    // Populate modal
+    const modalBody = document.getElementById('viewModalBody');
+    
+    // Billing Information
+    let billingSection = `
+      <div class="detail-section">
+        <h3 class="detail-title">💳 Billing Information</h3>
+        <div class="detail-row">
+          <span class="detail-label">Type</span>
+          <span class="detail-value">${itinerary.billing_type === 'corporate' ? '🏢 Corporate' : '👤 Passenger'}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Name</span>
+          <span class="detail-value">${itinerary.bill_to_name || 'N/A'}</span>
+        </div>
+    `;
+    
+    if (itinerary.billing_type === 'corporate') {
+      billingSection += `
+        <div class="detail-row">
+          <span class="detail-label">Company</span>
+          <span class="detail-value">${itinerary.bill_to_company || 'N/A'}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">GST</span>
+          <span class="detail-value">${itinerary.bill_to_gst || 'N/A'}</span>
+        </div>
+      `;
+    }
+    
+    billingSection += `
+        <div class="detail-row">
+          <span class="detail-label">Email</span>
+          <span class="detail-value">${itinerary.bill_to_email || 'N/A'}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Phone</span>
+          <span class="detail-value">${itinerary.bill_to_phone || 'N/A'}</span>
+        </div>
+      </div>
+    `;
+    
+    // Flight Information
+    let flightsSection = `
+      <div class="detail-section">
+        <h3 class="detail-title">✈️ Flight Details</h3>
+        <div class="flight-cards-preview">
+    `;
+    
+    itinerary.flights.forEach((flight, index) => {
+      let faresHTML = '';
+      Object.entries(flight.fares).forEach(([type, base]) => {
+        const finalFare = base + flight.markup;
+        faresHTML += `
+          <div class="detail-row">
+            <span class="detail-label">${type.charAt(0).toUpperCase() + type.slice(1)}</span>
+            <span class="detail-value">₹${finalFare.toLocaleString('en-IN')}</span>
+          </div>
+        `;
+      });
+      
+      flightsSection += `
+        <div class="flight-preview-card">
+          <strong>${flight.airline} ${flight.flight_number}</strong><br>
+          ${flight.departure_city} → ${flight.arrival_city}<br>
+          <small>${flight.departure_date} | ${flight.departure_time} - ${flight.arrival_time}</small>
+          <div style="margin-top: 0.5rem;">
+            ${faresHTML}
+          </div>
+        </div>
+      `;
+    });
+    
+    flightsSection += `
+        </div>
+      </div>
+    `;
+    
+    // Final Text
+    let textSection = `
+      <div class="detail-section">
+        <h3 class="detail-title">📄 Itinerary Text</h3>
+        <div class="itinerary-text">${itinerary.final_text}</div>
+      </div>
+    `;
+    
+    modalBody.innerHTML = billingSection + flightsSection + textSection;
+    
+    // Populate actions
+    const modalActions = document.getElementById('viewModalActions');
+    modalActions.innerHTML = `
+      ${itinerary.status !== 'approved' ? `
+        <button class="card-btn success" onclick="approveItinerary('${itinerary.id}')">
+          ✅ Mark as Approved
+        </button>
+      ` : ''}
+      <button class="card-btn primary" onclick="shareAsText('${itinerary.id}')">
+        📤 Share Text
+      </button>
+      <button class="card-btn primary" onclick="shareAsImage('${itinerary.id}')">
+        🖼️ Share as Image
+      </button>
+      <button class="card-btn secondary" onclick="copyItineraryText('${itinerary.id}')">
+        📋 Copy Text
+      </button>
+      <button class="card-btn danger" onclick="deleteItinerary('${itinerary.id}'); closeViewModal();">
+        🗑️ Delete
+      </button>
+    `;
+    
+    // Show modal
+    document.getElementById('viewModal').classList.add('active');
+    
+  } catch (error) {
+    console.error('Error viewing itinerary:', error);
+    showNotification('Failed to load itinerary details', 'error');
+  }
+}
+
+function closeViewModal() {
+  document.getElementById('viewModal').classList.remove('active');
+  currentViewingItinerary = null;
+}
+
+async function approveItinerary(id) {
+  if (!confirm('Mark this itinerary as approved?')) return;
+  
+  try {
+    const response = await fetch(`/api/itineraries/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'approved' })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to approve itinerary');
+    }
+    
+    showNotification('Itinerary approved successfully', 'success');
+    closeViewModal();
+    await refreshItineraries();
+    
+  } catch (error) {
+    console.error('Error approving itinerary:', error);
+    showNotification('Failed to approve itinerary', 'error');
+  }
+}
+
+async function deleteItinerary(id) {
+  if (!confirm('Are you sure you want to delete this itinerary? This action cannot be undone.')) return;
+  
+  try {
+    const response = await fetch(`/api/itineraries/${id}`, {
+      method: 'DELETE'
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to delete itinerary');
+    }
+    
+    showNotification('Itinerary deleted successfully', 'success');
+    await refreshItineraries();
+    
+  } catch (error) {
+    console.error('Error deleting itinerary:', error);
+    showNotification('Failed to delete itinerary', 'error');
+  }
+}
+
+function shareAsText(id) {
+  if (!currentViewingItinerary || currentViewingItinerary.id !== id) {
+    showNotification('Please wait...', 'warning');
+    return;
+  }
+  
+  const text = currentViewingItinerary.final_text;
+  const encodedText = encodeURIComponent(text);
+  const whatsappUrl = `https://wa.me/?text=${encodedText}`;
+  window.open(whatsappUrl, '_blank');
+}
+
+function copyItineraryText(id) {
+  if (!currentViewingItinerary || currentViewingItinerary.id !== id) {
+    showNotification('Please wait...', 'warning');
+    return;
+  }
+  
+  const text = currentViewingItinerary.final_text;
+  navigator.clipboard.writeText(text).then(() => {
+    showNotification('Copied to clipboard!', 'success');
+  }).catch(() => {
+    showNotification('Failed to copy', 'error');
+  });
+}
+
+function shareAsImage(id) {
+  if (!currentViewingItinerary || currentViewingItinerary.id !== id) {
+    showNotification('Please wait...', 'warning');
+    return;
+  }
+  
+  // Create a temporary container with flight cards
+  const tempContainer = document.createElement('div');
+  tempContainer.style.cssText = `
+    position: fixed;
+    left: -9999px;
+    top: 0;
+    background: #f8fafc;
+    padding: 2rem;
+    width: 800px;
+  `;
+  
+  const cardsHTML = currentViewingItinerary.flights.map(flight => {
+    let faresHTML = '';
+    Object.entries(flight.fares).forEach(([type, base]) => {
+      const finalFare = base + flight.markup;
+      faresHTML += `
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+          <span style="font-weight: 500;">${type.charAt(0).toUpperCase() + type.slice(1)}</span>
+          <span style="font-weight: 700; color: #2563eb; font-size: 1.1rem;">₹${finalFare.toLocaleString('en-IN')}</span>
+        </div>
+      `;
+    });
+    
+    return `
+      <div style="background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); border: 2px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; position: relative; border-left: 4px solid #2563eb;">
+        <div style="font-size: 1.1rem; font-weight: 700; color: #2563eb; margin-bottom: 0.5rem;">${flight.airline}</div>
+        <div style="font-size: 0.85rem; color: #64748b; margin-bottom: 1rem;">${flight.flight_number}</div>
+        
+        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
+          <div>
+            <div style="font-weight: 600;">${flight.departure_city}</div>
+            <div style="font-size: 0.85rem; color: #64748b;">${flight.departure_time}</div>
+          </div>
+          <span style="color: #2563eb; font-weight: 700;">→</span>
+          <div>
+            <div style="font-weight: 600;">${flight.arrival_city}</div>
+            <div style="font-size: 0.85rem; color: #64748b;">${flight.arrival_time}</div>
+          </div>
+        </div>
+        
+        <div style="font-size: 0.875rem; color: #64748b; margin-bottom: 1rem;">
+          Duration: ${flight.duration} | ${flight.stops} | Baggage: ${flight.baggage}
+        </div>
+        
+        <div style="background: #f8fafc; border-radius: 8px; padding: 1rem;">
+          <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 600; color: #64748b; margin-bottom: 0.5rem;">Available Fares</div>
+          ${faresHTML}
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  tempContainer.innerHTML = cardsHTML;
+  document.body.appendChild(tempContainer);
+  
+  // Check if html2canvas is loaded
+  if (typeof html2canvas === 'undefined') {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    script.onload = () => captureAndShare(tempContainer);
+    document.head.appendChild(script);
+  } else {
+    captureAndShare(tempContainer);
+  }
+}
+
+function captureAndShare(container) {
+  html2canvas(container, {
+    backgroundColor: '#f8fafc',
+    scale: 2,
+    logging: false,
+    useCORS: true
+  }).then(canvas => {
+    container.remove();
+    
+    canvas.toBlob(blob => {
+      const file = new File([blob], 'flight-itinerary.png', { type: 'image/png' });
+      
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({
+          files: [file],
+          title: 'Flight Itinerary',
+          text: 'Check out this flight itinerary!'
+        }).then(() => {
+          showNotification('Shared successfully!', 'success');
+        }).catch((error) => {
+          if (error.name !== 'AbortError') {
+            downloadImage(blob);
+          }
+        });
+      } else {
+        downloadImage(blob);
+      }
+    }, 'image/png');
+  }).catch((error) => {
+    container.remove();
+    showNotification('Failed to generate image', 'error');
+    console.error('Screenshot error:', error);
+  });
+}
+
+function downloadImage(blob) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `itinerary-${Date.now()}.png`;
+  link.click();
+  URL.revokeObjectURL(url);
+  showNotification('Image downloaded successfully', 'success');
+}
+
+function toggleMobileMenu() {
+  document.getElementById('sidebar').classList.toggle('mobile-open');
+}
+
+function showNotification(message, type = 'success') {
+  const notification = document.createElement('div');
+  notification.className = `notification ${type}`;
+  notification.innerHTML = `
+    <span>${type === 'error' ? '❌' : type === 'warning' ? '⚠️' : '✅'}</span>
+    <span>${message}</span>
+  `;
+  document.body.appendChild(notification);
+  
+  setTimeout(() => {
+    notification.style.animation = 'slideIn 0.3s ease reverse';
+    setTimeout(() => notification.remove(), 300);
+  }, 3000);
+}
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+</body>
+</html>

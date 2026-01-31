@@ -1,720 +1,2654 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flight Itinerary Builder</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-:root {
-  --primary: #2563eb;
-  --primary-dark: #1e40af;
-  --secondary: #0ea5e9;
-  --success: #10b981;
-  --danger: #ef4444;
-  --warning: #f59e0b;
-  --bg-main: #f8fafc;
-  --bg-card: #ffffff;
-  --text-primary: #0f172a;
-  --text-secondary: #64748b;
-  --border: #e2e8f0;
-  --shadow: rgba(15, 23, 42, 0.08);
-  --shadow-lg: rgba(15, 23, 42, 0.15);
-}
-
-body {
-  font-family: 'Outfit', sans-serif;
-  background: var(--bg-main);
-  color: var(--text-primary);
-  line-height: 1.6;
-  min-height: 100vh;
-}
-
-.app-header {
-  background: linear-gradient(135deg, #1e40af 0%, #2563eb 50%, #0ea5e9 100%);
-  color: white;
-  padding: 2rem 1.5rem;
-  box-shadow: 0 4px 20px var(--shadow-lg);
-}
-
-.header-content {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.header-content h1 {
-  font-size: 2rem;
-  font-weight: 700;
-  margin-bottom: 0.5rem;
-  letter-spacing: -0.02em;
-}
-
-.header-content p {
-  font-size: 1rem;
-  opacity: 0.95;
-  font-weight: 300;
-}
-
-.container {
-  max-width: 1200px;
-  margin: 2rem auto;
-  padding: 0 1.5rem;
-}
-
-.section {
-  background: var(--bg-card);
-  border-radius: 16px;
-  padding: 2rem;
-  margin-bottom: 1.5rem;
-  box-shadow: 0 1px 3px var(--shadow);
-  border: 1px solid var(--border);
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
-}
-
-.section-header h2 {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.section-icon {
-  width: 32px;
-  height: 32px;
-  background: linear-gradient(135deg, var(--primary), var(--secondary));
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 1.2rem;
-}
-
-.flight-block {
-  background: #f8fafc;
-  border: 2px solid var(--border);
-  border-radius: 12px;
-  padding: 1.5rem;
-  margin-bottom: 1rem;
-  transition: all 0.3s ease;
-  position: relative;
-}
-
-.flight-block:hover {
-  border-color: var(--primary);
-  box-shadow: 0 4px 12px var(--shadow);
-}
-
-.flight-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.flight-number {
-  font-weight: 600;
-  color: var(--primary);
-  font-size: 0.95rem;
-}
-
-.remove-btn {
-  background: #fee2e2;
-  color: var(--danger);
-  border: none;
-  padding: 0.4rem 0.75rem;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  cursor: pointer;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.remove-btn:hover {
-  background: #fecaca;
-  transform: translateY(-1px);
-}
-
-.textarea-wrapper {
-  margin-bottom: 1.25rem;
-}
-
-.textarea-label {
-  display: block;
-  font-size: 0.875rem;
-  font-weight: 500;
-  margin-bottom: 0.5rem;
-  color: var(--text-secondary);
-}
-
-textarea {
-  width: 100%;
-  min-height: 120px;
-  padding: 1rem;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.875rem;
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  resize: vertical;
-  transition: all 0.3s ease;
-  background: white;
-  color: var(--text-primary);
-}
-
-textarea:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-textarea::placeholder {
-  color: #94a3b8;
-}
-
-.fare-types {
-  display: flex;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.fare-group {
-  flex: 1;
-  min-width: 200px;
-}
-
-.fare-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-  cursor: pointer;
-  user-select: none;
-}
-
-.fare-checkbox input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
-  accent-color: var(--primary);
-}
-
-.fare-checkbox label {
-  font-weight: 500;
-  font-size: 0.9rem;
-  cursor: pointer;
-  color: var(--text-primary);
-}
-
-.fare-input {
-  width: 100%;
-  padding: 0.75rem 1rem;
-  font-size: 0.95rem;
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  font-family: 'Outfit', sans-serif;
-  transition: all 0.3s ease;
-  background: white;
-}
-
-.fare-input:disabled {
-  background: #f1f5f9;
-  cursor: not-allowed;
-  color: #94a3b8;
-}
-
-.fare-input:not(:disabled):focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-.add-flight-btn {
-  width: 100%;
-  padding: 1rem;
-  background: white;
-  border: 2px dashed var(--border);
-  border-radius: 12px;
-  color: var(--primary);
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-}
-
-.add-flight-btn:hover {
-  border-color: var(--primary);
-  background: #eff6ff;
-  transform: translateY(-2px);
-}
-
-.markup-section {
-  display: flex;
-  align-items: flex-end;
-  gap: 1rem;
-}
-
-.input-group {
-  flex: 1;
-}
-
-.input-label {
-  display: block;
-  font-size: 0.875rem;
-  font-weight: 500;
-  margin-bottom: 0.5rem;
-  color: var(--text-secondary);
-}
-
-.markup-input {
-  width: 100%;
-  padding: 0.875rem 1rem;
-  font-size: 1rem;
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  font-family: 'Outfit', sans-serif;
-  transition: all 0.3s ease;
-}
-
-.markup-input:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-.btn {
-  padding: 0.875rem 2rem;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-family: 'Outfit', sans-serif;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  white-space: nowrap;
-}
-
-.btn-primary {
-  background: linear-gradient(135deg, var(--primary), var(--secondary));
-  color: white;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
-}
-
-.btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.btn-secondary {
-  background: white;
-  color: var(--text-primary);
-  border: 2px solid var(--border);
-}
-
-.btn-secondary:hover {
-  border-color: var(--primary);
-  color: var(--primary);
-  transform: translateY(-2px);
-}
-
-.parse-section {
-  text-align: center;
-}
-
-.cards-grid {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-}
-
-.flight-card {
-  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-  border: 2px solid var(--border);
-  border-radius: 12px;
-  padding: 1.5rem;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-.flight-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 100%;
-  background: linear-gradient(135deg, var(--primary), var(--secondary));
-}
-
-.flight-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px var(--shadow-lg);
-}
-
-.card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.card-airline {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--primary);
-  line-height: 1.3;
-}
-
-.card-flight-num {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-.card-route {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-  font-size: 0.95rem;
-}
-
-.card-city {
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.card-time {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-}
-
-.card-arrow {
-  color: var(--primary);
-  font-weight: 700;
-}
-
-.card-details {
-  display: grid;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-  font-size: 0.875rem;
-}
-
-.card-detail-item {
-  display: flex;
-  justify-content: space-between;
-  color: var(--text-secondary);
-}
-
-.card-detail-label {
-  font-weight: 500;
-}
-
-.card-detail-value {
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.card-fares {
-  background: #f8fafc;
-  border-radius: 8px;
-  padding: 1rem;
-  margin-top: 1rem;
-}
-
-.card-fare-title {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 0.5rem;
-  letter-spacing: 0.05em;
-}
-
-.fare-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
-
-.fare-item:last-child {
-  margin-bottom: 0;
-}
-
-.fare-label {
-  font-weight: 500;
-  color: var(--text-primary);
-  font-size: 0.9rem;
-}
-
-.fare-value {
-  font-weight: 700;
-  color: var(--primary);
-  font-size: 1.1rem;
-}
-
-.output-section {
-  background: #0f172a;
-  color: #e2e8f0;
-  padding: 1.5rem;
-  border-radius: 12px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.875rem;
-  line-height: 1.8;
-  white-space: pre-wrap;
-  max-height: 600px;
-  overflow-y: auto;
-  border: 2px solid #1e293b;
-}
-
-.output-section::-webkit-scrollbar {
-  width: 8px;
-}
-
-.output-section::-webkit-scrollbar-track {
-  background: #1e293b;
-  border-radius: 4px;
-}
-
-.output-section::-webkit-scrollbar-thumb {
-  background: #475569;
-  border-radius: 4px;
-}
-
-.output-section::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 3rem;
-  color: var(--text-secondary);
-}
-
-.empty-state-icon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-  opacity: 0.5;
-}
-
-.empty-state-text {
-  font-size: 1.1rem;
-  font-weight: 500;
-}
-
-.actions {
-  display: flex;
-  gap: 1rem;
-  margin-top: 1rem;
-  flex-wrap: wrap;
-}
-
-.loading {
-  display: inline-block;
-  width: 18px;
-  height: 18px;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.notification {
-  position: fixed;
-  top: 2rem;
-  right: 2rem;
-  background: white;
-  padding: 1rem 1.5rem;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px var(--shadow-lg);
-  border-left: 4px solid var(--success);
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  z-index: 1000;
-  animation: slideIn 0.3s ease;
-}
-
-@keyframes slideIn {
-  from {
-    transform: translateX(400px);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-.notification.error {
-  border-left-color: var(--danger);
-}
-
-.notification.warning {
-  border-left-color: var(--warning);
-}
-
-@media (max-width: 768px) {
-  .container {
-    padding: 0 1rem;
-    margin: 1rem auto;
-  }
-
-  .section {
-    padding: 1.5rem;
-  }
-
-  .fare-types {
-    flex-direction: column;
-  }
-
-  .cards-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .markup-section {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .actions {
-    flex-direction: column;
-  }
-
-  .btn {
-    width: 100%;
-    justify-content: center;
-  }
-}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flight Itinerary Builder</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1e40af;
+      --secondary: #0ea5e9;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --bg-main: #f8fafc;
+      --bg-card: #ffffff;
+      --text-primary: #0f172a;
+      --text-secondary: #64748b;
+      --border: #e2e8f0;
+      --shadow: rgba(15, 23, 42, 0.08);
+      --shadow-lg: rgba(15, 23, 42, 0.15);
+      --primary-dark-mode: #3b82f6;
+      --primary-dark-dark-mode: #2563eb;
+      --secondary-dark-mode: #38bdf8;
+      --success-dark-mode: #22c55e;
+      --danger-dark-mode: #f87171;
+      --warning-dark-mode: #fbbf24;
+      --bg-main-dark-mode: #0f172a;
+      --bg-card-dark-mode: #1e293b;
+      --text-primary-dark-mode: #f1f5f9;
+      --text-secondary-dark-mode: #94a3b8;
+      --border-dark-mode: #334155;
+      --shadow-dark-mode: rgba(0, 0, 0, 0.3);
+      --shadow-lg-dark-mode: rgba(0, 0, 0, 0.5);
+    }
+
+    [data-theme="dark"] {
+      --primary: var(--primary-dark-mode);
+      --primary-dark: var(--primary-dark-dark-mode);
+      --secondary: var(--secondary-dark-mode);
+      --success: var(--success-dark-mode);
+      --danger: var(--danger-dark-mode);
+      --warning: var(--warning-dark-mode);
+      --bg-main: var(--bg-main-dark-mode);
+      --bg-card: var(--bg-card-dark-mode);
+      --text-primary: var(--text-primary-dark-mode);
+      --text-secondary: var(--text-secondary-dark-mode);
+      --border: var(--border-dark-mode);
+      --shadow: var(--shadow-dark-mode);
+      --shadow-lg: var(--shadow-lg-dark-mode);
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--bg-main);
+      color: var(--text-primary);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    .app-header {
+      background: linear-gradient(135deg, #1e40af 0%, #2563eb 50%, #0ea5e9 100%);
+      color: white;
+      padding: 2rem 1.5rem;
+      box-shadow: 0 4px 20px var(--shadow-lg);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header-left h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+
+    .header-left p {
+      font-size: 1rem;
+      opacity: 0.95;
+      font-weight: 300;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .header-btn {
+      padding: 0.625rem 1.25rem;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-decoration: none;
+      display: inline-block;
+      font-size: 0.95rem;
+    }
+
+    .header-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.5);
+      transform: translateY(-2px);
+    }
+
+    .header-btn.primary {
+      background: white;
+      color: var(--primary);
+      border-color: white;
+    }
+
+    .header-btn.primary:hover {
+      background: #f1f5f9;
+    }
+
+    .dark-mode-toggle {
+      padding: 0.625rem;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+    }
+
+    .dark-mode-toggle:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.5);
+      transform: translateY(-2px);
+    }
+
+    .dark-mode-icon {
+      transition: opacity 0.3s ease;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+    }
+
+    .section {
+      background: var(--bg-card);
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 1px 3px var(--shadow);
+      border: 1px solid var(--border);
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .section-header h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .section-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 1.2rem;
+    }
+
+    .flight-block {
+      background: var(--bg-main);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      transition: all 0.3s ease;
+      position: relative;
+      box-sizing: border-box;
+    }
+
+    .flight-block:hover {
+      border-color: var(--primary);
+      box-shadow: 0 4px 12px var(--shadow);
+    }
+
+    .flight-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .flight-number {
+      font-weight: 600;
+      color: var(--primary);
+      font-size: 0.95rem;
+    }
+
+    .remove-btn {
+      background: var(--danger);
+      color: white;
+      border: none;
+      padding: 0.4rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+
+    .remove-btn:hover {
+      background: #dc2626;
+      transform: translateY(-1px);
+    }
+
+    .textarea-wrapper {
+      margin-bottom: 1.25rem;
+    }
+
+    .textarea-label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      color: var(--text-secondary);
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.875rem;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      resize: vertical;
+      transition: all 0.3s ease;
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    textarea::placeholder {
+      color: #94a3b8;
+    }
+
+    .fare-types {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 0.75rem;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .fare-card {
+      background: var(--bg-card);
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      padding: 0.75rem;
+      transition: all 0.3s ease;
+      overflow: hidden;
+      box-sizing: border-box;
+      max-width: 100%;
+    }
+
+    .fare-card:hover {
+      border-color: var(--primary);
+    }
+
+    .fare-card.disabled {
+      opacity: 0.5;
+      background: var(--bg-main);
+    }
+
+    .fare-card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .fare-card-header input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: var(--primary);
+    }
+
+    .fare-card-header label {
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      color: var(--text-primary);
+    }
+
+    .fare-card-fields {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .fare-field-row {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      width: 100%;
+    }
+
+    .fare-field-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      min-width: 30px;
+      flex-shrink: 0;
+    }
+
+    .fare-field-input {
+      flex: 1;
+      min-width: 0;
+      width: 100%;
+      padding: 0.4rem 0.5rem;
+      font-size: 0.8rem;
+      border: 1.5px solid var(--border);
+      border-radius: 5px;
+      font-family: 'Outfit', sans-serif;
+      transition: all 0.2s ease;
+      background: var(--bg-main);
+      color: var(--text-primary);
+      box-sizing: border-box;
+    }
+
+    .fare-field-input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+    }
+
+    .fare-field-input:disabled {
+      background: var(--bg-card);
+      cursor: not-allowed;
+      color: var(--text-secondary);
+    }
+
+    .fare-field-input::placeholder {
+      color: #94a3b8;
+      font-size: 0.7rem;
+    }
+
+    .fare-group {
+      flex: 1;
+      min-width: 200px;
+    }
+
+    /* Inline Fare Editor for Cards */
+    .card-wrapper {
+      width: 100%;
+    }
+
+    .card-edit-bar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 0.5rem;
+    }
+
+    .card-edit-btn {
+      background: var(--bg-card);
+      border: 1.5px solid var(--primary);
+      border-radius: 6px;
+      padding: 0.4rem 0.8rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      transition: all 0.2s ease;
+      color: var(--primary);
+      font-weight: 500;
+    }
+
+    .card-edit-btn:hover {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+
+    .card-edit-btn.active {
+      background: var(--border);
+      color: var(--text-secondary);
+      border-color: var(--border);
+    }
+
+    .inline-fare-editor {
+      margin-top: 1rem;
+      padding: 0.75rem;
+      background: var(--bg-main);
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      width: 100%;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    .inline-fare-editor-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .inline-fare-editor-header h4 {
+      margin: 0;
+      font-size: 0.95rem;
+      color: var(--primary);
+    }
+
+    .inline-fare-editor-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+      justify-content: flex-end;
+    }
+
+    .inline-fare-editor-actions button {
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .inline-fare-editor-actions .btn-save {
+      background: var(--success);
+      color: white;
+      border: none;
+      font-weight: 600;
+    }
+
+    .inline-fare-editor-actions .btn-save:hover {
+      background: #059669;
+    }
+
+    .inline-fare-editor-actions .btn-cancel {
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      border: 1.5px solid var(--border);
+    }
+
+    .inline-fare-editor-actions .btn-cancel:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .fare-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .fare-checkbox input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: var(--primary);
+    }
+
+    .fare-checkbox label {
+      font-weight: 500;
+      font-size: 0.9rem;
+      cursor: pointer;
+      color: var(--text-primary);
+    }
+
+    .fare-input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      font-family: 'Outfit', sans-serif;
+      transition: all 0.3s ease;
+      background: var(--bg-card);
+    }
+
+    .fare-input:disabled {
+      background: var(--bg-main);
+      cursor: not-allowed;
+      color: var(--text-secondary);
+    }
+
+    .fare-input:not(:disabled):focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .add-flight-btn {
+      width: 100%;
+      padding: 1rem;
+      background: var(--bg-card);
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      color: var(--primary);
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .add-flight-btn:hover {
+      border-color: var(--primary);
+      background: #eff6ff;
+      transform: translateY(-2px);
+    }
+
+    .markup-section {
+      display: flex;
+      align-items: flex-end;
+      gap: 1rem;
+    }
+
+    .input-group {
+      flex: 1;
+    }
+
+    .input-label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      color: var(--text-secondary);
+    }
+
+    .markup-input {
+      width: 100%;
+      padding: 0.875rem 1rem;
+      font-size: 1rem;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      font-family: 'Outfit', sans-serif;
+      transition: all 0.3s ease;
+      background: var(--bg-main);
+      color: var(--text-primary);
+    }
+
+    .markup-input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    /* Modal Styles */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+      /* Flexbox centering */
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .modal.show {
+      display: flex !important;
+    }
+
+    .modal-content {
+      background-color: var(--bg-card);
+      margin: 0;
+      padding: 2rem;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      width: 90%;
+      max-width: 420px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      animation: modalSlideIn 0.3s ease-out;
+      position: relative;
+    }
+
+    @keyframes modalSlideIn {
+      from {
+        transform: translateY(-20px);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .modal h3 {
+      margin-bottom: 1.5rem;
+      color: var(--text-primary);
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .btn {
+      padding: 0.875rem 2rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-family: 'Outfit', sans-serif;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: white;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 2px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+      transform: translateY(-2px);
+    }
+
+    .btn-success {
+      background: var(--success);
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #059669;
+      transform: translateY(-2px);
+    }
+
+    .parse-section {
+      text-align: center;
+    }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+      width: 100%;
+      align-items: start;
+      /* Prevents neighbors from stretching in height */
+    }
+
+    @media (max-width: 900px) {
+      .cards-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Remove old wrapper specific styles if they interfere, or ensure flight-card is flexible */
+    .flight-card {
+      background: var(--bg-main);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 0 !important;
+      width: 100%;
+      /* Ensure it fills the grid cell */
+    }
+
+    .flight-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+    }
+
+    .flight-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 24px var(--shadow-lg);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .card-airline {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--primary);
+      line-height: 1.3;
+    }
+
+    .card-flight-num {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .card-route {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+    }
+
+    .card-city {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .card-time {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .card-arrow {
+      color: var(--primary);
+      font-weight: 700;
+    }
+
+    .card-details {
+      display: grid;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      font-size: 0.875rem;
+    }
+
+    .card-detail-item {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-secondary);
+    }
+
+    .card-detail-label {
+      font-weight: 500;
+    }
+
+    .card-detail-value {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .card-fares {
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+    }
+
+    .card-fare-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+      letter-spacing: 0.05em;
+    }
+
+    .fare-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+
+    .fare-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .fare-label {
+      font-weight: 500;
+      color: var(--text-primary);
+      font-size: 0.9rem;
+    }
+
+    .fare-value {
+      font-weight: 700;
+      color: var(--primary);
+      font-size: 1.1rem;
+    }
+
+    .output-section {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      padding: 1.5rem;
+      border-radius: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.875rem;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      max-height: 600px;
+      overflow-y: auto;
+      border: 2px solid var(--border);
+    }
+
+    .output-section::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .output-section::-webkit-scrollbar-track {
+      background: var(--bg-main);
+      border-radius: 4px;
+    }
+
+    .output-section::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    .output-section::-webkit-scrollbar-thumb:hover {
+      background: var(--primary);
+    }
+
+    .actions {
+      display: flex;
+      gap: 1rem;
+      margin-top: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .notification {
+      position: fixed;
+      top: 2rem;
+      right: 2rem;
+      background: var(--bg-card);
+      padding: 1rem 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px var(--shadow-lg);
+      border-left: 4px solid var(--success);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      z-index: 1000;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    .notification.error {
+      border-left-color: var(--danger);
+    }
+
+    .notification.warning {
+      border-left-color: var(--warning);
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    .modal-content {
+      background: var(--bg-card);
+      border-radius: 16px;
+      padding: 2rem;
+      max-width: 600px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      animation: slideUp 0.3s ease;
+    }
+
+    @keyframes slideUp {
+      from {
+        transform: translateY(50px);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .modal-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .modal-close {
+      background: var(--bg-main);
+      border: none;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .modal-close:hover {
+      background: var(--border);
+      transform: rotate(90deg);
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--text-primary);
+    }
+
+    .form-input,
+    .form-select,
+    .form-textarea {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      font-family: 'Outfit', sans-serif;
+      transition: all 0.3s ease;
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+
+    .form-input:focus,
+    .form-select:focus,
+    .form-textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .form-textarea {
+      min-height: 100px;
+      resize: vertical;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.875rem;
+    }
+
+    .billing-tabs {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .billing-tab {
+      padding: 0.75rem 1.5rem;
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      transition: all 0.3s ease;
+      margin-bottom: -2px;
+    }
+
+    .billing-tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+
+    .billing-tab:hover:not(.active) {
+      color: var(--text-primary);
+    }
+
+    .customer-selector {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .customer-selector select {
+      flex: 1;
+    }
+
+    .btn-small {
+      padding: 0.5rem 1rem;
+      font-size: 0.875rem;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 1rem;
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 2px solid var(--border);
+    }
+
+    .modal-actions .btn {
+      flex: 1;
+    }
+
+    .flight-grid {
+      display: grid;
+      gap: 2rem;
+    }
+
+    .flight-unit {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: 1fr;
+    }
+
+    .flight-unit.row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .flight-unit.row .flight-block {
+      flex: 1;
+      min-width: 300px;
+      margin-bottom: 0;
+    }
+
+    .flight-unit.row .shared-fare-section {
+      flex-basis: 100%;
+    }
+
+    .flight-unit.multi {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-content: flex-start;
+    }
+
+    .flight-unit.multi .flight-block {
+      flex: 1;
+      min-width: 280px;
+      margin-bottom: 0;
+    }
+
+    .flight-unit.multi .shared-fare-section {
+      flex-basis: 100%;
+    }
+
+    .flight-unit-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--primary);
+      margin-bottom: 0.5rem;
+      width: 100%;
+    }
+
+    .flight-unit-header h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--primary);
+    }
+
+    .flight-unit-header button {
+      padding: 0.5rem 1rem;
+      background: var(--danger);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: all 0.3s ease;
+    }
+
+    .flight-unit-header button:hover {
+      background: #dc2626;
+      transform: translateY(-2px);
+    }
+
+    .shared-fare-section {
+      border-top: 2px solid var(--border);
+      padding-top: 1rem;
+      margin-top: 0.5rem;
+      width: 100%;
+    }
+
+    .shared-fare-section h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      color: var(--text-primary);
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        padding: 0 1rem;
+        margin: 1rem auto;
+      }
+
+      .section {
+        padding: 1.5rem;
+      }
+
+      .fare-types {
+        flex-direction: column;
+      }
+
+      .cards-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .markup-section {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .actions {
+        flex-direction: column;
+      }
+
+      .btn {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .header-content {
+        flex-direction: column;
+        gap: 1rem;
+        text-align: center;
+      }
+
+      .header-actions {
+        width: 100%;
+        justify-content: center;
+      }
+
+    }
+
+    /* --- New Flight Card Design (Skyscanner Style) --- */
+    .flight-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      /* Lighter border */
+      border-radius: 12px !important;
+      padding: 0 !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+      transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+      overflow: hidden;
+      margin-bottom: 0 !important;
+      animation: fadeIn 0.5s ease;
+    }
+
+    .flight-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+      border-color: var(--primary);
+    }
+
+    /* Summary Header */
+    .flight-summary {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-card);
+    }
+
+    .summary-main {
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+      flex: 1;
+    }
+
+    .summary-airline {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      min-width: 120px;
+    }
+
+    .airline-name {
+      font-weight: 700;
+      color: var(--text-primary);
+      font-size: 1rem;
+    }
+
+    .flight-code {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .flight-route-visual {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      max-width: 400px;
+    }
+
+    .time-group {
+      text-align: center;
+    }
+
+    .time-big {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      line-height: 1;
+    }
+
+    .city-code {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+      margin-top: 0.25rem;
+    }
+
+    .duration-line-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      min-width: 80px;
+    }
+
+    .duration-text {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.25rem;
+    }
+
+    .route-line {
+      width: 100%;
+      height: 2px;
+      background: var(--border);
+      position: relative;
+    }
+
+    .route-line::after {
+      content: '✈';
+      position: absolute;
+      top: 50%;
+      left: 100%;
+      transform: translate(-50%, -50%) rotate(90deg);
+      font-size: 0.8rem;
+      color: var(--primary);
+      background: var(--bg-card);
+      padding-left: 4px;
+    }
+
+    .stops-text {
+      font-size: 0.75rem;
+      margin-top: 0.35rem;
+      color: var(--danger);
+      /* Red for stops usually */
+    }
+
+    .stops-text.direct {
+      color: var(--success);
+    }
+
+    /* Timeline Styles */
+    .flight-timeline {
+      padding: 1.5rem 2rem;
+      background: var(--bg-main);
+      position: relative;
+    }
+
+    .timeline-segment {
+      position: relative;
+      padding-left: 20px;
+      /* Space for line */
+      margin-left: 10px;
+      /* Offset from container */
+      border-left: 2px solid var(--border);
+      padding-bottom: 2rem;
+    }
+
+    .timeline-segment:last-child {
+      border-left: 2px solid transparent;
+      padding-bottom: 0;
+    }
+
+    .t-dot {
+      position: absolute;
+      left: -7px;
+      /* Center on 2px border: -1px (border center) - 6px (half dot) = -7px */
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--bg-card);
+      border: 2px solid var(--text-secondary);
+      z-index: 2;
+      box-shadow: 0 0 0 4px var(--bg-main);
+      /* White/Bg halo to separate from line if needed */
+    }
+
+    .t-dot.departure {
+      top: 0;
+      border-color: var(--text-secondary);
+    }
+
+    .t-dot.arrival {
+      top: 0;
+      border-color: var(--text-primary);
+      background: var(--text-primary);
+    }
+
+    .t-time-row {
+      display: flex;
+      align-items: baseline;
+      gap: 1rem;
+      margin-bottom: 0.25rem;
+      line-height: 1;
+      padding-left: 1rem;
+      /* Gap between line and text */
+    }
+
+    .t-time {
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--text-primary);
+      width: 60px;
+      flex-shrink: 0;
+    }
+
+    .t-city {
+      font-weight: 600;
+      font-size: 1rem;
+      color: var(--text-primary);
+    }
+
+    .t-airport {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      margin-left: 0.5rem;
+      font-weight: 400;
+    }
+
+    .airport-code-small {
+      font-size: 0.8em;
+      color: var(--text-secondary);
+      margin-left: 4px;
+      font-weight: 400;
+    }
+
+    .t-detail-row {
+      margin-left: 76px;
+      /* time width + gap */
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Layover Block */
+    .layover-container {
+      position: relative;
+      margin: 0.5rem 0 1.5rem 0;
+      padding-left: 20px;
+      margin-left: -2px;
+      /* Pull back to overlap segment border */
+      width: calc(100% + 2px);
+    }
+
+    .layover-line-fix {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background-image: linear-gradient(to bottom, var(--warning) 33%, rgba(255, 255, 255, 0) 0%);
+      background-position: right;
+      background-size: 2px 6px;
+      background-repeat: repeat-y;
+      z-index: 1;
+    }
+
+    .layover-pill {
+      background: #fff1f2;
+      color: #be123c;
+      padding: 0.5rem 1rem;
+      border-radius: 100px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-left: 1.5rem;
+      /* Indent */
+      position: relative;
+      z-index: 2;
+    }
+
+    [data-theme="dark"] .layover-pill {
+      background: #4c0519;
+      color: #fda4af;
+    }
+
+    .flight-info-block {
+      margin-left: 80px;
+      /* Aligned with text */
+      padding: 0.75rem 1rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      margin-top: 0.5rem;
+    }
+
+    .info-row {
+      display: flex;
+      gap: 1.5rem;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.25rem;
+    }
+
+    .info-icon {
+      width: 16px;
+      text-align: center;
+    }
+
+    /* Fares Footer */
+    .card-footer-fares {
+      background: var(--bg-card);
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .footer-fare-item {
+      display: flex;
+      flex-direction: column;
+      padding: 0.5rem 1rem;
+      background: var(--bg-main);
+      border-radius: 8px;
+      min-width: 100px;
+    }
+
+    .footer-fare-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+
+    .footer-fare-price {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    /* Date Warning */
+    .date-warning-strip {
+      background: #fff7ed;
+      color: #c2410c;
+      padding: 0.5rem 1.5rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      gap: 0.75rem;
+      border-bottom: 1px solid #fed7aa;
+    }
+
+    .date-btn {
+      background: #c2410c;
+      color: white;
+      border: none;
+      padding: 0.25rem 0.75rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.75rem;
+    }
+
+    /* Stacked Airline Display */
+    .airline-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .airline-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      line-height: 1.2;
+    }
+
+    .airline-name-small {
+      font-weight: 700;
+      color: var(--text-primary);
+      font-size: 0.85rem;
+    }
+
+    .flight-code-small {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Expand/Collapse Styles */
+    .flight-summary {
+      cursor: pointer;
+      padding-right: 2rem;
+      /* Make space for arrow */
+      position: relative;
+    }
+
+    .expand-icon {
+      width: 10px;
+      height: 10px;
+      border-right: 2px solid #444;
+      border-bottom: 2px solid #444;
+      transform: rotate(45deg);
+      transition: transform 0.25s ease;
+      cursor: pointer;
+    }
+
+    /* when expanded */
+    .expand-icon.rotated {
+      transform: rotate(-135deg);
+    }
+
+
+    /* Compact Card Styles for Grid Layout */
+    .flight-card {
+      padding: 0 !important;
+      /* Ensure border-box or similar doesn't add unexpected size */
+    }
+
+    /* Summary Header Optimized */
+    .flight-summary {
+      padding: 1rem 1.25rem;
+      /* Reduced padding */
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-card);
+      min-height: 80px;
+      /* Consistent height */
+    }
+
+    .summary-main {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      /* Reduced gap */
+      flex: 1;
+      width: 100%;
+      /* Ensure full width usage */
+    }
+
+    .summary-airline {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      min-width: 100px;
+      /* slightly smaller min-width */
+      flex-shrink: 0;
+    }
+
+    .airline-name {
+      font-weight: 700;
+      color: var(--text-primary);
+      font-size: 0.9rem;
+      /* Smaller font */
+    }
+
+    .flight-code {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .flight-route-visual {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      /* Evenly spread */
+      gap: 0.5rem;
+      max-width: 100%;
+      /* Allow full expansion */
+      padding: 0 0.5rem;
+    }
+
+    .time-group {
+      text-align: center;
+      min-width: 50px;
+    }
+
+    .time-big {
+      font-size: 1.1rem;
+      /* Smaller time font */
+      font-weight: 700;
+      color: var(--text-primary);
+      line-height: 1;
+    }
+
+    .city-code {
+      font-size: 0.75rem;
+      /* Slightly smaller to fit "City (Code)" */
+      color: var(--text-secondary);
+      font-weight: 600;
+      /* Bolder */
+      margin-top: 0.25rem;
+      line-height: 1.2;
+      max-width: 80px;
+      /* Constrain width but allow wrap */
+      overflow-wrap: break-word;
+    }
+
+    .duration-line-container {
+      flex: 1;
+      /* Take available space */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      min-width: 60px;
+      /* Reduced min width */
+      margin: 0 0.5rem;
+    }
+
+    .duration-text {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.2rem;
+    }
+
+    /* Fares Footer Compact */
+    .card-footer-fares {
+      padding: 0.75rem 1.25rem;
+      gap: 0.75rem;
+    }
+
+    .footer-fare-item {
+      padding: 0.4rem 0.75rem;
+      min-width: 80px;
+    }
+
+    .footer-fare-price {
+      font-size: 1rem;
+    }
+
+    /* Timeline hidden by default if using inline style, or we can use a class */
+    /* Timeline hidden by default if using inline style, or we can use a class */
+    .flight-timeline-container {
+      border-top: 1px solid var(--border);
+      transition: all 0.3s ease;
+    }
+
+    .option-label {
+      position: absolute;
+      top: 0;
+      right: 0;
+      background: var(--primary);
+      color: white;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-bottom-right-radius: 8px;
+      z-index: 10;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Capture Optimization - Clean Raw Cards */
+    .capturing .flight-card {
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      transform: none !important;
+      border: 1px solid #ccc !important;
+      /* Simple border for definition */
+    }
+
+    .capturing {
+      background: transparent !important;
+    }
+
+    /* Animated Header Styles */
+    .animated-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 2.5rem;
+      font-weight: 800;
+      /* Professional gradient: White -> Gold -> Cyan -> White */
+      background: linear-gradient(to right, #ffffff, #fbbf24, #22d3ee, #ffffff);
+      background-size: 300% auto;
+      color: transparent;
+      -webkit-background-clip: text;
+      background-clip: text;
+      animation: shine 6s linear infinite;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+      text-transform: uppercase;
+    }
+
+    @keyframes shine {
+      to {
+        background-position: 300% center;
+      }
+    }
+
+    .header-subtitle {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 300;
+      color: rgba(255, 255, 255, 0.95);
+      opacity: 0;
+      animation: fadeIn 1s ease-out forwards 0.5s;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      font-size: 0.9rem;
+      /* Slightly smaller for elegance */
+    }
+
+    .header-left p {
+      /* Override existing p style if needed */
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(5px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
 </head>
+
 <body>
 
-<div class="app-header">
-  <div class="header-content">
-    <h1>✈️ Flight Itinerary Builder</h1>
-    <p>Paste flight details → Select fares → Generate professional itinerary</p>
-  </div>
-</div>
-
-<div class="container">
-  <!-- Flight Inputs Section -->
-  <div class="section">
-    <div class="section-header">
-      <div class="section-icon">✈️</div>
-      <h2>Flight Details</h2>
-    </div>
-    <div id="flightInputs"></div>
-    <button class="add-flight-btn" onclick="addFlight()">
-      <span>➕</span>
-      <span>Add Another Flight</span>
-    </button>
-  </div>
-
-  <!-- Markup Section -->
-  <div class="section">
-    <div class="section-header">
-      <div class="section-icon">💰</div>
-      <h2>Markup Configuration</h2>
-    </div>
-    <div class="markup-section">
-      <div class="input-group">
-        <label class="input-label">Global Markup (₹)</label>
-        <input type="number" id="markup" class="markup-input" placeholder="Enter markup amount (e.g., 500)" min="0">
+  <div class="app-header">
+    <div class="header-content">
+      <div class="header-left">
+        <h1 class="animated-title">Time Travels Query</h1>
+        <p class="header-subtitle">Seamlessly convert flight data into professional itineraries</p>
+      </div>
+      <div class="header-actions">
+        <button class="dark-mode-toggle" id="darkModeToggle" aria-label="Toggle dark mode">
+          <span class="dark-mode-icon">🌙</span>
+          <span class="dark-mode-icon" style="display: none;">☀️</span>
+        </button>
+        <a href="/itineraries" class="header-btn">📋 My Itineraries</a>
+        <button class="header-btn primary" id="authBtn" onclick="handleAuthClick()">🔐 Login / Register</button>
       </div>
     </div>
   </div>
 
-  <!-- Parse Button -->
-  <div class="section parse-section">
-    <button class="btn btn-primary" id="parseBtn" onclick="parseFlights()">
-      <span id="parseIcon">🚀</span>
-      <span id="parseBtnText">Parse Flights & Generate Itinerary</span>
-    </button>
-  </div>
+  <div class="container">
+    <!-- Flight Inputs Section -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">✈️</div>
+        <h2>Flight Details</h2>
+      </div>
 
-  <!-- Flight Cards Section -->
-  <div class="section" id="cardsSection" style="display: none;">
-    <div class="section-header">
-      <div class="section-icon">🎫</div>
-      <h2>Flight Cards</h2>
-    </div>
-    <div id="cards" class="cards-grid"></div>
-    <div class="actions">
-      <button class="btn btn-secondary" onclick="shareCardsAsImage()">
-        📤 Download & Share Cards on WhatsApp
+      <div style="margin-bottom: 1.5rem;">
+        <label class="input-label">Trip Type</label>
+
+        <div style="display:flex; gap:1.5rem; margin-top:0.5rem;">
+          <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+            <input type="radio" name="tripType" value="one_way" checked onchange="handleTripType()">
+            <span>One Way</span>
+          </label>
+
+          <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+            <input type="radio" name="tripType" value="round_trip" onchange="handleTripType()">
+            <span>Round Trip</span>
+          </label>
+
+          <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+            <input type="radio" name="tripType" value="multi_city" onchange="handleTripType()">
+            <span>Multi City</span>
+          </label>
+        </div>
+      </div>
+
+
+
+      <div id="flightInputs" class="flight-grid"></div>
+      <button id="addUnitBtn" class="add-flight-btn" onclick="addUnit()" style="display: none;">
+        <span>➕</span>
+        <span id="addUnitLabel">Add Another Flight</span>
       </button>
     </div>
+
+    <!-- Markup Section -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">💰</div>
+        <h2>Markup Configuration</h2>
+      </div>
+      <div class="markup-section" style="display: flex; gap: 2rem; align-items: flex-end;">
+        <div class="input-group" id="globalMarkupSection">
+          <label class="input-label">Global Markup (₹)</label>
+          <input type="number" id="markup" class="markup-input" placeholder="Enter markup amount (e.g., 500)" min="0">
+        </div>
+        <div class="input-group">
+          <label class="input-label">Service Charge (Optional)</label>
+          <div style="display: flex; align-items: center; gap: 1rem;">
+            <input type="number" id="serviceCharge" class="markup-input" placeholder="Enter service charge" min="0"
+              oninput="updateGSTDisplay()">
+            <span id="gstDisplay" style="font-size: 0.9rem; color: var(--text-secondary); white-space: nowrap;"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Parse Button -->
+    <div class="section parse-section">
+      <button class="btn btn-primary" id="parseBtn" onclick="parseFlights()">
+        <span id="parseIcon">🚀</span>
+        <span id="parseBtnText">Parse Flights & Generate Itinerary</span>
+      </button>
+    </div>
+
+    <!-- Flight Cards Section -->
+    <div class="section" id="cardsSection" style="display: none;">
+      <div class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <div class="section-icon">🎫</div>
+          <h2>Flight Cards</h2>
+        </div>
+        <div id="globalEditControls" style="display: none;">
+          <button class="btn btn-secondary" id="globalEditBtn" onclick="toggleGlobalEditMode()"
+            style="padding: 0.5rem 1rem; font-size: 0.9rem;">
+            ✏️ Edit Fares
+          </button>
+        </div>
+      </div>
+      <div id="cards" class="cards-grid" style="gap: 1rem;"></div>
+      <div class="actions">
+        <button class="btn btn-secondary" onclick="downloadCardsImage()">
+          📤 Download Cards Image
+        </button>
+      </div>
+    </div>
+
+    <!-- Output Section -->
+    <div class="section" id="outputSection" style="display: none;">
+      <div class="section-header">
+        <div class="section-icon">📋</div>
+        <h2>Final Itinerary Text</h2>
+      </div>
+      <div id="output" class="output-section">No output yet.</div>
+      <div class="actions">
+        <button class="btn btn-success" onclick="openSaveModal()">
+          💾 Save Itinerary
+        </button>
+        <button class="btn btn-primary" onclick="copyOutput()">
+          📋 Copy Text
+        </button>
+        <button class="btn" style="background-color: #25D366; color: white;" onclick="shareCombined('whatsapp')">
+          📱 Share to WhatsApp (Text + Img)
+        </button>
+        <button class="btn" style="background-color: #EA4335; color: white;" onclick="shareCombined('email')">
+          📧 Copy (Gmail)
+        </button>
+      </div>
+    </div>
   </div>
 
-  <!-- Output Section -->
-  <div class="section" id="outputSection" style="display: none;">
-    <div class="section-header">
-      <div class="section-icon">📋</div>
-      <h2>Final Itinerary Text</h2>
-    </div>
-    <div id="output" class="output-section">No output yet.</div>
-    <div class="actions">
-      <button class="btn btn-primary" onclick="copyOutput()">
-        📋 Copy to Clipboard
-      </button>
-      <button class="btn btn-secondary" onclick="shareOnWhatsApp()">
-        📤 Share on WhatsApp
-      </button>
+  <!-- Save Itinerary Modal -->
+  <div id="saveModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">💾 Save Itinerary</h3>
+        <button class="modal-close" onclick="closeSaveModal()">✕</button>
+      </div>
+
+      <div class="billing-tabs">
+        <button class="billing-tab active" onclick="switchBillingTab('passenger')">👤 Passenger</button>
+        <button class="billing-tab" onclick="switchBillingTab('corporate')">🏢 Corporate</button>
+      </div>
+
+      <form id="saveForm" onsubmit="saveItinerary(event)">
+        <!-- Passenger Billing Form -->
+        <div id="passengerForm" class="billing-form">
+          <div class="customer-selector">
+            <select id="passengerCustomerSelect" class="form-select" onchange="loadCustomerData('passenger')">
+              <option value="">Select existing passenger or enter new</option>
+            </select>
+            <button type="button" class="btn btn-primary btn-small" onclick="refreshCustomers()">🔄</button>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Passenger Name *</label>
+            <input type="text" id="passengerName" class="form-input" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" id="passengerEmail" class="form-input">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Phone</label>
+            <input type="tel" id="passengerPhone" class="form-input">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Address</label>
+            <textarea id="passengerAddress" class="form-textarea"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+              <input type="checkbox" id="savePassengerToDb">
+              <span class="form-label" style="margin: 0;">Save this passenger to database for future use</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Corporate Billing Form -->
+        <div id="corporateForm" class="billing-form" style="display: none;">
+          <div class="customer-selector">
+            <select id="corporateCustomerSelect" class="form-select" onchange="loadCustomerData('corporate')">
+              <option value="">Select existing corporate or enter new</option>
+            </select>
+            <button type="button" class="btn btn-primary btn-small" onclick="refreshCustomers()">🔄</button>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Company Name *</label>
+            <input type="text" id="corporateCompany" class="form-input" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Contact Person Name *</label>
+            <input type="text" id="corporateName" class="form-input" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" id="corporateEmail" class="form-input">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Phone</label>
+            <input type="tel" id="corporatePhone" class="form-input">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">GST Number</label>
+            <input type="text" id="corporateGst" class="form-input">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Address</label>
+            <textarea id="corporateAddress" class="form-textarea"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+              <input type="checkbox" id="saveCorporateToDb">
+              <span class="form-label" style="margin: 0;">Save this company to database for future use</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeSaveModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">
+            <span id="saveBtnText">💾 Save Itinerary</span>
+            <span id="saveBtnLoading" style="display: none;" class="loading"></span>
+          </button>
+        </div>
+      </form>
     </div>
   </div>
-</div>
 
-<script>
-let flightCount = 0;
-let isParsing = false;
-
-function addFlight() {
-  flightCount++;
-  const div = document.createElement("div");
-  div.className = "flight-block";
-  div.dataset.flightId = flightCount;
-  div.innerHTML = `
-    <div class="flight-header">
-      <span class="flight-number">Flight #${flightCount}</span>
-      ${flightCount > 1 ? '<button class="remove-btn" onclick="removeFlight(this)">🗑️ Remove</button>' : ''}
+  <!-- Warning Modal -->
+  <!-- Warning Modal -->
+  <div id="warningModal" class="modal">
+    <div class="modal-content" style="text-align: center;">
+      <h3 style="color: #f59e0b; margin-bottom: 0.5rem; font-size: 1.5rem;">⚠️</h3>
+      <h3 style="color: var(--text-primary); margin-bottom: 1rem;">Markup Not Added</h3>
+      <p id="warningMessage" style="color: var(--text-secondary); margin-bottom: 1.5rem; line-height: 1.5;">
+        Are you sure you want to proceed without adding any markup?
+      </p>
+      <div class="modal-actions" style="justify-content: center; gap: 1rem;">
+        <button class="btn btn-secondary" onclick="closeWarningModal(false)" style="padding: 0.6rem 1.25rem;">Go
+          Back</button>
+        <button class="btn btn-primary"
+          style="background-color: #f59e0b; border-color: #f59e0b; padding: 0.6rem 1.25rem;"
+          onclick="closeWarningModal(true)">Proceed</button>
+      </div>
     </div>
-    
-    <div class="textarea-wrapper">
-      <label class="textarea-label">Paste Flight Details (include price if available)</label>
-      <textarea placeholder="Paste complete flight information here...
+  </div>
+
+  <script>
+    let unitCount = 0;
+    let flightCount = 0;
+    let isParsing = false;
+    let currentFlights = [];
+    let currentFinalText = '';
+    let currentMarkup = 0;
+    let currentServiceCharge = 0;
+    let currentGST = 0;
+    let activeBillingType = 'passenger';
+    let allCustomers = [];
+    let currentTripType = 'one_way';
+    let unitFlightCounts = {}; // Track flight count per unit for multi-city
+    let unitFlights = {}; // Store flights organized by unit
+    let isGlobalEditMode = false; // Track if we're in edit mode for fare cards
+    let hasUnsavedFareChanges = false; // Track if there are unsaved fare changes
+
+    // Check authentication status on load
+    window.addEventListener('DOMContentLoaded', async () => {
+      await checkAuth();
+      await loadCustomers();
+      initializeTripType();
+      initializeDarkMode();
+    });
+
+    // Dark mode functionality
+    function initializeDarkMode() {
+      const savedTheme = localStorage.getItem('theme') || 'light';
+      const darkModeToggle = document.getElementById('darkModeToggle');
+
+      // Apply saved theme
+      document.documentElement.setAttribute('data-theme', savedTheme);
+      updateDarkModeToggle(savedTheme);
+
+      // Add click event listener
+      darkModeToggle.addEventListener('click', toggleDarkMode);
+    }
+
+    function toggleDarkMode() {
+      const currentTheme = document.documentElement.getAttribute('data-theme');
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+      document.documentElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      updateDarkModeToggle(newTheme);
+    }
+
+    function updateDarkModeToggle(theme) {
+      const darkModeToggle = document.getElementById('darkModeToggle');
+      const icons = darkModeToggle.querySelectorAll('.dark-mode-icon');
+
+      if (theme === 'dark') {
+        icons[0].style.display = 'none';  // Moon icon
+        icons[1].style.display = 'block'; // Sun icon
+      } else {
+        icons[0].style.display = 'block';  // Moon icon
+        icons[1].style.display = 'none';  // Sun icon
+      }
+    }
+
+    function initializeTripType() {
+      const tripType = document.querySelector('input[name="tripType"]:checked').value;
+      handleTripType();
+    }
+
+    async function checkAuth() {
+      try {
+        const response = await fetch('/api/user');
+        if (response.ok) {
+          const data = await response.json();
+          updateAuthUI(data);
+        }
+      } catch (error) {
+        // Not logged in, that's ok
+      }
+    }
+
+    function updateAuthUI(user) {
+      const authBtn = document.getElementById('authBtn');
+      authBtn.textContent = `👤 ${user.username}`;
+      authBtn.onclick = () => {
+        if (confirm('Do you want to logout?')) {
+          logout();
+        }
+      };
+    }
+
+    function handleAuthClick() {
+      window.location.href = '/login';
+    }
+
+    async function logout() {
+      try {
+        await fetch('/api/logout', { method: 'POST' });
+        showNotification('Logged out successfully', 'success');
+        setTimeout(() => window.location.reload(), 1000);
+      } catch (error) {
+        showNotification('Logout failed', 'error');
+      }
+    }
+
+    async function loadCustomers() {
+      try {
+        const response = await fetch('/api/customers');
+        if (response.ok) {
+          const data = await response.json();
+          allCustomers = data.customers;
+          populateCustomerSelects();
+        }
+      } catch (error) {
+        // Not logged in or error loading customers
+        console.log('Could not load customers:', error);
+      }
+    }
+
+    function populateCustomerSelects() {
+      const passengerSelect = document.getElementById('passengerCustomerSelect');
+      const corporateSelect = document.getElementById('corporateCustomerSelect');
+
+      // Clear existing options except first
+      passengerSelect.innerHTML = '<option value="">Select existing passenger or enter new</option>';
+      corporateSelect.innerHTML = '<option value="">Select existing corporate or enter new</option>';
+
+      // Add customers to appropriate selects
+      allCustomers.forEach(customer => {
+        const option = document.createElement('option');
+        option.value = customer.id;
+        option.textContent = customer.customer_type === 'corporate'
+          ? `${customer.company_name} (${customer.name})`
+          : customer.name;
+
+        if (customer.customer_type === 'passenger') {
+          passengerSelect.appendChild(option);
+        } else {
+          corporateSelect.appendChild(option);
+        }
+      });
+    }
+
+    function loadCustomerData(type) {
+      const select = document.getElementById(`${type}CustomerSelect`);
+      const customerId = select.value;
+
+      if (!customerId) {
+        clearForm(type);
+        return;
+      }
+
+      const customer = allCustomers.find(c => c.id === customerId);
+      if (!customer) return;
+
+      if (type === 'passenger') {
+        document.getElementById('passengerName').value = customer.name || '';
+        document.getElementById('passengerEmail').value = customer.email || '';
+        document.getElementById('passengerPhone').value = customer.phone || '';
+        document.getElementById('passengerAddress').value = customer.address || '';
+      } else {
+        document.getElementById('corporateCompany').value = customer.company_name || '';
+        document.getElementById('corporateName').value = customer.name || '';
+        document.getElementById('corporateEmail').value = customer.email || '';
+        document.getElementById('corporatePhone').value = customer.phone || '';
+        document.getElementById('corporateGst').value = customer.gst_number || '';
+        document.getElementById('corporateAddress').value = customer.address || '';
+      }
+    }
+
+    function clearForm(type) {
+      if (type === 'passenger') {
+        document.getElementById('passengerName').value = '';
+        document.getElementById('passengerEmail').value = '';
+        document.getElementById('passengerPhone').value = '';
+        document.getElementById('passengerAddress').value = '';
+      } else {
+        document.getElementById('corporateCompany').value = '';
+        document.getElementById('corporateName').value = '';
+        document.getElementById('corporateEmail').value = '';
+        document.getElementById('corporatePhone').value = '';
+        document.getElementById('corporateGst').value = '';
+        document.getElementById('corporateAddress').value = '';
+      }
+    }
+
+    async function refreshCustomers() {
+      await loadCustomers();
+      showNotification('Customer list refreshed', 'success');
+    }
+
+    function switchBillingTab(type) {
+      activeBillingType = type;
+
+      // Update tabs
+      document.querySelectorAll('.billing-tab').forEach(tab => {
+        tab.classList.remove('active');
+      });
+      event.target.classList.add('active');
+
+      // Update forms
+      document.getElementById('passengerForm').style.display = type === 'passenger' ? 'block' : 'none';
+      document.getElementById('corporateForm').style.display = type === 'corporate' ? 'block' : 'none';
+    }
+
+    function openSaveModal() {
+      // Check if we have parsed flights
+      if (!currentFlights || currentFlights.length === 0) {
+        showNotification('Please parse flights first', 'warning');
+        return;
+      }
+
+      // Check if user is logged in
+      fetch('/api/user')
+        .then(response => {
+          if (!response.ok) {
+            showNotification('Please login to save itineraries', 'error');
+            setTimeout(() => {
+              window.location.href = '/login';
+            }, 1500);
+            return;
+          }
+          // User is logged in, show the modal
+          document.getElementById('saveModal').style.display = 'flex';
+        })
+        .catch(error => {
+          showNotification('Please login to save itineraries', 'error');
+          setTimeout(() => {
+            window.location.href = '/login';
+          }, 1500);
+        });
+    }
+
+    function closeSaveModal() {
+      document.getElementById('saveModal').style.display = 'none';
+      document.getElementById('saveForm').reset();
+      clearForm('passenger');
+      clearForm('corporate');
+    }
+
+    async function saveItinerary(event) {
+      event.preventDefault();
+
+      const saveBtnText = document.getElementById('saveBtnText');
+      const saveBtnLoading = document.getElementById('saveBtnLoading');
+
+      saveBtnText.style.display = 'none';
+      saveBtnLoading.style.display = 'inline-block';
+
+      try {
+        // Gather billing data based on active tab
+        let billingData = {
+          billing_type: activeBillingType,
+          flights: currentFlights,
+          final_text: currentFinalText,
+          markup: currentMarkup
+        };
+
+        if (activeBillingType === 'passenger') {
+          billingData.bill_to_name = document.getElementById('passengerName').value;
+          billingData.bill_to_email = document.getElementById('passengerEmail').value;
+          billingData.bill_to_phone = document.getElementById('passengerPhone').value;
+          billingData.bill_to_address = document.getElementById('passengerAddress').value;
+
+          const customerId = document.getElementById('passengerCustomerSelect').value;
+          if (customerId) {
+            billingData.customer_id = customerId;
+          }
+
+          // If save to database is checked and no customer selected, create new customer
+          if (document.getElementById('savePassengerToDb').checked && !customerId) {
+            const customerData = {
+              name: billingData.bill_to_name,
+              email: billingData.bill_to_email,
+              phone: billingData.bill_to_phone,
+              address: billingData.bill_to_address,
+              customer_type: 'passenger'
+            };
+
+            const customerResponse = await fetch('/api/customers', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(customerData)
+            });
+
+            if (customerResponse.ok) {
+              const customerResult = await customerResponse.json();
+              billingData.customer_id = customerResult.customer.id;
+              await loadCustomers();
+            }
+          }
+        } else {
+          billingData.bill_to_name = document.getElementById('corporateName').value;
+          billingData.bill_to_email = document.getElementById('corporateEmail').value;
+          billingData.bill_to_phone = document.getElementById('corporatePhone').value;
+          billingData.bill_to_address = document.getElementById('corporateAddress').value;
+          billingData.bill_to_company = document.getElementById('corporateCompany').value;
+          billingData.bill_to_gst = document.getElementById('corporateGst').value;
+
+          const customerId = document.getElementById('corporateCustomerSelect').value;
+          if (customerId) {
+            billingData.customer_id = customerId;
+          }
+
+          // If save to database is checked and no customer selected, create new customer
+          if (document.getElementById('saveCorporateToDb').checked && !customerId) {
+            const customerData = {
+              name: billingData.bill_to_name,
+              email: billingData.bill_to_email,
+              phone: billingData.bill_to_phone,
+              address: billingData.bill_to_address,
+              customer_type: 'corporate',
+              company_name: billingData.bill_to_company,
+              gst_number: billingData.bill_to_gst
+            };
+
+            const customerResponse = await fetch('/api/customers', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(customerData)
+            });
+
+            if (customerResponse.ok) {
+              const customerResult = await customerResponse.json();
+              billingData.customer_id = customerResult.customer.id;
+              await loadCustomers();
+            }
+          }
+        }
+
+        // Save itinerary
+        const response = await fetch('/api/itineraries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(billingData)
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          showNotification('Itinerary saved successfully!', 'success');
+          closeSaveModal();
+
+          // Optionally redirect to itineraries page
+          setTimeout(() => {
+            if (confirm('Would you like to view your saved itineraries?')) {
+              window.location.href = '/itineraries';
+            }
+          }, 1000);
+        } else {
+          const error = await response.json();
+          console.error('Save error response:', error);
+
+          if (response.status === 401) {
+            showNotification('Session expired. Please login again.', 'error');
+            setTimeout(() => {
+              window.location.href = '/login';
+            }, 1500);
+          } else {
+            showNotification(error.error || 'Failed to save itinerary', 'error');
+          }
+        }
+      } catch (error) {
+        console.error('Save error:', error);
+        showNotification('An error occurred while saving', 'error');
+      } finally {
+        saveBtnLoading.style.display = 'none';
+        saveBtnText.style.display = 'inline';
+        submitBtn.disabled = false;
+      }
+    }
+
+    // --- Warning Modal Logic ---
+    let warningModalResolve = null;
+
+    function showWarningModal(message) {
+      if (message) {
+        document.getElementById('warningMessage').textContent = message;
+      }
+      document.getElementById('warningModal').classList.add('show');
+      return new Promise((resolve) => {
+        warningModalResolve = resolve;
+      });
+    }
+
+    function closeWarningModal(result) {
+      document.getElementById('warningModal').classList.remove('show');
+      if (warningModalResolve) {
+        warningModalResolve(result);
+        warningModalResolve = null;
+      }
+    }
+
+    // Handle trip type changes
+    function handleTripType() {
+      const tripType = document.querySelector('input[name="tripType"]:checked').value;
+      currentTripType = tripType;
+
+      // Reset all flight inputs
+      const flightInputs = document.getElementById('flightInputs');
+      flightInputs.innerHTML = '';
+      unitCount = 0;
+      flightCount = 0;
+      unitFlightCounts = {};
+      unitFlights = {};
+
+      const addUnitBtn = document.getElementById('addUnitBtn');
+
+      if (tripType === 'one_way') {
+        addUnitBtn.style.display = 'inline-flex';
+        document.getElementById('addUnitLabel').textContent = 'Add Another Option';
+        addUnit();
+      } else if (tripType === 'round_trip') {
+        addUnitBtn.style.display = 'inline-flex';
+        document.getElementById('addUnitLabel').textContent = 'Add Another Option';
+        addUnit();
+      } else if (tripType === 'multi_city') {
+        addUnitBtn.style.display = 'inline-flex';
+        document.getElementById('addUnitLabel').textContent = 'Add Another Option';
+        addUnit();
+      }
+    }
+
+    // Add a unit based on trip type
+    function addUnit() {
+      unitCount++;
+      const container = document.getElementById('flightInputs');
+      const unit = document.createElement('div');
+      unit.className = 'flight-unit';
+      unit.dataset.unitId = unitCount;
+
+      if (currentTripType === 'one_way') {
+        // One Way: 1 unit = 1 flight + shared fares
+        unit.innerHTML = createOneWayUnit(unitCount);
+      } else if (currentTripType === 'round_trip') {
+        // Round Trip: 1 unit = 2 flights (outbound + return) + shared fares
+        unit.className += ' row';
+        unit.innerHTML = createRoundTripUnit(unitCount);
+      } else if (currentTripType === 'multi_city') {
+        // Multi City: 1 unit = 1 flight initially, can add more with "Add City" button
+        unit.className += ' multi';
+        unit.innerHTML = createMultiCityUnit(unitCount);
+      }
+
+      container.appendChild(unit);
+
+      // Initialize fares for the new unit
+      initializeUnitFares(unitCount);
+    }
+
+    function createOneWayUnit(unitId) {
+      const flightId = ++flightCount;
+      unitFlights[unitId] = [flightId];
+
+      return `
+    ${unitId > 1 ? `<div class="flight-unit-header"><h3>Option ${unitId}</h3><button type="button" onclick="removeUnit(${unitId})">🗑️ Remove Option</button></div>` : ''}
+    ${createFlightBox(flightId, 'Departure', true)}
+    ${createSharedFareSection(unitId)}
+  `;
+    }
+
+    function createRoundTripUnit(unitId) {
+      const outboundId = ++flightCount;
+      const returnId = ++flightCount;
+      unitFlights[unitId] = [outboundId, returnId];
+
+      return `
+    ${unitId > 1 ? `<div class="flight-unit-header"><h3>Option ${unitId}</h3><button type="button" onclick="removeUnit(${unitId})">🗑️ Remove Option</button></div>` : ''}
+    ${createFlightBox(outboundId, 'Outbound Flight')}
+    ${createFlightBox(returnId, 'Return Flight')}
+    ${createSharedFareSection(unitId)}
+  `;
+    }
+
+    function createMultiCityUnit(unitId) {
+      const flightId = ++flightCount;
+      unitFlights[unitId] = [flightId];
+      unitFlightCounts[unitId] = 1;
+
+      return `
+    <div class="flight-unit-header"><h3>Option ${unitId}</h3><button type="button" onclick="addCityToUnit(${unitId})">➕ Add City</button>${unitId > 1 ? `<button type="button" onclick="removeUnit(${unitId})">🗑️ Remove Option</button>` : ''}</div>
+    <div id="unit-${unitId}-flights" style="display: contents;">
+      ${createFlightBox(flightId, `City 1`)}
+    </div>
+    ${createSharedFareSection(unitId)}
+  `;
+    }
+
+    function createFlightBox(flightId, label, showMultipleFlights = false) {
+      const multipleFlightsCheckbox = showMultipleFlights ? `
+        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; font-size: 0.85rem;">
+            <input type="checkbox" class="multiple-flights-checkbox">
+            <span>Multiple Flights</span>
+        </label>
+      ` : '';
+
+      return `
+    <div class="flight-block" data-flight-id="${flightId}">
+      <div class="flight-header">
+        <span class="flight-number">${label}</span>
+        <div style="display: flex; gap: 1rem;">
+            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; font-size: 0.85rem;">
+                <input type="checkbox" class="layover-checkbox">
+                <span>Has Layover</span>
+            </label>
+            ${multipleFlightsCheckbox}
+        </div>
+      </div>
+      
+      <div class="textarea-wrapper">
+        <label class="textarea-label">Paste Flight Details (include price if available)</label>
+        <textarea placeholder="Paste complete flight information here...
 Example: 
 Airline: IndiGo
 Flight: 6E-123
@@ -727,561 +2661,1898 @@ Baggage: 15 Kg
 Refundable
 Price: ₹5,500
 
-The price will be automatically extracted as Saver Fare"></textarea>
-    </div>
-
-    <div class="fare-types">
-      <div class="fare-group">
-        <div class="fare-checkbox">
-          <input type="checkbox" id="saver-${flightCount}" onchange="toggleFare(this, 'saver', ${flightCount})" checked>
-          <label for="saver-${flightCount}">Saver Fare (auto-extracted or manual)</label>
-        </div>
-        <input type="number" class="fare-input fare-saver-${flightCount}" placeholder="Auto-filled from text or enter manually" min="0">
-      </div>
-
-      <div class="fare-group">
-        <div class="fare-checkbox">
-          <input type="checkbox" id="corporate-${flightCount}" onchange="toggleFare(this, 'corporate', ${flightCount})">
-          <label for="corporate-${flightCount}">Corporate Fare</label>
-        </div>
-        <input type="number" class="fare-input fare-corporate-${flightCount}" placeholder="₹ 0" min="0" disabled>
-      </div>
-
-      <div class="fare-group">
-        <div class="fare-checkbox">
-          <input type="checkbox" id="sme-${flightCount}" onchange="toggleFare(this, 'sme', ${flightCount})">
-          <label for="sme-${flightCount}">SME Fare</label>
-        </div>
-        <input type="number" class="fare-input fare-sme-${flightCount}" placeholder="₹ 0" min="0" disabled>
+For Multiple Flights: Paste each flight's details separated by a blank line."></textarea>
       </div>
     </div>
   `;
-  document.getElementById("flightInputs").appendChild(div);
-}
+    }
 
-function removeFlight(btn) {
-  btn.closest('.flight-block').remove();
-  renumberFlights();
-}
+    function createSharedFareSection(unitId) {
+      // Hide the header text in One Way mode
+      const headerHTML = currentTripType === 'one_way' ? '' : `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+          <h4 style="margin: 0;">📊 Fare Options for Option ${unitId}</h4>
+      </div>
+      `;
 
-function renumberFlights() {
-  const blocks = document.querySelectorAll('.flight-block');
-  blocks.forEach((block, index) => {
-    const number = index + 1;
-    block.querySelector('.flight-number').textContent = `Flight #${number}`;
-  });
-}
+      return `
+    <div class="shared-fare-section" data-unit-id="${unitId}">
+      ${headerHTML}
+      
+      <div class="fare-types" id="fare-list-${unitId}">
+        ${createFareCard('saver', 'Saver Fare', unitId, true)}
+        ${createFareCard('corporate', 'Corporate Fare', unitId, false)}
+        ${createFareCard('sme', 'SME Fare', unitId, false)}
+      </div>
 
-function toggleFare(checkbox, fareType, flightId) {
-  const input = document.querySelector(`.fare-${fareType}-${flightId}`);
-  input.disabled = !checkbox.checked;
-  if (!checkbox.checked) {
-    input.value = '';
-  }
-}
+      <div class="add-fare-controls" style="margin-top: 1rem; border-top: 1px dashed var(--border); padding-top: 0.75rem;">
+         <select class="form-select" style="width: 100%; max-width: 200px; padding: 0.5rem; font-size: 0.9rem; border-radius: 6px; border: 1.5px solid var(--border);" onchange="handleAddFareType(this, ${unitId})">
+             <option value="">+ Add Fare Type...</option>
+             <option value="coupon">Coupon Fare</option>
+             <option value="flexi">Flexi Fare</option>
+             <option value="custom">Custom...</option>
+         </select>
+      </div>
+    </div>
+  `;
+    }
 
-function showNotification(message, type = 'success') {
-  const notification = document.createElement('div');
-  notification.className = `notification ${type}`;
-  notification.innerHTML = `
+    function createFareCard(key, label, unitId, isChecked) {
+      const checkedAttr = isChecked ? 'checked' : '';
+      const disabledAttr = isChecked ? '' : 'disabled';
+      const cardClass = isChecked ? 'fare-card' : 'fare-card disabled';
+
+      return `
+        <div class="${cardClass}" data-fare-key="${key}" id="fare-card-${key}-${unitId}">
+          <div class="fare-card-header">
+            <input type="checkbox" id="${key}-unit-${unitId}" onchange="toggleFareCard(this, '${key}', ${unitId})" ${checkedAttr}>
+            <label for="${key}-unit-${unitId}">${label}</label>
+          </div>
+          <div class="fare-card-fields">
+            <div class="fare-field-row">
+              <span class="fare-field-label">Fare</span>
+              <input type="number" class="fare-field-input fare-${key}-unit-${unitId}" placeholder="${key === 'saver' ? 'Auto / Manual' : '₹ 0'}" min="0" ${disabledAttr}>
+            </div>
+            <div class="fare-field-row">
+              <span class="fare-field-label">MU</span>
+              <input type="number" class="fare-field-input mu-${key}-unit-${unitId}" placeholder="Markup (optional)" min="0" ${disabledAttr}>
+            </div>
+            <div class="fare-field-row">
+              <span class="fare-field-label">SVC</span>
+              <input type="number" class="fare-field-input svc-${key}-unit-${unitId}" placeholder="Service Chg (optional)" min="0" ${disabledAttr}>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function toggleFareCard(checkbox, fareType, unitId) {
+      const card = document.getElementById(`fare-card-${fareType}-${unitId}`);
+      const fareInput = document.querySelector(`.fare-${fareType}-unit-${unitId}`);
+      const muInput = document.querySelector(`.mu-${fareType}-unit-${unitId}`);
+      const svcInput = document.querySelector(`.svc-${fareType}-unit-${unitId}`);
+
+      if (checkbox.checked) {
+        card.classList.remove('disabled');
+        fareInput.disabled = false;
+        muInput.disabled = false;
+        svcInput.disabled = false;
+      } else {
+        card.classList.add('disabled');
+        fareInput.disabled = true;
+        muInput.disabled = true;
+        svcInput.disabled = true;
+        fareInput.value = '';
+        muInput.value = '';
+        svcInput.value = '';
+      }
+
+      // Check if we need global markup
+      updateGlobalMarkupRequirement();
+    }
+
+    function updateGlobalMarkupRequirement() {
+      // Check if all checked fare types have MU filled
+      let allHaveMU = true;
+      let anyChecked = false;
+
+      document.querySelectorAll('.fare-card').forEach(card => {
+        const checkbox = card.querySelector('input[type="checkbox"]');
+        if (checkbox && checkbox.checked) {
+          anyChecked = true;
+          const fareKey = card.dataset.fareKey;
+          const unitId = card.closest('.shared-fare-section').dataset.unitId;
+          const muInput = document.querySelector(`.mu-${fareKey}-unit-${unitId}`);
+          if (!muInput || !muInput.value || muInput.value.trim() === '') {
+            allHaveMU = false;
+          }
+        }
+      });
+
+      const globalMarkupSection = document.getElementById('globalMarkupSection');
+      if (globalMarkupSection) {
+        if (anyChecked && allHaveMU) {
+          globalMarkupSection.style.opacity = '0.5';
+          globalMarkupSection.querySelector('.input-label').innerHTML = 'Global Markup (₹) <span style="color: var(--success); font-size: 0.8rem;">- Not required (all fares have MU)</span>';
+        } else {
+          globalMarkupSection.style.opacity = '1';
+          globalMarkupSection.querySelector('.input-label').innerHTML = 'Global Markup (₹)';
+        }
+      }
+    }
+
+    function handleAddFareType(select, unitId) {
+      const val = select.value;
+      if (!val) return;
+
+      let key = val;
+      let label = val.charAt(0).toUpperCase() + val.slice(1) + ' Fare';
+
+      if (val === 'custom') {
+        const customName = prompt("Enter Name for Custom Fare Type:");
+        if (!customName || customName.trim() === '') {
+          select.value = '';
+          return;
+        }
+        label = customName.trim();
+        key = label.toLowerCase().replace(/\s+/g, '_');
+      }
+
+      // Check if exists
+      if (document.getElementById(`${key}-unit-${unitId}`)) {
+        showNotification('Fare type already exists', 'warning');
+        select.value = '';
+        return;
+      }
+
+      appendFareRow(unitId, key, label);
+      select.value = '';
+    }
+
+    function appendFareRow(unitId, key, label) {
+      const list = document.getElementById(`fare-list-${unitId}`);
+      const div = document.createElement('div');
+      div.className = 'fare-card';
+      div.dataset.fareKey = key;
+      div.id = `fare-card-${key}-${unitId}`;
+      div.innerHTML = `
+          <div class="fare-card-header">
+            <input type="checkbox" id="${key}-unit-${unitId}" onchange="toggleFareCard(this, '${key}', ${unitId})" checked>
+            <label for="${key}-unit-${unitId}">${label}</label>
+          </div>
+          <div class="fare-card-fields">
+            <div class="fare-field-row">
+              <span class="fare-field-label">Fare</span>
+              <input type="number" class="fare-field-input fare-${key}-unit-${unitId}" placeholder="₹ 0" min="0">
+            </div>
+            <div class="fare-field-row">
+              <span class="fare-field-label">MU</span>
+              <input type="number" class="fare-field-input mu-${key}-unit-${unitId}" placeholder="Markup (optional)" min="0">
+            </div>
+            <div class="fare-field-row">
+              <span class="fare-field-label">SVC</span>
+              <input type="number" class="fare-field-input svc-${key}-unit-${unitId}" placeholder="Service Chg (optional)" min="0">
+            </div>
+          </div>
+        `;
+      list.appendChild(div);
+    }
+
+    function initializeUnitFares(unitId) {
+      // Can add initialization logic here if needed
+    }
+
+    function addCityToUnit(unitId) {
+      const cityCount = (unitFlightCounts[unitId] || 1) + 1;
+      unitFlightCounts[unitId] = cityCount;
+      const flightId = ++flightCount;
+
+      if (!unitFlights[unitId]) {
+        unitFlights[unitId] = [];
+      }
+      unitFlights[unitId].push(flightId);
+
+      const container = document.querySelector(`#unit-${unitId}-flights`);
+      const flightBox = document.createElement('div');
+      flightBox.innerHTML = createFlightBox(flightId, `City ${cityCount}`);
+      container.appendChild(flightBox.firstElementChild);
+    }
+
+    function removeUnit(unitId) {
+      if (unitCount <= 1) {
+        showNotification('You must have at least one option', 'warning');
+        return;
+      }
+
+      const unit = document.querySelector(`[data-unit-id="${unitId}"]`).closest('.flight-unit');
+      unit.remove();
+      unitCount--;
+
+      // Cleanup
+      if (unitFlights[unitId]) {
+        delete unitFlights[unitId];
+      }
+      if (unitFlightCounts[unitId]) {
+        delete unitFlightCounts[unitId];
+      }
+    }
+
+    function toggleUnitFare(checkbox, fareType, unitId) {
+      const input = document.querySelector(`.fare-${fareType}-unit-${unitId}`);
+      input.disabled = !checkbox.checked;
+      if (!checkbox.checked) {
+        input.value = '';
+      }
+    }
+
+    function showNotification(message, type = 'success') {
+      const notification = document.createElement('div');
+      notification.className = `notification ${type}`;
+      notification.innerHTML = `
     <span>${type === 'error' ? '❌' : type === 'warning' ? '⚠️' : '✅'}</span>
     <span>${message}</span>
   `;
-  document.body.appendChild(notification);
-  
-  setTimeout(() => {
-    notification.style.animation = 'slideIn 0.3s ease reverse';
-    setTimeout(() => notification.remove(), 300);
-  }, 3000);
-}
+      document.body.appendChild(notification);
 
-async function parseFlights() {
-  if (isParsing) {
-    showNotification('Parsing already in progress', 'warning');
-    return;
-  }
-
-  const blocks = document.querySelectorAll(".flight-block");
-  const flights = [];
-  const markup = document.getElementById("markup").value.trim();
-
-  // Validation
-  if (!markup || markup === '' || Number(markup) < 0) {
-    showNotification('Please enter a valid markup amount', 'error');
-    document.getElementById("markup").focus();
-    return;
-  }
-
-  let hasError = false;
-  let emptyFlightFound = false;
-
-  blocks.forEach((block, index) => {
-    const text = block.querySelector("textarea").value.trim();
-    
-    if (!text) {
-      emptyFlightFound = true;
-      return;
+      setTimeout(() => {
+        notification.style.animation = 'slideIn 0.3s ease reverse';
+        setTimeout(() => notification.remove(), 300);
+      }, 3000);
     }
 
-    const flightId = block.dataset.flightId;
-    const fares = {};
-    let fareSelected = false;
+    async function parseFlights() {
+      if (isParsing) {
+        showNotification('Parsing already in progress', 'warning');
+        return;
+      }
 
-    ['saver', 'corporate', 'sme'].forEach(fareType => {
-      const checkbox = document.getElementById(`${fareType}-${flightId}`);
-      const input = document.querySelector(`.fare-${fareType}-${flightId}`);
-      
-      if (checkbox.checked) {
-        fareSelected = true;
-        
-        // For saver fare, it's okay if empty (will be extracted from text)
-        // For other fares, user must enter manually
-        if (fareType === 'saver') {
-          // If user entered a value, use it. Otherwise, it will be extracted by AI
-          if (input.value && input.value.trim() !== '') {
-            fares[fareType] = Number(input.value);
+      const markup = document.getElementById("markup").value.trim();
+      const serviceChargeInput = document.getElementById("serviceCharge").value.trim();
+
+      // Validation - markup is optional, default to 0 if not entered
+      const markupValue = markup === '' ? 0 : Number(markup);
+      if (Number.isNaN(markupValue) || markupValue < 0) {
+        showNotification('Please enter a valid markup amount', 'error');
+        document.getElementById("markup").focus();
+        return;
+      }
+
+      currentMarkup = markupValue;
+
+      // Service Charge
+      const svcValue = serviceChargeInput === '' ? 0 : Number(serviceChargeInput);
+      currentServiceCharge = svcValue;
+      currentGST = svcValue > 0 ? Math.round(svcValue * 0.18) : 0;
+
+      let hasError = false;
+      const flights = [];
+      const flightTexturesByUnit = {}; // Map unit IDs to their flight texts and fares
+
+      // Check if any markup is specified anywhere (per-fare or global)
+      let hasAnyMarkup = markupValue > 0;
+      if (!hasAnyMarkup) {
+        // Check for per-fare markups
+        document.querySelectorAll('.fare-card').forEach(card => {
+          const checkbox = card.querySelector('.fare-card-header input[type="checkbox"]');
+          if (checkbox && checkbox.checked) {
+            const fareKey = card.dataset.fareKey;
+            const section = card.closest('.shared-fare-section');
+            if (section) {
+              const unitId = section.dataset.unitId;
+              const muInput = card.querySelector(`.mu-${fareKey}-unit-${unitId}`);
+              if (muInput && muInput.value && muInput.value.trim() !== '' && Number(muInput.value) > 0) {
+                hasAnyMarkup = true;
+              }
+            }
           }
-          // If empty, don't add to fares object - let backend handle extraction
-        } else {
-          // Corporate and SME must have values if checked
-          if (!input.value || input.value.trim() === '' || Number(input.value) < 0) {
-            showNotification(`Please enter ${fareType} fare for Flight #${index + 1}`, 'error');
-            input.focus();
-            hasError = true;
+        });
+      }
+
+      // Warn if no markup anywhere
+      if (!hasAnyMarkup) {
+        const proceed = await showWarningModal('Are you sure you want to proceed without adding any markup?');
+        if (!proceed) {
+          document.getElementById('markup').focus();
+          return;
+        }
+      }
+
+      // Process each unit
+      // IMPORTANT: flightUnits needs to be defined/collected correctly
+      // Previously, we iterate through unitFlights to build flights. 
+      // Actually, looking at code in 2388+, we iterate Object.entries(unitFlights).
+
+      Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
+        const unitFares = {};
+        const unitFareMU = {};  // Per-fare markup
+        const unitFareSVC = {}; // Per-fare service charge
+
+        // Get shared fares for this unit (new card format)
+        // Find all fare cards with checked checkboxes
+        const fareCards = document.querySelectorAll(`#fare-list-${unitId} .fare-card`);
+
+        fareCards.forEach(card => {
+          const checkbox = card.querySelector('.fare-card-header input[type="checkbox"]');
+          if (!checkbox || !checkbox.checked) return;
+
+          const fareKey = card.dataset.fareKey;
+          const fareInput = card.querySelector(`.fare-${fareKey}-unit-${unitId}`);
+          const muInput = card.querySelector(`.mu-${fareKey}-unit-${unitId}`);
+          const svcInput = card.querySelector(`.svc-${fareKey}-unit-${unitId}`);
+
+          if (fareKey === 'saver') {
+            // For saver fare, value is optional - parser will try to extract from text
+            if (fareInput && fareInput.value && fareInput.value.trim() !== '') {
+              unitFares[fareKey] = Number(fareInput.value);
+            }
           } else {
-            fares[fareType] = Number(input.value);
+            // For all other fares, require manual entry if checked
+            if (!fareInput || !fareInput.value || fareInput.value.trim() === '' || Number(fareInput.value) < 0) {
+              // Format label for error message
+              const label = card.querySelector('.fare-card-header label')?.textContent || fareKey;
+              showNotification(`Please enter amount for ${label} in Option ${unitId}`, 'error');
+              if (fareInput) fareInput.focus();
+              hasError = true;
+            } else {
+              unitFares[fareKey] = Number(fareInput.value);
+            }
+          }
+
+          // Collect per-fare MU and SVC (optional)
+          if (muInput && muInput.value && muInput.value.trim() !== '') {
+            unitFareMU[fareKey] = Number(muInput.value);
+          }
+          if (svcInput && svcInput.value && svcInput.value.trim() !== '') {
+            unitFareSVC[fareKey] = Number(svcInput.value);
+          }
+        });
+
+        // For saver, allow if checkbox is checked (even if empty) because parser will extract
+        const saverCheckbox = document.getElementById(`saver-unit-${unitId}`);
+        if (saverCheckbox && saverCheckbox.checked && !('saver' in unitFares)) {
+          // Saver is checked but no value - mark for auto-extraction
+          unitFares['saver'] = null; // null signals auto-extract mode
+        }
+
+        if (!saverCheckbox || !saverCheckbox.checked) {
+          // If saver not checked AND no other fares, error
+          if (Object.keys(unitFares).length === 0) {
+            showNotification(`Please select at least one fare type for Option ${unitId}`, 'error');
+            hasError = true;
           }
         }
-      }
-    });
 
-    if (!fareSelected) {
-      showNotification(`Please select at least one fare type for Flight #${index + 1}`, 'error');
-      hasError = true;
-    }
+        // Collect flight texts for this unit
+        let unitFlightTexts = [];
+        flightIds.forEach((flightId) => {
+          const block = document.querySelector(`[data-flight-id="${flightId}"]`);
+          if (block) {
+            const text = block.querySelector("textarea").value.trim();
+            const hasLayover = block.querySelector(".layover-checkbox")?.checked || false;
+            const isMultiple = block.querySelector(".multiple-flights-checkbox")?.checked || false;
+            if (text) {
+              unitFlightTexts.push(text);
+              flights.push({
+                text: text,
+                fares: unitFares,
+                fare_mu: unitFareMU,    // Per-fare markups
+                fare_svc: unitFareSVC,  // Per-fare service charges
+                has_layover: hasLayover,
+                is_multiple: isMultiple
+              });
+            }
+          }
+        });
 
-    if (!hasError) {
-      flights.push({
-        text: text,
-        fares: fares
+        if (unitFlightTexts.length === 0) {
+          showNotification(`Please paste at least one flight detail for Option ${unitId}`, 'error');
+          hasError = true;
+        }
+
+        flightTexturesByUnit[unitId] = unitFlightTexts;
       });
+
+      if (hasError || flights.length === 0) {
+        return;
+      }
+
+      // Start parsing
+      isParsing = true;
+      const parseBtn = document.getElementById('parseBtn');
+      const parseIcon = document.getElementById('parseIcon');
+      const parseBtnText = document.getElementById('parseBtnText');
+
+      parseBtn.disabled = true;
+      parseIcon.innerHTML = '<span class="loading"></span>';
+      parseBtnText.textContent = 'Processing...';
+
+      document.getElementById("cards").innerHTML = '';
+      document.getElementById("cardsSection").style.display = 'none';
+      document.getElementById("outputSection").style.display = 'none';
+
+      try {
+        // Send flight texts and their selected fares
+        // If saver is checked but empty, parser will try to extract it from text
+        const response = await fetch("/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            flights: flights.map(f => f.text),
+            fares: flights.map(f => f.fares), // Send user-selected fares for each flight
+            fare_mu: flights.map(f => f.fare_mu || {}),  // Per-fare markups
+            fare_svc: flights.map(f => f.fare_svc || {}), // Per-fare service charges
+            layover_flags: flights.map(f => f.has_layover),
+            multiple_flight_flags: flights.map(f => f.is_multiple),
+            markup: Number(markup),
+            global_svc: svcValue
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          showNotification(data.error || 'Failed to parse flights', 'error');
+          return;
+        }
+
+        // Update the saver fare inputs with extracted values if any
+        let flightIndex = 0;
+        Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
+          let extractedSaverFare = null;
+
+          // Check if any flight in this unit has extracted saver fare
+          for (let i = 0; i < flightIds.length; i++) {
+            if (flightIndex + i < data.flights.length) {
+              const flight = data.flights[flightIndex + i];
+              // Check if saver fare was extracted or provided
+              if (flight.fares && flight.fares.saver) {
+                extractedSaverFare = flight.fares.saver;
+                break;
+              }
+            }
+          }
+
+          // If we found a saver fare and the input is empty, auto-fill it
+          if (extractedSaverFare) {
+            const saverInput = document.querySelector(`.fare-saver-unit-${unitId}`);
+            if (saverInput && (!saverInput.value || saverInput.value.trim() === '')) {
+              saverInput.value = extractedSaverFare;
+              showNotification(`Auto-filled Saver Fare (₹${extractedSaverFare.toLocaleString('en-IN')}) for Option ${unitId}`, 'success');
+            }
+          }
+
+          flightIndex += flightIds.length;
+        });
+
+        // Apply SVC and GST to all flights
+        data.flights.forEach(f => {
+          f.service_charge = currentServiceCharge;
+          f.gst = currentGST;
+        });
+
+        currentFlights = data.flights;
+        renderResults(data.flights);
+        showNotification('Flights parsed successfully!', 'success');
+
+      } catch (error) {
+        showNotification('Error parsing flights. Please try again.', 'error');
+        console.error(error);
+      } finally {
+        isParsing = false;
+        parseBtn.disabled = false;
+        parseIcon.innerHTML = '🚀';
+        parseBtnText.textContent = 'Parse Flights & Generate Itinerary';
+      }
     }
-  });
 
-  if (emptyFlightFound && flights.length === 0) {
-    showNotification('Please paste at least one flight detail', 'error');
-    return;
-  }
+    function renderResults(flights) {
+      if (!flights || flights.length === 0) {
+        return;
+      }
 
-  if (hasError || flights.length === 0) {
-    return;
-  }
+      // Show sections
+      document.getElementById("cardsSection").style.display = 'block';
+      document.getElementById("outputSection").style.display = 'block';
 
-  // Start parsing
-  isParsing = true;
-  const parseBtn = document.getElementById('parseBtn');
-  const parseIcon = document.getElementById('parseIcon');
-  const parseBtnText = document.getElementById('parseBtnText');
-  
-  parseBtn.disabled = true;
-  parseIcon.innerHTML = '<span class="loading"></span>';
-  parseBtnText.textContent = 'Processing...';
+      // Render cards with unit grouping
+      const cardsContainer = document.getElementById("cards");
+      cardsContainer.innerHTML = '';
 
-  document.getElementById("cards").innerHTML = '';
-  document.getElementById("cardsSection").style.display = 'none';
-  document.getElementById("outputSection").style.display = 'none';
+      // Check if any flight is editable - show global edit controls
+      const hasEditableFlights = flights.some(f => f.is_editable);
+      const globalEditControls = document.getElementById('globalEditControls');
+      if (hasEditableFlights) {
+        globalEditControls.style.display = 'flex';
+        globalEditControls.style.gap = '0.5rem';
 
-  try {
-    const response = await fetch("/parse", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        flights: flights.map(f => f.text),
-        fares: flights.map(f => f.fares),
-        markup: Number(markup)
-      })
-    });
+        // Update button state to reflect current mode
+        const globalEditBtn = document.getElementById('globalEditBtn');
+        if (isGlobalEditMode) {
+          globalEditBtn.innerHTML = '✕ Cancel Edit';
+          globalEditBtn.classList.add('active');
+        } else {
+          globalEditBtn.innerHTML = '✏️ Edit Fares';
+          globalEditBtn.classList.remove('active');
+        }
+      } else {
+        globalEditControls.style.display = 'none';
+        isGlobalEditMode = false;
+      }
 
-    const data = await response.json();
-    
-    if (!response.ok) {
-      // Show specific error from backend
-      showNotification(data.error || 'Failed to parse flights', 'error');
-      return;
-    }
-    
-    // Update the saver fare inputs with extracted values if any
-    data.flights.forEach((flight, index) => {
-      if (flight.fares && flight.fares.saver) {
-        const block = blocks[index];
-        if (block) {
-          const flightId = block.dataset.flightId;
-          const saverInput = document.querySelector(`.fare-saver-${flightId}`);
-          // Only update if it was empty (user didn't manually enter)
-          if (saverInput && (!saverInput.value || saverInput.value.trim() === '')) {
-            saverInput.value = flight.fares.saver;
+      // Group flights by unit for display
+      let flightIndex = 0;
+      Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
+        if (currentTripType === 'round_trip' || currentTripType === 'multi_city') {
+          // Create a unit container with side-by-side layout
+          const unitContainer = document.createElement('div');
+          unitContainer.style.marginBottom = '2rem';
+          unitContainer.style.width = '100%';
+          unitContainer.style.boxSizing = 'border-box';
+
+          // Create header
+          const unitHeader = document.createElement('h4');
+          unitHeader.style.marginBottom = '1rem';
+          unitHeader.style.color = 'var(--primary)';
+          unitHeader.style.paddingBottom = '0.5rem';
+          unitHeader.style.borderBottom = '2px solid var(--primary)';
+
+          if (currentTripType === 'round_trip') {
+            unitHeader.textContent = `Round Trip Option ${unitId}`;
+          } else if (currentTripType === 'multi_city') {
+            unitHeader.textContent = `Multi-City Option ${unitId}`;
+          }
+          unitContainer.appendChild(unitHeader);
+
+          // Create flex container for side-by-side cards
+          const cardsWrapper = document.createElement('div');
+          cardsWrapper.className = 'cards-wrapper';
+
+          flightIds.forEach((flightId) => {
+            if (flightIndex < flights.length) {
+              const flight = flights[flightIndex];
+              const cardWrapper = createCardWithEditButton(flight, flightIndex);
+              cardsWrapper.appendChild(cardWrapper);
+              flightIndex++;
+            }
+          });
+
+          unitContainer.appendChild(cardsWrapper);
+          cardsContainer.appendChild(unitContainer);
+        } else {
+          // One Way - render ALL flights (supports multiple flights from single text block)
+          // Only render on first unit iteration, then skip subsequent units
+          if (unitId === Object.keys(unitFlights)[0]) {
+            // Render all flights in the array
+            for (let fi = 0; fi < flights.length; fi++) {
+              const flight = flights[fi];
+              const cardWrapper = createCardWithEditButton(flight, fi);
+              cardsContainer.appendChild(cardWrapper);
+            }
+            flightIndex = flights.length; // Mark all as processed
           }
         }
-      }
-    });
-    
-    renderResults(data.flights);
-    showNotification('Flights parsed successfully!', 'success');
-    
-  } catch (error) {
-    showNotification('Error parsing flights. Please try again.', 'error');
-    console.error(error);
-  } finally {
-    isParsing = false;
-    parseBtn.disabled = false;
-    parseIcon.innerHTML = '🚀';
-    parseBtnText.textContent = 'Parse Flights & Generate Itinerary';
-  }
-}
+      });
 
-function renderResults(flights) {
-  if (!flights || flights.length === 0) {
-    return;
-  }
+      // Render output text with trip type awareness
+      let output = '';
+      const tripTypeLabel = currentTripType === 'one_way' ? 'One Way Air Travel' :
+        currentTripType === 'round_trip' ? 'Round Trip Air Travel' :
+          'Multi-City Air Travel';
 
-  // Show sections
-  document.getElementById("cardsSection").style.display = 'block';
-  document.getElementById("outputSection").style.display = 'block';
+      output = `Your Flight Itinerary for ${tripTypeLabel} for 1 Traveller(s):\n\n`;
 
-  // Render cards
-  const cardsContainer = document.getElementById("cards");
-  cardsContainer.innerHTML = '';
+      if (currentTripType === 'round_trip') {
+        // Organize round trip flights by outbound and return
+        let flightIdx = 0;
+        Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
+          if (flightIds.length === 2) {
+            output += `\n${'='.repeat(60)}\n`;
+            output += `ROUND TRIP OPTION ${unitId}\n`;
+            output += `${'='.repeat(60)}\n\n`;
 
-  flights.forEach((flight, index) => {
-    const card = document.createElement('div');
-    card.className = 'flight-card';
-    
-    let faresHTML = '';
-    Object.entries(flight.fares).forEach(([type, base]) => {
-      const finalFare = base + flight.markup;
-      faresHTML += `
-        <div class="fare-item">
-          <span class="fare-label">${type.charAt(0).toUpperCase() + type.slice(1)}</span>
-          <span class="fare-value">₹ ${finalFare.toLocaleString('en-IN')}</span>
-        </div>
-      `;
-    });
+            // Outbound flight
+            output += `*✈️ OUTBOUND FLIGHT*\n`;
+            const outboundFlight = flights[flightIdx];
+            output += formatFlightOutputWithoutFares(outboundFlight, flightIdx + 1);
 
-    card.innerHTML = `
-      <div class="card-header">
-        <div>
-          <div class="card-airline">${flight.airline}</div>
-          <div class="card-flight-num">${flight.flight_number}</div>
-        </div>
-      </div>
-      
-      <div class="card-route">
-        <div>
-          <div class="card-city">${flight.departure_city}</div>
-          <div class="card-time">${flight.departure_time}</div>
-        </div>
-        <span class="card-arrow">→</span>
-        <div>
-          <div class="card-city">${flight.arrival_city}</div>
-          <div class="card-time">${flight.arrival_time}</div>
-        </div>
-      </div>
+            // Return flight
+            output += `\n*✈️ RETURN FLIGHT*\n`;
+            const returnFlight = flights[flightIdx + 1];
+            output += formatFlightOutputWithoutFares(returnFlight, 2);
 
-      <div class="card-details">
-        <div class="card-detail-item">
-          <span class="card-detail-label">Duration:</span>
-          <span class="card-detail-value">${flight.duration}</span>
-        </div>
-        <div class="card-detail-item">
-          <span class="card-detail-label">Stops:</span>
-          <span class="card-detail-value">${flight.stops}</span>
-        </div>
-        <div class="card-detail-item">
-          <span class="card-detail-label">Baggage:</span>
-          <span class="card-detail-value">${flight.baggage}</span>
-        </div>
-      </div>
+            // Show fares once for the option
+            output += `\n*FARES FOR THIS OPTION:*\n`;
+            output += formatFaresOutput(outboundFlight);
 
-      <div class="card-fares">
-        <div class="card-fare-title">Available Fares</div>
-        ${faresHTML}
-      </div>
-    `;
-    
-    cardsContainer.appendChild(card);
-  });
+            flightIdx += 2;
+          }
+        });
+      } else if (currentTripType === 'multi_city') {
+        // Organize multi-city flights by option
+        let flightIdx = 0;
+        Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
+          output += `\n${'='.repeat(60)}\n`;
+          output += `MULTI-CITY OPTION ${unitId}\n`;
+          output += `${'='.repeat(60)}\n\n`;
 
-  // Render output text
-  let output = `Your Flight Itinerary for Oneway Air Travel for 1 Traveller(s):\n\n`;
+          flightIds.forEach((fid, cityIdx) => {
+            if (flightIdx < flights.length) {
+              output += `*✈️ CITY ${cityIdx + 1}*\n`;
+              const flight = flights[flightIdx];
+              output += formatFlightOutputWithoutFares(flight, cityIdx + 1);
+              output += '\n';
+              flightIdx++;
+            }
+          });
 
-  flights.forEach((flight, index) => {
-    let fareLines = '';
-    Object.entries(flight.fares).forEach(([type, base]) => {
-      const finalFare = base + flight.markup;
-      fareLines += `*${type.charAt(0).toUpperCase() + type.slice(1)} Fare:* ₹ ${finalFare.toLocaleString('en-IN')}\n`;
-    });
-
-    output += `*${index + 1}. ${flight.airline} : ${flight.flight_number}*
-
-*Departure:* ${flight.departure_city} (${flight.departure_airport})
-*Time:* ${flight.departure_date} , ${flight.departure_time}
-
-*Arrival:* ${flight.arrival_city} (${flight.arrival_airport})
-*Time:* ${flight.departure_date} , ${flight.arrival_time}
-
-*Duration:* ${flight.duration} (${flight.stops})
-
-*Baggage:* ${flight.baggage}
-*${flight.refundability}*
-
-${fareLines}
-
-`;
-  });
-
-  output += `Please confirm the same at the earliest. 
-
-Contact: +919831020012
-Email: mail@timetours.in
-
-Thanks,
-Time Travels
-
-*Note:* Airline ticket pricing is dynamic. Fares are valid as of now and might change at the time of issuance.`;
-
-  document.getElementById("output").textContent = output.trim();
-
-  // Scroll to results
-  document.getElementById("cardsSection").scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-function copyOutput() {
-  const output = document.getElementById("output").textContent;
-  navigator.clipboard.writeText(output).then(() => {
-    showNotification('Copied to clipboard!', 'success');
-  }).catch(() => {
-    showNotification('Failed to copy', 'error');
-  });
-}
-
-function shareOnWhatsApp() {
-  const output = document.getElementById("output").textContent;
-  const encodedText = encodeURIComponent(output);
-  const whatsappUrl = `https://wa.me/?text=${encodedText}`;
-  window.open(whatsappUrl, '_blank');
-}
-
-function shareCardsAsImage() {
-  showNotification('Generating image... This may take a moment', 'warning');
-  
-  // Use html2canvas library to capture cards
-  const cardsContainer = document.getElementById('cards');
-  
-  // Check if html2canvas is loaded
-  if (typeof html2canvas === 'undefined') {
-    // Load html2canvas dynamically
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-    script.onload = () => captureAndShare();
-    document.head.appendChild(script);
-  } else {
-    captureAndShare();
-  }
-}
-
-function captureAndShare() {
-  const cardsContainer = document.getElementById('cards');
-  
-  html2canvas(cardsContainer, {
-    backgroundColor: '#f8fafc',
-    scale: 2,
-    logging: false,
-    useCORS: true
-  }).then(canvas => {
-    canvas.toBlob(blob => {
-      const file = new File([blob], 'flight-cards.png', { type: 'image/png' });
-      
-      // Try native Web Share API first (works on mobile)
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        navigator.share({
-          files: [file],
-          title: 'Flight Itinerary Cards',
-          text: 'Check out these flight options!'
-        }).then(() => {
-          showNotification('Shared successfully!', 'success');
-        }).catch((error) => {
-          // If user cancels, try WhatsApp fallback
-          if (error.name !== 'AbortError') {
-            shareToWhatsAppWeb(blob);
+          // Show fares once for the option
+          if (flightIdx > 0) {
+            output += `\n*FARES FOR THIS OPTION:*\n`;
+            output += formatFaresOutput(flights[flightIdx - 1]);
           }
         });
       } else {
-        // Fallback: Try WhatsApp Web/Mobile
-        shareToWhatsAppWeb(blob);
+        // One Way - simple list
+        flights.forEach((flight, index) => {
+          output += formatFlightOutput(flight, index + 1);
+          if (index < flights.length - 1) {
+            output += '\n';
+          }
+        });
       }
-    }, 'image/png');
-  }).catch((error) => {
-    showNotification('Failed to generate image', 'error');
-    console.error('Screenshot error:', error);
-  });
-}
 
-function shareToWhatsAppWeb(blob) {
-  // For desktop: Download file and provide instructions
-  // For mobile: Try to open WhatsApp with message
-  
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  
-  if (isMobile) {
-    // On mobile, we can't directly attach images to WhatsApp Web URL
-    // So we save to device and show instructions
-    downloadImageWithInstructions(blob);
-  } else {
-    // On desktop, download and show instructions
-    downloadImageWithInstructions(blob);
-  }
-}
+      output += `\n\n*Please Note:\nTimings mentioned are in 24 hours clock\nNo booking has been made yet\nRates and inventory are subject to availability at the time of final booking*`;
 
-function downloadImageWithInstructions(blob) {
-  // Create download link
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `flight-cards-${Date.now()}.png`;
-  link.click();
-  URL.revokeObjectURL(url);
-  
-  // Try to copy a helpful message to clipboard
-  const helperText = "Flight options attached 👆\n\nPlease let me know which option works best for you!";
-  navigator.clipboard.writeText(helperText).catch(() => {
-    // Clipboard copy failed, that's okay
-  });
-  
-  // Show instructions in a custom modal
-  showWhatsAppInstructions();
-}
+      currentFinalText = output.trim();
+      document.getElementById("output").textContent = currentFinalText;
 
-function showWhatsAppInstructions() {
-  // Create modal overlay
-  const modal = document.createElement('div');
-  modal.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.8);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-    animation: fadeIn 0.3s ease;
-  `;
-  
-  const modalContent = document.createElement('div');
-  modalContent.style.cssText = `
-    background: white;
-    border-radius: 16px;
-    padding: 2rem;
-    max-width: 500px;
-    margin: 1rem;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    animation: slideUp 0.3s ease;
-  `;
-  
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  
-  modalContent.innerHTML = `
-    <style>
-      @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
+      // Scroll to results
+      document.getElementById("cardsSection").scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function isFieldValid(val) {
+      if (!val) return false;
+      const s = String(val).trim().toLowerCase();
+      return s !== '' && s !== 'n/a' && s !== 'null' && s !== 'undefined' && s !== 'unknown';
+    }
+
+    function getTimeCategory(timeStr) {
+      if (!timeStr || timeStr === 'N/A') return '';
+      const parts = timeStr.split(':');
+      if (parts.length < 2) return '';
+
+      const hour = parseInt(parts[0], 10);
+
+      if (hour >= 0 && hour < 6) return 'Early Morning Flight';
+      if (hour >= 6 && hour < 12) return 'Morning Flight';
+      if (hour >= 12 && hour < 16) return 'Afternoon Flight';
+      if (hour >= 16 && hour < 21) return 'Evening Flight';
+      if (hour >= 21) return 'Night Flight';
+
+      return '';
+    }
+
+    function createFlightCard(flight, index) {
+      const card = document.createElement('div');
+      card.className = 'flight-card';
+      card.setAttribute('data-flight-index', index);
+
+      // Generate a unique ID for this card to prevent conflicts
+      const uniqueId = `flight-${index}-${Math.random().toString(36).substr(2, 9)}`;
+
+      const isMissingDate = !flight.departure_date || flight.departure_date === 'N/A';
+      const dateDisplay = isMissingDate ? 'Date Required' : flight.departure_date;
+
+      // Calculate derived info
+      const hasSegments = flight.segments && flight.segments.length > 0;
+      const displayStops = flight.stops || (hasSegments ? `${flight.segments.length - 1} Stop(s)` : 'Direct');
+      const isDirect = displayStops.toLowerCase().includes('non-stop') || displayStops.toLowerCase().includes('direct') || (flight.segments && flight.segments.length <= 1);
+
+      // Option Label
+      const optionLabelHTML = `<div class="option-label">Option ${index + 1}</div>`;
+
+      // --- Date Header (if missing) ---
+      let dateHeaderHTML = '';
+      if (isMissingDate) {
+        dateHeaderHTML = `
+            <div class="date-warning-strip" id="date-warning-${index}">
+                <span>⚠️ ${dateDisplay}</span>
+                <button class="date-btn" onclick="promptDateInput(${index})">Select Date</button>
+            </div>
+        `;
       }
-      @keyframes slideUp {
-        from { transform: translateY(50px); opacity: 0; }
-        to { transform: translateY(0); opacity: 1; }
+
+      // Helper for city display
+      const formatCity = (city, airport) => {
+        if (!city) return airport || '';
+        // If city already contains airport code (e.g. "Mumbai (BOM)"), don't add it again
+        if (airport && city.includes(airport)) return city;
+        // If city is just the airport code, don't repeat
+        if (airport && city.trim() === airport.trim()) return city;
+
+        return `${city} <span class="airport-code-small">(${airport || ''})</span>`;
+      };
+
+      // Helper for time difference calculation (layover or duration)
+      const calculateTimeDiff = (startTime, endTime) => {
+        if (!startTime || !endTime) return null;
+
+        try {
+          const parseTime = (t) => {
+            const parts = t.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+            if (!parts) return null;
+            let h = parseInt(parts[1], 10);
+            const m = parseInt(parts[2], 10);
+            const p = parts[3] ? parts[3].toUpperCase() : null;
+
+            if (p === 'PM' && h < 12) h += 12;
+            if (p === 'AM' && h === 12) h = 0;
+
+            return h * 60 + m;
+          };
+
+          const startMins = parseTime(startTime);
+          const endMins = parseTime(endTime);
+
+          if (startMins === null || endMins === null) return null;
+
+          let diff = endMins - startMins;
+          if (diff < 0) diff += 24 * 60; // Next day
+
+          const hours = Math.floor(diff / 60);
+          const minutes = diff % 60;
+
+          let text = '';
+          if (hours > 0) text += `${hours}h `;
+          if (minutes > 0) text += `${minutes}m`;
+
+          return { text: text.trim(), minutes: diff };
+        } catch (e) {
+          return null;
+        }
+      };
+
+      // Helper specifically for layover labeling
+      const getLayoverLabel = (minutes) => {
+        if (minutes < 60) return { label: 'Short Layover', alertClass: 'short' };
+        if (minutes > 300) return { label: 'Long Wait', alertClass: 'long' };
+        return { label: 'Layover', alertClass: '' };
+      };
+
+      // --- Summary Header ---
+      const summaryHTML = `
+        <div class="flight-summary" onclick="toggleDetails('${uniqueId}')">
+            <div class="summary-main">
+                <div class="summary-airline">
+                    <div class="airline-stack">
+                        ${(hasSegments && !isDirect)
+          ? flight.segments.map(s => `
+                              <div class="airline-row">
+                                <span class="airline-name-small">${s.airline}</span>
+                                <span class="flight-code-small">${s.flight_number}</span>
+                              </div>
+                            `).join('')
+          : `
+                              <div class="airline-name">${flight.airline}</div>
+                              <div class="flight-code">${flight.flight_number}</div>
+                            `
+        }
+                    </div>
+                    <!-- IMPORTANT: Added ID for date display update -->
+                    <div id="date-display-${index}" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.25rem;">${isMissingDate ? '' : flight.departure_date}</div>
+                </div>
+                
+                <div class="flight-route-visual">
+                    <div class="time-group">
+                        <div class="time-big">${flight.departure_time}</div>
+                        <div class="city-code">${formatCity(flight.departure_city, flight.departure_airport)}</div>
+                    </div>
+                    
+                    <div class="duration-line-container">
+                        <div class="duration-text">${flight.duration}</div>
+                        <div class="route-line"></div>
+                        <div class="stops-text ${isDirect ? 'direct' : ''}">${displayStops}</div>
+                    </div>
+                    
+                    <div class="time-group">
+                        <div class="time-big">${flight.arrival_time}</div>
+                        <div class="city-code">${formatCity(flight.arrival_city, flight.arrival_airport)}</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="expand-icon" id="arrow-${uniqueId}"></div>
+        </div>
+      `;
+
+      // --- Timeline Content ---
+      // Wrapped in a hidden container
+      let timelineHTML = `<div id="timeline-${uniqueId}" class="flight-timeline-container" style="display: none;">`;
+      timelineHTML += '<div class="flight-timeline">';
+
+      if (hasSegments && !isDirect) {
+        // Connecting Flight Timeline
+        flight.segments.forEach((seg, i) => {
+          // Calculate if there is a next segment for layover
+          const nextSeg = flight.segments[i + 1];
+
+          // Calculate segment duration if possible
+          let segmentDuration = seg.duration;
+          if (!segmentDuration || segmentDuration === 'Duration n/a') {
+            const diffInfo = calculateTimeDiff(seg.departure_time, seg.arrival_time);
+            if (diffInfo) {
+              segmentDuration = diffInfo.text;
+            }
+          }
+
+          // Segment Departure
+          timelineHTML += `
+                <div class="timeline-segment">
+                    <div class="t-dot departure"></div>
+                    <div class="t-time-row">
+                        <div class="t-time">${seg.departure_time || ''}</div>
+                        <div class="t-city">${formatCity(seg.departure_city || seg.departure_airport || 'Departure', seg.departure_airport)}</div>
+                    </div>
+                    
+                    <!-- Flight Info Box -->
+                    <div class="flight-info-block">
+                        <div class="info-row">
+                             <div class="info-icon">✈</div>
+                             <span style="font-weight: 600; color: var(--text-primary);">${seg.airline || flight.airline} ${seg.flight_number || ''}</span>
+                        </div>
+                        <div class="info-row">
+                             <div class="info-icon">⏱</div>
+                             <span>${segmentDuration || 'Duration n/a'}</span>
+                             <span>•</span>
+                             <span>${flight.baggage || 'Baggage n/a'}</span>
+                        </div>
+                    </div>
+
+                    <div class="t-time-row">
+                        <div class="t-time" style="color: var(--text-secondary); font-size: 1rem;">${seg.arrival_time || ''}</div>
+                        <div class="t-city" style="font-weight: 500; color: var(--text-secondary); font-size: 0.95rem;">${formatCity(seg.arrival_city || seg.arrival_airport || 'Arrival', seg.arrival_airport)}</div>
+                    </div>
+                </div>
+             `;
+
+          // Layover Block
+          if (nextSeg) {
+            const layoverDiff = calculateTimeDiff(seg.arrival_time, nextSeg.departure_time);
+            let durationText = '';
+            let labelText = 'Connect in airport';
+
+            if (layoverDiff) {
+              durationText = layoverDiff.text;
+              const labelInfo = getLayoverLabel(layoverDiff.minutes);
+              labelText = labelInfo.label;
+            }
+
+            timelineHTML += `
+                    <div class="layover-container">
+                        <div class="layover-line-fix"></div>
+                        <div class="layover-pill">
+                            <span>⏱</span>
+                            <span>${labelText} • ${durationText}</span> 
+                        </div>
+                    </div>
+                 `;
+          }
+        });
+
+      } else {
+        // Direct Flight Timeline (Simple start and end)
+        timelineHTML += `
+            <div class="timeline-segment">
+                <div class="t-dot departure"></div>
+                <div class="t-time-row">
+                    <div class="t-time">${flight.departure_time}</div>
+                    <div class="t-city">${formatCity(flight.departure_city, flight.departure_airport)}</div>
+                </div>
+                
+                <div class="flight-info-block">
+                    <div class="info-row">
+                         <div class="info-icon">✈</div>
+                         <span style="font-weight: 600; color: var(--text-primary);">${flight.airline} ${flight.flight_number}</span>
+                    </div>
+                    ${isFieldValid(flight.duration) ? `
+                    <div class="info-row">
+                         <div class="info-icon">⏱</div>
+                         <span>${flight.duration}</span>
+                    </div>` : ''}
+                     ${(isFieldValid(flight.baggage) || isFieldValid(flight.refundability || 'Refundable')) ? `
+                     <div class="info-row">
+                         ${isFieldValid(flight.baggage) ? `<div class="info-icon">🧳</div><span>${flight.baggage}</span>` : ''}
+                         ${isFieldValid(flight.baggage) && isFieldValid(flight.refundability || 'Refundable') ? `<span>•</span>` : ''}
+                         ${isFieldValid(flight.refundability || 'Refundable') ? `<span>${flight.refundability || 'Refundable'}</span>` : ''}
+                    </div>` : ''}
+                </div>
+
+                <div class="t-dot arrival"></div>
+                <div class="t-time-row">
+                    <div class="t-time">${flight.arrival_time}</div>
+                    <div class="t-city">${formatCity(flight.arrival_city, flight.arrival_airport)}</div>
+                </div>
+            </div>
+        `;
       }
-    </style>
-    <div style="text-align: center;">
-      <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
-      <h2 style="margin-bottom: 1rem; color: #0f172a;">Image Downloaded!</h2>
-      <p style="color: #64748b; margin-bottom: 0.5rem; line-height: 1.6;">
-        ${isMobile ? 
-          'The flight cards image has been saved to your device.' : 
-          'The flight cards image has been downloaded to your computer.'}
-      </p>
-      <p style="color: #10b981; margin-bottom: 1.5rem; font-weight: 500; font-size: 0.9rem;">
-        📋 Message copied to clipboard!
-      </p>
-      
-      <div style="background: #f8fafc; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; text-align: left;">
-        <h3 style="font-size: 0.9rem; color: #0f172a; margin-bottom: 1rem; font-weight: 600;">📱 To Share on WhatsApp:</h3>
-        <ol style="color: #475569; line-height: 1.8; padding-left: 1.2rem; margin: 0;">
-          <li>Open WhatsApp</li>
-          <li>Select the contact or group</li>
-          <li>Click the attachment (📎) icon</li>
-          <li>Choose "Gallery" or "Photos"</li>
-          <li>Select the downloaded image</li>
-          <li>Paste the copied message (optional)</li>
-          <li>Send! 🚀</li>
-        </ol>
+
+      timelineHTML += '</div></div>'; // End timeline and container
+
+      // --- Fares Footer ---
+      let faresHTML = '<div class="card-footer-fares">';
+      Object.entries(flight.fares).forEach(([type, base]) => {
+        // Use per-fare markup if available, otherwise use global markup
+        const perFareMU = flight.fare_mu && flight.fare_mu[type] !== undefined ? flight.fare_mu[type] : (flight.markup || 0);
+        const finalFare = base + perFareMU;
+
+        // Use per-fare SVC if available, otherwise use global SVC
+        const perFareSVC = flight.fare_svc && flight.fare_svc[type] !== undefined ? flight.fare_svc[type] : (flight.service_charge || 0);
+        const perFareGST = perFareSVC > 0 ? Math.round(perFareSVC * 0.18) : 0;
+
+        let extraText = '';
+        if (perFareSVC > 0) {
+          extraText = ` <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(+ ₹${perFareSVC} SVC + ₹${perFareGST} GST)</span>`;
+        }
+
+        faresHTML += `
+          <div class="footer-fare-item">
+            <span class="footer-fare-label">${type}</span>
+            <span class="footer-fare-price">₹ ${finalFare.toLocaleString('en-IN')}${extraText}</span>
+          </div>
+        `;
+      });
+      faresHTML += '</div>';
+
+      // Inline editor placeholder (will be populated when edit is clicked)
+      let inlineEditorPlaceholder = '';
+      if (flight.is_editable) {
+        inlineEditorPlaceholder = `<div id="inline-editor-${index}" class="inline-fare-editor" style="display: none;"></div>`;
+      }
+
+      card.innerHTML = optionLabelHTML + dateHeaderHTML + summaryHTML + timelineHTML + faresHTML + inlineEditorPlaceholder;
+      return card;
+    }
+
+    // Creates a wrapper with edit button above the card
+    function createCardWithEditButton(flight, index) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'card-wrapper';
+      wrapper.style.marginBottom = '0.75rem';
+
+      // Add edit button above card if editable (hidden by default, shown in global edit mode)
+      if (flight.is_editable) {
+        const editBar = document.createElement('div');
+        editBar.className = 'card-edit-bar';
+        editBar.id = `card-edit-bar-${index}`;
+        // Initially hidden - will be shown when global edit mode is activated
+        editBar.style.display = isGlobalEditMode ? 'flex' : 'none';
+        editBar.innerHTML = `
+          <button class="card-edit-btn" onclick="toggleInlineFareEditor(${index})" id="edit-btn-${index}">
+            ✏️ Edit
+          </button>
+        `;
+        wrapper.appendChild(editBar);
+      }
+
+      // Add the flight card
+      const card = createFlightCard(flight, index);
+      wrapper.appendChild(card);
+
+      return wrapper;
+    }
+
+    // Toggle global edit mode for all cards
+    function toggleGlobalEditMode() {
+      isGlobalEditMode = !isGlobalEditMode;
+
+      const globalEditBtn = document.getElementById('globalEditBtn');
+
+      // Find all card edit bars and toggle their visibility
+      currentFlights.forEach((flight, index) => {
+        if (flight.is_editable) {
+          const editBar = document.getElementById(`card-edit-bar-${index}`);
+          if (editBar) {
+            editBar.style.display = isGlobalEditMode ? 'flex' : 'none';
+          }
+          // If turning off edit mode, hide any open editors
+          if (!isGlobalEditMode) {
+            const editor = document.getElementById(`inline-editor-${index}`);
+            if (editor) {
+              editor.style.display = 'none';
+              // Check if edit button state needs reset
+              const editBtn = document.getElementById(`edit-btn-${index}`);
+              if (editBtn) editBtn.classList.remove('active');
+            }
+          }
+        }
+      });
+
+      if (isGlobalEditMode) {
+        globalEditBtn.innerHTML = '✕ Cancel Edit';
+        globalEditBtn.classList.add('active');
+      } else {
+        globalEditBtn.innerHTML = '✏️ Edit Fares';
+        globalEditBtn.classList.remove('active');
+      }
+    }
+
+    // createSegmentsHTML is no longer used separately, integrated into createFlightCard
+    function createSegmentsHTML(flight) { return ''; }
+
+    // ============== Inline Fare Editor Functions ==============
+
+    function toggleInlineFareEditor(flightIndex) {
+      const editor = document.getElementById(`inline-editor-${flightIndex}`);
+      const editBtn = document.getElementById(`edit-btn-${flightIndex}`);
+
+      if (!editor) return;
+
+      if (editor.style.display === 'none') {
+        // Show editor
+        editor.style.display = 'block';
+        editBtn.innerHTML = '✕ Cancel';
+        editBtn.classList.add('active');
+
+        // Populate editor with current fare data
+        populateInlineFareEditor(flightIndex);
+      } else {
+        // Hide editor
+        editor.style.display = 'none';
+        editBtn.innerHTML = '✏️ Edit Fares';
+        editBtn.classList.remove('active');
+      }
+    }
+
+    function populateInlineFareEditor(flightIndex) {
+      const flight = currentFlights[flightIndex];
+      const editor = document.getElementById(`inline-editor-${flightIndex}`);
+
+      if (!editor || !flight) return;
+
+      let faresHTML = '';
+
+      // Create fare cards for existing fares
+      Object.entries(flight.fares).forEach(([fareType, baseFare]) => {
+        let mu = flight.fare_mu && flight.fare_mu[fareType] !== undefined ? flight.fare_mu[fareType] : '';
+        const svc = flight.fare_svc && flight.fare_svc[fareType] !== undefined ? flight.fare_svc[fareType] : '';
+
+        // If markup is not set specifically, show global markup if preset
+        if ((mu === '' || mu === undefined) && currentMarkup > 0) {
+          mu = currentMarkup;
+        }
+
+        faresHTML += createInlineFareCard(flightIndex, fareType, fareType.charAt(0).toUpperCase() + fareType.slice(1) + ' Fare', baseFare, mu, svc, true);
+      });
+
+      editor.innerHTML = `
+        <div class="inline-fare-editor-header">
+          <h4>✏️ Edit Fares for Option ${flightIndex + 1}</h4>
+        </div>
+        <div class="fare-types" id="inline-fare-list-${flightIndex}">
+          ${faresHTML}
+        </div>
+        <div class="add-fare-controls" style="margin-top: 1rem; border-top: 1px dashed var(--border); padding-top: 0.75rem;">
+          <select class="form-select" style="width: 100%; max-width: 200px; padding: 0.5rem; font-size: 0.9rem; border-radius: 6px; border: 1.5px solid var(--border);" onchange="handleInlineAddFareType(this, ${flightIndex})">
+            <option value="">+ Add Fare Type...</option>
+            <option value="saver">Saver Fare</option>
+            <option value="corporate">Corporate Fare</option>
+            <option value="sme">SME Fare</option>
+            <option value="coupon">Coupon Fare</option>
+            <option value="flexi">Flexi Fare</option>
+            <option value="custom">Custom...</option>
+          </select>
+        </div>
+        <div class="inline-fare-editor-actions">
+          <button class="btn-cancel" onclick="toggleInlineFareEditor(${flightIndex})">Cancel</button>
+          <button class="btn-save" onclick="saveInlineFareChanges(${flightIndex})">💾 Save Changes</button>
+        </div>
+      `;
+    }
+
+    function createInlineFareCard(flightIndex, key, label, baseFare, mu, svc, isChecked) {
+      const checkedAttr = isChecked ? 'checked' : '';
+      const disabledAttr = isChecked ? '' : 'disabled';
+      const cardClass = isChecked ? 'fare-card' : 'fare-card disabled';
+
+      return `
+        <div class="${cardClass}" data-fare-key="${key}" id="inline-fare-card-${key}-${flightIndex}">
+          <div class="fare-card-header">
+            <input type="checkbox" id="inline-${key}-flight-${flightIndex}" onchange="toggleInlineFareCard(this, '${key}', ${flightIndex})" ${checkedAttr}>
+            <label for="inline-${key}-flight-${flightIndex}">${label}</label>
+          </div>
+          <div class="fare-card-fields">
+            <div class="fare-field-row">
+              <span class="fare-field-label">Fare</span>
+              <input type="number" class="fare-field-input inline-fare-${key}-flight-${flightIndex}" placeholder="₹ 0" min="0" value="${baseFare || ''}" ${disabledAttr}>
+            </div>
+            <div class="fare-field-row">
+              <span class="fare-field-label">MU</span>
+              <input type="number" class="fare-field-input inline-mu-${key}-flight-${flightIndex}" placeholder="Markup" min="0" value="${mu}" ${disabledAttr}>
+            </div>
+            <div class="fare-field-row">
+              <span class="fare-field-label">SVC</span>
+              <input type="number" class="fare-field-input inline-svc-${key}-flight-${flightIndex}" placeholder="Service Chg" min="0" value="${svc}" ${disabledAttr}>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function toggleInlineFareCard(checkbox, fareType, flightIndex) {
+      const card = document.getElementById(`inline-fare-card-${fareType}-${flightIndex}`);
+      const fareInput = document.querySelector(`.inline-fare-${fareType}-flight-${flightIndex}`);
+      const muInput = document.querySelector(`.inline-mu-${fareType}-flight-${flightIndex}`);
+      const svcInput = document.querySelector(`.inline-svc-${fareType}-flight-${flightIndex}`);
+
+      if (checkbox.checked) {
+        card.classList.remove('disabled');
+        fareInput.disabled = false;
+        muInput.disabled = false;
+        svcInput.disabled = false;
+      } else {
+        card.classList.add('disabled');
+        fareInput.disabled = true;
+        muInput.disabled = true;
+        svcInput.disabled = true;
+        fareInput.value = '';
+        muInput.value = '';
+        svcInput.value = '';
+      }
+    }
+
+    function handleInlineAddFareType(select, flightIndex) {
+      const val = select.value;
+      if (!val) return;
+
+      let key = val;
+      let label = val.charAt(0).toUpperCase() + val.slice(1) + ' Fare';
+
+      if (val === 'custom') {
+        const customName = prompt("Enter Name for Custom Fare Type:");
+        if (!customName || customName.trim() === '') {
+          select.value = '';
+          return;
+        }
+        label = customName.trim();
+        key = label.toLowerCase().replace(/\s+/g, '_');
+      }
+
+      // Check if exists
+      if (document.getElementById(`inline-fare-card-${key}-${flightIndex}`)) {
+        showNotification('Fare type already exists', 'warning');
+        select.value = '';
+        return;
+      }
+
+      // Add the new fare card
+      const list = document.getElementById(`inline-fare-list-${flightIndex}`);
+      const div = document.createElement('div');
+      div.innerHTML = createInlineFareCard(flightIndex, key, label, '', '', '', true);
+      list.appendChild(div.firstElementChild);
+
+      select.value = '';
+    }
+
+    function saveInlineFareChanges(flightIndex) {
+      const flight = currentFlights[flightIndex];
+      if (!flight) return;
+
+      // Collect all fare data from the inline editor
+      const fareCards = document.querySelectorAll(`#inline-fare-list-${flightIndex} .fare-card`);
+
+      const newFares = {};
+      const newFareMU = {};
+      const newFareSVC = {};
+      let hasAtLeastOneFare = false;
+      let hasError = false;
+
+      fareCards.forEach(card => {
+        const checkbox = card.querySelector('.fare-card-header input[type="checkbox"]');
+        if (!checkbox || !checkbox.checked) return;
+
+        const fareKey = card.dataset.fareKey;
+        const fareInput = card.querySelector(`.inline-fare-${fareKey}-flight-${flightIndex}`);
+        const muInput = card.querySelector(`.inline-mu-${fareKey}-flight-${flightIndex}`);
+        const svcInput = card.querySelector(`.inline-svc-${fareKey}-flight-${flightIndex}`);
+
+        // Validate fare amount
+        if (!fareInput || !fareInput.value || fareInput.value.trim() === '') {
+          const label = card.querySelector('.fare-card-header label')?.textContent || fareKey;
+          showNotification(`Please enter fare amount for ${label}`, 'error');
+          fareInput?.focus();
+          hasError = true;
+          return;
+        }
+
+        hasAtLeastOneFare = true;
+        newFares[fareKey] = Number(fareInput.value);
+
+        // Collect optional MU and SVC
+        if (muInput && muInput.value && muInput.value.trim() !== '') {
+          newFareMU[fareKey] = Number(muInput.value);
+        } else {
+          // Explicitly set to 0 if left blank, so it overrides any global fallback
+          newFareMU[fareKey] = 0;
+        }
+
+        if (svcInput && svcInput.value && svcInput.value.trim() !== '') {
+          newFareSVC[fareKey] = Number(svcInput.value);
+        }
+      });
+
+      if (hasError) return;
+
+      if (!hasAtLeastOneFare) {
+        showNotification('Please select and fill at least one fare type', 'error');
+        return;
+      }
+
+      // Removed auto-apply global markup logic as per request.
+      // If user clears the markup field, it saves as 0.
+
+      // Update the flight data
+      flight.fares = newFares;
+      flight.fare_mu = newFareMU;
+      flight.fare_svc = newFareSVC;
+
+      // Hide the editor
+      toggleInlineFareEditor(flightIndex);
+
+      // Re-render the results to show updated data IMMEDIATELY
+      renderResults(currentFlights);
+      regenerateOutputText();
+
+      showNotification('Fares updated successfully!', 'success');
+
+      // Re-apply global edit mode state if active so other edit buttons remain visible
+      if (isGlobalEditMode) {
+        // We just re-rendered, so we need to make sure edit buttons are visible again
+        // and global edit button state is correct.
+        const globalEditBtn = document.getElementById('globalEditBtn');
+        if (globalEditBtn) {
+          globalEditBtn.classList.add('active');
+          globalEditBtn.innerHTML = '✕ Cancel Edit';
+        }
+
+        // Show edit bars again for editable flights
+        currentFlights.forEach((f, idx) => {
+          if (f.is_editable) {
+            const editBar = document.getElementById(`card-edit-bar-${idx}`);
+            if (editBar) editBar.style.display = 'flex';
+          }
+        });
+      }
+    }
+
+    function formatFlightOutput(flight, flightNumber) {
+      const dateDisplay = !flight.departure_date || flight.departure_date === 'N/A' ? '[DATE TO BE CONFIRMED]' : flight.departure_date;
+
+      // Check if we have segments (layover/connecting flights)
+      const hasSegments = flight.segments && flight.segments.length > 1;
+
+      let output = '';
+
+      // Option header
+      const timeCat = getTimeCategory(flight.departure_time);
+      output += `*OPTION ${flightNumber}${timeCat ? ' - ' + timeCat : ''}*\n\n`;
+
+      // Route line without emoji
+      output += `Flight from ${flight.departure_city} (${flight.departure_airport}) to ${flight.arrival_city} (${flight.arrival_airport}) — *${dateDisplay}*\n\n`;
+
+      if (hasSegments) {
+        // Multi-segment flight with layovers
+        flight.segments.forEach((seg, idx) => {
+          output += `*${seg.airline || flight.airline} ${seg.flight_number || ''}*\n`;
+          output += `*${seg.departure_airport}* ${seg.departure_time} → *${seg.arrival_airport}* ${seg.arrival_time}\n`;
+          if (isFieldValid(seg.duration)) output += `Duration: *${seg.duration}*\n`;
+
+          // Add layover info if not the last segment
+          if (idx < flight.segments.length - 1) {
+            output += `\n*Layover:* ${seg.arrival_city || seg.arrival_airport}`;
+            if (isFieldValid(seg.layover_duration)) output += ` — *${seg.layover_duration}*`;
+            output += `\n\n`;
+          }
+        });
+      } else {
+        // Single segment flight
+        output += `*${flight.airline} ${flight.flight_number}*\n`;
+        output += `*${flight.departure_airport}* ${flight.departure_time} → *${flight.arrival_airport}* ${flight.arrival_time}\n`;
+        if (isFieldValid(flight.duration)) output += `Duration: *${flight.duration}*\n`;
+        if (isFieldValid(flight.stops) && flight.stops !== '0 stops') output += `${flight.stops}\n`;
+      }
+
+      output += `\n`;
+
+      // Fares (no dash separator)
+      Object.entries(flight.fares).forEach(([type, base]) => {
+        // Use per-fare markup if available, otherwise use global markup
+        const perFareMU = flight.fare_mu && flight.fare_mu[type] !== undefined ? flight.fare_mu[type] : (flight.markup || 0);
+        const finalFare = base + perFareMU;
+
+        // Use per-fare SVC if available, otherwise use global SVC
+        const perFareSVC = flight.fare_svc && flight.fare_svc[type] !== undefined ? flight.fare_svc[type] : (flight.service_charge || 0);
+        const perFareGST = perFareSVC > 0 ? Math.round(perFareSVC * 0.18) : 0;
+
+        let svcText = '';
+        if (perFareSVC > 0) {
+          svcText = ` (+ ₹${perFareSVC} SVC + ₹${perFareGST} GST)`;
+        }
+        output += `*${type.charAt(0).toUpperCase() + type.slice(1)} Fare:* ₹${finalFare.toLocaleString('en-IN')} per person${svcText}\n`;
+      });
+
+      if (isFieldValid(flight.baggage)) output += `*Baggage:* ${flight.baggage}\n`;
+      if (isFieldValid(flight.refundability)) output += `*${flight.refundability}*\n`;
+
+      return output;
+    }
+
+    function formatFlightOutputWithoutFares(flight, flightNumber) {
+      const dateDisplay = !flight.departure_date || flight.departure_date === 'N/A' ? '[DATE TO BE CONFIRMED]' : flight.departure_date;
+      const timeCat = getTimeCategory(flight.departure_time);
+
+      let out = `*${flightNumber}. ${flight.airline} : ${flight.flight_number}${timeCat ? ' (' + timeCat + ')' : ''}*\n\n`;
+      out += `*Date:* ${dateDisplay}\n`;
+      out += `*Departure:* ${flight.departure_city} (${flight.departure_airport})\n`;
+      out += `*Time:* ${flight.departure_time}\n\n`;
+
+      out += `*Arrival:* ${flight.arrival_city} (${flight.arrival_airport})\n`;
+      out += `*Time:* ${flight.arrival_time}\n\n`;
+
+      if (isFieldValid(flight.duration)) {
+        out += `*Duration:* ${flight.duration}`;
+        if (isFieldValid(flight.stops)) out += ` (${flight.stops})`;
+        out += `\n\n`;
+      }
+
+      if (isFieldValid(flight.baggage)) out += `*Baggage:* ${flight.baggage}\n`;
+      if (isFieldValid(flight.refundability)) out += `*${flight.refundability}*`;
+
+      return out;
+    }
+
+    function formatFaresOutput(flight) {
+      let fareLines = '';
+      Object.entries(flight.fares).forEach(([type, base]) => {
+        // Use per-fare markup if available, otherwise use global markup
+        const perFareMU = flight.fare_mu && flight.fare_mu[type] !== undefined ? flight.fare_mu[type] : (flight.markup || 0);
+        const finalFare = base + perFareMU;
+
+        // Use per-fare SVC if available, otherwise use global SVC
+        const perFareSVC = flight.fare_svc && flight.fare_svc[type] !== undefined ? flight.fare_svc[type] : (flight.service_charge || 0);
+        const perFareGST = perFareSVC > 0 ? Math.round(perFareSVC * 0.18) : 0;
+
+        let extraText = '';
+        if (perFareSVC > 0) {
+          extraText = ` (+ ₹${perFareSVC} SVC + ₹${perFareGST} GST)`;
+        }
+        fareLines += `*${type.charAt(0).toUpperCase() + type.slice(1)} Fare:* ₹ ${finalFare.toLocaleString('en-IN')}${extraText}\n`;
+      });
+      return fareLines;
+    }
+
+    function promptDateInput(flightIndex) {
+      const flight = currentFlights[flightIndex];
+      const today = new Date();
+      const minDate = today.toISOString().split('T')[0];
+
+      // Create modal for date input
+      const modalHTML = `
+    <div id="dateModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;">
+      <div style="background: var(--bg-card); padding: 2rem; border-radius: 0.8rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 400px; width: 90%;">
+        <h3 style="margin: 0 0 1rem 0; color: var(--primary);">📅 Enter Flight Date</h3>
+        <p style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.95rem;">
+          ${flight.airline} ${flight.flight_number}<br/>
+          <strong>${flight.departure_city} → ${flight.arrival_city}</strong>
+        </p>
+        
+        <input type="date" id="flightDateInput" min="${minDate}" style="width: 100%; padding: 0.8rem; border: 2px solid var(--border); border-radius: 0.4rem; font-size: 1rem; box-sizing: border-box; margin-bottom: 1rem; background: var(--bg-card); color: var(--text-primary);" />
+        
+        <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+          <button onclick="closeDateModal()" style="padding: 0.6rem 1.2rem; background: var(--bg-main); border: none; border-radius: 0.3rem; cursor: pointer; color: var(--text-primary);">Cancel</button>
+          <button onclick="saveDateInput(${flightIndex})" style="padding: 0.6rem 1.2rem; background: var(--primary); color: white; border: none; border-radius: 0.3rem; cursor: pointer; font-weight: bold;">Save Date</button>
+        </div>
       </div>
-      
-      <button onclick="this.parentElement.parentElement.parentElement.remove()" 
-        style="background: linear-gradient(135deg, #2563eb, #0ea5e9); color: white; border: none; padding: 0.875rem 2rem; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; width: 100%; transition: transform 0.2s ease;">
-        Got It!
-      </button>
-      
-      <button onclick="openWhatsAppDirect(); this.parentElement.parentElement.parentElement.remove();" 
-        style="background: #25D366; color: white; border: none; padding: 0.875rem 2rem; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; width: 100%; margin-top: 0.5rem; transition: transform 0.2s ease;">
-        📱 Open WhatsApp Now
-      </button>
     </div>
   `;
-  
-  modal.appendChild(modalContent);
-  document.body.appendChild(modal);
-  
-  // Close on background click
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      modal.remove();
+
+      document.body.insertAdjacentHTML('beforeend', modalHTML);
+      document.getElementById('flightDateInput').focus();
     }
-  });
-  
-  // Add hover effects
-  const buttons = modalContent.querySelectorAll('button');
-  buttons.forEach(btn => {
-    btn.addEventListener('mouseenter', () => {
-      btn.style.transform = 'translateY(-2px)';
-    });
-    btn.addEventListener('mouseleave', () => {
-      btn.style.transform = 'translateY(0)';
-    });
-  });
-  
-  showNotification('Image ready! Follow the instructions to share', 'success');
-}
 
-function openWhatsAppDirect() {
-  // Open WhatsApp (user will need to manually attach the downloaded image)
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  
-  if (isMobile) {
-    // Mobile: Open WhatsApp app
-    window.open('whatsapp://send', '_blank');
-  } else {
-    // Desktop: Open WhatsApp Web
-    window.open('https://web.whatsapp.com', '_blank');
-  }
-}
+    function closeDateModal() {
+      const modal = document.getElementById('dateModal');
+      if (modal) modal.remove();
+    }
 
-// Initialize with one flight
-addFlight();
-</script>
+    function regenerateOutputText() {
+      if (!currentFlights || currentFlights.length === 0) {
+        console.log('No current flights available');
+        return;
+      }
 
-<!-- Load html2canvas for card sharing -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+      let output = '';
+      const tripTypeLabel = currentTripType === 'one_way' ? 'One Way Air Travel' :
+        currentTripType === 'round_trip' ? 'Round Trip Air Travel' :
+          'Multi-City Air Travel';
+
+      output = `Your Flight Itinerary for ${tripTypeLabel} for 1 Traveller(s):\n\n`;
+
+      if (currentTripType === 'round_trip') {
+        let flightIdx = 0;
+        Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
+          if (flightIds.length === 2) {
+            output += `\n${'='.repeat(60)}\n`;
+            output += `ROUND TRIP OPTION ${unitId}\n`;
+            output += `${'='.repeat(60)}\n\n`;
+
+            output += `*✈️ OUTBOUND FLIGHT*\n`;
+            const outboundFlight = currentFlights[flightIdx];
+            output += formatFlightOutputWithoutFares(outboundFlight, flightIdx + 1);
+
+            output += `\n*✈️ RETURN FLIGHT*\n`;
+            const returnFlight = currentFlights[flightIdx + 1];
+            output += formatFlightOutputWithoutFares(returnFlight, 2);
+
+            output += `\n*FARES FOR THIS OPTION:*\n`;
+            output += formatFaresOutput(outboundFlight);
+
+            flightIdx += 2;
+          }
+        });
+      } else if (currentTripType === 'multi_city') {
+        let flightIdx = 0;
+        Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
+          output += `\n${'='.repeat(60)}\n`;
+          output += `MULTI-CITY OPTION ${unitId}\n`;
+          output += `${'='.repeat(60)}\n\n`;
+
+          flightIds.forEach((fid, cityIdx) => {
+            if (flightIdx < currentFlights.length) {
+              output += `*✈️ CITY ${cityIdx + 1}*\n`;
+              const flight = currentFlights[flightIdx];
+              output += formatFlightOutputWithoutFares(flight, cityIdx + 1);
+              output += '\n';
+              flightIdx++;
+            }
+          });
+
+          if (flightIdx > 0) {
+            output += `\n*FARES FOR THIS OPTION:*\n`;
+            output += formatFaresOutput(currentFlights[flightIdx - 1]);
+          }
+        });
+      } else {
+        currentFlights.forEach((flight, index) => {
+          output += formatFlightOutput(flight, index + 1);
+          if (index < currentFlights.length - 1) {
+            output += '\n';
+          }
+        });
+      }
+
+      output += `\n\n*Please Note:\nTimings mentioned are in 24 hours clock\nNo booking has been made yet\nRates and inventory are subject to availability at the time of final booking*`;
+
+      currentFinalText = output.trim();
+      const outputElement = document.getElementById("output");
+      if (outputElement) {
+        outputElement.textContent = currentFinalText;
+        console.log('Output text updated');
+      } else {
+        console.log('Output element not found');
+      }
+    }
+
+    function saveDateInput(flightIndex) {
+      const dateInput = document.getElementById('flightDateInput');
+      const selectedDate = dateInput.value.trim();
+
+      if (!selectedDate) {
+        showNotification('Please select a date', 'error');
+        return;
+      }
+
+      // Convert YYYY-MM-DD to "DD Mon YYYY" format
+      const dateParts = selectedDate.split('-');
+      const dateObj = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+      const options = { day: '2-digit', month: 'short', year: 'numeric' };
+      const formattedDate = dateObj.toLocaleDateString('en-GB', options).replace(/\s+/g, ' ');
+
+      console.log('Saving date:', formattedDate, 'for flight index:', flightIndex);
+
+      // Update the flight data
+      if (currentFlights && currentFlights[flightIndex]) {
+        const oldDate = currentFlights[flightIndex].departure_date;
+        console.log('Old date:', oldDate, 'New date:', formattedDate);
+
+        currentFlights[flightIndex].departure_date = formattedDate;
+
+        // Update the card display
+        const dateDisplay = document.getElementById(`date-display-${flightIndex}`);
+        if (dateDisplay) {
+          dateDisplay.innerHTML = formattedDate;
+          dateDisplay.style.color = 'var(--primary)';
+        }
+
+        // Remove the "Enter Date" warning strip if it exists
+        const warningStrip = document.getElementById(`date-warning-${flightIndex}`);
+        if (warningStrip) {
+          warningStrip.remove();
+        }
+
+        // Update the output text by replacing the old date with new date
+        // If old date was "N/A" or missing, we can't do a replace - we must regenerate
+        if (currentFinalText && oldDate && oldDate !== 'N/A' && oldDate.length > 5) {
+          const updatedOutput = currentFinalText.replace(new RegExp(oldDate, 'g'), formattedDate);
+          currentFinalText = updatedOutput;
+          const outputElement = document.getElementById("output");
+          if (outputElement) {
+            outputElement.textContent = currentFinalText;
+          }
+        } else {
+          // Fallback: regenerate full output
+          regenerateOutputText();
+        }
+
+        showNotification(`Date set to ${formattedDate}`, 'success');
+
+        // Check if there are other flights without dates
+        const flightsWithoutDate = currentFlights.filter((f, idx) =>
+          idx !== flightIndex && (!f.departure_date || f.departure_date === 'N/A')
+        );
+
+        if (flightsWithoutDate.length > 0) {
+          // Close current modal first
+          closeDateModal();
+
+          // Show prompt to apply date to other flights
+          setTimeout(() => {
+            showApplyDatePrompt(formattedDate, flightIndex, selectedDate);
+          }, 300);
+          return;
+        }
+      } else {
+        console.log('currentFlights not available or index out of range');
+        showNotification('Error updating flight', 'error');
+      }
+
+      closeDateModal();
+    }
+
+    function showApplyDatePrompt(formattedDate, excludeIndex, rawDate) {
+      const flightsWithoutDate = currentFlights
+        .map((f, idx) => ({ flight: f, index: idx }))
+        .filter(item => item.index !== excludeIndex && (!item.flight.departure_date || item.flight.departure_date === 'N/A'));
+
+      if (flightsWithoutDate.length === 0) return;
+
+      const count = flightsWithoutDate.length;
+      const modalHTML = `
+        <div id="applyDateModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;">
+          <div style="background: var(--bg-card); padding: 2rem; border-radius: 0.8rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 450px; width: 90%;">
+            <h3 style="margin: 0 0 1rem 0; color: var(--primary);">📅 Apply Date to Other Flights?</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.95rem;">
+              You have <strong>${count} other flight${count > 1 ? 's' : ''}</strong> without a date set.<br><br>
+              Would you like to apply <strong>${formattedDate}</strong> to ${count > 1 ? 'all of them' : 'it'}?
+            </p>
+            
+            <div style="display: flex; gap: 1rem; justify-content: flex-end; flex-wrap: wrap;">
+              <button onclick="closeApplyDateModal()" style="padding: 0.6rem 1.2rem; background: var(--bg-main); border: none; border-radius: 0.3rem; cursor: pointer; color: var(--text-primary);">No, I'll set them manually</button>
+              <button onclick="applyDateToAllFlights('${formattedDate}', ${excludeIndex})" style="padding: 0.6rem 1.2rem; background: var(--primary); color: white; border: none; border-radius: 0.3rem; cursor: pointer; font-weight: bold;">Yes, apply to all</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+
+    function closeApplyDateModal() {
+      const modal = document.getElementById('applyDateModal');
+      if (modal) modal.remove();
+    }
+
+    function applyDateToAllFlights(formattedDate, excludeIndex) {
+      let updatedCount = 0;
+
+      currentFlights.forEach((flight, idx) => {
+        if (idx !== excludeIndex && (!flight.departure_date || flight.departure_date === 'N/A')) {
+          flight.departure_date = formattedDate;
+          updatedCount++;
+
+          // Update the card display
+          const dateDisplay = document.getElementById(`date-display-${idx}`);
+          if (dateDisplay) {
+            dateDisplay.innerHTML = formattedDate;
+            dateDisplay.style.color = 'var(--primary)';
+          }
+
+          // Remove warning strip
+          const warningStrip = document.getElementById(`date-warning-${idx}`);
+          if (warningStrip) {
+            warningStrip.remove();
+          }
+        }
+      });
+
+      // Regenerate output text with all dates updated
+      regenerateOutputText();
+
+      closeApplyDateModal();
+      showNotification(`Date applied to ${updatedCount} flight${updatedCount > 1 ? 's' : ''}!`, 'success');
+    }
+
+    function toggleDetails(id) {
+      const timeline = document.getElementById(`timeline-${id}`);
+      const arrow = document.getElementById(`arrow-${id}`);
+
+      if (timeline && timeline.style.display === 'none') {
+        timeline.style.display = 'block';
+        if (arrow) arrow.classList.add('rotated');
+      } else if (timeline) {
+        timeline.style.display = 'none';
+        if (arrow) arrow.classList.remove('rotated');
+      }
+    }
+
+    function copyOutput() {
+      // Use currentFinalText which is the properly formatted output
+      const output = currentFinalText || document.getElementById("output").textContent;
+
+      if (!output || output === 'No output yet.') {
+        showNotification('No itinerary to copy. Parse flights first.', 'warning');
+        return;
+      }
+
+      // Try modern clipboard API first
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(output).then(() => {
+          showNotification('Copied to clipboard!', 'success');
+        }).catch((err) => {
+          console.error('Clipboard API failed', err);
+          fallbackCopy(output);
+        });
+      } else {
+        fallbackCopy(output);
+      }
+    }
+
+    function fallbackCopy(text) {
+      // Fallback for older browsers or when clipboard API is not available
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      textarea.style.top = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+
+      try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+          showNotification('Copied to clipboard!', 'success');
+        } else {
+          showNotification('Failed to copy. Please select and copy manually.', 'error');
+        }
+      } catch (e) {
+        console.error('Fallback copy failed', e);
+        showNotification('Failed to copy. Please select and copy manually.', 'error');
+      }
+
+      document.body.removeChild(textarea);
+    }
+
+    async function ensureHtml2Canvas() {
+      if (typeof html2canvas === 'undefined') {
+        return new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+          script.onload = () => resolve();
+          script.onerror = () => reject('Failed to load html2canvas');
+          document.head.appendChild(script);
+        });
+      }
+      return Promise.resolve();
+    }
+
+    async function generateImageBlob() {
+      await ensureHtml2Canvas();
+      const cardsContainer = document.getElementById('cards');
+      const htmlEl = document.documentElement;
+
+      // 1. Store current theme and Force Light Mode
+      const currentTheme = htmlEl.getAttribute('data-theme');
+      const isDark = currentTheme === 'dark';
+
+      if (isDark) {
+        htmlEl.setAttribute('data-theme', 'light');
+      }
+
+      // 2. Add capturing class to remove shadows/blurs
+      cardsContainer.classList.add('capturing');
+
+      try {
+        // 3. Get Light Mode Background Color
+        const lightBg = getComputedStyle(document.body).backgroundColor;
+
+        const canvas = await html2canvas(cardsContainer, {
+          backgroundColor: lightBg, // Use proper light background
+          scale: 2,
+          logging: false,
+          useCORS: true,
+          allowTaint: true
+        });
+
+        // 4. Restore State
+        if (isDark) htmlEl.setAttribute('data-theme', 'dark');
+        cardsContainer.classList.remove('capturing');
+
+        return new Promise(resolve => {
+          canvas.toBlob(blob => resolve(blob), 'image/png');
+        });
+      } catch (e) {
+        if (isDark) htmlEl.setAttribute('data-theme', 'dark');
+        cardsContainer.classList.remove('capturing');
+        throw e;
+      }
+    }
+
+    async function shareCombined(type) {
+      if (!currentFinalText) {
+        showNotification('No itinerary generated yet', 'warning');
+        return;
+      }
+
+      // --- Email/Gmail Logic: Copy Clean Text Only (No Image, No Stars) ---
+      if (type === 'email') {
+        // Remove all asterisks
+        const plainText = currentFinalText.replace(/\*/g, '');
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          try {
+            await navigator.clipboard.writeText(plainText);
+            showNotification('Text copied! (Stars removed for Gmail)', 'success');
+          } catch (e) {
+            fallbackCopy(plainText);
+          }
+        } else {
+          fallbackCopy(plainText);
+        }
+        return; // Stop here, do not generate image
+      }
+
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+      // 1. Prepare Window for Desktop WhatsApp (Bypass Popup Blocker)
+      // On mobile, we expect to use Native Share, so we skip opening a blank window (which looks bad)
+      let waWindow = null;
+      if (type === 'whatsapp' && !isMobile) {
+        waWindow = window.open('', '_blank');
+        if (waWindow) {
+          waWindow.document.write('<!DOCTYPE html><html><body><h2 style="font-family:sans-serif;text-align:center;margin-top:20%;">Generating Itinerary... Please wait.</h2></body></html>');
+        } else {
+          showNotification('Popup blocked! Please facilitate WhatsApp opening.', 'warning');
+        }
+      }
+
+      showNotification('Generating Image...', 'info');
+
+      try {
+        const imageBlob = await generateImageBlob();
+        const file = new File([imageBlob], 'Flight_Itinerary.png', { type: 'image/png' });
+        const shareData = {
+          title: 'Flight Itinerary',
+          text: currentFinalText,
+          files: [file]
+        };
+
+        // 2. Try Native Web Share (Mobile / Supported Desktop)
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            if (waWindow) waWindow.close(); // Close placeholder if native share works
+            await navigator.share(shareData);
+            return; // Success
+          } catch (e) {
+            if (e.name === 'AbortError') return;
+            console.warn('Native share failed/cancelled, trying fallback', e);
+          }
+        }
+
+        // 3. Fallback for Desktop (or if Native Share failed)
+        if (type === 'whatsapp') {
+          const encodedText = encodeURIComponent(currentFinalText);
+          const waUrl = `https://web.whatsapp.com/send?text=${encodedText}`;
+
+          // If we didn't open window earlier (e.g. mobile fallback or detection error), try now
+          if (!waWindow) {
+            // Might block, but worth a try
+            waWindow = window.open('', '_blank');
+          }
+
+          // Try Copy Image
+          try {
+            const item = new ClipboardItem({ 'image/png': imageBlob });
+            await navigator.clipboard.write([item]);
+            showNotification('Image Copied! Paste (Ctrl+V) in WhatsApp.', 'success');
+          } catch (clipErr) {
+            console.warn('Clipboard write failed', clipErr);
+            downloadImage(imageBlob);
+            showNotification('Image downloaded. Please attach manually.', 'warning');
+          }
+
+          // Redirect Window
+          if (waWindow) {
+            waWindow.location.href = waUrl;
+          } else {
+            window.open(waUrl, '_blank');
+          }
+        }
+
+        // --- Email Logic: Copy text (without stars) + Download image ---
+        else if (type === 'email') {
+          if (waWindow) waWindow.close(); // Cleanup
+
+          // Remove all asterisks from the text for email
+          let plainText = currentFinalText.replace(/\*/g, '');
+
+          // Copy plain text to clipboard
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(plainText);
+              showNotification('Text copied to clipboard (without formatting)!', 'success');
+            } else {
+              // Fallback copy
+              fallbackCopy(plainText);
+            }
+          } catch (e) {
+            console.error('Clipboard copy failed', e);
+            fallbackCopy(plainText);
+          }
+
+          // Download the image
+          downloadImage(imageBlob);
+          showNotification('Image downloaded. Text copied to clipboard!', 'success');
+        }
+
+      } catch (error) {
+        console.error('Share error:', error);
+        showNotification('Failed to process request', 'error');
+        if (waWindow) waWindow.close();
+      }
+    }
+
+    function downloadImage(blob) {
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = 'Flight_Itinerary.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    }
+
+    // Deprecated/Legacy direct share function (redirect)
+    function shareCardsAsImage() {
+      shareCombined('whatsapp');
+    }
+
+    async function downloadCardsImage() {
+      showNotification('Generating Image...', 'info');
+      try {
+        const imageBlob = await generateImageBlob();
+        downloadImage(imageBlob);
+        showNotification('Cards image downloaded!', 'success');
+      } catch (err) {
+        console.error('Image generation failed:', err);
+        showNotification('Failed to generate image', 'error');
+      }
+    }
+
+  </script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 </body>
+
 </html>
