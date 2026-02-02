@@ -357,6 +357,7 @@ def parse():
                 flight_data["fare_svc"] = user_fare_svc    # Per-fare service charges
                 flight_data["service_charge"] = global_svc
                 flight_data["gst"] = int(global_svc * 0.18) if global_svc > 0 else 0
+                flight_data["is_editable"] = True
                 
                 # Remove the saver_fare field as it's now in fares
                 if "saver_fare" in flight_data:

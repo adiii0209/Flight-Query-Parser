@@ -1,8 +1,9 @@
 import json
 import uuid
 import os
+import re
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,58 +13,177 @@ load_dotenv()
 OPENROUTER_API_KEY = "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"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-MODEL = "mistralai/mistral-small-creative"
+MODEL = "x-ai/grok-4.1-fast"
 
-MAX_TOKENS = 200        # DO NOT INCREASE (credit-safe)
+MAX_TOKENS = 800        # Increased for better accuracy with complex itineraries
 TEMPERATURE = 0
+
+# ==================== AIRPORT/CITY MAPPINGS ====================
+
+AIRPORT_CODES = {
+    # India
+    "CCU": "Kolkata", "DEL": "Delhi", "BOM": "Mumbai", "BLR": "Bengaluru", "MAA": "Chennai",
+    "HYD": "Hyderabad", "AMD": "Ahmedabad", "PNQ": "Pune", "GOI": "Goa", "COK": "Kochi",
+    "TRV": "Thiruvananthapuram", "GAU": "Guwahati", "JAI": "Jaipur", "LKO": "Lucknow",
+    "PAT": "Patna", "IXR": "Ranchi", "BBI": "Bhubaneswar", "IXB": "Bagdogra", "VNS": "Varanasi",
+    "IXC": "Chandigarh", "SXR": "Srinagar", "IXZ": "Port Blair", "VGA": "Vijayawada",
+    "IXE": "Mangalore", "IXM": "Madurai", "IXU": "Aurangabad", "NAG": "Nagpur",
+    "IDR": "Indore", "RPR": "Raipur", "IMF": "Imphal", "DIB": "Dibrugarh", "JRH": "Jorhat",
+    
+    # International - Asia
+    "SIN": "Singapore", "BKK": "Bangkok", "DMK": "Bangkok Don Mueang", "HKG": "Hong Kong",
+    "KUL": "Kuala Lumpur", "MNL": "Manila", "SGN": "Ho Chi Minh City", "HAN": "Hanoi",
+    "ICN": "Seoul Incheon", "NRT": "Tokyo Narita", "HND": "Tokyo Haneda", "KIX": "Osaka",
+    "PEK": "Beijing", "PVG": "Shanghai", "CAN": "Guangzhou", "TPE": "Taipei",
+    "CMB": "Colombo", "DAC": "Dhaka", "KTM": "Kathmandu", "MLE": "Male",
+    
+    # Middle East
+    "DXB": "Dubai", "DOH": "Doha", "AUH": "Abu Dhabi", "BAH": "Bahrain", "KWI": "Kuwait",
+    "MCT": "Muscat", "RUH": "Riyadh", "JED": "Jeddah", "TLV": "Tel Aviv",
+    
+    # Europe  
+    "LHR": "London Heathrow", "LGW": "London Gatwick", "CDG": "Paris", "ORY": "Paris Orly",
+    "FRA": "Frankfurt", "AMS": "Amsterdam", "FCO": "Rome", "MXP": "Milan", "MAD": "Madrid",
+    "BCN": "Barcelona", "MUC": "Munich", "ZRH": "Zurich", "VIE": "Vienna", "BRU": "Brussels",
+    "CPH": "Copenhagen", "OSL": "Oslo", "ARN": "Stockholm", "HEL": "Helsinki",
+    "DUB": "Dublin", "ATH": "Athens", "IST": "Istanbul", "LED": "St Petersburg", "SVO": "Moscow",
+    
+    # Americas
+    "JFK": "New York JFK", "EWR": "Newark", "LAX": "Los Angeles", "SFO": "San Francisco",
+    "ORD": "Chicago", "DFW": "Dallas", "MIA": "Miami", "ATL": "Atlanta", "IAD": "Washington",
+    "BOS": "Boston", "SEA": "Seattle", "DEN": "Denver", "YYZ": "Toronto", "YVR": "Vancouver",
+    "MEX": "Mexico City", "GRU": "Sao Paulo", "EZE": "Buenos Aires",
+    
+    # Oceania
+    "SYD": "Sydney", "MEL": "Melbourne", "BNE": "Brisbane", "PER": "Perth", "AKL": "Auckland",
+    
+    # Africa
+    "JNB": "Johannesburg", "CPT": "Cape Town", "NBO": "Nairobi", "ADD": "Addis Ababa",
+    "CAI": "Cairo", "CMN": "Casablanca", "LOS": "Lagos"
+}
+
+# Timezone offsets from UTC (in hours)
+AIRPORT_TIMEZONES = {
+    # India (UTC+5:30)
+    "CCU": 5.5, "DEL": 5.5, "BOM": 5.5, "BLR": 5.5, "MAA": 5.5, "HYD": 5.5,
+    "AMD": 5.5, "PNQ": 5.5, "GOI": 5.5, "COK": 5.5, "TRV": 5.5, "GAU": 5.5,
+    "JAI": 5.5, "LKO": 5.5, "PAT": 5.5, "IXR": 5.5, "BBI": 5.5, "IXB": 5.5,
+    "VNS": 5.5, "IXC": 5.5, "SXR": 5.5, "IXZ": 5.5, "VGA": 5.5, "IXE": 5.5,
+    "IXM": 5.5, "IXU": 5.5, "NAG": 5.5, "IDR": 5.5, "RPR": 5.5, "IMF": 5.5,
+    "DIB": 5.5, "JRH": 5.5,
+    
+    # Asia
+    "SIN": 8, "BKK": 7, "DMK": 7, "HKG": 8, "KUL": 8, "MNL": 8, "SGN": 7, "HAN": 7,
+    "ICN": 9, "NRT": 9, "HND": 9, "KIX": 9, "PEK": 8, "PVG": 8, "CAN": 8, "TPE": 8,
+    "CMB": 5.5, "DAC": 6, "KTM": 5.75, "MLE": 5,
+    
+    # Middle East
+    "DXB": 4, "DOH": 3, "AUH": 4, "BAH": 3, "KWI": 3, "MCT": 4, "RUH": 3, "JED": 3, "TLV": 2,
+    
+    # Europe
+    "LHR": 0, "LGW": 0, "CDG": 1, "ORY": 1, "FRA": 1, "AMS": 1, "FCO": 1, "MXP": 1,
+    "MAD": 1, "BCN": 1, "MUC": 1, "ZRH": 1, "VIE": 1, "BRU": 1, "CPH": 1, "OSL": 1,
+    "ARN": 1, "HEL": 2, "DUB": 0, "ATH": 2, "IST": 3, "LED": 3, "SVO": 3,
+    
+    # Americas
+    "JFK": -5, "EWR": -5, "LAX": -8, "SFO": -8, "ORD": -6, "DFW": -6, "MIA": -5,
+    "ATL": -5, "IAD": -5, "BOS": -5, "SEA": -8, "DEN": -7, "YYZ": -5, "YVR": -8,
+    "MEX": -6, "GRU": -3, "EZE": -3,
+    
+    # Oceania
+    "SYD": 10, "MEL": 10, "BNE": 10, "PER": 8, "AKL": 12,
+    
+    # Africa
+    "JNB": 2, "CPT": 2, "NBO": 3, "ADD": 3, "CAI": 2, "CMN": 0, "LOS": 1
+}
+
+AIRLINE_CODES = {
+    # Indian Airlines
+    "6E": "IndiGo", "AI": "Air India", "QP": "Akasa Air", "SG": "SpiceJet",
+    "UK": "Vistara", "G8": "GoAir", "I5": "AirAsia India", "IX": "Air India Express",
+    
+    # AirAsia Group
+    "AK": "AirAsia", "FD": "Thai AirAsia", "QZ": "Indonesia AirAsia", "Z2": "AirAsia Philippines",
+    "D7": "AirAsia X",
+    
+    # Middle East
+    "QR": "Qatar Airways", "EK": "Emirates", "EY": "Etihad Airways", "WY": "Oman Air",
+    "GF": "Gulf Air", "SV": "Saudia", "FZ": "flydubai", "G9": "Air Arabia",
+    
+    # Asia Pacific
+    "SQ": "Singapore Airlines", "TG": "Thai Airways", "CX": "Cathay Pacific", 
+    "MH": "Malaysia Airlines", "TR": "Scoot", "3K": "Jetstar Asia", "VN": "Vietnam Airlines",
+    "VJ": "VietJet Air", "PG": "Bangkok Airways",
+    
+    # Europe
+    "BA": "British Airways", "LH": "Lufthansa", "AF": "Air France", "KL": "KLM",
+    "LX": "Swiss", "OS": "Austrian Airlines", "SK": "SAS", "AY": "Finnair",
+    
+    # Americas  
+    "UA": "United Airlines", "AA": "American Airlines", "DL": "Delta", "B6": "JetBlue",
+    "AC": "Air Canada", "WN": "Southwest",
+    
+    # Oceania
+    "QF": "Qantas", "NZ": "Air New Zealand", "VA": "Virgin Australia",
+    
+    # Africa
+    "SA": "South African Airways", "ET": "Ethiopian Airlines", "MS": "EgyptAir",
+    
+    # East Asia
+    "TK": "Turkish Airlines", "JL": "Japan Airlines", "NH": "ANA", "OZ": "Asiana",
+    "KE": "Korean Air", "CI": "China Airlines", "BR": "EVA Air", "CA": "Air China",
+    "MU": "China Eastern", "CZ": "China Southern", "HX": "Hong Kong Airlines"
+}
 
 # ==================== PROMPT ====================
 
 SYSTEM_PROMPT = """
-You extract structured flight information from raw flight search text.
+You are an expert flight data extraction system. Extract structured flight information with ABSOLUTE ACCURACY.
+The user wants to use you as the primary source for ALL calculations including timezones and durations.
 
-GOALS:
-- Identify airline name and flight number if present
-- Identify departure and arrival cities and airport codes
-- Expand airport codes or abbreviations (e.g. kol → Kolkata, CCU → Kolkata, SIN → Singapore)
-- Extract times, duration, stops, baggage, refundability, and base fare (saver fare)
-
-RULES:
-- Output ONLY valid JSON (no markdown, no explanation)
-- Use 24-hour time format (HH:MM)
-- **Date format MUST be "dd MMM yy" (e.g. 30 Jan 26, 05 Feb 24). If year is missing, assume current/next year.**
-- Airport codes must be uppercase (CCU, SIN, DEL)
-- If airline code is present (e.g. SQ, 6E), infer airline name
-- If a field cannot be determined confidently, return "N/A"
-- Extract base fare as a NUMBER only (₹15,236 → 15236)
+CRITICAL RULES:
+1. Output ONLY valid JSON (no markdown, no extra text).
+2. Use 24-hour time format (HH:MM). Convert any AM/PM correctly.
+3. Date format MUST be "dd MMM yy" (e.g. "30 Jan 26"). Default year: 2026.
+4. Airport codes MUST be 3-letter uppercase (e.g., CCU, LHR, SIN).
+5. Cities MUST be full names (e.g., "Kolkata" not "kol").
+6. Fares: Extract as NUMBERS only. Remove currency symbols and commas.
+7. TIMEZONE & DURATION (CRITICAL):
+   - Provide the UTC offset for BOTH departure and arrival airports (e.g., "+05:30", "-05:00", "+00:00").
+   - Calculate the ACTUAL flight duration accurately using UTC times.
+   - Set 'arrival_next_day' to true if the flight crosses midnight in its LOCAL context or due to duration.
+   - 'days_offset' should be 0 (same day), 1 (next day), etc.
+8. If multiple fare types like Saver, Flexi, Premium, Corporate are mentioned, map them to 'fares' object.
 
 OUTPUT JSON FORMAT:
 {
-  "airline": "string",
-  "flight_number": "string",
-  "departure_city": "string",
-  "departure_airport": "string",
-  "departure_date": "string",
-  "departure_time": "string",
-  "arrival_city": "string",
-  "arrival_airport": "string",
-  "arrival_time": "string",
-  "duration": "string",
-  "stops": "string",
-  "baggage": "string",
-  "refundability": "string",
-  "saver_fare": number | null,
-  "segments": [
-    {
-      "airline": "string",
-      "flight_number": "string",
-      "departure_airport": "string",
-      "departure_time": "string",
-      "arrival_airport": "string",
-      "arrival_time": "string"
-    }
-  ]
+  "airline": "Full Airline Name",
+  "flight_number": "XX 1234",
+  "departure_city": "Full City Name",
+  "departure_airport": "XXX",
+  "departure_date": "dd MMM yy",
+  "departure_time": "HH:MM",
+  "departure_utc": "+HH:MM",
+  "arrival_city": "Full City Name", 
+  "arrival_airport": "XXX",
+  "arrival_time": "HH:MM",
+  "arrival_utc": "+HH:MM",
+  "arrival_next_day": false,
+  "days_offset": 0,
+  "duration": "Xh Ym",
+  "stops": "Non Stop / 1 Stop via XXX",
+  "baggage": "XXkg",
+  "refundability": "Refundable / Non-Refundable",
+  "saver_fare": 12345,
+  "fares": {
+    "saver": 12345,
+    "flexi": null,
+    "corporate": null
+  },
+  "segments": []
 }
+
+For Multi-Segment Flights, include the 'segments' array where each segment has the same detailed time/utc info.
 """
 
 # ==================== FALLBACK STRUCTURE ====================
@@ -80,12 +200,654 @@ def empty_flight():
         "arrival_city": "N/A",
         "arrival_airport": "N/A",
         "arrival_time": "N/A",
+        "arrival_next_day": False,
+        "days_offset": 0,
         "duration": "N/A",
         "stops": "N/A",
         "baggage": "N/A",
         "refundability": "N/A",
-        "saver_fare": None
+        "saver_fare": None,
+        "segments": [],
+        "parse_errors": []
     }
+
+# ==================== VALIDATION ====================
+
+def validate_flight(flight: dict) -> tuple:
+    """
+    Validate extracted flight data. Returns (is_valid, errors_list).
+    Essential fields that must be present: route (from/to), times.
+    Only show errors for truly missing critical data.
+    """
+    errors = []
+    
+    # Check essential fields (removed departure_date as it's handled separately)
+    essential_fields = {
+        'departure_airport': 'Departure airport/city',
+        'arrival_airport': 'Arrival airport/city', 
+        'departure_time': 'Departure time',
+        'arrival_time': 'Arrival time'
+    }
+    
+    for field, label in essential_fields.items():
+        value = flight.get(field)
+        # More lenient check - only error if truly missing
+        if value is None or value == '' or str(value).upper() == 'N/A':
+            errors.append(f"{label} could not be extracted")
+    
+    # Validate time format only if time is present
+    for time_field in ['departure_time', 'arrival_time']:
+        value = flight.get(time_field)
+        if value and value not in ['N/A', '', None]:
+            # Accept various time formats
+            if not re.match(r'^\d{1,2}[:\.]\d{2}(\s*(AM|PM))?$', str(value), re.IGNORECASE):
+                # Don't add error, just skip - time might be in different format
+                pass
+    
+    # Don't validate airport format strictly - cities are also acceptable
+    # Segment validation only for connecting flights with actual segment data
+    segments = flight.get('segments', [])
+    if segments and len(segments) > 1:  # Only check if multiple segments (connecting flight)
+        for i, seg in enumerate(segments):
+            # Only flag as error if segment exists but is empty
+            if seg:  # If segment dict exists
+                has_airports = seg.get('departure_airport') or seg.get('arrival_airport')
+                has_times = seg.get('departure_time') or seg.get('arrival_time')
+                
+                # Only error if segment has some data but is incomplete
+                if has_airports and not (seg.get('departure_airport') and seg.get('arrival_airport')):
+                    errors.append(f"Segment {i+1} has incomplete airport info")
+                if has_times and not (seg.get('departure_time') and seg.get('arrival_time')):
+                    errors.append(f"Segment {i+1} has incomplete time info")
+    
+    is_valid = len(errors) == 0
+    return is_valid, errors
+
+
+def calculate_segment_duration(dep_time: str, arr_time: str, 
+                                dep_airport: str = None, arr_airport: str = None,
+                                days_offset: int = 0) -> str:
+    """
+    Calculate duration for a single flight segment with timezone awareness.
+    """
+    try:
+        dep = datetime.strptime(dep_time, "%H:%M")
+        arr = datetime.strptime(arr_time, "%H:%M")
+        
+        # Add days offset if provided
+        if days_offset > 0:
+            arr = arr + timedelta(days=days_offset)
+        elif arr < dep:
+            # Arrival is next day
+            arr = arr + timedelta(days=1)
+        
+        # Get timezone offsets
+        dep_tz = AIRPORT_TIMEZONES.get(dep_airport, 5.5) if dep_airport else 5.5
+        arr_tz = AIRPORT_TIMEZONES.get(arr_airport, 5.5) if arr_airport else 5.5
+        
+        # Calculate apparent time difference in minutes
+        diff = arr - dep
+        apparent_minutes = int(diff.total_seconds() / 60)
+        
+        # Adjust for timezone difference (actual flight time)
+        tz_diff_minutes = int((arr_tz - dep_tz) * 60)
+        actual_minutes = apparent_minutes - tz_diff_minutes
+        
+        if actual_minutes < 0:
+            actual_minutes += 24 * 60
+        
+        hours = actual_minutes // 60
+        minutes = actual_minutes % 60
+        
+        return f"{hours}h {minutes}m"
+    except Exception as e:
+        print(f"[DEBUG] Segment duration calc error: {e}")
+        return "N/A"
+
+
+def calculate_layover_duration(arr_time: str, dep_time: str,
+                                arr_airport: str = None, dep_airport: str = None,
+                                days_between: int = 0) -> str:
+    """
+    Calculate layover duration between arrival of one segment and departure of next.
+    For layovers at the same airport, timezone is the same so no adjustment needed.
+    """
+    try:
+        arr = datetime.strptime(arr_time, "%H:%M")
+        dep = datetime.strptime(dep_time, "%H:%M")
+        
+        # Add days if layover spans midnight or multiple days
+        if days_between > 0:
+            dep = dep + timedelta(days=days_between)
+        elif dep < arr:
+            # Next segment departs next day
+            dep = dep + timedelta(days=1)
+        
+        diff = dep - arr
+        total_minutes = int(diff.total_seconds() / 60)
+        
+        if total_minutes < 0:
+            total_minutes += 24 * 60
+        
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+        
+        return f"{hours}h {minutes}m"
+    except Exception as e:
+        print(f"[DEBUG] Layover duration calc error: {e}")
+        return "N/A"
+
+
+def calculate_total_journey_duration(segments: list, first_dep_airport: str = None,
+                                      last_arr_airport: str = None) -> str:
+    """
+    Calculate total journey duration from first departure to last arrival,
+    accounting for timezone changes.
+    """
+    if not segments or len(segments) == 0:
+        return "N/A"
+    
+    try:
+        first_seg = segments[0]
+        last_seg = segments[-1]
+        
+        first_dep_time = first_seg.get('departure_time')
+        last_arr_time = last_seg.get('arrival_time')
+        
+        if not first_dep_time or not last_arr_time:
+            return "N/A"
+        
+        # Get airports
+        dep_airport = first_dep_airport or first_seg.get('departure_airport')
+        arr_airport = last_arr_airport or last_seg.get('arrival_airport')
+        
+        # Calculate using timezone-aware duration
+        return calculate_duration_with_timezone(
+            first_dep_time, last_arr_time,
+            dep_airport, arr_airport,
+            next_day=False  # We'll handle days offset separately
+        )
+    except Exception as e:
+        print(f"[DEBUG] Total journey duration calc error: {e}")
+        return "N/A"
+
+
+def calculate_days_offset(dep_time: str, arr_time: str, duration_str: str = None,
+                          dep_airport: str = None, arr_airport: str = None) -> int:
+    """
+    Calculate how many days difference between departure and arrival.
+    Returns 0 for same day, 1 for next day, 2 for two days later, etc.
+    """
+    try:
+        dep = datetime.strptime(dep_time, "%H:%M")
+        arr = datetime.strptime(arr_time, "%H:%M")
+        
+        # Get timezone offsets
+        dep_tz = AIRPORT_TIMEZONES.get(dep_airport, 5.5) if dep_airport else 5.5
+        arr_tz = AIRPORT_TIMEZONES.get(arr_airport, 5.5) if arr_airport else 5.5
+        tz_diff_hours = arr_tz - dep_tz
+        
+        # Calculate apparent time difference in hours
+        dep_total_hours = dep.hour + dep.minute / 60
+        arr_total_hours = arr.hour + arr.minute / 60
+        apparent_diff_hours = arr_total_hours - dep_total_hours
+        
+        # Calculate actual flight time (accounting for timezone)
+        # actual_flight_time = apparent_diff - tz_gain
+        # If arr < dep (clock wise), apparent_diff is negative
+        
+        # For overnight flights: departure late night (e.g., 23:30) arrival early morning (e.g., 06:10)
+        # apparent_diff = 6.17 - 23.5 = -17.33 hours (negative means crosses midnight)
+        
+        # For same-day international flights with tz gain:
+        # DEL 10:00 -> SIN 17:30: apparent = 7.5h, tz_gain = 2.5h, so actual = 5h, same day
+        
+        if apparent_diff_hours < 0:
+            # Arrival time is "earlier" than departure on the clock
+            # This always means at least next day
+            return 1
+        
+        # Try to parse duration if provided for more accuracy
+        if duration_str and duration_str != 'N/A':
+            dur_match = re.match(r'(\d+)h\s*(\d+)?m?', duration_str)
+            if dur_match:
+                duration_hours = int(dur_match.group(1))
+                if dur_match.group(2):
+                    duration_hours += int(dur_match.group(2)) / 60
+                
+                # Calculate what departure should reach based on duration + tz
+                # If actual flight is 4h, and tz gain is 2.5h, apparent = 6.5h
+                expected_apparent = duration_hours + tz_diff_hours
+                
+                # If expected apparent > 24 or spans midnight, it's next day
+                if expected_apparent > 24:
+                    return 1
+                elif duration_hours > 20:
+                    return 1  # Very long flight, definitely next day
+        
+        return 0
+    except Exception as e:
+        print(f"[DEBUG] days_offset calc error: {e}")
+        return 0
+
+# ==================== PRE-PROCESSING ====================
+
+def preprocess_text(raw_text: str) -> str:
+    """
+    Clean and normalize the input text before sending to LLM.
+    """
+    text = raw_text.strip()
+    
+    # Normalize common variations
+    text = re.sub(r'\s+', ' ', text)  # Multiple spaces to single
+    text = re.sub(r'(\d+)\s*hrs?\s*(\d+)\s*min', r'\1h \2m', text, flags=re.IGNORECASE)
+    text = re.sub(r'(\d+)\s*hours?\s*(\d+)\s*minutes?', r'\1h \2m', text, flags=re.IGNORECASE)
+    text = re.sub(r'(\d+):(\d+)\s*(hrs?|hours?)', r'\1h \2m', text, flags=re.IGNORECASE)
+    
+    # Normalize fare formats
+    text = re.sub(r'Rs\.?\s*', '₹', text, flags=re.IGNORECASE)
+    text = re.sub(r'INR\s*', '₹', text, flags=re.IGNORECASE)
+    
+    # Expand common city abbreviations in text
+    city_abbrevs = {
+        r'\bkol\b': 'Kolkata', r'\bcal\b': 'Kolkata', r'\bdel\b': 'Delhi',
+        r'\bbom\b': 'Mumbai', r'\bmum\b': 'Mumbai', r'\bblr\b': 'Bengaluru',
+        r'\bban\b': 'Bengaluru', r'\bmad\b': 'Chennai', r'\bche\b': 'Chennai',
+        r'\bhyd\b': 'Hyderabad', r'\bsin\b': 'Singapore', r'\bdxb\b': 'Dubai',
+        r'\bgoa\b': 'Goa', r'\bpat\b': 'Patna', r'\bgau\b': 'Guwahati'
+    }
+    for abbrev, full in city_abbrevs.items():
+        text = re.sub(abbrev, full, text, flags=re.IGNORECASE)
+    
+    return text
+
+
+def extract_info_regex(text: str) -> dict:
+    """
+    Pre-extract information using regex patterns as hints for the LLM.
+    """
+    hints = {}
+    
+    # Extract flight numbers (e.g., 6E 2341, AI 101, SQ 423)
+    flight_match = re.search(r'\b([A-Z]{2}|[A-Z]\d|\d[A-Z])\s*[-]?\s*(\d{3,4})\b', text.upper())
+    if flight_match:
+        airline_code = flight_match.group(1)
+        flight_num = flight_match.group(2)
+        hints['flight_number'] = f"{airline_code} {flight_num}"
+        if airline_code in AIRLINE_CODES:
+            hints['airline'] = AIRLINE_CODES[airline_code]
+    
+    # Extract airport codes
+    airport_matches = re.findall(r'\b([A-Z]{3})\b', text.upper())
+    valid_airports = [a for a in airport_matches if a in AIRPORT_CODES]
+    if len(valid_airports) >= 2:
+        hints['departure_airport'] = valid_airports[0]
+        hints['departure_city'] = AIRPORT_CODES.get(valid_airports[0], 'N/A')
+        hints['arrival_airport'] = valid_airports[-1]
+        hints['arrival_city'] = AIRPORT_CODES.get(valid_airports[-1], 'N/A')
+    
+    # Extract times (HH:MM or H:MM AM/PM)
+    time_matches = re.findall(r'\b(\d{1,2})[:\.](\d{2})\s*(am|pm)?\b', text, re.IGNORECASE)
+    times_24h = []
+    for h, m, ampm in time_matches:
+        hour = int(h)
+        if ampm:
+            if ampm.lower() == 'pm' and hour != 12:
+                hour += 12
+            elif ampm.lower() == 'am' and hour == 12:
+                hour = 0
+        if 0 <= hour <= 23 and 0 <= int(m) <= 59:
+            times_24h.append(f"{hour:02d}:{m}")
+    
+    if len(times_24h) >= 2:
+        hints['departure_time'] = times_24h[0]
+        hints['arrival_time'] = times_24h[-1]
+    
+    # Extract duration patterns
+    dur_match = re.search(r'(\d{1,2})\s*h(?:rs?)?\s*(\d{1,2})?\s*m(?:ins?)?', text, re.IGNORECASE)
+    if dur_match:
+        hours = dur_match.group(1)
+        mins = dur_match.group(2) or '0'
+        hints['duration'] = f"{hours}h {mins}m"
+    
+    # Extract fare
+    fare_match = re.search(r'[₹$]\s*([\d,]+)', text)
+    if fare_match:
+        fare_str = fare_match.group(1).replace(',', '')
+        try:
+            hints['saver_fare'] = int(fare_str)
+        except:
+            pass
+    
+    # Extract baggage
+    bag_match = re.search(r'(\d+)\s*(kg|pc|piece)', text, re.IGNORECASE)
+    if bag_match:
+        hints['baggage'] = f"{bag_match.group(1)}{bag_match.group(2).lower()}"
+    
+    # Check for stops
+    if re.search(r'non[\s-]*stop|direct|nonstop', text, re.IGNORECASE):
+        hints['stops'] = 'Non Stop'
+    elif re.search(r'(\d)\s*stop', text, re.IGNORECASE):
+        stop_match = re.search(r'(\d)\s*stop', text, re.IGNORECASE)
+        hints['stops'] = f"{stop_match.group(1)} Stop"
+    
+    return hints
+
+# ==================== DURATION CALCULATION ====================
+
+def calculate_duration_with_timezone(dep_time: str, arr_time: str, 
+                                      dep_airport: str = None, arr_airport: str = None,
+                                      next_day: bool = False) -> str:
+    """
+    Calculate flight duration accounting for timezone differences.
+    """
+    try:
+        dep = datetime.strptime(dep_time, "%H:%M")
+        arr = datetime.strptime(arr_time, "%H:%M")
+        
+        # Get timezone offsets
+        dep_tz = AIRPORT_TIMEZONES.get(dep_airport, 5.5) if dep_airport else 5.5
+        arr_tz = AIRPORT_TIMEZONES.get(arr_airport, 5.5) if arr_airport else 5.5
+        
+        # Calculate timezone difference in minutes
+        tz_diff_minutes = int((arr_tz - dep_tz) * 60)
+        
+        # Calculate base time difference
+        if next_day or arr < dep:
+            arr = arr + timedelta(days=1)
+        
+        diff = arr - dep
+        total_minutes = int(diff.total_seconds() / 60)
+        
+        # Adjust for timezone (actual flight time = apparent time - tz gain)
+        actual_minutes = total_minutes - tz_diff_minutes
+        
+        if actual_minutes < 0:
+            actual_minutes += 24 * 60  # Add a day if negative
+        
+        hours = actual_minutes // 60
+        minutes = actual_minutes % 60
+        
+        return f"{hours}h {minutes}m"
+    except Exception as e:
+        print(f"[DEBUG] Duration calc error: {e}")
+        return "N/A"
+
+
+def calculate_duration_simple(dep: str, arr: str, next_day: bool = False) -> str:
+    """
+    Simple duration calculation without timezone adjustment.
+    """
+    try:
+        dep_time = datetime.strptime(dep, "%H:%M")
+        arr_time = datetime.strptime(arr, "%H:%M")
+
+        if next_day or arr_time < dep_time:
+            arr_time = arr_time + timedelta(days=1)
+
+        diff = arr_time - dep_time
+        hours, remainder = divmod(int(diff.total_seconds()), 3600)
+        minutes = remainder // 60
+
+        return f"{hours}h {minutes}m"
+    except:
+        return "N/A"
+
+def parse_duration_to_minutes(duration_str: str) -> int:
+    """Helper to convert 'Xh Ym' to total minutes."""
+    if not duration_str or duration_str == 'N/A':
+        return 0
+    try:
+        match = re.match(r'(\d+)h\s*(\d+)?m?', str(duration_str))
+        if match:
+            h = int(match.group(1))
+            m = int(match.group(2)) if match.group(2) else 0
+            return h * 60 + m
+    except:
+        pass
+    return 0
+
+def format_minutes_to_duration(total_minutes: int) -> str:
+    """Helper to convert minutes to 'Xh Ym'."""
+    if total_minutes <= 0: return "N/A"
+    h = total_minutes // 60
+    m = total_minutes % 60
+    return f"{h}h {m}m"
+
+# ==================== POST-PROCESSING ====================
+
+def post_process_flight(flight: dict, hints: dict = None) -> dict:
+    """
+    Clean and validate extracted flight data.
+    """
+    hints = hints or {}
+    
+    # Apply regex hints as fallbacks
+    for key in ['airline', 'flight_number', 'departure_airport', 'departure_city',
+                'arrival_airport', 'arrival_city', 'departure_time', 'arrival_time',
+                'duration', 'stops', 'baggage', 'saver_fare']:
+        if flight.get(key) in [None, '', 'N/A', 'null'] and key in hints:
+            flight[key] = hints[key]
+    
+    # Normalize airport codes to uppercase
+    for key in ['departure_airport', 'arrival_airport']:
+        if flight.get(key) and flight[key] != 'N/A':
+            flight[key] = flight[key].upper().strip()
+    
+    # Expand airport codes to city names if missing
+    if flight.get('departure_airport') and flight['departure_airport'] in AIRPORT_CODES:
+        if flight.get('departure_city') in [None, '', 'N/A']:
+            flight['departure_city'] = AIRPORT_CODES[flight['departure_airport']]
+    
+    if flight.get('arrival_airport') and flight['arrival_airport'] in AIRPORT_CODES:
+        if flight.get('arrival_city') in [None, '', 'N/A']:
+            flight['arrival_city'] = AIRPORT_CODES[flight['arrival_airport']]
+    
+    # Normalize flight number format
+    if flight.get('flight_number') and flight['flight_number'] != 'N/A':
+        fn = flight['flight_number'].upper().replace('-', ' ').replace('  ', ' ')
+        # Ensure space between code and number
+        fn = re.sub(r'^([A-Z]{2})(\d)', r'\1 \2', fn)
+        flight['flight_number'] = fn.strip()
+        
+        # Extract airline from flight number if missing
+        if flight.get('airline') in [None, '', 'N/A']:
+            code_match = re.match(r'([A-Z]{2})', fn)
+            if code_match and code_match.group(1) in AIRLINE_CODES:
+                flight['airline'] = AIRLINE_CODES[code_match.group(1)]
+    
+    # Normalize stops format
+    if flight.get('stops'):
+        stops = flight['stops'].lower()
+        if 'non' in stops or 'direct' in stops or stops == '0':
+            flight['stops'] = 'Non Stop'
+        elif '1' in stops:
+            flight['stops'] = '1 Stop' if 'via' not in stops else flight['stops']
+        elif '2' in stops:
+            flight['stops'] = '2 Stops' if 'via' not in stops else flight['stops']
+    
+    # Calculate/recalculate duration - TRUST LLM IF PROVIDED AND REASONABLE
+    dep_time = flight.get('departure_time')
+    arr_time = flight.get('arrival_time')
+    dep_airport = flight.get('departure_airport')
+    arr_airport = flight.get('arrival_airport')
+    next_day = flight.get('arrival_next_day', False)
+    llm_duration = flight.get('duration')
+    
+    # If LLM provided a duration and it's not the default N/A, we trust it as requested by user
+    if llm_duration and llm_duration not in [None, '', 'N/A']:
+        # Basic sanity check (should contain 'h')
+        if 'h' in str(llm_duration):
+             # LLM provided a formatted duration, we keep it
+             pass
+        else:
+            # Maybe it's just minutes?
+            try:
+                mins = int(llm_duration)
+                flight['duration'] = format_minutes_to_duration(mins)
+            except:
+                if dep_time and arr_time and dep_time != 'N/A' and arr_time != 'N/A':
+                    flight['duration'] = calculate_duration_with_timezone(
+                        dep_time, arr_time, dep_airport, arr_airport, next_day
+                    )
+    elif dep_time and arr_time and dep_time != 'N/A' and arr_time != 'N/A':
+        # Check if international (different timezone regions)
+        dep_tz = AIRPORT_TIMEZONES.get(dep_airport, 5.5)
+        arr_tz = AIRPORT_TIMEZONES.get(arr_airport, 5.5)
+        
+        if abs(dep_tz - arr_tz) > 0.5:  # International flight
+            flight['duration'] = calculate_duration_with_timezone(
+                dep_time, arr_time, dep_airport, arr_airport, next_day
+            )
+        else:
+            flight['duration'] = calculate_duration_simple(dep_time, arr_time, next_day)
+    
+    # Synchronize fares object and saver_fare
+    if 'fares' not in flight or not isinstance(flight['fares'], dict):
+        flight['fares'] = {}
+    
+    # Clean up fares object (ensure numeric values)
+    clean_fares = {}
+    if flight['fares']:
+        for fare_type, value in flight['fares'].items():
+            if value is not None:
+                try:
+                    clean_fares[fare_type] = int(re.sub(r'[^\d]', '', str(value)))
+                except:
+                    pass
+    
+    flight['fares'] = clean_fares
+
+    if flight.get('saver_fare'):
+        # Normalize saver_fare to int
+        try:
+            val = int(re.sub(r'[^\d]', '', str(flight['saver_fare'])))
+            flight['saver_fare'] = val
+            # If 'saver' not in fares object, add it
+            if 'saver' not in flight['fares'] or flight['fares']['saver'] is None:
+                flight['fares']['saver'] = val
+        except:
+             flight['saver_fare'] = None
+    elif flight['fares'].get('saver'):
+        flight['saver_fare'] = flight['fares']['saver']
+    elif flight['fares']:
+        # Use the first available fare as saver_fare
+        first_type = list(flight['fares'].keys())[0]
+        flight['saver_fare'] = flight['fares'][first_type]
+    
+    # Initialize edit fields if missing
+    if 'markup' not in flight: flight['markup'] = 0
+    if 'service_charge' not in flight: flight['service_charge'] = 0
+    if 'is_editable' not in flight: flight['is_editable'] = True
+    
+    # Post-process each segment with timezone-aware duration calculation
+    segments = flight.get('segments', [])
+    if segments and len(segments) > 0:
+        layover_cities = []
+        
+        for i, seg in enumerate(segments):
+            # Ensure segment has required fields
+            seg_dep = seg.get('departure_airport', '').upper()
+            seg_arr = seg.get('arrival_airport', '').upper()
+            seg_dep_time = seg.get('departure_time')
+            seg_arr_time = seg.get('arrival_time')
+            
+            # TRUST LLM FOR SEGMENT DURATION AND LAYOVER
+            seg_dur = seg.get('duration')
+            seg_lay = seg.get('layover_duration')
+
+            if not seg_dur or seg_dur == 'N/A':
+                if seg_dep_time and seg_arr_time:
+                    calculated_dur = calculate_segment_duration(seg_dep_time, seg_arr_time, seg_dep, seg_arr)
+                    seg['duration'] = calculated_dur
+            
+            # Calculate days offset for this segment if missing
+            if 'days_offset' not in seg or seg['days_offset'] == 'N/A':
+                if seg_dep_time and seg_arr_time:
+                    seg['days_offset'] = calculate_days_offset(seg_dep_time, seg_arr_time, seg.get('duration'), seg_dep, seg_arr)
+            
+            # Expand city names from airport codes
+            if seg_dep in AIRPORT_CODES and not seg.get('departure_city'):
+                seg['departure_city'] = AIRPORT_CODES.get(seg_dep, seg_dep)
+            if seg_arr in AIRPORT_CODES and not seg.get('arrival_city'):
+                seg['arrival_city'] = AIRPORT_CODES.get(seg_arr, seg_arr)
+            
+            # Collect layover cities (intermediate airports)
+            if i > 0:
+                layover_cities.append(seg_dep)
+            
+            # Use LLM layover or calculate if missing
+            if i > 0 and (not seg_lay or seg_lay == 'N/A'):
+                if segments[i-1].get('arrival_time'):
+                    prev_arr_time = segments[i-1].get('arrival_time')
+                    layover_airport = seg_dep
+                    layover_dur = calculate_layover_duration(prev_arr_time, seg_dep_time, layover_airport)
+                    seg['layover_duration'] = layover_dur
+        
+        # Update stops field based on segments
+        num_stops = len(segments) - 1
+        if num_stops > 0 and layover_cities:
+            via_cities = ', '.join(layover_cities[:2])  # Max 2 cities in display
+            flight['stops'] = f"{num_stops} Stop{'s' if num_stops > 1 else ''} via {via_cities}"
+        
+        # Calculate total journey duration for multi-segment flights
+        total_minutes = 0
+        for seg in segments:
+            seg_dur = seg.get('duration', '')
+            if seg_dur:
+                dur_match = re.match(r'(\d+)h\s*(\d+)?m?', seg_dur)
+                if dur_match:
+                    total_minutes += int(dur_match.group(1)) * 60
+                    if dur_match.group(2):
+                        total_minutes += int(dur_match.group(2))
+            
+            # Add layover time
+            layover = seg.get('layover_duration', '')
+            if layover:
+                lay_match = re.match(r'(\d+)h\s*(\d+)?m?', layover)
+                if lay_match:
+                    total_minutes += int(lay_match.group(1)) * 60
+                    if lay_match.group(2):
+                        total_minutes += int(lay_match.group(2))
+        
+        if total_minutes > 0:
+            flight['duration'] = format_minutes_to_duration(total_minutes)
+            flight['total_journey_duration'] = flight['duration']
+        elif llm_duration and llm_duration != 'N/A':
+            # Fallback to LLM top-level duration if segments duration sum is 0
+            flight['total_journey_duration'] = llm_duration
+    
+    # Ensure arrival_next_day and days_offset are consistent
+    if segments and len(segments) > 1:
+        # Multi-segment: sum up all segment day offsets
+        total_days = sum(s.get('days_offset', 0) for s in segments)
+        flight['days_offset'] = total_days
+        flight['arrival_next_day'] = total_days > 0
+    else:
+        # Single segment or direct flight
+        dep_time = flight.get('departure_time')
+        arr_time = flight.get('arrival_time')
+        duration = flight.get('duration')
+        dep_airport = flight.get('departure_airport')
+        arr_airport = flight.get('arrival_airport')
+        
+        if dep_time and arr_time and dep_time != 'N/A' and arr_time != 'N/A':
+            days_offset = calculate_days_offset(dep_time, arr_time, duration, dep_airport, arr_airport)
+            flight['days_offset'] = days_offset
+            flight['arrival_next_day'] = days_offset > 0
+        else:
+            # Fallback to LLM hint if calculation is not possible
+            if flight.get('arrival_next_day'):
+                flight['days_offset'] = 1
+            else:
+                flight['days_offset'] = 0
+    
+    # Validate the flight and add parse_errors if any
+    is_valid, errors = validate_flight(flight)
+    flight['parse_errors'] = errors
+    flight['is_valid'] = is_valid
+    
+    return flight
 
 # ==================== MAIN PARSER ====================
 
@@ -94,12 +856,65 @@ def extract_flight(raw_text: str, has_layover: bool = False) -> dict:
     Extract flight details using LLM-only parsing.
     Handles UI text, GDS text, airline cards, and pasted results.
     """
-
+    
+    # Pre-process text
+    processed_text = preprocess_text(raw_text)
+    
+    # Extract regex hints
+    hints = extract_info_regex(raw_text)
+    
     prompt = SYSTEM_PROMPT
     if has_layover:
-        prompt += "\n\nMODE: MULTI-SEGMENT LAYOVER\n- Treat input as a multi-leg journey.\n- Extract 'segments' list containing each flight leg.\n- Derive 'stops' (e.g. '1 Stop via DXB') from intermediate cities.\n- Main departure is first leg start; Main arrival is last leg end."
+        prompt += """
+
+MODE: MULTI-SEGMENT CONNECTING FLIGHT
+This is a connecting flight with multiple legs. Extract EACH segment separately.
+
+SEGMENT EXTRACTION RULES:
+1. Create a 'segments' array containing one object for EVERY SINGLE FLIGHT LEG.
+2. DO NOT skip any segments. If there are 3 legs, there must be 3 segment objects.
+3. Each segment MUST have:
+   - 'airline' and 'flight_number'
+   - 'departure_airport' and 'departure_city' (Full Name)
+   - 'departure_time' (24h) and 'dep_utc' (e.g., +05:30)
+   - 'arrival_airport' and 'arrival_city' (Full Name)
+   - 'arrival_time' (24h) and 'arr_utc' (e.g., +08:00)
+   - 'duration' (Xh Ym) - The actual flying time for this leg.
+   - 'layover_duration' (Xh Ym) - The wait time at the departure airport BEFORE this leg starts (leave 0 or null for the first leg).
+4. Top-level 'duration' MUST be the TOTAL JOURNEY TIME (Total time from first departure to final arrival, including all flight times and all layovers).
+5. 'arrival_next_day' and 'days_offset' must be calculated based on the GLOBAL journey start vs end.
+6. Check for AIRPORT CHANGES during layovers (e.g., arrive at HND, depart from NRT). If this happens, note it in the 'stops' description.
+7. Extract 'baggage' and 'refundability' for EVERY segment individually if the data varies between legs.
+
+SEGMENT JSON FORMAT:
+"segments": [
+  {
+    "airline": "Full Airline Name",
+    "flight_number": "XX 1234",
+    "departure_city": "Full City Name",
+    "departure_airport": "XXX",
+    "departure_time": "HH:MM",
+    "dep_utc": "+HH:MM",
+    "arrival_city": "Full City Name",
+    "arrival_airport": "XXX",
+    "arrival_time": "HH:MM",
+    "arr_utc": "+HH:MM",
+    "duration": "Xh Ym",
+    "layover_duration": "Xh Ym",
+    "baggage": "XXkg",
+    "refundability": "Refundable"
+  }
+]
+"""
+    
+    # Add hints to prompt if available
+    if hints:
+        prompt += f"\n\nREGEX HINTS (use as reference): {json.dumps(hints)}"
 
     try:
+        # Use more tokens for layover flights (multiple segments need more output)
+        token_limit = MAX_TOKENS * 2 if has_layover else MAX_TOKENS
+        
         response = requests.post(
             OPENROUTER_URL,
             headers={
@@ -110,12 +925,12 @@ def extract_flight(raw_text: str, has_layover: bool = False) -> dict:
                 "model": MODEL,
                 "messages": [
                     {"role": "system", "content": prompt},
-                    {"role": "user", "content": raw_text.strip()}
+                    {"role": "user", "content": processed_text}
                 ],
-                "max_tokens": MAX_TOKENS,
+                "max_tokens": token_limit,
                 "temperature": TEMPERATURE
             },
-            timeout=30
+            timeout=45 if has_layover else 30  # More time for complex flights
         )
 
         if response.status_code != 200:
@@ -126,6 +941,11 @@ def extract_flight(raw_text: str, has_layover: bool = False) -> dict:
         # Defensive cleanup
         if content.startswith("```"):
             content = content.replace("```json", "").replace("```", "").strip()
+        
+        # Remove any text before first { or [
+        json_start = content.find('{')
+        if json_start > 0:
+            content = content[json_start:]
 
         data = json.loads(content)
 
@@ -134,20 +954,9 @@ def extract_flight(raw_text: str, has_layover: bool = False) -> dict:
 
         # Ensure required fields
         required_fields = [
-            "airline",
-            "flight_number",
-            "departure_city",
-            "departure_airport",
-            "departure_date",
-            "departure_time",
-            "arrival_city",
-            "arrival_airport",
-            "arrival_time",
-            "duration",
-            "stops",
-            "baggage",
-            "refundability",
-            "saver_fare"
+            "airline", "flight_number", "departure_city", "departure_airport",
+            "departure_date", "departure_time", "arrival_city", "arrival_airport",
+            "arrival_time", "duration", "stops", "baggage", "refundability", "saver_fare"
         ]
 
         for field in required_fields:
@@ -158,18 +967,18 @@ def extract_flight(raw_text: str, has_layover: bool = False) -> dict:
         if "segments" not in data:
             data["segments"] = []
 
-        # Auto-calc duration if missing but times exist
-        if data["duration"] == "N/A" and data["departure_time"] != "N/A" and data["arrival_time"] != "N/A":
-            data["duration"] = calculate_duration(
-                data["departure_time"],
-                data["arrival_time"]
-            )
+        # Post-process the flight data
+        data = post_process_flight(data, hints)
 
         return data
 
     except Exception as e:
         print(f"[ERROR] Error extracting flight: {e}")
-        return empty_flight()
+        # Return with hints if available
+        fallback = empty_flight()
+        if hints:
+            fallback = post_process_flight(fallback, hints)
+        return fallback
 
 
 def extract_multiple_flights(raw_text: str, has_layover: bool = False) -> list:
@@ -179,62 +988,67 @@ def extract_multiple_flights(raw_text: str, has_layover: bool = False) -> list:
     Returns a list of flight dictionaries.
     """
     
+    # Pre-process text
+    processed_text = preprocess_text(raw_text)
+    
+    # Extract regex hints
+    hints = extract_info_regex(raw_text)
+    
     MULTI_FLIGHT_PROMPT = """
-You extract structured flight information from raw text that may contain MULTIPLE DIFFERENT FLIGHTS.
+You are an expert flight data extraction system. Extract ALL distinct flights from the input text.
+The user wants to use you as the primary source for ALL calculations including timezones, durations and layovers.
 
-TASK:
-- Identify ALL distinct flights in the input text
-- Each flight has its own airline, flight number, route, times, and fare
-- Return a JSON ARRAY containing each flight as a separate object
+CRITICAL TASK:
+- Identify EVERY separate flight option/itinerary in the input.
+- Return a JSON ARRAY containing each flight as a separate object.
 
 RULES:
-- Output ONLY valid JSON array (no markdown, no explanation)
-- Each flight object must have the same structure
-- Use 24-hour time format (HH:MM)
-- Date format: "dd MMM yy" (e.g. 30 Jan 26). If year missing, assume current year.
-- Airport codes must be uppercase (CCU, SIN, DEL)
-- If airline code present (6E, AI, QP, SQ), infer full airline name
-- Extract fare as NUMBER only (₹6,314 → 6314)
-- If a field cannot be determined, use "N/A"
-
-AIRLINE CODES:
-- 6E = IndiGo
-- AI = Air India
-- QP = Akasa Air
-- SG = SpiceJet
-- UK = Vistara
-- G8 = GoAir
-- I5 = AirAsia India
-- QR = Qatar Airways
-- EK = Emirates
-- SQ = Singapore Airlines
+- Output ONLY valid JSON array. No markdown.
+- Date format: "dd MMM yy". Default year: 2026.
+- Time format: 24-hour (HH:MM).
+- Fares: Extract as NUMBERS for 'saver_fare' and fill the 'fares' object if multiple types exist.
+- TIMEZONE & DURATION (CRITICAL):
+   - Provide UTC offsets for departure ('departure_utc') and arrival ('arrival_utc') (e.g., "+05:30").
+   - Calculate ACTUAL flight duration accurately using UTC.
+   - For connecting flights, include 'segments' with their own durations and layovers.
 
 OUTPUT FORMAT (JSON ARRAY):
 [
   {
-    "airline": "string",
-    "flight_number": "string",
-    "departure_city": "string",
-    "departure_airport": "string",
-    "departure_date": "string",
-    "departure_time": "string",
-    "arrival_city": "string",
-    "arrival_airport": "string",
-    "arrival_time": "string",
-    "duration": "string",
-    "stops": "string",
-    "baggage": "string",
-    "refundability": "string",
-    "saver_fare": number | null
+    "airline": "Full Airline Name",
+    "flight_number": "XX 1234",
+    "departure_city": "City Name",
+    "departure_airport": "XXX",
+    "departure_date": "dd MMM yy",
+    "departure_time": "HH:MM",
+    "departure_utc": "+HH:MM",
+    "arrival_city": "City Name", 
+    "arrival_airport": "XXX",
+    "arrival_time": "HH:MM",
+    "arrival_utc": "+HH:MM",
+    "arrival_next_day": false,
+    "days_offset": 0,
+    "duration": "Xh Ym",
+    "stops": "Non Stop / 1 Stop via XXX",
+    "baggage": "XXkg",
+    "refundability": "Refundable",
+    "saver_fare": 12345,
+    "fares": {
+      "saver": 12345,
+      "corporate": null
+    },
+    "segments": []
   }
 ]
-
-IMPORTANT: Return an ARRAY even if there's only one flight. Look for patterns that indicate separate flights (different airlines, different routes, different times/fares listed).
 """
+
+    # Add hints if available  
+    if hints:
+        MULTI_FLIGHT_PROMPT += f"\n\nREGEX HINTS: {json.dumps(hints)}"
 
     try:
         # Use higher token limit for multiple flights
-        multi_max_tokens = 1500  # Much higher for multiple flights
+        multi_max_tokens = 2000
         
         response = requests.post(
             OPENROUTER_URL,
@@ -246,12 +1060,12 @@ IMPORTANT: Return an ARRAY even if there's only one flight. Look for patterns th
                 "model": MODEL,
                 "messages": [
                     {"role": "system", "content": MULTI_FLIGHT_PROMPT},
-                    {"role": "user", "content": raw_text.strip()}
+                    {"role": "user", "content": processed_text}
                 ],
                 "max_tokens": multi_max_tokens,
                 "temperature": TEMPERATURE
             },
-            timeout=60  # Longer timeout for multiple flights
+            timeout=60
         )
 
         if response.status_code != 200:
@@ -263,12 +1077,16 @@ IMPORTANT: Return an ARRAY even if there's only one flight. Look for patterns th
         # Defensive cleanup
         if content.startswith("```"):
             content = content.replace("```json", "").replace("```", "").strip()
+        
+        # Find JSON array start
+        json_start = content.find('[')
+        if json_start > 0:
+            content = content[json_start:]
 
         data = json.loads(content)
         
         # Ensure it's a list
         if not isinstance(data, list):
-            # If LLM returned single object, wrap in list
             data = [data]
         
         flights = []
@@ -285,6 +1103,7 @@ IMPORTANT: Return an ARRAY even if there's only one flight. Look for patterns th
                 "arrival_city": item.get("arrival_city", "N/A"),
                 "arrival_airport": item.get("arrival_airport", "N/A"),
                 "arrival_time": item.get("arrival_time", "N/A"),
+                "arrival_next_day": item.get("arrival_next_day", False),
                 "duration": item.get("duration", "N/A"),
                 "stops": item.get("stops", "N/A"),
                 "baggage": item.get("baggage", "N/A"),
@@ -293,10 +1112,8 @@ IMPORTANT: Return an ARRAY even if there's only one flight. Look for patterns th
                 "segments": item.get("segments", [])
             }
             
-            # Clean up N/A values that are empty
-            for key in flight:
-                if flight[key] in [None, "", []] and key not in ["saver_fare", "segments", "id"]:
-                    flight[key] = "N/A"
+            # Post-process each flight
+            flight = post_process_flight(flight, hints)
             
             flights.append(flight)
         
@@ -306,28 +1123,15 @@ IMPORTANT: Return an ARRAY even if there's only one flight. Look for patterns th
     except json.JSONDecodeError as e:
         print(f"[ERROR] JSON parse error in multi-flight extraction: {e}")
         print(f"[ERROR] Raw content: {content[:500] if 'content' in dir() else 'N/A'}")
-        # Fallback: try single flight extraction
         return [extract_flight(raw_text, has_layover)]
     
     except Exception as e:
         print(f"[ERROR] Error in multi-flight extraction: {e}")
-        # Fallback: try single flight extraction
         return [extract_flight(raw_text, has_layover)]
+
 
 # ==================== UTILITY ====================
 
 def calculate_duration(dep: str, arr: str) -> str:
-    try:
-        dep_time = datetime.strptime(dep, "%H:%M")
-        arr_time = datetime.strptime(arr, "%H:%M")
-
-        if arr_time < dep_time:
-            arr_time = arr_time.replace(day=arr_time.day + 1)
-
-        diff = arr_time - dep_time
-        hours, remainder = divmod(diff.seconds, 3600)
-        minutes = remainder // 60
-
-        return f"{hours}h {minutes}m"
-    except:
-        return "N/A"
+    """Legacy function for backward compatibility."""
+    return calculate_duration_simple(dep, arr)

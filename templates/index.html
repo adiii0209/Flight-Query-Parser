@@ -4,7 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Flight Itinerary Builder</title>
+  <title>Query</title>
+  <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/784/784306.png">
   <link
     href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet">
@@ -596,6 +597,47 @@
       outline: none;
       border-color: var(--primary);
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .card-delete-btn {
+      background: #fee2e2;
+      color: #dc2626;
+      border: 1.5px solid #fecaca;
+      border-radius: 6px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 0.9rem;
+    }
+
+    .card-delete-btn:hover {
+      background: #dc2626;
+      color: white;
+      border-color: #dc2626;
+    }
+
+    .fare-delete-icon-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      opacity: 0.6;
+    }
+
+    .fare-delete-icon-btn:hover {
+      background: #fee2e2;
+      color: #dc2626;
+      opacity: 1;
     }
 
     /* Modal Styles */
@@ -1362,6 +1404,47 @@
       min-width: 80px;
     }
 
+    /* Combined Card Styles */
+    .combined-flight-card {
+      width: 100% !important;
+      max-width: 100% !important;
+    }
+
+    .flight-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 0.5rem 1.5rem;
+      opacity: 0.6;
+    }
+
+    .combined-label {
+      background: var(--primary);
+      color: white;
+      padding: 0.25rem 0.75rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom-right-radius: 8px;
+      display: inline-block;
+      margin-bottom: 0.5rem;
+    }
+
+    .option-label {
+      position: absolute;
+      top: 0;
+      right: 0;
+      background: var(--bg-main);
+      color: var(--text-secondary);
+      padding: 0.25rem 0.75rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border-bottom-left-radius: 12px;
+      border-left: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+    }
+
     .duration-text {
       font-size: 0.75rem;
       color: var(--text-secondary);
@@ -1579,6 +1662,31 @@
       background: var(--bg-main);
       border-radius: 8px;
       min-width: 100px;
+    }
+
+    /* Combined Card Specifics */
+    .combined-flight-card {
+      border: 2px solid var(--primary-light, rgba(79, 70, 229, 0.1));
+    }
+
+    .combined-label {
+      background: var(--primary);
+      color: white;
+      padding: 0.25rem 1rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: inline-block;
+      border-radius: 0;
+      margin-bottom: 0;
+    }
+
+    .flight-divider {
+      height: 1px;
+      background: linear-gradient(to right, transparent, var(--border), transparent);
+      margin: 0;
+      width: 100%;
     }
 
     .footer-fare-label {
@@ -2123,7 +2231,22 @@
     </div>
   </div>
 
-  <!-- Warning Modal -->
+  <!-- Delete Confirmation Modal -->
+  <div id="deleteModal" class="modal">
+    <div class="modal-content" style="text-align: center; max-width: 400px;">
+      <h3 style="color: var(--danger); margin-bottom: 0.5rem; font-size: 1.5rem;">🗑️</h3>
+      <h3 id="deleteModalTitle" style="color: var(--text-primary); margin-bottom: 1rem;">Confirm Deletion</h3>
+      <p id="deleteModalMessage" style="color: var(--text-secondary); margin-bottom: 1.5rem; line-height: 1.5;">
+        Are you sure you want to delete this? This action cannot be undone.
+      </p>
+      <div class="modal-actions" style="justify-content: center; gap: 1rem;">
+        <button class="btn btn-secondary" onclick="closeDeleteModal(false)"
+          style="padding: 0.6rem 1.25rem;">Cancel</button>
+        <button class="btn btn-danger" style="padding: 0.6rem 1.25rem;" onclick="closeDeleteModal(true)">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Warning Modal -->
   <div id="warningModal" class="modal">
     <div class="modal-content" style="text-align: center;">
@@ -2222,8 +2345,9 @@
     function updateAuthUI(user) {
       const authBtn = document.getElementById('authBtn');
       authBtn.textContent = `👤 ${user.username}`;
-      authBtn.onclick = () => {
-        if (confirm('Do you want to logout?')) {
+      authBtn.onclick = async () => {
+        const confirmed = await showDeleteModal('Logout', 'Are you sure you want to logout?');
+        if (confirmed) {
           logout();
         }
       };
@@ -2481,8 +2605,9 @@
           closeSaveModal();
 
           // Optionally redirect to itineraries page
-          setTimeout(() => {
-            if (confirm('Would you like to view your saved itineraries?')) {
+          setTimeout(async () => {
+            const view = await showWarningModal('Itinerary saved! Would you like to view your saved itineraries now?');
+            if (view) {
               window.location.href = '/itineraries';
             }
           }, 1000);
@@ -2509,8 +2634,9 @@
       }
     }
 
-    // --- Warning Modal Logic ---
+    // --- Modal Logic ---
     let warningModalResolve = null;
+    let deleteModalResolve = null;
 
     function showWarningModal(message) {
       if (message) {
@@ -2527,6 +2653,23 @@
       if (warningModalResolve) {
         warningModalResolve(result);
         warningModalResolve = null;
+      }
+    }
+
+    function showDeleteModal(title, message) {
+      if (title) document.getElementById('deleteModalTitle').textContent = title;
+      if (message) document.getElementById('deleteModalMessage').textContent = message;
+      document.getElementById('deleteModal').classList.add('show');
+      return new Promise((resolve) => {
+        deleteModalResolve = resolve;
+      });
+    }
+
+    function closeDeleteModal(result) {
+      document.getElementById('deleteModal').classList.remove('show');
+      if (deleteModalResolve) {
+        deleteModalResolve(result);
+        deleteModalResolve = null;
       }
     }
 
@@ -2858,23 +3001,35 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       container.appendChild(flightBox.firstElementChild);
     }
 
-    function removeUnit(unitId) {
-      if (unitCount <= 1) {
+    async function removeUnit(unitId) {
+      const remainingUnits = document.querySelectorAll('.flight-unit');
+      if (remainingUnits.length <= 1) {
         showNotification('You must have at least one option', 'warning');
         return;
       }
 
-      const unit = document.querySelector(`[data-unit-id="${unitId}"]`).closest('.flight-unit');
-      unit.remove();
-      unitCount--;
+      const confirmed = await showDeleteModal('Remove Option', 'Are you sure you want to remove this Entire Option? All nested flights and fares will be lost.');
+      if (!confirmed) return;
 
-      // Cleanup
-      if (unitFlights[unitId]) {
-        delete unitFlights[unitId];
+      const unit = document.querySelector(`[data-unit-id="${unitId}"]`) || document.getElementById(`unit-${unitId}`)?.closest('.flight-unit');
+      if (unit) {
+        unit.remove();
       }
-      if (unitFlightCounts[unitId]) {
-        delete unitFlightCounts[unitId];
-      }
+
+      // Cleanup mappings
+      delete unitFlights[unitId];
+      delete unitFlightCounts[unitId];
+
+      // Re-index remaining units' visual labels
+      const currentUnits = document.querySelectorAll('.flight-unit');
+      currentUnits.forEach((u, idx) => {
+        const header = u.querySelector('.flight-unit-header h3');
+        if (header) {
+          header.textContent = `Option ${idx + 1}`;
+        }
+      });
+
+      showNotification('Option removed', 'success');
     }
 
     function toggleUnitFare(checkbox, fareType, unitId) {
@@ -3056,6 +3211,37 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         return;
       }
 
+      // Pre-validation for layover flights - prompt user if info seems incomplete
+      for (const flight of flights) {
+        if (flight.has_layover) {
+          const text = flight.text.toLowerCase();
+
+          // Check for minimum layover indicators
+          const hasMultipleTimes = (text.match(/\d{1,2}[:\.]?\d{2}\s*(am|pm)?/gi) || []).length >= 4;
+          const hasMultipleCities = (text.match(/\b[A-Z]{3}\b/g) || []).length >= 3;
+          const hasLayoverKeywords = /layover|via|connect|stop|transit/i.test(text);
+
+          if (!hasMultipleTimes && !hasMultipleCities && !hasLayoverKeywords) {
+            const shouldContinue = confirm(
+              `⚠️ Layover Flight Info Check\n\n` +
+              `The layover checkbox is checked, but we couldn't detect:\n` +
+              `• Multiple departure/arrival times (need at least 4)\n` +
+              `• Multiple airport codes (need at least 3)\n` +
+              `• Layover keywords (via, connecting, transit)\n\n` +
+              `For accurate layover parsing, please ensure your text includes:\n` +
+              `• Each segment's departure and arrival times\n` +
+              `• Each segment's departure and arrival cities/airports\n` +
+              `• Layover city and duration (if known)\n\n` +
+              `Click OK to continue anyway, or Cancel to edit the input.`
+            );
+
+            if (!shouldContinue) {
+              return;
+            }
+          }
+        }
+      }
+
       // Start parsing
       isParsing = true;
       const parseBtn = document.getElementById('parseBtn');
@@ -3131,6 +3317,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         });
 
         currentFlights = data.flights;
+        // Reset edit mode to false by default for new parse results
+        isGlobalEditMode = false;
         renderResults(data.flights);
         showNotification('Flights parsed successfully!', 'success');
 
@@ -3183,52 +3371,59 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       let flightIndex = 0;
       Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
         if (currentTripType === 'round_trip' || currentTripType === 'multi_city') {
-          // Create a unit container with side-by-side layout
           const unitContainer = document.createElement('div');
           unitContainer.style.marginBottom = '2rem';
           unitContainer.style.width = '100%';
-          unitContainer.style.boxSizing = 'border-box';
 
-          // Create header
           const unitHeader = document.createElement('h4');
           unitHeader.style.marginBottom = '1rem';
           unitHeader.style.color = 'var(--primary)';
           unitHeader.style.paddingBottom = '0.5rem';
           unitHeader.style.borderBottom = '2px solid var(--primary)';
-
-          if (currentTripType === 'round_trip') {
-            unitHeader.textContent = `Round Trip Option ${unitId}`;
-          } else if (currentTripType === 'multi_city') {
-            unitHeader.textContent = `Multi-City Option ${unitId}`;
-          }
+          unitHeader.textContent = (currentTripType === 'round_trip' ? 'Round Trip Option ' : 'Multi-City Option ') + unitId;
           unitContainer.appendChild(unitHeader);
 
-          // Create flex container for side-by-side cards
           const cardsWrapper = document.createElement('div');
           cardsWrapper.className = 'cards-wrapper';
 
-          flightIds.forEach((flightId) => {
-            if (flightIndex < flights.length) {
-              const flight = flights[flightIndex];
-              const cardWrapper = createCardWithEditButton(flight, flightIndex);
-              cardsWrapper.appendChild(cardWrapper);
-              flightIndex++;
+          // For round trip, we want to combine 2 flights into one card if possible
+          if (currentTripType === 'round_trip' && flightIds.length === 2) {
+            const outbound = flights[flightIndex];
+            const returnFlight = flights[flightIndex + 1];
+            if (outbound && returnFlight) {
+              const combinedCard = createRoundTripCardWithEditButton(outbound, returnFlight, flightIndex, unitId);
+              cardsWrapper.appendChild(combinedCard);
+              flightIndex += 2;
             }
-          });
+          } else if (currentTripType === 'multi_city') {
+            // Multi-City Combined Card
+            const optionFlights = flights.slice(flightIndex, flightIndex + flightIds.length);
+            if (optionFlights.length > 0) {
+              const combinedCard = createMultiCityCardWithEditButton(optionFlights, flightIndex, unitId);
+              cardsWrapper.appendChild(combinedCard);
+              flightIndex += flightIds.length;
+            }
+          } else {
+            // Malformed data fallback: render individual cards
+            flightIds.forEach(() => {
+              if (flightIndex < flights.length) {
+                const flight = flights[flightIndex];
+                const card = createCardWithEditButton(flight, flightIndex);
+                cardsWrapper.appendChild(card);
+                flightIndex++;
+              }
+            });
+          }
 
           unitContainer.appendChild(cardsWrapper);
           cardsContainer.appendChild(unitContainer);
         } else {
-          // One Way - render ALL flights (supports multiple flights from single text block)
-          // Only render on first unit iteration, then skip subsequent units
+          // One Way
           if (unitId === Object.keys(unitFlights)[0]) {
-            // Render all flights in the array
             for (let fi = 0; fi < flights.length; fi++) {
-              const flight = flights[fi];
-              const cardWrapper = createCardWithEditButton(flight, fi);
-              cardsContainer.appendChild(cardWrapper);
+              cardsContainer.appendChild(createCardWithEditButton(flights[fi], fi));
             }
-            flightIndex = flights.length; // Mark all as processed
+            flightIndex = flights.length;
           }
         }
       });
@@ -3250,17 +3445,17 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             output += `ROUND TRIP OPTION ${unitId}\n`;
             output += `${'='.repeat(60)}\n\n`;
 
-            // Outbound flight
-            output += `*✈️ OUTBOUND FLIGHT*\n`;
+            // Outbound flight - WITHOUT fares
+            output += `*✈️ OUTBOUND FLIGHT*\n\n`;
             const outboundFlight = flights[flightIdx];
             output += formatFlightOutputWithoutFares(outboundFlight, flightIdx + 1);
 
-            // Return flight
-            output += `\n*✈️ RETURN FLIGHT*\n`;
+            // Return flight - WITHOUT fares
+            output += `\n*✈️ RETURN FLIGHT*\n\n`;
             const returnFlight = flights[flightIdx + 1];
-            output += formatFlightOutputWithoutFares(returnFlight, 2);
+            output += formatFlightOutputWithoutFares(returnFlight, flightIdx + 2);
 
-            // Show fares once for the option
+            // Show fares ONCE for the entire option
             output += `\n*FARES FOR THIS OPTION:*\n`;
             output += formatFaresOutput(outboundFlight);
 
@@ -3277,22 +3472,23 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
           flightIds.forEach((fid, cityIdx) => {
             if (flightIdx < flights.length) {
-              output += `*✈️ CITY ${cityIdx + 1}*\n`;
+              output += `*✈️ FLIGHT ${cityIdx + 1}*\n\n`;
               const flight = flights[flightIdx];
-              output += formatFlightOutputWithoutFares(flight, cityIdx + 1);
+              // Show flight WITHOUT fares
+              output += formatFlightOutputWithoutFares(flight, flightIdx + 1);
               output += '\n';
               flightIdx++;
             }
           });
 
-          // Show fares once for the option
+          // Show fares ONCE for the entire option
           if (flightIdx > 0) {
-            output += `\n*FARES FOR THIS OPTION:*\n`;
+            output += `*FARES FOR THIS OPTION:*\n`;
             output += formatFaresOutput(flights[flightIdx - 1]);
           }
         });
       } else {
-        // One Way - simple list
+        // One Way - simple list with fares for each
         flights.forEach((flight, index) => {
           output += formatFlightOutput(flight, index + 1);
           if (index < flights.length - 1) {
@@ -3332,95 +3528,39 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       return '';
     }
 
-    function createFlightCard(flight, index) {
-      const card = document.createElement('div');
-      card.className = 'flight-card';
-      card.setAttribute('data-flight-index', index);
+    function generateFlightSummaryHTML(flight, index, uniqueId) {
+      // Helper to safely display values - never show undefined, null, N/A
+      const safe = (val, fallback = '') => {
+        if (val === undefined || val === null || val === 'N/A' || val === 'undefined' || val === 'null') {
+          return fallback;
+        }
+        return val;
+      };
 
-      // Generate a unique ID for this card to prevent conflicts
-      const uniqueId = `flight-${index}-${Math.random().toString(36).substr(2, 9)}`;
-
-      const isMissingDate = !flight.departure_date || flight.departure_date === 'N/A';
-      const dateDisplay = isMissingDate ? 'Date Required' : flight.departure_date;
-
-      // Calculate derived info
+      const airlineName = safe(flight.airline, 'Airline');
+      const flightNumber = safe(flight.flight_number, '');
+      const depTime = safe(flight.departure_time, '--:--');
+      const arrTime = safe(flight.arrival_time, '--:--');
+      const depCity = safe(flight.departure_city, '');
+      const arrCity = safe(flight.arrival_city, '');
+      const depAirport = safe(flight.departure_airport, '');
+      const arrAirport = safe(flight.arrival_airport, '');
+      const duration = safe(flight.duration, '--');
+      const daysOffset = flight.days_offset || 0;
       const hasSegments = flight.segments && flight.segments.length > 0;
-      const displayStops = flight.stops || (hasSegments ? `${flight.segments.length - 1} Stop(s)` : 'Direct');
+      const displayStops = safe(flight.stops, hasSegments ? `${flight.segments.length - 1} Stop(s)` : 'Direct');
       const isDirect = displayStops.toLowerCase().includes('non-stop') || displayStops.toLowerCase().includes('direct') || (flight.segments && flight.segments.length <= 1);
-
-      // Option Label
-      const optionLabelHTML = `<div class="option-label">Option ${index + 1}</div>`;
-
-      // --- Date Header (if missing) ---
-      let dateHeaderHTML = '';
-      if (isMissingDate) {
-        dateHeaderHTML = `
-            <div class="date-warning-strip" id="date-warning-${index}">
-                <span>⚠️ ${dateDisplay}</span>
-                <button class="date-btn" onclick="promptDateInput(${index})">Select Date</button>
-            </div>
-        `;
-      }
+      const isMissingDate = !flight.departure_date || flight.departure_date === 'N/A';
 
       // Helper for city display
       const formatCity = (city, airport) => {
         if (!city) return airport || '';
-        // If city already contains airport code (e.g. "Mumbai (BOM)"), don't add it again
         if (airport && city.includes(airport)) return city;
-        // If city is just the airport code, don't repeat
         if (airport && city.trim() === airport.trim()) return city;
-
         return `${city} <span class="airport-code-small">(${airport || ''})</span>`;
       };
 
-      // Helper for time difference calculation (layover or duration)
-      const calculateTimeDiff = (startTime, endTime) => {
-        if (!startTime || !endTime) return null;
-
-        try {
-          const parseTime = (t) => {
-            const parts = t.match(/(\d+):(\d+)\s*(AM|PM)?/i);
-            if (!parts) return null;
-            let h = parseInt(parts[1], 10);
-            const m = parseInt(parts[2], 10);
-            const p = parts[3] ? parts[3].toUpperCase() : null;
-
-            if (p === 'PM' && h < 12) h += 12;
-            if (p === 'AM' && h === 12) h = 0;
-
-            return h * 60 + m;
-          };
-
-          const startMins = parseTime(startTime);
-          const endMins = parseTime(endTime);
-
-          if (startMins === null || endMins === null) return null;
-
-          let diff = endMins - startMins;
-          if (diff < 0) diff += 24 * 60; // Next day
-
-          const hours = Math.floor(diff / 60);
-          const minutes = diff % 60;
-
-          let text = '';
-          if (hours > 0) text += `${hours}h `;
-          if (minutes > 0) text += `${minutes}m`;
-
-          return { text: text.trim(), minutes: diff };
-        } catch (e) {
-          return null;
-        }
-      };
-
-      // Helper specifically for layover labeling
-      const getLayoverLabel = (minutes) => {
-        if (minutes < 60) return { label: 'Short Layover', alertClass: 'short' };
-        if (minutes > 300) return { label: 'Long Wait', alertClass: 'long' };
-        return { label: 'Layover', alertClass: '' };
-      };
-
-      // --- Summary Header ---
-      const summaryHTML = `
+      return `
         <div class="flight-summary" onclick="toggleDetails('${uniqueId}')">
             <div class="summary-main">
                 <div class="summary-airline">
@@ -3428,189 +3568,452 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
                         ${(hasSegments && !isDirect)
           ? flight.segments.map(s => `
                               <div class="airline-row">
-                                <span class="airline-name-small">${s.airline}</span>
-                                <span class="flight-code-small">${s.flight_number}</span>
+                                <span class="airline-name-small">${safe(s.airline, 'Airline')}</span>
+                                <span class="flight-code-small">${safe(s.flight_number, '')}</span>
                               </div>
                             `).join('')
           : `
-                              <div class="airline-name">${flight.airline}</div>
-                              <div class="flight-code">${flight.flight_number}</div>
+                              <div class="airline-name">${airlineName}</div>
+                              <div class="flight-code">${flightNumber}</div>
                             `
         }
                     </div>
-                    <!-- IMPORTANT: Added ID for date display update -->
                     <div id="date-display-${index}" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.25rem;">${isMissingDate ? '' : flight.departure_date}</div>
                 </div>
                 
                 <div class="flight-route-visual">
                     <div class="time-group">
-                        <div class="time-big">${flight.departure_time}</div>
-                        <div class="city-code">${formatCity(flight.departure_city, flight.departure_airport)}</div>
+                        <div class="time-big">${depTime}</div>
+                        <div class="city-code">${formatCity(depCity, depAirport)}</div>
                     </div>
                     
                     <div class="duration-line-container">
-                        <div class="duration-text">${flight.duration}</div>
+                        <div class="duration-text">${duration}</div>
                         <div class="route-line"></div>
                         <div class="stops-text ${isDirect ? 'direct' : ''}">${displayStops}</div>
                     </div>
                     
                     <div class="time-group">
-                        <div class="time-big">${flight.arrival_time}</div>
-                        <div class="city-code">${formatCity(flight.arrival_city, flight.arrival_airport)}</div>
+                        <div class="time-big">${arrTime}${daysOffset > 0 ? `<sup style="color: #f59e0b; font-size: 0.7rem; font-weight: 600; margin-left: 2px;">+${daysOffset}</sup>` : ''}</div>
+                        <div class="city-code">${formatCity(arrCity, arrAirport)}</div>
                     </div>
                 </div>
             </div>
-            
             <div class="expand-icon" id="arrow-${uniqueId}"></div>
         </div>
       `;
+    }
 
-      // --- Timeline Content ---
-      // Wrapped in a hidden container
-      let timelineHTML = `<div id="timeline-${uniqueId}" class="flight-timeline-container" style="display: none;">`;
-      timelineHTML += '<div class="flight-timeline">';
+    function generateFlightTimelineHTML(flight, index, uniqueId) {
+      // Helper to safely display values - never show undefined, null, N/A
+      const safe = (val, fallback = '') => {
+        if (val === undefined || val === null || val === 'N/A' || val === 'undefined' || val === 'null') {
+          return fallback;
+        }
+        return val;
+      };
+
+      const depTime = safe(flight.departure_time, '--:--');
+      const arrTime = safe(flight.arrival_time, '--:--');
+      const depCity = safe(flight.departure_city, '');
+      const arrCity = safe(flight.arrival_city, '');
+      const depAirport = safe(flight.departure_airport, '');
+      const arrAirport = safe(flight.arrival_airport, '');
+      const airlineName = safe(flight.airline, 'Airline');
+      const flightNumber = safe(flight.flight_number, '');
+      const duration = safe(flight.duration, '--');
+      const baggage = safe(flight.baggage, '');
+
+      const hasSegments = flight.segments && flight.segments.length > 0;
+      const displayStops = safe(flight.stops, 'Direct');
+      const isDirect = displayStops.toLowerCase().includes('non-stop') || displayStops.toLowerCase().includes('direct') || (flight.segments && flight.segments.length <= 1);
+
+      const formatCity = (city, airport) => {
+        if (!city) return airport || '';
+        if (airport && city.includes(airport)) return city;
+        if (airport && city.trim() === airport.trim()) return city;
+        return `${city} <span class="airport-code-small">(${airport || ''})</span>`;
+      };
+
+      const calculateTimeDiff = (startTime, endTime) => {
+        if (!startTime || !endTime) return null;
+        try {
+          const parseTime = (t) => {
+            const parts = t.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+            if (!parts) return null;
+            let h = parseInt(parts[1], 10);
+            const m = parseInt(parts[2], 10);
+            const p = parts[3] ? parts[3].toUpperCase() : null;
+            if (p === 'PM' && h < 12) h += 12;
+            if (p === 'AM' && h === 12) h = 0;
+            return h * 60 + m;
+          };
+          const startMins = parseTime(startTime);
+          const endMins = parseTime(endTime);
+          if (startMins === null || endMins === null) return null;
+          let diff = endMins - startMins;
+          if (diff < 0) diff += 24 * 60;
+          const hours = Math.floor(diff / 60);
+          const minutes = diff % 60;
+          let text = '';
+          if (hours > 0) text += `${hours}h `;
+          if (minutes > 0) text += `${minutes}m`;
+          return { text: text.trim(), minutes: diff };
+        } catch (e) { return null; }
+      };
+
+      const getLayoverLabel = (minutes) => {
+        if (minutes < 60) return { label: 'Short Layover', alertClass: 'short' };
+        if (minutes > 300) return { label: 'Long Wait', alertClass: 'long' };
+        return { label: 'Layover', alertClass: '' };
+      };
+
+      const AIRPORT_TIMEZONES = {
+        'CCU': 5.5, 'DEL': 5.5, 'BOM': 5.5, 'BLR': 5.5, 'MAA': 5.5, 'HYD': 5.5, 'AMD': 5.5, 'PNQ': 5.5, 'GOI': 5.5, 'COK': 5.5, 'GAU': 5.5, 'PAT': 5.5,
+        'SIN': 8, 'BKK': 7, 'HKG': 8, 'KUL': 8, 'NRT': 9, 'HND': 9, 'ICN': 9, 'PEK': 8, 'PVG': 8, 'CMB': 5.5, 'DAC': 6, 'KTM': 5.75,
+        'DXB': 4, 'DOH': 3, 'AUH': 4, 'BAH': 3, 'KWI': 3, 'MCT': 4,
+        'LHR': 0, 'CDG': 1, 'FRA': 1, 'AMS': 1, 'FCO': 1, 'IST': 3,
+        'JFK': -5, 'LAX': -8, 'SFO': -8, 'ORD': -6, 'YYZ': -5,
+        'SYD': 10, 'MEL': 10, 'AKL': 12
+      };
+
+      const calculateSegmentDurationWithTimezone = (depT, arrT, depA, arrA) => {
+        if (!depT || !arrT) return 'N/A';
+        try {
+          const parseTime = (t) => {
+            const parts = t.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+            if (!parts) return null;
+            let h = parseInt(parts[1], 10);
+            const m = parseInt(parts[2], 10);
+            const p = parts[3] ? parts[3].toUpperCase() : null;
+            if (p === 'PM' && h < 12) h += 12;
+            if (p === 'AM' && h === 12) h = 0;
+            return h * 60 + m;
+          };
+          const dm = parseTime(depT);
+          const am = parseTime(arrT);
+          if (dm === null || am === null) return 'N/A';
+          const dtz = AIRPORT_TIMEZONES[depA?.toUpperCase()] || 5.5;
+          const atz = AIRPORT_TIMEZONES[arrA?.toUpperCase()] || 5.5;
+          const td = Math.round((atz - dtz) * 60);
+          let ad = am - dm;
+          if (ad < 0) ad += 24 * 60;
+          let actual = ad - td;
+          if (actual < 0) actual += 24 * 60;
+          if (actual > 24 * 60) actual -= 24 * 60;
+          const hrs = Math.floor(actual / 60);
+          const mins = actual % 60;
+          return `${hrs}h ${mins}m`;
+        } catch (e) { return 'N/A'; }
+      };
+
+      let html = `<div id="timeline-${uniqueId}" class="flight-timeline-container" style="display: none;">`;
+      html += '<div class="flight-timeline">';
 
       if (hasSegments && !isDirect) {
-        // Connecting Flight Timeline
         flight.segments.forEach((seg, i) => {
-          // Calculate if there is a next segment for layover
           const nextSeg = flight.segments[i + 1];
-
-          // Calculate segment duration if possible
           let segmentDuration = seg.duration;
-          if (!segmentDuration || segmentDuration === 'Duration n/a') {
-            const diffInfo = calculateTimeDiff(seg.departure_time, seg.arrival_time);
-            if (diffInfo) {
-              segmentDuration = diffInfo.text;
-            }
+          if (!segmentDuration || segmentDuration === 'Duration n/a' || segmentDuration === 'N/A') {
+            segmentDuration = calculateSegmentDurationWithTimezone(seg.departure_time, seg.arrival_time, seg.departure_airport, seg.arrival_airport);
           }
+          const sAir = safe(seg.airline, safe(flight.airline, 'Airline'));
+          const sNum = safe(seg.flight_number, '');
+          const sDT = safe(seg.departure_time, '--:--');
+          const sAT = safe(seg.arrival_time, '--:--');
+          const sDC = safe(seg.departure_city, safe(seg.departure_airport, 'Departure'));
+          const sAC = safe(seg.arrival_city, safe(seg.arrival_airport, 'Arrival'));
+          const sDA = safe(seg.departure_airport, '');
+          const sAA = safe(seg.arrival_airport, '');
+          const sDur = safe(segmentDuration, '--');
+          const sBag = safe(flight.baggage, '');
 
-          // Segment Departure
-          timelineHTML += `
-                <div class="timeline-segment">
-                    <div class="t-dot departure"></div>
-                    <div class="t-time-row">
-                        <div class="t-time">${seg.departure_time || ''}</div>
-                        <div class="t-city">${formatCity(seg.departure_city || seg.departure_airport || 'Departure', seg.departure_airport)}</div>
-                    </div>
-                    
-                    <!-- Flight Info Box -->
-                    <div class="flight-info-block">
-                        <div class="info-row">
-                             <div class="info-icon">✈</div>
-                             <span style="font-weight: 600; color: var(--text-primary);">${seg.airline || flight.airline} ${seg.flight_number || ''}</span>
+          html += `
+                    <div class="timeline-segment">
+                        <div class="t-dot departure"></div>
+                        <div class="t-time-row">
+                            <div class="t-time">${sDT}</div>
+                            <div class="t-city">${formatCity(sDC, sDA)}</div>
                         </div>
-                        <div class="info-row">
-                             <div class="info-icon">⏱</div>
-                             <span>${segmentDuration || 'Duration n/a'}</span>
-                             <span>•</span>
-                             <span>${flight.baggage || 'Baggage n/a'}</span>
+                        <div class="flight-info-block">
+                            <div class="info-row">
+                                 <div class="info-icon">✈</div>
+                                 <span style="font-weight: 600; color: var(--text-primary);">${sAir} ${sNum}</span>
+                            </div>
+                            <div class="info-row">
+                                 <div class="info-icon">⏱</div>
+                                 <span>${sDur}</span>
+                                 ${sBag ? `<span>•</span><span>${sBag}</span>` : ''}
+                            </div>
                         </div>
-                    </div>
-
-                    <div class="t-time-row">
-                        <div class="t-time" style="color: var(--text-secondary); font-size: 1rem;">${seg.arrival_time || ''}</div>
-                        <div class="t-city" style="font-weight: 500; color: var(--text-secondary); font-size: 0.95rem;">${formatCity(seg.arrival_city || seg.arrival_airport || 'Arrival', seg.arrival_airport)}</div>
-                    </div>
-                </div>
-             `;
-
-          // Layover Block
-          if (nextSeg) {
-            const layoverDiff = calculateTimeDiff(seg.arrival_time, nextSeg.departure_time);
-            let durationText = '';
-            let labelText = 'Connect in airport';
-
-            if (layoverDiff) {
-              durationText = layoverDiff.text;
-              const labelInfo = getLayoverLabel(layoverDiff.minutes);
-              labelText = labelInfo.label;
-            }
-
-            timelineHTML += `
-                    <div class="layover-container">
-                        <div class="layover-line-fix"></div>
-                        <div class="layover-pill">
-                            <span>⏱</span>
-                            <span>${labelText} • ${durationText}</span> 
+                        <div class="t-time-row">
+                            <div class="t-time" style="color: var(--text-secondary); font-size: 1rem;">${sAT}${seg.days_offset > 0 ? `<sup style="color: #f59e0b; font-size: 0.65rem; font-weight: 600; margin-left: 2px;">+${seg.days_offset}</sup>` : ''}</div>
+                            <div class="t-city" style="font-weight: 500; color: var(--text-secondary); font-size: 0.95rem;">${formatCity(sAC, sAA)}</div>
                         </div>
                     </div>
                  `;
+
+          if (nextSeg) {
+            let dText = safe(nextSeg.layover_duration, '');
+            let lText = 'Layover';
+            if (!dText) {
+              const lDiff = calculateTimeDiff(seg.arrival_time, nextSeg.departure_time);
+              if (lDiff) { dText = lDiff.text; lText = getLayoverLabel(lDiff.minutes).label; }
+            } else {
+              const dM = dText.match(/(\d+)h\s*(\d+)?m?/);
+              if (dM) lText = getLayoverLabel(parseInt(dM[1]) * 60 + (parseInt(dM[2]) || 0)).label;
+            }
+            const lDA = safe(nextSeg.departure_airport, '');
+            const lDC = safe(nextSeg.departure_city, lDA);
+            html += `
+                        <div class="layover-container">
+                            <div class="layover-line-fix"></div>
+                            <div class="layover-pill"><span>⏱</span><span>${lText} in ${lDC} • ${dText}</span></div>
+                        </div>
+                    `;
           }
         });
-
       } else {
-        // Direct Flight Timeline (Simple start and end)
-        timelineHTML += `
-            <div class="timeline-segment">
-                <div class="t-dot departure"></div>
-                <div class="t-time-row">
-                    <div class="t-time">${flight.departure_time}</div>
-                    <div class="t-city">${formatCity(flight.departure_city, flight.departure_airport)}</div>
-                </div>
-                
-                <div class="flight-info-block">
-                    <div class="info-row">
-                         <div class="info-icon">✈</div>
-                         <span style="font-weight: 600; color: var(--text-primary);">${flight.airline} ${flight.flight_number}</span>
+        html += `
+                <div class="timeline-segment">
+                    <div class="t-dot departure"></div>
+                    <div class="t-time-row">
+                        <div class="t-time">${depTime}</div>
+                        <div class="t-city">${formatCity(depCity, depAirport)}</div>
                     </div>
-                    ${isFieldValid(flight.duration) ? `
-                    <div class="info-row">
-                         <div class="info-icon">⏱</div>
-                         <span>${flight.duration}</span>
-                    </div>` : ''}
-                     ${(isFieldValid(flight.baggage) || isFieldValid(flight.refundability || 'Refundable')) ? `
-                     <div class="info-row">
-                         ${isFieldValid(flight.baggage) ? `<div class="info-icon">🧳</div><span>${flight.baggage}</span>` : ''}
-                         ${isFieldValid(flight.baggage) && isFieldValid(flight.refundability || 'Refundable') ? `<span>•</span>` : ''}
-                         ${isFieldValid(flight.refundability || 'Refundable') ? `<span>${flight.refundability || 'Refundable'}</span>` : ''}
-                    </div>` : ''}
+                    <div class="flight-info-block">
+                        <div class="info-row">
+                             <div class="info-icon">✈</div>
+                             <span style="font-weight: 600; color: var(--text-primary);">${airlineName} ${flightNumber}</span>
+                        </div>
+                        ${duration && duration !== '--' ? `<div class="info-row"><div class="info-icon">⏱</div><span>${duration}</span></div>` : ''}
+                        ${(baggage || flight.refundability) ? `
+                         <div class="info-row">
+                             ${baggage ? `<div class="info-icon">🧳</div><span>${baggage}</span>` : ''}
+                             ${baggage && safe(flight.refundability, '') ? `<span>•</span>` : ''}
+                             ${safe(flight.refundability, '') ? `<span>${flight.refundability}</span>` : ''}
+                        </div>` : ''}
+                    </div>
+                    <div class="t-dot arrival"></div>
+                    <div class="t-time-row">
+                        <div class="t-time">${arrTime}</div>
+                        <div class="t-city">${formatCity(arrCity, arrAirport)}</div>
+                    </div>
                 </div>
+            `;
+      }
 
-                <div class="t-dot arrival"></div>
-                <div class="t-time-row">
-                    <div class="t-time">${flight.arrival_time}</div>
-                    <div class="t-city">${formatCity(flight.arrival_city, flight.arrival_airport)}</div>
+      html += '</div></div>';
+      return html;
+    }
+
+    function createFlightCard(flight, index) {
+      const card = document.createElement('div');
+      card.className = 'flight-card';
+      card.setAttribute('data-flight-index', index);
+      const uniqueId = `flight-${index}-${Math.random().toString(36).substr(2, 9)}`;
+
+      const isMissingDate = !flight.departure_date || flight.departure_date === 'N/A';
+      const optionLabelHTML = `<div class="option-label">Option ${index + 1}</div>`;
+
+      let dateHeaderHTML = '';
+      if (isMissingDate) {
+        dateHeaderHTML = `<div class="date-warning-strip" id="date-warning-${index}"><span>⚠️ Date Required</span><button class="date-btn" onclick="promptDateInput(${index})">Select Date</button></div>`;
+      }
+
+      const summaryHTML = generateFlightSummaryHTML(flight, index, uniqueId);
+      const timelineHTML = generateFlightTimelineHTML(flight, index, uniqueId);
+
+      // Parse errors warning
+      let parseErrorsHTML = '';
+      if (flight.parse_errors && flight.parse_errors.length > 0) {
+        parseErrorsHTML = `
+          <div class="parse-errors-banner" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 1px solid #f59e0b; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.75rem;">
+            <div style="display: flex; align-items: flex-start; gap: 0.5rem;">
+              <span style="font-size: 1.2rem;">⚠️</span>
+              <div>
+                <div style="font-weight: 600; color: #92400e; margin-bottom: 0.25rem;">Input Issue Detected</div>
+                <div style="font-size: 0.85rem; color: #78350f;">
+                  ${flight.parse_errors.map(e => `<div>• ${e}</div>`).join('')}
                 </div>
+              </div>
             </div>
+          </div>
         `;
       }
 
-      timelineHTML += '</div></div>'; // End timeline and container
+      const faresHTML = generateFaresFooterHTML(flight);
 
-      // --- Fares Footer ---
-      let faresHTML = '<div class="card-footer-fares">';
-      Object.entries(flight.fares).forEach(([type, base]) => {
-        // Use per-fare markup if available, otherwise use global markup
-        const perFareMU = flight.fare_mu && flight.fare_mu[type] !== undefined ? flight.fare_mu[type] : (flight.markup || 0);
-        const finalFare = base + perFareMU;
-
-        // Use per-fare SVC if available, otherwise use global SVC
-        const perFareSVC = flight.fare_svc && flight.fare_svc[type] !== undefined ? flight.fare_svc[type] : (flight.service_charge || 0);
-        const perFareGST = perFareSVC > 0 ? Math.round(perFareSVC * 0.18) : 0;
-
-        let extraText = '';
-        if (perFareSVC > 0) {
-          extraText = ` <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(+ ₹${perFareSVC} SVC + ₹${perFareGST} GST)</span>`;
-        }
-
-        faresHTML += `
-          <div class="footer-fare-item">
-            <span class="footer-fare-label">${type}</span>
-            <span class="footer-fare-price">₹ ${finalFare.toLocaleString('en-IN')}${extraText}</span>
-          </div>
-        `;
-      });
-      faresHTML += '</div>';
-
-      // Inline editor placeholder (will be populated when edit is clicked)
+      // Inline editor placeholder
       let inlineEditorPlaceholder = '';
       if (flight.is_editable) {
         inlineEditorPlaceholder = `<div id="inline-editor-${index}" class="inline-fare-editor" style="display: none;"></div>`;
       }
 
-      card.innerHTML = optionLabelHTML + dateHeaderHTML + summaryHTML + timelineHTML + faresHTML + inlineEditorPlaceholder;
+      card.innerHTML = (flight.parse_errors && flight.parse_errors.length > 0 ? parseErrorsHTML : '') + optionLabelHTML + dateHeaderHTML + summaryHTML + timelineHTML + faresHTML + inlineEditorPlaceholder;
       return card;
+    }
+
+    function generateFaresFooterHTML(flight) {
+      let faresHTML = '<div class="card-footer-fares">';
+      Object.entries(flight.fares).forEach(([type, base]) => {
+        const perFareMU = flight.fare_mu && flight.fare_mu[type] !== undefined ? flight.fare_mu[type] : (flight.markup || 0);
+        const finalFare = base + perFareMU;
+        const perFareSVC = flight.fare_svc && flight.fare_svc[type] !== undefined ? flight.fare_svc[type] : (flight.service_charge || 0);
+        const perFareGST = perFareSVC > 0 ? Math.round(perFareSVC * 0.18) : 0;
+        let extraText = '';
+        if (perFareSVC > 0) {
+          extraText = ` <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(+ ₹${perFareSVC} SVC + ₹${perFareGST} GST)</span>`;
+        }
+        faresHTML += `
+              <div class="footer-fare-item">
+                <span class="footer-fare-label">${type}</span>
+                <span class="footer-fare-price">₹ ${finalFare.toLocaleString('en-IN')}${extraText}</span>
+              </div>
+            `;
+      });
+      faresHTML += '</div>';
+      return faresHTML;
+    }
+
+    function createRoundTripFlightCard(outbound, returnFlight, index, unitId) {
+      const card = document.createElement('div');
+      card.className = 'flight-card combined-flight-card';
+      card.setAttribute('data-flight-index', index);
+
+      const outUniqueId = `flight-${index}-out-${Math.random().toString(36).substr(2, 4)}`;
+      const retUniqueId = `flight-${index}-ret-${Math.random().toString(36).substr(2, 4)}`;
+
+      const optionLabelHTML = `<div class="option-label">Option ${unitId}</div>`;
+
+      // Outbound Section
+      const outSummary = generateFlightSummaryHTML(outbound, index, outUniqueId);
+      const outTimeline = generateFlightTimelineHTML(outbound, index, outUniqueId);
+
+      // Return Section
+      const retSummary = generateFlightSummaryHTML(returnFlight, index + 1, retUniqueId);
+      const retTimeline = generateFlightTimelineHTML(returnFlight, index + 1, retUniqueId);
+
+      // Date warnings if needed
+      let dateHeaderHTML = '';
+      if ((!outbound.departure_date || outbound.departure_date === 'N/A')) {
+        dateHeaderHTML += `<div class="date-warning-strip"><span>⚠️ Outbound Date Required</span><button class="date-btn" onclick="promptDateInput(${index})">Select</button></div>`;
+      }
+      if ((!returnFlight.departure_date || returnFlight.departure_date === 'N/A')) {
+        dateHeaderHTML += `<div class="date-warning-strip"><span>⚠️ Return Date Required</span><button class="date-btn" onclick="promptDateInput(${index + 1})">Select</button></div>`;
+      }
+
+      // Dividers and Labels
+      const outLabel = '<div class="combined-label">Outbound</div>';
+      const retLabel = '<div class="combined-label" style="background:var(--secondary);">Return</div>';
+      const divider = '<div class="flight-divider"></div>';
+
+      // Use fares from outbound (assuming they are common for the unit)
+      const faresHTML = generateFaresFooterHTML(outbound);
+
+      // Editor placeholders for both (even if we only show one edit button)
+      let editorHTML = '';
+      if (outbound.is_editable) editorHTML += `<div id="inline-editor-${index}" class="inline-fare-editor" style="display: none;"></div>`;
+      if (returnFlight.is_editable) editorHTML += `<div id="inline-editor-${index + 1}" class="inline-fare-editor" style="display: none;"></div>`;
+
+      card.innerHTML = optionLabelHTML + dateHeaderHTML + outLabel + outSummary + outTimeline + divider + retLabel + retSummary + retTimeline + faresHTML + editorHTML;
+      return card;
+    }
+
+    function createRoundTripCardWithEditButton(outbound, returnFlight, index, unitId) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'card-wrapper';
+      wrapper.style.marginBottom = '1.5rem';
+
+      if (outbound.is_editable || returnFlight.is_editable) {
+        const editBar = document.createElement('div');
+        editBar.className = 'card-edit-bar';
+        editBar.id = `card-edit-bar-${index}`;
+        editBar.style.display = isGlobalEditMode ? 'flex' : 'none';
+        editBar.innerHTML = `
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <button class="card-edit-btn" onclick="toggleInlineFareEditor(${index})" id="edit-btn-${index}">
+                        ✏️ Edit Fares
+                    </button>
+                    <button class="card-delete-btn" onclick="deleteFlightOption(${index})" title="Delete This Option">
+                        🗑️
+                    </button>
+                </div>
+            `;
+        wrapper.appendChild(editBar);
+      }
+
+      const card = createRoundTripFlightCard(outbound, returnFlight, index, unitId);
+      wrapper.appendChild(card);
+      return wrapper;
+    }
+
+    function createMultiCityFlightCard(flightList, startIndex, unitId) {
+      const card = document.createElement('div');
+      card.className = 'flight-card combined-flight-card';
+      card.setAttribute('data-flight-index', startIndex);
+
+      const optionLabelHTML = `<div class="option-label">Option ${unitId}</div>`;
+      let contentHTML = optionLabelHTML;
+
+      flightList.forEach((flight, i) => {
+        const flightIndex = startIndex + i;
+        const uniqueId = `flight-${flightIndex}-mc-${Math.random().toString(36).substr(2, 4)}`;
+
+        const isMissingDate = !flight.departure_date || flight.departure_date === 'N/A';
+        if (isMissingDate) {
+          contentHTML += `<div class="date-warning-strip"><span>⚠️ Date Required for Flight ${i + 1}</span><button class="date-btn" onclick="promptDateInput(${flightIndex})">Select</button></div>`;
+        }
+
+        const label = `<div class="combined-label">Flight ${i + 1}</div>`;
+        const summary = generateFlightSummaryHTML(flight, flightIndex, uniqueId);
+        const timeline = generateFlightTimelineHTML(flight, flightIndex, uniqueId);
+        const divider = i < flightList.length - 1 ? '<div class="flight-divider"></div>' : '';
+
+        contentHTML += label + summary + timeline + divider;
+      });
+
+      // Use fares from the first flight (shared for the option)
+      const faresHTML = generateFaresFooterHTML(flightList[0]);
+
+      // Editor placeholders
+      let editorHTML = '';
+      flightList.forEach((f, i) => {
+        if (f.is_editable) editorHTML += `<div id="inline-editor-${startIndex + i}" class="inline-fare-editor" style="display: none;"></div>`;
+      });
+
+      card.innerHTML = contentHTML + faresHTML + editorHTML;
+      return card;
+    }
+
+    function createMultiCityCardWithEditButton(flightList, startIndex, unitId) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'card-wrapper';
+      wrapper.style.marginBottom = '1.5rem';
+
+      const anyEditable = flightList.some(f => f.is_editable);
+
+      if (anyEditable) {
+        const editBar = document.createElement('div');
+        editBar.className = 'card-edit-bar';
+        editBar.id = `card-edit-bar-${startIndex}`;
+        editBar.style.display = isGlobalEditMode ? 'flex' : 'none';
+        editBar.innerHTML = `
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <button class="card-edit-btn" onclick="toggleInlineFareEditor(${startIndex})" id="edit-btn-${startIndex}">
+                        ✏️ Edit Fares
+                    </button>
+                    <button class="card-delete-btn" onclick="deleteFlightOption(${startIndex})" title="Delete This Option">
+                        🗑️
+                    </button>
+                </div>
+            `;
+        wrapper.appendChild(editBar);
+      }
+
+      const card = createMultiCityFlightCard(flightList, startIndex, unitId);
+      wrapper.appendChild(card);
+      return wrapper;
     }
 
     // Creates a wrapper with edit button above the card
@@ -3627,9 +4030,14 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         // Initially hidden - will be shown when global edit mode is activated
         editBar.style.display = isGlobalEditMode ? 'flex' : 'none';
         editBar.innerHTML = `
-          <button class="card-edit-btn" onclick="toggleInlineFareEditor(${index})" id="edit-btn-${index}">
-            ✏️ Edit
-          </button>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button class="card-edit-btn" onclick="toggleInlineFareEditor(${index})" id="edit-btn-${index}">
+              ✏️ Edit
+            </button>
+            <button class="card-delete-btn" onclick="deleteFlightOption(${index})" title="Delete This Option">
+              🗑️
+            </button>
+          </div>
         `;
         wrapper.appendChild(editBar);
       }
@@ -3654,14 +4062,17 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           if (editBar) {
             editBar.style.display = isGlobalEditMode ? 'flex' : 'none';
           }
-          // If turning off edit mode, hide any open editors
+          // If turning off edit mode, hide any open editors and reset their buttons
           if (!isGlobalEditMode) {
             const editor = document.getElementById(`inline-editor-${index}`);
             if (editor) {
               editor.style.display = 'none';
-              // Check if edit button state needs reset
+              // Reset edit button state
               const editBtn = document.getElementById(`edit-btn-${index}`);
-              if (editBtn) editBtn.classList.remove('active');
+              if (editBtn) {
+                editBtn.innerHTML = '✏️ Edit';
+                editBtn.classList.remove('active');
+              }
             }
           }
         }
@@ -3698,7 +4109,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       } else {
         // Hide editor
         editor.style.display = 'none';
-        editBtn.innerHTML = '✏️ Edit Fares';
+        editBtn.innerHTML = '✏️ Edit';
         editBtn.classList.remove('active');
       }
     }
@@ -3714,11 +4125,16 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       // Create fare cards for existing fares
       Object.entries(flight.fares).forEach(([fareType, baseFare]) => {
         let mu = flight.fare_mu && flight.fare_mu[fareType] !== undefined ? flight.fare_mu[fareType] : '';
-        const svc = flight.fare_svc && flight.fare_svc[fareType] !== undefined ? flight.fare_svc[fareType] : '';
+        let svc = flight.fare_svc && flight.fare_svc[fareType] !== undefined ? flight.fare_svc[fareType] : '';
 
         // If markup is not set specifically, show global markup if preset
         if ((mu === '' || mu === undefined) && currentMarkup > 0) {
           mu = currentMarkup;
+        }
+
+        // If service charge is not set specifically, show global svc if preset
+        if ((svc === '' || svc === undefined) && currentServiceCharge > 0) {
+          svc = currentServiceCharge;
         }
 
         faresHTML += createInlineFareCard(flightIndex, fareType, fareType.charAt(0).toUpperCase() + fareType.slice(1) + ' Fare', baseFare, mu, svc, true);
@@ -3756,9 +4172,14 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
       return `
         <div class="${cardClass}" data-fare-key="${key}" id="inline-fare-card-${key}-${flightIndex}">
-          <div class="fare-card-header">
-            <input type="checkbox" id="inline-${key}-flight-${flightIndex}" onchange="toggleInlineFareCard(this, '${key}', ${flightIndex})" ${checkedAttr}>
-            <label for="inline-${key}-flight-${flightIndex}">${label}</label>
+          <div class="fare-card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <input type="checkbox" id="inline-${key}-flight-${flightIndex}" onchange="toggleInlineFareCard(this, '${key}', ${flightIndex})" ${checkedAttr}>
+              <label for="inline-${key}-flight-${flightIndex}">${label}</label>
+            </div>
+            <button class="fare-delete-icon-btn" onclick="removeFareFromOption(${flightIndex}, '${key}')" title="Remove This Fare Type">
+              ✕
+            </button>
           </div>
           <div class="fare-card-fields">
             <div class="fare-field-row">
@@ -3877,6 +4298,9 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
         if (svcInput && svcInput.value && svcInput.value.trim() !== '') {
           newFareSVC[fareKey] = Number(svcInput.value);
+        } else {
+          // Explicitly set to 0 if left blank, so it overrides any global fallback
+          newFareSVC[fareKey] = 0;
         }
       });
 
@@ -3887,13 +4311,35 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         return;
       }
 
-      // Removed auto-apply global markup logic as per request.
-      // If user clears the markup field, it saves as 0.
-
       // Update the flight data
       flight.fares = newFares;
       flight.fare_mu = newFareMU;
       flight.fare_svc = newFareSVC;
+
+      // For round-trip and multi-city, synchronize fares across all flights in the same unit
+      if (currentTripType === 'round_trip' || currentTripType === 'multi_city') {
+        // Find which unit this flight belongs to
+        let currentUnitId = null;
+        let flightIdsInUnit = [];
+
+        Object.entries(unitFlights).forEach(([unitId, ids]) => {
+          if (ids.includes(flightIndex)) {
+            currentUnitId = unitId;
+            flightIdsInUnit = ids;
+          }
+        });
+
+        // Apply the same fares to all flights in this unit
+        if (flightIdsInUnit.length > 0) {
+          flightIdsInUnit.forEach(idx => {
+            if (idx !== flightIndex && currentFlights[idx]) {
+              currentFlights[idx].fares = { ...newFares };
+              currentFlights[idx].fare_mu = { ...newFareMU };
+              currentFlights[idx].fare_svc = { ...newFareSVC };
+            }
+          });
+        }
+      }
 
       // Hide the editor
       toggleInlineFareEditor(flightIndex);
@@ -3906,14 +4352,6 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
       // Re-apply global edit mode state if active so other edit buttons remain visible
       if (isGlobalEditMode) {
-        // We just re-rendered, so we need to make sure edit buttons are visible again
-        // and global edit button state is correct.
-        const globalEditBtn = document.getElementById('globalEditBtn');
-        if (globalEditBtn) {
-          globalEditBtn.classList.add('active');
-          globalEditBtn.innerHTML = '✕ Cancel Edit';
-        }
-
         // Show edit bars again for editable flights
         currentFlights.forEach((f, idx) => {
           if (f.is_editable) {
@@ -3921,6 +4359,61 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             if (editBar) editBar.style.display = 'flex';
           }
         });
+      }
+    }
+
+    async function deleteFlightOption(index) {
+      const confirmed = await showDeleteModal('Delete Flight Option', 'Are you sure you want to delete this Entire Flight Option and its fares? This cannot be undone.');
+      if (!confirmed) {
+        return;
+      }
+
+      // Hide editor if open for this index
+      const editor = document.getElementById(`inline-editor-${index}`);
+      if (editor) editor.style.display = 'none';
+
+      // Remove from currentFlights
+      currentFlights.splice(index, 1);
+
+      // Update unitFlights mapping (re-index all references)
+      const newUnitFlights = {};
+      Object.entries(unitFlights).forEach(([unitId, ids]) => {
+        const newIds = ids
+          .map(id => id === index ? null : (id > index ? id - 1 : id))
+          .filter(id => id !== null);
+
+        if (newIds.length > 0) {
+          newUnitFlights[unitId] = newIds;
+        }
+      });
+      unitFlights = newUnitFlights;
+
+      // Re-render
+      renderResults(currentFlights);
+      regenerateOutputText();
+
+      showNotification('Flight option deleted successfully', 'success');
+
+      // Re-apply global edit mode state if active
+      if (isGlobalEditMode) {
+        currentFlights.forEach((f, idx) => {
+          if (f.is_editable) {
+            const editBar = document.getElementById(`card-edit-bar-${idx}`);
+            if (editBar) editBar.style.display = 'flex';
+          }
+        });
+      }
+    }
+
+    function removeFareFromOption(flightIndex, fareKey) {
+      const card = document.getElementById(`inline-fare-card-${fareKey}-${flightIndex}`);
+      if (card) {
+        card.style.transition = 'all 0.3s ease';
+        card.style.opacity = '0';
+        card.style.transform = 'translateX(20px)';
+        setTimeout(() => {
+          card.remove();
+        }, 300);
       }
     }
 
@@ -4085,14 +4578,17 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             output += `ROUND TRIP OPTION ${unitId}\n`;
             output += `${'='.repeat(60)}\n\n`;
 
-            output += `*✈️ OUTBOUND FLIGHT*\n`;
+            // Outbound flight - WITHOUT fares
+            output += `*✈️ OUTBOUND FLIGHT*\n\n`;
             const outboundFlight = currentFlights[flightIdx];
             output += formatFlightOutputWithoutFares(outboundFlight, flightIdx + 1);
 
-            output += `\n*✈️ RETURN FLIGHT*\n`;
+            // Return flight - WITHOUT fares
+            output += `\n*✈️ RETURN FLIGHT*\n\n`;
             const returnFlight = currentFlights[flightIdx + 1];
-            output += formatFlightOutputWithoutFares(returnFlight, 2);
+            output += formatFlightOutputWithoutFares(returnFlight, flightIdx + 2);
 
+            // Show fares ONCE for the entire option
             output += `\n*FARES FOR THIS OPTION:*\n`;
             output += formatFaresOutput(outboundFlight);
 
@@ -4108,16 +4604,18 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
           flightIds.forEach((fid, cityIdx) => {
             if (flightIdx < currentFlights.length) {
-              output += `*✈️ CITY ${cityIdx + 1}*\n`;
+              output += `*✈️ FLIGHT ${cityIdx + 1}*\n\n`;
               const flight = currentFlights[flightIdx];
-              output += formatFlightOutputWithoutFares(flight, cityIdx + 1);
+              // Show flight WITHOUT fares
+              output += formatFlightOutputWithoutFares(flight, flightIdx + 1);
               output += '\n';
               flightIdx++;
             }
           });
 
+          // Show fares ONCE for the entire option
           if (flightIdx > 0) {
-            output += `\n*FARES FOR THIS OPTION:*\n`;
+            output += `*FARES FOR THIS OPTION:*\n`;
             output += formatFaresOutput(currentFlights[flightIdx - 1]);
           }
         });
@@ -4180,8 +4678,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         }
 
         // Update the output text by replacing the old date with new date
-        // If old date was "N/A" or missing, we can't do a replace - we must regenerate
-        if (currentFinalText && oldDate && oldDate !== 'N/A' && oldDate.length > 5) {
+        // For round-trip and multi-city, always regenerate to ensure consistency
+        if (currentTripType === 'round_trip' || currentTripType === 'multi_city') {
+          regenerateOutputText();
+        } else if (currentFinalText && oldDate && oldDate !== 'N/A' && oldDate.length > 5) {
+          // For one-way, we can do a simple string replacement
           const updatedOutput = currentFinalText.replace(new RegExp(oldDate, 'g'), formattedDate);
           currentFinalText = updatedOutput;
           const outputElement = document.getElementById("output");
