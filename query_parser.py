@@ -151,6 +151,7 @@ CRITICAL RULES:
 8. Duration format: "Xh Ym" (e.g. "2h 30m", "14h 45m")
 9. Stops format: "Non Stop" or "1 Stop" or "2 Stops" (with via city if known)
 10. If info cannot be determined, use "N/A" (but try hard to extract)
+11. CRITICAL: Convert AM/PM to 24-hour format correctly. Pay close attention to times like "1:40 PMSan" which should be 13:40.
 
 AIRLINE CODE MAPPING (use these to get full names):
 6E=IndiGo, AI=Air India, QP=Akasa Air, SG=SpiceJet, UK=Vistara, G8=GoAir,
@@ -183,6 +184,7 @@ OUTPUT JSON FORMAT:
   "duration": "Xh Ym",
   "stops": "Non Stop / 1 Stop via XXX",
   "baggage": "XXkg / Xpc",
+  "emissions": "IGNORE ANY EMISSIONS DATA (e.g. 286 kg CO2e is NOT baggage)",
   "refundability": "Refundable / Non-Refundable / Partial",
   "saver_fare": 12345,
   "segments": []
@@ -462,6 +464,15 @@ def preprocess_text(raw_text: str) -> str:
     for abbrev, full in city_abbrevs.items():
         text = re.sub(abbrev, full, text, flags=re.IGNORECASE)
     
+    # Fix jammed times (e.g., "1:40 PMSan" -> "1:40 PM San")
+    text = re.sub(r'(\d{1,2}[:\.]\d{2})\s*(AM|PM)([A-Z])', r'\1 \2 \3', text, flags=re.IGNORECASE)
+    # Also handle AM/PM jammed with lowercase or other text
+    text = re.sub(r'([AP]M)([a-zA-Z])', r'\1 \2', text, flags=re.IGNORECASE)
+    
+    # Strip emissions data (e.g. "Emissions estimate: 286 kg CO2e")
+    text = re.sub(r'emissions\s*estimate:?[\d\s,]+kg\s*co2e', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'[\d\s,]+kg\s*co2e', '', text, flags=re.IGNORECASE)
+    
     return text
 
 
@@ -489,8 +500,8 @@ def extract_info_regex(text: str) -> dict:
         hints['arrival_airport'] = valid_airports[-1]
         hints['arrival_city'] = AIRPORT_CODES.get(valid_airports[-1], 'N/A')
     
-    # Extract times (HH:MM or H:MM AM/PM)
-    time_matches = re.findall(r'\b(\d{1,2})[:\.](\d{2})\s*(am|pm)?\b', text, re.IGNORECASE)
+    # Extract times (HH:MM or H:MM AM/PM) - improved to catch jammed AM/PM
+    time_matches = re.findall(r'(\d{1,2})[:\.](\d{2})\s*(am|pm)?', text, re.IGNORECASE)
     times_24h = []
     for h, m, ampm in time_matches:
         hour = int(h)
@@ -522,10 +533,16 @@ def extract_info_regex(text: str) -> dict:
         except:
             pass
     
-    # Extract baggage
-    bag_match = re.search(r'(\d+)\s*(kg|pc|piece)', text, re.IGNORECASE)
+    # Extract baggage (avoid matching emissions data like "286 kg CO2e")
+    # Pattern: Digit(s) + kg/pc/piece, but NOT followed by CO2e and NOT preceded by "Emissions"
+    # Using a more specific pattern that looks for baggage keywords or isolated weights
+    bag_match = re.search(r'(?:baggage|check-in|cabin|checkin)?[:\s]*(\d+)\s*(kg|pc|piece)(?!\s*CO2e)', text, re.IGNORECASE)
     if bag_match:
-        hints['baggage'] = f"{bag_match.group(1)}{bag_match.group(2).lower()}"
+        # Additional safety check: ensure the word "emissions" isn't immediately nearby
+        start_idx = max(0, bag_match.start() - 20)
+        context = text[start_idx:bag_match.end()].lower()
+        if 'emission' not in context:
+            hints['baggage'] = f"{bag_match.group(1)}{bag_match.group(2).lower()}"
     
     # Check for stops
     if re.search(r'non[\s-]*stop|direct|nonstop', text, re.IGNORECASE):
@@ -598,7 +615,7 @@ def calculate_duration_simple(dep: str, arr: str, next_day: bool = False) -> str
 
 # ==================== POST-PROCESSING ====================
 
-def post_process_flight(flight: dict, hints: dict = None) -> dict:
+def post_process_flight(flight: dict, hints: dict = None, original_text: str = "") -> dict:
     """
     Clean and validate extracted flight data.
     """
@@ -668,18 +685,31 @@ def post_process_flight(flight: dict, hints: dict = None) -> dict:
         elif flight.get('duration') in [None, '', 'N/A']:  # Domestic - only if missing
             flight['duration'] = calculate_duration_simple(dep_time, arr_time, next_day)
     
+    # Ensure segments list exists
+    if 'segments' not in flight:
+        flight['segments'] = []
+    segments = flight.get('segments', [])
+
+    # NEW: Try to find "Travel time: X hr Y min" in original_text to override calculated duration
+    if 'Travel time:' in original_text:
+        # Regex to handle hr/hrs/min/mins
+        time_matches = re.findall(r'Travel time:\s*(\d+)\s*hr[s]?\s*(\d+)\s*min[s]?', original_text, re.IGNORECASE)
+        
+        # 1. Update individual segments
+        if segments and len(segments) == len(time_matches):
+            for i, (h, m) in enumerate(time_matches):
+                segments[i]['duration'] = f"{h}h {m}m"
+        
+        # 2. If it's a single segment flight and we have one match, use it
+        if not segments and len(time_matches) == 1:
+            h, m = time_matches[0]
+            flight['duration'] = f"{h}h {m}m"
+
     # Normalize fare
     if flight.get('saver_fare'):
         if isinstance(flight['saver_fare'], str):
             fare_str = re.sub(r'[^\d]', '', str(flight['saver_fare']))
             flight['saver_fare'] = int(fare_str) if fare_str else None
-    
-    # Ensure segments list exists
-    if 'segments' not in flight:
-        flight['segments'] = []
-    
-    # Post-process each segment with timezone-aware duration calculation
-    segments = flight.get('segments', [])
     if segments and len(segments) > 0:
         layover_cities = []
         
@@ -691,12 +721,14 @@ def post_process_flight(flight: dict, hints: dict = None) -> dict:
             seg_arr_time = seg.get('arrival_time')
             
             # Calculate segment duration if not provided or seems wrong
-            if seg_dep_time and seg_arr_time:
+            # Only calculate if we didn't already get it from "Travel time" regex hints
+            if seg_dep_time and seg_arr_time and (not seg.get('duration') or seg['duration'] == 'N/A'):
                 calculated_dur = calculate_segment_duration(seg_dep_time, seg_arr_time, seg_dep, seg_arr)
                 seg['duration'] = calculated_dur
-                
-                # Calculate days offset for this segment
-                seg['days_offset'] = calculate_days_offset(seg_dep_time, seg_arr_time, calculated_dur, seg_dep, seg_arr)
+            
+            # Calculate days offset for this segment
+            if seg_dep_time and seg_arr_time:
+                seg['days_offset'] = calculate_days_offset(seg_dep_time, seg_arr_time, seg.get('duration'), seg_dep, seg_arr)
             
             # Expand city names from airport codes
             if seg_dep in AIRPORT_CODES and not seg.get('departure_city'):
@@ -723,11 +755,11 @@ def post_process_flight(flight: dict, hints: dict = None) -> dict:
             via_cities = ', '.join(layover_cities[:2])  # Max 2 cities in display
             flight['stops'] = f"{num_stops} Stop{'s' if num_stops > 1 else ''} via {via_cities}"
         
-        # Calculate total journey duration for multi-segment flights
+        # Calculate total journey duration for multi-segment flights (sum of flight times + layovers)
         total_minutes = 0
         for seg in segments:
             seg_dur = seg.get('duration', '')
-            if seg_dur:
+            if seg_dur and seg_dur != 'N/A':
                 dur_match = re.match(r'(\d+)h\s*(\d+)?m?', seg_dur)
                 if dur_match:
                     total_minutes += int(dur_match.group(1)) * 60
@@ -736,7 +768,7 @@ def post_process_flight(flight: dict, hints: dict = None) -> dict:
             
             # Add layover time
             layover = seg.get('layover_duration', '')
-            if layover:
+            if layover and layover != 'N/A':
                 lay_match = re.match(r'(\d+)h\s*(\d+)?m?', layover)
                 if lay_match:
                     total_minutes += int(lay_match.group(1)) * 60
@@ -754,55 +786,18 @@ def post_process_flight(flight: dict, hints: dict = None) -> dict:
         flight['arrival_next_day'] = False
     
     # Calculate days_offset for overall journey
-    # For multi-segment flights, we need to accumulate days across all segments
-    segments = flight.get('segments', [])
-    
     if segments and len(segments) > 1:
         # Multi-segment: sum up all segment day offsets + check for overnight layovers
         total_days = 0
         for i, seg in enumerate(segments):
-            # Add segment's days offset
             total_days += seg.get('days_offset', 0)
-            
-            # Check if layover spans overnight (arrival before midnight, departure after)
-            if i > 0:
-                prev_seg = segments[i - 1]
-                prev_arr = prev_seg.get('arrival_time', '')
-                curr_dep = seg.get('departure_time', '')
-                
-                if prev_arr and curr_dep:
-                    try:
-                        prev_arr_h = int(prev_arr.split(':')[0])
-                        curr_dep_h = int(curr_dep.split(':')[0])
-                        
-                        # If previous arrival was late night (after 20:00) and 
-                        # current departure is next day morning/evening
-                        # OR if layover duration > 12 hours and spans midnight
-                        layover_dur = seg.get('layover_duration', '')
-                        if layover_dur:
-                            dur_match = re.match(r'(\d+)h', layover_dur)
-                            if dur_match:
-                                layover_hours = int(dur_match.group(1))
-                                # Long layover that likely spans midnight
-                                if layover_hours > 12 and prev_arr_h > curr_dep_h:
-                                    # Layover spans to next day
-                                    # This day is already counted if seg.days_offset includes it
-                                    pass
-                    except:
-                        pass
         
         flight['days_offset'] = total_days
         flight['arrival_next_day'] = total_days > 0
     else:
-        # Single segment or direct flight
-        dep_time = flight.get('departure_time')
-        arr_time = flight.get('arrival_time')
-        duration = flight.get('duration')
-        dep_airport = flight.get('departure_airport')
-        arr_airport = flight.get('arrival_airport')
-        
+        # Single segment 
         if dep_time and arr_time and dep_time != 'N/A' and arr_time != 'N/A':
-            days_offset = calculate_days_offset(dep_time, arr_time, duration, dep_airport, arr_airport)
+            days_offset = calculate_days_offset(dep_time, arr_time, flight.get('duration'), dep_airport, arr_airport)
             flight['days_offset'] = days_offset
             flight['arrival_next_day'] = days_offset > 0
         else:
@@ -926,7 +921,7 @@ EXAMPLE for CCU->SIN->FRA->LHR:
             data["segments"] = []
 
         # Post-process the flight data
-        data = post_process_flight(data, hints)
+        data = post_process_flight(data, hints, processed_text)
 
         return data
 
@@ -935,7 +930,7 @@ EXAMPLE for CCU->SIN->FRA->LHR:
         # Return with hints if available
         fallback = empty_flight()
         if hints:
-            fallback = post_process_flight(fallback, hints)
+            fallback = post_process_flight(fallback, hints, processed_text)
         return fallback
 
 
@@ -999,7 +994,7 @@ OUTPUT FORMAT (JSON ARRAY):
     "arrival_next_day": false,
     "duration": "Xh Ym",
     "stops": "Non Stop",
-    "baggage": "XXkg",
+    "baggage": "XXkg (IGNORE emissions like 286 kg CO2e)",
     "refundability": "Refundable",
     "saver_fare": 12345
   }
@@ -1079,7 +1074,7 @@ IMPORTANT: Return an ARRAY even if there's only one flight.
             }
             
             # Post-process each flight
-            flight = post_process_flight(flight, hints)
+            flight = post_process_flight(flight, hints, processed_text)
             
             flights.append(flight)
         

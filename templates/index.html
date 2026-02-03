@@ -1827,17 +1827,16 @@
 
     .timeline-segment {
       position: relative;
-      padding-left: 20px;
-      /* Space for line */
+      padding-left: 25px;
       margin-left: 10px;
-      /* Offset from container */
       border-left: 2px solid var(--border);
       padding-bottom: 2rem;
     }
 
     .timeline-segment:last-child {
-      border-left: 2px solid transparent;
-      padding-bottom: 0;
+      /* Keep the border to connect to arrival dot, but we'll use a trick to make it stop */
+      border-left-color: var(--border);
+      padding-bottom: 1rem;
     }
 
     .t-dot {
@@ -1855,14 +1854,16 @@
     }
 
     .t-dot.departure {
-      top: 0;
-      border-color: var(--text-secondary);
+      top: 6px;
+      border-color: var(--text-primary);
     }
 
     .t-dot.arrival {
-      top: 0;
+      bottom: 6px;
+      top: auto;
       border-color: var(--text-primary);
-      background: var(--text-primary);
+      background: var(--bg-card);
+      /* White/Hollow inside */
     }
 
     .t-time-row {
@@ -2480,8 +2481,8 @@
       }
 
       .timeline-segment {
-        margin-left: 0 !important;
-        padding-left: 15px !important;
+        margin-left: 10px !important;
+        padding-left: 25px !important;
         padding-bottom: 1.5rem !important;
       }
 
@@ -3564,8 +3565,41 @@
     ${unitId > 1 ? `<div class="flight-unit-header"><h3>Option ${unitId}</h3><button type="button" onclick="removeUnit(${unitId})">🗑️ Remove Option</button></div>` : ''}
     ${createFlightBox(outboundId, 'Outbound Flight')}
     ${createFlightBox(returnId, 'Return Flight')}
-    ${createSharedFareSection(unitId)}
+    
+    <div class="fare-split-control" style="width: 100%; clear: both; margin: 1.5rem 0 1rem 0; padding: 0 0.25rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 500; cursor: pointer;">
+            <input type="checkbox" id="split-fares-toggle-${unitId}" onchange="toggleSplitFares(${unitId})">
+            <span>Separate Fares for Outbound & Return</span>
+        </label>
+    </div>
+
+    <div id="fares-combined-wrapper-${unitId}">
+        ${createSharedFareSection(unitId, '', '📊 Fare Options (Combined)')}
+    </div>
+
+    <div id="fares-split-wrapper-${unitId}" style="display: none; gap: 1rem; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 300px;">
+            ${createSharedFareSection(unitId, '_out', '✈️ Outbound Fares')}
+        </div>
+        <div style="flex: 1; min-width: 300px;">
+             ${createSharedFareSection(unitId, '_ret', '✈️ Return Fares')}
+        </div>
+    </div>
   `;
+    }
+
+    function toggleSplitFares(unitId) {
+      const toggle = document.getElementById(`split-fares-toggle-${unitId}`);
+      const combinedWrapper = document.getElementById(`fares-combined-wrapper-${unitId}`);
+      const splitWrapper = document.getElementById(`fares-split-wrapper-${unitId}`);
+
+      if (toggle && toggle.checked) {
+        combinedWrapper.style.display = 'none';
+        splitWrapper.style.display = 'flex';
+      } else {
+        combinedWrapper.style.display = 'block';
+        splitWrapper.style.display = 'none';
+      }
     }
 
     function createMultiCityUnit(unitId) {
@@ -3624,26 +3658,35 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
   `;
     }
 
-    function createSharedFareSection(unitId) {
+    function createSharedFareSection(unitId, suffix = '', labelOverride = '') {
       const isOneWay = currentTripType === 'one_way';
-      const headingText = isOneWay ? `Fare Options (Option ${unitId})` : `📊 Fare Options for Option ${unitId}`;
+      let headingText = '';
+
+      if (labelOverride) {
+        headingText = labelOverride;
+      } else {
+        headingText = isOneWay ? `Fare Options (Option ${unitId})` : `📊 Fare Options for Option ${unitId}`;
+      }
+
+      const sectionId = `fare-section-${unitId}${suffix}`;
+      const listId = `fare-list-${unitId}${suffix}`;
 
       return `
-    <div class="shared-fare-section" id="fare-section-${unitId}" data-unit-id="${unitId}">
-      <div class="fare-section-header" onclick="toggleFareSection(${unitId})">
+    <div class="shared-fare-section expanded" id="${sectionId}" data-unit-id="${unitId}" data-suffix="${suffix}">
+      <div class="fare-section-header" onclick="toggleFareSection('${unitId}', '${suffix}')">
           <h4 style="margin: 0;">${headingText}</h4>
           <span class="fare-toggle-icon">▼</span>
       </div>
       
-      <div class="fare-section-content" id="fare-content-${unitId}">
-        <div class="fare-types" id="fare-list-${unitId}">
-          ${createFareCard('saver', 'Saver Fare', unitId, true)}
-          ${createFareCard('corporate', 'Corporate Fare', unitId, false)}
-          ${createFareCard('sme', 'SME Fare', unitId, false)}
+      <div class="fare-section-content" id="fare-content-${unitId}${suffix}">
+        <div class="fare-types" id="${listId}">
+          ${createFareCard('saver', 'Saver Fare', unitId, true, suffix)}
         </div>
         <div class="add-fare-controls" style="margin-top: 1rem; border-top: 1px dashed var(--border); padding-top: 0.75rem;">
-           <select class="form-select" style="width: 100%; max-width: 200px; padding: 0.5rem; font-size: 0.9rem; border-radius: 6px; border: 1.5px solid var(--border);" onchange="handleAddFareType(this, ${unitId})">
+           <select class="form-select" style="width: 100%; max-width: 200px; padding: 0.5rem; font-size: 0.9rem; border-radius: 6px; border: 1.5px solid var(--border);" onchange="handleAddFareType(this, ${unitId}, '${suffix}')">
                <option value="">+ Add Fare Type...</option>
+               <option value="corporate">Corporate Fare</option>
+               <option value="sme">SME Fare</option>
                <option value="coupon">Coupon Fare</option>
                <option value="flexi">Flexi Fare</option>
                <option value="custom">Custom...</option>
@@ -3654,59 +3697,61 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
   `;
     }
 
-    function toggleFareSection(unitId) {
-      const section = document.getElementById(`fare-section-${unitId}`);
-      section.classList.toggle('expanded');
+    function toggleFareSection(unitId, suffix = '') {
+      const section = document.getElementById(`fare-section-${unitId}${suffix}`);
+      if (section) section.classList.toggle('expanded');
     }
 
-    function createFareCard(key, label, unitId, isChecked) {
+    function createFareCard(key, label, unitId, isChecked, suffix = '') {
       const checkedAttr = isChecked ? 'checked' : '';
       const disabledAttr = isChecked ? '' : 'disabled';
       const cardClass = isChecked ? 'fare-card' : 'fare-card disabled';
+      const uniqueKey = `${key}-unit-${unitId}${suffix}`;
 
       return `
-        <div class="${cardClass}" data-fare-key="${key}" id="fare-card-${key}-${unitId}">
+        <div class="${cardClass}" data-fare-key="${key}" id="fare-card-${uniqueKey}">
           <div class="fare-card-header">
-            <input type="checkbox" id="${key}-unit-${unitId}" onchange="toggleFareCard(this, '${key}', ${unitId})" ${checkedAttr}>
-            <label for="${key}-unit-${unitId}">${label}</label>
+            <input type="checkbox" id="chk-${uniqueKey}" onchange="toggleFareCard(this, '${key}', ${unitId}, '${suffix}')" ${checkedAttr}>
+            <label for="chk-${uniqueKey}">${label}</label>
           </div>
           <div class="fare-card-fields">
             <div class="fare-field-row">
               <span class="fare-field-label">Fare</span>
-              <input type="number" class="fare-field-input fare-${key}-unit-${unitId}" placeholder="${key === 'saver' ? 'Auto / Manual' : '₹ 0'}" min="0" ${disabledAttr}>
+              <input type="number" class="fare-field-input fare-${uniqueKey}" placeholder="${key === 'saver' ? 'Auto / Manual' : '₹ 0'}" min="0" ${disabledAttr}>
             </div>
             <div class="fare-field-row">
               <span class="fare-field-label">MU</span>
-              <input type="number" class="fare-field-input mu-${key}-unit-${unitId}" placeholder="Markup (optional)" min="0" ${disabledAttr}>
+              <input type="number" class="fare-field-input mu-${uniqueKey}" placeholder="Markup" min="0" ${disabledAttr}>
             </div>
             <div class="fare-field-row">
               <span class="fare-field-label">SVC</span>
-              <input type="number" class="fare-field-input svc-${key}-unit-${unitId}" placeholder="Service Chg (optional)" min="0" ${disabledAttr}>
+              <input type="number" class="fare-field-input svc-${uniqueKey}" placeholder="SVC" min="0" ${disabledAttr}>
             </div>
           </div>
         </div>
       `;
     }
 
-    function toggleFareCard(checkbox, fareType, unitId) {
-      const card = document.getElementById(`fare-card-${fareType}-${unitId}`);
-      const fareInput = document.querySelector(`.fare-${fareType}-unit-${unitId}`);
-      const muInput = document.querySelector(`.mu-${fareType}-unit-${unitId}`);
-      const svcInput = document.querySelector(`.svc-${fareType}-unit-${unitId}`);
+    function toggleFareCard(checkbox, fareType, unitId, suffix = '') {
+      const uniqueKey = `${fareType}-unit-${unitId}${suffix}`;
+      const card = document.getElementById(`fare-card-${uniqueKey}`);
+      const fareInput = document.querySelector(`.fare-${uniqueKey}`);
+      const muInput = document.querySelector(`.mu-${uniqueKey}`);
+      const svcInput = document.querySelector(`.svc-${uniqueKey}`);
 
       if (checkbox.checked) {
         card.classList.remove('disabled');
-        fareInput.disabled = false;
-        muInput.disabled = false;
-        svcInput.disabled = false;
+        if (fareInput) fareInput.disabled = false;
+        if (muInput) muInput.disabled = false;
+        if (svcInput) svcInput.disabled = false;
       } else {
         card.classList.add('disabled');
-        fareInput.disabled = true;
-        muInput.disabled = true;
-        svcInput.disabled = true;
-        fareInput.value = '';
-        muInput.value = '';
-        svcInput.value = '';
+        if (fareInput) fareInput.disabled = true;
+        if (muInput) muInput.disabled = true;
+        if (svcInput) svcInput.disabled = true;
+        if (fareInput) fareInput.value = '';
+        if (muInput) muInput.value = '';
+        if (svcInput) svcInput.value = '';
       }
 
       // Check if we need global markup
@@ -3723,10 +3768,15 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         if (checkbox && checkbox.checked) {
           anyChecked = true;
           const fareKey = card.dataset.fareKey;
-          const unitId = card.closest('.shared-fare-section').dataset.unitId;
-          const muInput = document.querySelector(`.mu-${fareKey}-unit-${unitId}`);
-          if (!muInput || !muInput.value || muInput.value.trim() === '') {
-            allHaveMU = false;
+          const section = card.closest('.shared-fare-section');
+          if (section) {
+            const unitId = section.dataset.unitId;
+            const suffix = section.dataset.suffix || '';
+            const uniqueKey = `${fareKey}-unit-${unitId}${suffix}`;
+            const muInput = document.querySelector(`.mu-${uniqueKey}`);
+            if (!muInput || !muInput.value || muInput.value.trim() === '') {
+              allHaveMU = false;
+            }
           }
         }
       });
@@ -3743,7 +3793,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       }
     }
 
-    function handleAddFareType(select, unitId) {
+    function handleAddFareType(select, unitId, suffix = '') {
       const val = select.value;
       if (!val) return;
 
@@ -3761,39 +3811,41 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       }
 
       // Check if exists
-      if (document.getElementById(`${key}-unit-${unitId}`)) {
+      const uniqueKey = `${key}-unit-${unitId}${suffix}`;
+      if (document.getElementById(`fare-card-${uniqueKey}`)) {
         showNotification('Fare type already exists', 'warning');
         select.value = '';
         return;
       }
 
-      appendFareRow(unitId, key, label);
+      appendFareRow(unitId, key, label, suffix);
       select.value = '';
     }
 
-    function appendFareRow(unitId, key, label) {
-      const list = document.getElementById(`fare-list-${unitId}`);
+    function appendFareRow(unitId, key, label, suffix = '') {
+      const list = document.getElementById(`fare-list-${unitId}${suffix}`);
+      const uniqueKey = `${key}-unit-${unitId}${suffix}`;
       const div = document.createElement('div');
       div.className = 'fare-card';
       div.dataset.fareKey = key;
-      div.id = `fare-card-${key}-${unitId}`;
+      div.id = `fare-card-${uniqueKey}`;
       div.innerHTML = `
           <div class="fare-card-header">
-            <input type="checkbox" id="${key}-unit-${unitId}" onchange="toggleFareCard(this, '${key}', ${unitId})" checked>
-            <label for="${key}-unit-${unitId}">${label}</label>
+            <input type="checkbox" id="chk-${uniqueKey}" onchange="toggleFareCard(this, '${key}', ${unitId}, '${suffix}')" checked>
+            <label for="chk-${uniqueKey}">${label}</label>
           </div>
           <div class="fare-card-fields">
             <div class="fare-field-row">
               <span class="fare-field-label">Fare</span>
-              <input type="number" class="fare-field-input fare-${key}-unit-${unitId}" placeholder="₹ 0" min="0">
+              <input type="number" class="fare-field-input fare-${uniqueKey}" placeholder="₹ 0" min="0">
             </div>
             <div class="fare-field-row">
               <span class="fare-field-label">MU</span>
-              <input type="number" class="fare-field-input mu-${key}-unit-${unitId}" placeholder="Markup (optional)" min="0">
+              <input type="number" class="fare-field-input mu-${uniqueKey}" placeholder="Markup" min="0">
             </div>
             <div class="fare-field-row">
               <span class="fare-field-label">SVC</span>
-              <input type="number" class="fare-field-input svc-${key}-unit-${unitId}" placeholder="Service Chg (optional)" min="0">
+              <input type="number" class="fare-field-input svc-${uniqueKey}" placeholder="SVC" min="0">
             </div>
           </div>
         `;
@@ -3937,93 +3989,130 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       // Actually, looking at code in 2388+, we iterate Object.entries(unitFlights).
 
       Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
-        const unitFares = {};
-        const unitFareMU = {};  // Per-fare markup
-        const unitFareSVC = {}; // Per-fare service charge
+        // Helper to collect fares from a specific list (suffix)
+        const collectFares = (suffix) => {
+          const fares = {};
+          const mus = {};
+          const svcs = {};
+          const fareCards = document.querySelectorAll(`#fare-list-${unitId}${suffix} .fare-card`);
+          let localError = false;
 
-        // Get shared fares for this unit (new card format)
-        // Find all fare cards with checked checkboxes
-        const fareCards = document.querySelectorAll(`#fare-list-${unitId} .fare-card`);
+          fareCards.forEach(card => {
+            const checkbox = card.querySelector('.fare-card-header input[type="checkbox"]');
+            if (!checkbox || !checkbox.checked) return;
 
-        fareCards.forEach(card => {
-          const checkbox = card.querySelector('.fare-card-header input[type="checkbox"]');
-          if (!checkbox || !checkbox.checked) return;
+            const fareKey = card.dataset.fareKey;
+            const uniqueKey = `${fareKey}-unit-${unitId}${suffix}`;
 
-          const fareKey = card.dataset.fareKey;
-          const fareInput = card.querySelector(`.fare-${fareKey}-unit-${unitId}`);
-          const muInput = card.querySelector(`.mu-${fareKey}-unit-${unitId}`);
-          const svcInput = card.querySelector(`.svc-${fareKey}-unit-${unitId}`);
+            const fareInput = card.querySelector(`.fare-${uniqueKey}`);
+            const muInput = card.querySelector(`.mu-${uniqueKey}`);
+            const svcInput = card.querySelector(`.svc-${uniqueKey}`);
 
-          if (fareKey === 'saver') {
-            // For saver fare, value is optional - parser will try to extract from text
-            if (fareInput && fareInput.value && fareInput.value.trim() !== '') {
-              unitFares[fareKey] = Number(fareInput.value);
-            }
-          } else {
-            // For all other fares, require manual entry if checked
-            if (!fareInput || !fareInput.value || fareInput.value.trim() === '' || Number(fareInput.value) < 0) {
-              // Format label for error message
-              const label = card.querySelector('.fare-card-header label')?.textContent || fareKey;
-              showNotification(`Please enter amount for ${label} in Option ${unitId}`, 'error');
-              if (fareInput) fareInput.focus();
-              hasError = true;
+            if (fareKey === 'saver') {
+              if (fareInput && fareInput.value && fareInput.value.trim() !== '') {
+                fares[fareKey] = Number(fareInput.value);
+              } else {
+                fares[fareKey] = null; // Auto-extract
+              }
             } else {
-              unitFares[fareKey] = Number(fareInput.value);
+              if (!fareInput || !fareInput.value || fareInput.value.trim() === '' || Number(fareInput.value) < 0) {
+                const label = card.querySelector('.fare-card-header label')?.textContent || fareKey;
+                showNotification(`Please enter amount for ${label} in Option ${unitId}`, 'error');
+                if (fareInput) fareInput.focus();
+                localError = true;
+                hasError = true;
+              } else {
+                fares[fareKey] = Number(fareInput.value);
+              }
             }
-          }
 
-          // Collect per-fare MU and SVC (optional)
-          if (muInput && muInput.value && muInput.value.trim() !== '') {
-            unitFareMU[fareKey] = Number(muInput.value);
-          }
-          if (svcInput && svcInput.value && svcInput.value.trim() !== '') {
-            unitFareSVC[fareKey] = Number(svcInput.value);
-          }
-        });
+            if (muInput && muInput.value && muInput.value.trim() !== '') {
+              mus[fareKey] = Number(muInput.value);
+            }
+            if (svcInput && svcInput.value && svcInput.value.trim() !== '') {
+              svcs[fareKey] = Number(svcInput.value);
+            }
+          });
 
-        // For saver, allow if checkbox is checked (even if empty) because parser will extract
-        const saverCheckbox = document.getElementById(`saver-unit-${unitId}`);
-        if (saverCheckbox && saverCheckbox.checked && !('saver' in unitFares)) {
-          // Saver is checked but no value - mark for auto-extraction
-          unitFares['saver'] = null; // null signals auto-extract mode
-        }
-
-        if (!saverCheckbox || !saverCheckbox.checked) {
-          // If saver not checked AND no other fares, error
-          if (Object.keys(unitFares).length === 0) {
+          // Check if at least one fare is selected (if saver not auto-selected)
+          // Simplified: If no fares and no saver checked, error.
+          // Actually, we rely on the loop above. If fares is empty and 'saver' is not in checked cards...
+          // But we iterate over *selected* cards.
+          // So just check if fares is empty.
+          // However, we need to know if saver was checked.
+          // If fares is empty, that means no checkboxes were checked.
+          if (Object.keys(fares).length === 0) {
+            // Exception: User might want to proceed without fares? 
+            // Existing logic allowed proceeding if saver was checked (auto-extract).
+            // My logic above adds 'saver': null if checked. So it won't be empty.
+            // If completely empty -> Error.
             showNotification(`Please select at least one fare type for Option ${unitId}`, 'error');
+            localError = true;
             hasError = true;
           }
+
+          return { fares, mus, svcs, error: localError };
+        };
+
+        const isSplit = document.getElementById(`split-fares-toggle-${unitId}`)?.checked;
+        let outboundData = null;
+        let returnData = null;
+        let sharedData = null;
+
+        if (isSplit && flightIds.length === 2) {
+          outboundData = collectFares('_out');
+          returnData = collectFares('_ret');
+          // If error, hasError is already true
+        } else {
+          sharedData = collectFares('');
         }
 
-        // Collect flight texts for this unit
-        let unitFlightTexts = [];
-        flightIds.forEach((flightId) => {
+        flightIds.forEach((flightId, idx) => {
           const block = document.querySelector(`[data-flight-id="${flightId}"]`);
-          if (block) {
-            const text = block.querySelector("textarea").value.trim();
-            const hasLayover = block.querySelector(".layover-checkbox")?.checked || false;
-            const isMultiple = block.querySelector(".multiple-flights-checkbox")?.checked || false;
-            if (text) {
-              unitFlightTexts.push(text);
-              flights.push({
-                text: text,
-                fares: unitFares,
-                fare_mu: unitFareMU,    // Per-fare markups
-                fare_svc: unitFareSVC,  // Per-fare service charges
-                has_layover: hasLayover,
-                is_multiple: isMultiple
-              });
-            }
+          if (!block) return;
+
+          const text = block.querySelector("textarea").value.trim();
+          const hasLayover = block.querySelector(".layover-checkbox")?.checked || false;
+          const isMultiple = block.querySelector(".multiple-flights-checkbox")?.checked || false;
+
+          if (!text) {
+            showNotification(`Please paste flight details for flight #${flightId}`, 'error');
+            hasError = true;
+            return;
           }
+
+          let faresToUse = {};
+          let muToUse = {};
+          let svcToUse = {};
+
+          if (isSplit && flightIds.length === 2) {
+            if (idx === 0 && outboundData) { // Outbound
+              faresToUse = outboundData.fares;
+              muToUse = outboundData.mus;
+              svcToUse = outboundData.svcs;
+            } else if (idx === 1 && returnData) { // Return
+              faresToUse = returnData.fares;
+              muToUse = returnData.mus;
+              svcToUse = returnData.svcs;
+            }
+          } else if (sharedData) {
+            faresToUse = sharedData.fares;
+            muToUse = sharedData.mus;
+            svcToUse = sharedData.svcs;
+          }
+
+          flightTexturesByUnit[unitId] = flightTexturesByUnit[unitId] || [];
+          flightTexturesByUnit[unitId].push(text);
+
+          flights.push({
+            text: text,
+            fares: faresToUse,
+            fare_mu: muToUse,
+            fare_svc: svcToUse,
+            has_layover: hasLayover,
+            is_multiple: isMultiple
+          });
         });
-
-        if (unitFlightTexts.length === 0) {
-          showNotification(`Please paste at least one flight detail for Option ${unitId}`, 'error');
-          hasError = true;
-        }
-
-        flightTexturesByUnit[unitId] = unitFlightTexts;
       });
 
       if (hasError || flights.length === 0) {
@@ -4247,79 +4336,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         }
       });
 
-      // Render output text with trip type awareness
-      let output = '';
-      const tripTypeLabel = currentTripType === 'one_way' ? 'One Way Air Travel' :
-        currentTripType === 'round_trip' ? 'Round Trip Air Travel' :
-          'Multi-City Air Travel';
-
-      output = `Your Flight Itinerary for ${tripTypeLabel} for 1 Traveller(s):\n\n`;
-
-      if (currentTripType === 'round_trip') {
-        // Organize round trip flights by outbound and return
-        let flightIdx = 0;
-        Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
-          if (flightIds.length === 2) {
-            output += `\n${'='.repeat(60)}\n`;
-            output += `ROUND TRIP OPTION ${unitId}\n`;
-            output += `${'='.repeat(60)}\n\n`;
-
-            // Outbound flight - WITHOUT fares
-            output += `*✈️ OUTBOUND FLIGHT*\n\n`;
-            const outboundFlight = flights[flightIdx];
-            output += formatFlightOutputWithoutFares(outboundFlight, flightIdx + 1);
-
-            // Return flight - WITHOUT fares
-            output += `\n*✈️ RETURN FLIGHT*\n\n`;
-            const returnFlight = flights[flightIdx + 1];
-            output += formatFlightOutputWithoutFares(returnFlight, flightIdx + 2);
-
-            // Show fares ONCE for the entire option
-            output += `\n*FARES FOR THIS OPTION:*\n`;
-            output += formatFaresOutput(outboundFlight);
-
-            flightIdx += 2;
-          }
-        });
-      } else if (currentTripType === 'multi_city') {
-        // Organize multi-city flights by option
-        let flightIdx = 0;
-        Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
-          output += `\n${'='.repeat(60)}\n`;
-          output += `MULTI-CITY OPTION ${unitId}\n`;
-          output += `${'='.repeat(60)}\n\n`;
-
-          flightIds.forEach((fid, cityIdx) => {
-            if (flightIdx < flights.length) {
-              output += `*✈️ FLIGHT ${cityIdx + 1}*\n\n`;
-              const flight = flights[flightIdx];
-              // Show flight WITHOUT fares
-              output += formatFlightOutputWithoutFares(flight, flightIdx + 1);
-              output += '\n';
-              flightIdx++;
-            }
-          });
-
-          // Show fares ONCE for the entire option
-          if (flightIdx > 0) {
-            output += `*FARES FOR THIS OPTION:*\n`;
-            output += formatFaresOutput(flights[flightIdx - 1]);
-          }
-        });
-      } else {
-        // One Way - simple list with fares for each
-        flights.forEach((flight, index) => {
-          output += formatFlightOutput(flight, index + 1);
-          if (index < flights.length - 1) {
-            output += '\n';
-          }
-        });
-      }
-
-      output += `\n\n*Please Note:\nTimings mentioned are in 24 hours clock\nNo booking has been made yet\nRates and inventory are subject to availability at the time of final booking*`;
-
-      currentFinalText = output.trim();
-      document.getElementById("output").textContent = currentFinalText;
+      // Render output text using the consolidated logic
+      regenerateOutputText();
 
       // Scroll to results
       document.getElementById("cardsSection").scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -4550,6 +4568,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           html += `
                     <div class="timeline-segment">
                         <div class="t-dot departure"></div>
+                        ${(i === flight.segments.length - 1) ? '<div class="t-dot arrival"></div>' : ''}
                         <div class="t-time-row">
                             <div class="t-time">${sDT}</div>
                             <div class="t-city">${formatCity(sDC, sDA)}</div>
@@ -4713,7 +4732,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const retSummary = generateFlightSummaryHTML(returnFlight, index + 1, retUniqueId);
       const retTimeline = generateFlightTimelineHTML(returnFlight, index + 1, retUniqueId);
 
-      // Date warnings if needed
+      // Date warnings
       let dateHeaderHTML = '';
       if ((!outbound.departure_date || outbound.departure_date === 'N/A')) {
         dateHeaderHTML += `<div class="date-warning-strip"><span>⚠️ Outbound Date Required</span><button class="date-btn" onclick="promptDateInput(${index})">Select</button></div>`;
@@ -4727,15 +4746,37 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const retLabel = '<div class="combined-label" style="background:var(--secondary);">Return</div>';
       const divider = '<div class="flight-divider"></div>';
 
-      // Use fares from outbound (assuming they are common for the unit)
-      const faresHTML = generateFaresFooterHTML(outbound);
+      // Check if fares are split
+      // We perform a deep comparison of the fares objects to determine if they are identical
+      const areFaresInitiallySame = (f1, f2) => {
+        const k1 = Object.keys(f1).sort();
+        const k2 = Object.keys(f2).sort();
+        if (k1.length !== k2.length) return false;
+        if (!k1.every((key, i) => key === k2[i])) return false;
+        return k1.every(key => f1[key] === f2[key]);
+      };
 
-      // Editor placeholders for both (even if we only show one edit button)
-      let editorHTML = '';
-      if (outbound.is_editable) editorHTML += `<div id="inline-editor-${index}" class="inline-fare-editor" style="display: none;"></div>`;
-      if (returnFlight.is_editable) editorHTML += `<div id="inline-editor-${index + 1}" class="inline-fare-editor" style="display: none;"></div>`;
+      const areFaresDifferent = !areFaresInitiallySame(outbound.fares, returnFlight.fares);
 
-      card.innerHTML = optionLabelHTML + dateHeaderHTML + outLabel + outSummary + outTimeline + divider + retLabel + retSummary + retTimeline + faresHTML + editorHTML;
+      let html = optionLabelHTML + dateHeaderHTML;
+
+      if (areFaresDifferent) {
+        // Split Layout
+        const outFares = generateFaresFooterHTML(outbound);
+        const retFares = generateFaresFooterHTML(returnFlight);
+
+        html += outLabel + outSummary + outTimeline + outFares + divider + retLabel + retSummary + retTimeline + retFares;
+      } else {
+        // Combined Layout
+        const faresHTML = generateFaresFooterHTML(outbound); // Use outbound as shared source
+        html += outLabel + outSummary + outTimeline + divider + retLabel + retSummary + retTimeline + faresHTML;
+      }
+
+      // Editor placeholders
+      if (outbound.is_editable) html += `<div id="inline-editor-${index}" class="inline-fare-editor" style="display: none;"></div>`;
+      if (returnFlight.is_editable) html += `<div id="inline-editor-${index + 1}" class="inline-fare-editor" style="display: none;"></div>`;
+
+      card.innerHTML = html;
       return card;
     }
 
@@ -4939,90 +4980,150 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
       if (!editor || !flight) return;
 
-      let faresHTML = '';
+      const isRoundTrip = currentTripType === 'round_trip' && currentFlights[flightIndex + 1];
+      let isSplit = false;
+      let returnFlight = null;
 
-      // Create fare cards for existing fares
-      Object.entries(flight.fares).forEach(([fareType, baseFare]) => {
-        let mu = flight.fare_mu && flight.fare_mu[fareType] !== undefined ? flight.fare_mu[fareType] : '';
-        let svc = flight.fare_svc && flight.fare_svc[fareType] !== undefined ? flight.fare_svc[fareType] : '';
+      if (isRoundTrip) {
+        returnFlight = currentFlights[flightIndex + 1];
+        // Deep compare fares to see if split
+        const areFaresSame = (f1, f2) => {
+          const k1 = Object.keys(f1).sort();
+          const k2 = Object.keys(f2).sort();
+          if (k1.length !== k2.length) return false;
+          if (!k1.every((key, i) => key === k2[i])) return false;
+          return k1.every(key => f1[key] === f2[key]);
+        };
+        isSplit = !areFaresSame(flight.fares, returnFlight.fares);
+      }
 
-        // If markup is not set specifically, show global markup if preset
-        if ((mu === '' || mu === undefined) && currentMarkup > 0) {
-          mu = currentMarkup;
-        }
+      // Helper to generate a section
+      const generateSectionHTML = (fData, fIdx, suffix, title, displayStyle = 'block') => {
+        let html = `<div id="inline-section-${fIdx}${suffix}" style="display: ${displayStyle}; margin-bottom: 1.5rem;">`;
+        if (title) html += `<h5 style="margin: 0 0 0.5rem 0; color: var(--text-secondary); border-bottom: 1px dashed var(--border); padding-bottom: 0.25rem;">${title}</h5>`;
 
-        // If service charge is not set specifically, show global svc if preset
-        if ((svc === '' || svc === undefined) && currentServiceCharge > 0) {
-          svc = currentServiceCharge;
-        }
+        let faresHTML = '';
+        Object.entries(fData.fares).forEach(([fareType, baseFare]) => {
+          let mu = fData.fare_mu && fData.fare_mu[fareType] !== undefined ? fData.fare_mu[fareType] : '';
+          let svc = fData.fare_svc && fData.fare_svc[fareType] !== undefined ? fData.fare_svc[fareType] : '';
 
-        faresHTML += createInlineFareCard(flightIndex, fareType, fareType.charAt(0).toUpperCase() + fareType.slice(1) + ' Fare', baseFare, mu, svc, true);
-      });
+          // Fallback to global if empty
+          if ((mu === '' || mu === undefined) && currentMarkup > 0) mu = currentMarkup;
+          if ((svc === '' || svc === undefined) && currentServiceCharge > 0) svc = currentServiceCharge;
 
-      editor.innerHTML = `
+          faresHTML += createInlineFareCard(fIdx, fareType, fareType.charAt(0).toUpperCase() + fareType.slice(1) + ' Fare', baseFare, mu, svc, true, suffix);
+        });
+
+        html += `<div class="fare-types" id="inline-fare-list-${fIdx}${suffix}">${faresHTML}</div>`;
+
+        html += `
+            <div class="add-fare-controls" style="margin-top: 0.5rem; padding-top: 0.5rem;">
+               <select class="form-select" style="width: 100%; max-width: 200px; padding: 0.4rem; font-size: 0.85rem; border-radius: 6px; border: 1.5px solid var(--border);" onchange="handleInlineAddFareType(this, ${fIdx}, '${suffix}')">
+                 <option value="">+ Add Fare Type...</option>
+                 <option value="saver">Saver Fare</option>
+                 <option value="corporate">Corporate Fare</option>
+                 <option value="sme">SME Fare</option>
+                 <option value="coupon">Coupon Fare</option>
+                 <option value="flexi">Flexi Fare</option>
+                 <option value="custom">Custom...</option>
+               </select>
+            </div>
+          </div>`;
+        return html;
+      };
+
+      let contentHTML = `
         <div class="inline-fare-editor-header">
-          <h4>✏️ Edit Fares for Option ${flightIndex + 1}</h4>
-        </div>
-        <div class="fare-types" id="inline-fare-list-${flightIndex}">
-          ${faresHTML}
-        </div>
-        <div class="add-fare-controls" style="margin-top: 1rem; border-top: 1px dashed var(--border); padding-top: 0.75rem;">
-          <select class="form-select" style="width: 100%; max-width: 200px; padding: 0.5rem; font-size: 0.9rem; border-radius: 6px; border: 1.5px solid var(--border);" onchange="handleInlineAddFareType(this, ${flightIndex})">
-            <option value="">+ Add Fare Type...</option>
-            <option value="saver">Saver Fare</option>
-            <option value="corporate">Corporate Fare</option>
-            <option value="sme">SME Fare</option>
-            <option value="coupon">Coupon Fare</option>
-            <option value="flexi">Flexi Fare</option>
-            <option value="custom">Custom...</option>
-          </select>
-        </div>
+          <h4>✏️ Edit Fares for Option ${Math.floor(flightIndex / 2) + 1}</h4> <!-- Approximation for unit ID -->
+        </div>`;
+
+      if (isRoundTrip) {
+        contentHTML += `
+            <div style="margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);">
+               <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 500; cursor: pointer; font-size: 0.9rem;">
+                  <input type="checkbox" id="inline-split-toggle-${flightIndex}" onchange="toggleInlineSplit(${flightIndex})" ${isSplit ? 'checked' : ''}>
+                  <span>Separate Fares for Outbound & Return</span>
+               </label>
+            </div>
+          `;
+
+        contentHTML += generateSectionHTML(flight, flightIndex, '_out', isSplit ? '✈️ Outbound Fares' : '📊 Combined Fares');
+        contentHTML += generateSectionHTML(returnFlight, flightIndex, '_ret', '✈️ Return Fares', isSplit ? 'block' : 'none');
+      } else {
+        // Normal One-Way / Multi-City (Single List)
+        contentHTML += generateSectionHTML(flight, flightIndex, '', '');
+      }
+
+      contentHTML += `
         <div class="inline-fare-editor-actions">
           <button class="btn-cancel" onclick="toggleInlineFareEditor(${flightIndex})">Cancel</button>
           <button class="btn-save" onclick="saveInlineFareChanges(${flightIndex})">💾 Save Changes</button>
         </div>
       `;
+
+      editor.innerHTML = contentHTML;
     }
 
-    function createInlineFareCard(flightIndex, key, label, baseFare, mu, svc, isChecked) {
+    function toggleInlineSplit(flightIndex) {
+      const toggle = document.getElementById(`inline-split-toggle-${flightIndex}`);
+      const retSection = document.getElementById(`inline-section-${flightIndex}_ret`);
+      const outHeader = document.querySelector(`#inline-section-${flightIndex}_out h5`);
+
+      if (toggle && toggle.checked) {
+        retSection.style.display = 'block';
+        if (outHeader) outHeader.textContent = '✈️ Outbound Fares';
+      } else {
+        retSection.style.display = 'none';
+        if (outHeader) outHeader.textContent = '📊 Combined Fares';
+      }
+    }
+
+    function createInlineFareCard(flightIndex, key, label, baseFare, mu, svc, isChecked, suffix = '') {
       const checkedAttr = isChecked ? 'checked' : '';
       const disabledAttr = isChecked ? '' : 'disabled';
       const cardClass = isChecked ? 'fare-card' : 'fare-card disabled';
+      const uniqueId = `inline-fare-card-${key}-${flightIndex}${suffix}`;
 
       return `
-        <div class="${cardClass}" data-fare-key="${key}" id="inline-fare-card-${key}-${flightIndex}">
+        <div class="${cardClass}" data-fare-key="${key}" id="${uniqueId}">
           <div class="fare-card-header" style="display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 0.5rem;">
-              <input type="checkbox" id="inline-${key}-flight-${flightIndex}" onchange="toggleInlineFareCard(this, '${key}', ${flightIndex})" ${checkedAttr}>
-              <label for="inline-${key}-flight-${flightIndex}">${label}</label>
+              <input type="checkbox" id="chk-${uniqueId}" onchange="toggleInlineFareCard(this, '${key}', ${flightIndex}, '${suffix}')" ${checkedAttr}>
+              <label for="chk-${uniqueId}">${label}</label>
             </div>
-            <button class="fare-delete-icon-btn" onclick="removeFareFromOption(${flightIndex}, '${key}')" title="Remove This Fare Type">
+            <button class="fare-delete-icon-btn" style="background:none; border:none; color:var(--text-secondary); cursor:pointer; font-size:1rem;" onclick="removeFareFromInline('${uniqueId}')" title="Remove This Fare Type">
               ✕
             </button>
           </div>
           <div class="fare-card-fields">
             <div class="fare-field-row">
               <span class="fare-field-label">Fare</span>
-              <input type="number" class="fare-field-input inline-fare-${key}-flight-${flightIndex}" placeholder="₹ 0" min="0" value="${baseFare || ''}" ${disabledAttr}>
+              <input type="number" class="fare-field-input inline-fare-${uniqueId}" placeholder="₹ 0" min="0" value="${baseFare !== undefined && baseFare !== null ? baseFare : ''}" ${disabledAttr}>
             </div>
             <div class="fare-field-row">
               <span class="fare-field-label">MU</span>
-              <input type="number" class="fare-field-input inline-mu-${key}-flight-${flightIndex}" placeholder="Markup" min="0" value="${mu}" ${disabledAttr}>
+              <input type="number" class="fare-field-input inline-mu-${uniqueId}" placeholder="Markup" min="0" value="${mu}" ${disabledAttr}>
             </div>
             <div class="fare-field-row">
               <span class="fare-field-label">SVC</span>
-              <input type="number" class="fare-field-input inline-svc-${key}-flight-${flightIndex}" placeholder="Service Chg" min="0" value="${svc}" ${disabledAttr}>
+              <input type="number" class="fare-field-input inline-svc-${uniqueId}" placeholder="Service Chg" min="0" value="${svc}" ${disabledAttr}>
             </div>
           </div>
         </div>
       `;
     }
 
-    function toggleInlineFareCard(checkbox, fareType, flightIndex) {
-      const card = document.getElementById(`inline-fare-card-${fareType}-${flightIndex}`);
-      const fareInput = document.querySelector(`.inline-fare-${fareType}-flight-${flightIndex}`);
-      const muInput = document.querySelector(`.inline-mu-${fareType}-flight-${flightIndex}`);
-      const svcInput = document.querySelector(`.inline-svc-${fareType}-flight-${flightIndex}`);
+    function removeFareFromInline(uniqueId) {
+      const card = document.getElementById(uniqueId);
+      if (card) card.remove();
+    }
+
+    function toggleInlineFareCard(checkbox, fareType, flightIndex, suffix = '') {
+      const uniqueId = `inline-fare-card-${fareType}-${flightIndex}${suffix}`;
+      const card = document.getElementById(uniqueId);
+      const fareInput = document.querySelector(`.inline-fare-${uniqueId}`);
+      const muInput = document.querySelector(`.inline-mu-${uniqueId}`);
+      const svcInput = document.querySelector(`.inline-svc-${uniqueId}`);
 
       if (checkbox.checked) {
         card.classList.remove('disabled');
@@ -5040,7 +5141,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       }
     }
 
-    function handleInlineAddFareType(select, flightIndex) {
+    function handleInlineAddFareType(select, flightIndex, suffix = '') {
       const val = select.value;
       if (!val) return;
 
@@ -5057,17 +5158,18 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         key = label.toLowerCase().replace(/\s+/g, '_');
       }
 
+      const uniqueId = `inline-fare-card-${key}-${flightIndex}${suffix}`;
       // Check if exists
-      if (document.getElementById(`inline-fare-card-${key}-${flightIndex}`)) {
+      if (document.getElementById(uniqueId)) {
         showNotification('Fare type already exists', 'warning');
         select.value = '';
         return;
       }
 
       // Add the new fare card
-      const list = document.getElementById(`inline-fare-list-${flightIndex}`);
+      const list = document.getElementById(`inline-fare-list-${flightIndex}${suffix}`);
       const div = document.createElement('div');
-      div.innerHTML = createInlineFareCard(flightIndex, key, label, '', '', '', true);
+      div.innerHTML = createInlineFareCard(flightIndex, key, label, '', '', '', true, suffix);
       list.appendChild(div.firstElementChild);
 
       select.value = '';
@@ -5077,109 +5179,75 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const flight = currentFlights[flightIndex];
       if (!flight) return;
 
-      // Collect all fare data from the inline editor
-      const fareCards = document.querySelectorAll(`#inline-fare-list-${flightIndex} .fare-card`);
+      const isRoundTrip = currentTripType === 'round_trip' && currentFlights[flightIndex + 1];
+      const isSplit = isRoundTrip && document.getElementById(`inline-split-toggle-${flightIndex}`)?.checked;
 
-      const newFares = {};
-      const newFareMU = {};
-      const newFareSVC = {};
-      let hasAtLeastOneFare = false;
-      let hasError = false;
+      // Helper to collect data from a specific list
+      const collectData = (suffix) => {
+        const fareCards = document.querySelectorAll(`#inline-fare-list-${flightIndex}${suffix} .fare-card`);
+        const newFares = {};
+        const newFareMU = {};
+        const newFareSVC = {};
+        let hasError = false;
 
-      fareCards.forEach(card => {
-        const checkbox = card.querySelector('.fare-card-header input[type="checkbox"]');
-        if (!checkbox || !checkbox.checked) return;
+        fareCards.forEach(card => {
+          const checkbox = card.querySelector('.fare-card-header input[type="checkbox"]');
+          if (!checkbox || !checkbox.checked) return;
 
-        const fareKey = card.dataset.fareKey;
-        const fareInput = card.querySelector(`.inline-fare-${fareKey}-flight-${flightIndex}`);
-        const muInput = card.querySelector(`.inline-mu-${fareKey}-flight-${flightIndex}`);
-        const svcInput = card.querySelector(`.inline-svc-${fareKey}-flight-${flightIndex}`);
+          const fareKey = card.dataset.fareKey;
+          const uniqueId = `inline-fare-card-${fareKey}-${flightIndex}${suffix}`;
+          const fareInput = document.querySelector(`.inline-fare-${uniqueId}`);
+          const muInput = document.querySelector(`.inline-mu-${uniqueId}`);
+          const svcInput = document.querySelector(`.inline-svc-${uniqueId}`);
 
-        // Validate fare amount
-        if (!fareInput || !fareInput.value || fareInput.value.trim() === '') {
-          const label = card.querySelector('.fare-card-header label')?.textContent || fareKey;
-          showNotification(`Please enter fare amount for ${label}`, 'error');
-          fareInput?.focus();
-          hasError = true;
-          return;
-        }
-
-        hasAtLeastOneFare = true;
-        newFares[fareKey] = Number(fareInput.value);
-
-        // Collect optional MU and SVC
-        if (muInput && muInput.value && muInput.value.trim() !== '') {
-          newFareMU[fareKey] = Number(muInput.value);
-        } else {
-          // Explicitly set to 0 if left blank, so it overrides any global fallback
-          newFareMU[fareKey] = 0;
-        }
-
-        if (svcInput && svcInput.value && svcInput.value.trim() !== '') {
-          newFareSVC[fareKey] = Number(svcInput.value);
-        } else {
-          // Explicitly set to 0 if left blank, so it overrides any global fallback
-          newFareSVC[fareKey] = 0;
-        }
-      });
-
-      if (hasError) return;
-
-      if (!hasAtLeastOneFare) {
-        showNotification('Please select and fill at least one fare type', 'error');
-        return;
-      }
-
-      // Update the flight data
-      flight.fares = newFares;
-      flight.fare_mu = newFareMU;
-      flight.fare_svc = newFareSVC;
-
-      // For round-trip and multi-city, synchronize fares across all flights in the same unit
-      if (currentTripType === 'round_trip' || currentTripType === 'multi_city') {
-        // Find which unit this flight belongs to
-        let currentUnitId = null;
-        let flightIdsInUnit = [];
-
-        Object.entries(unitFlights).forEach(([unitId, ids]) => {
-          if (ids.includes(flightIndex)) {
-            currentUnitId = unitId;
-            flightIdsInUnit = ids;
+          if (!fareInput || !fareInput.value || fareInput.value.trim() === '') {
+            showNotification(`Please enter fare amount for ${fareKey}`, 'error');
+            if (fareInput) fareInput.focus();
+            hasError = true;
+            return;
           }
-        });
 
-        // Apply the same fares to all flights in this unit
-        if (flightIdsInUnit.length > 0) {
-          flightIdsInUnit.forEach(idx => {
-            if (idx !== flightIndex && currentFlights[idx]) {
-              currentFlights[idx].fares = { ...newFares };
-              currentFlights[idx].fare_mu = { ...newFareMU };
-              currentFlights[idx].fare_svc = { ...newFareSVC };
-            }
-          });
+          newFares[fareKey] = Number(fareInput.value);
+          newFareMU[fareKey] = (muInput && muInput.value) ? Number(muInput.value) : 0;
+          newFareSVC[fareKey] = (svcInput && svcInput.value) ? Number(svcInput.value) : 0;
+        });
+        return { newFares, newFareMU, newFareSVC, hasError };
+      };
+
+      // Collect Main (Outbound/Shared)
+      const mainSuffix = isRoundTrip ? '_out' : '';
+      const mainData = collectData(mainSuffix);
+      if (mainData.hasError) return;
+
+      // Save to main flight
+      flight.fares = mainData.newFares;
+      flight.fare_mu = mainData.newFareMU;
+      flight.fare_svc = mainData.newFareSVC;
+
+      if (isRoundTrip) {
+        const returnFlight = currentFlights[flightIndex + 1];
+        if (isSplit) {
+          // Collect Return
+          const retData = collectData('_ret');
+          if (retData.hasError) return;
+
+          returnFlight.fares = retData.newFares;
+          returnFlight.fare_mu = retData.newFareMU;
+          returnFlight.fare_svc = retData.newFareSVC;
+        } else {
+          // Copy Main to Return
+          returnFlight.fares = JSON.parse(JSON.stringify(mainData.newFares));
+          returnFlight.fare_mu = JSON.parse(JSON.stringify(mainData.newFareMU));
+          returnFlight.fare_svc = JSON.parse(JSON.stringify(mainData.newFareSVC));
         }
       }
 
-      // Hide the editor
+      showNotification('Fares updated successfully', 'success');
       toggleInlineFareEditor(flightIndex);
-
-      // Re-render the results to show updated data IMMEDIATELY
-      renderResults(currentFlights);
-      regenerateOutputText();
-
-      showNotification('Fares updated successfully!', 'success');
-
-      // Re-apply global edit mode state if active so other edit buttons remain visible
-      if (isGlobalEditMode) {
-        // Show edit bars again for editable flights
-        currentFlights.forEach((f, idx) => {
-          if (f.is_editable) {
-            const editBar = document.getElementById(`card-edit-bar-${idx}`);
-            if (editBar) editBar.style.display = 'flex';
-          }
-        });
-      }
+      renderResults(currentFlights); // Re-render to show updates
+      regenerateOutputText();       // Ensure text also refreshes
     }
+
 
     async function deleteFlightOption(index) {
       const confirmed = await showDeleteModal('Delete Flight Option', 'Are you sure you want to delete this Entire Flight Option and its fares? This cannot be undone.');
@@ -5300,24 +5368,24 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     function formatFlightOutputWithoutFares(flight, flightNumber) {
       const dateDisplay = !flight.departure_date || flight.departure_date === 'N/A' ? '[DATE TO BE CONFIRMED]' : flight.departure_date;
-      const timeCat = getTimeCategory(flight.departure_time);
 
-      let out = `*${flightNumber}. ${flight.airline} : ${flight.flight_number}${timeCat ? ' (' + timeCat + ')' : ''}*\n\n`;
-      out += `*Date:* ${dateDisplay}\n`;
-      out += `*Departure:* ${flight.departure_city} (${flight.departure_airport})\n`;
-      out += `*Time:* ${flight.departure_time}\n\n`;
+      let out = `Flight from ${flight.departure_city} (${flight.departure_airport}) to ${flight.arrival_city} (${flight.arrival_airport}) — *${dateDisplay}*\n\n`;
 
-      out += `*Arrival:* ${flight.arrival_city} (${flight.arrival_airport})\n`;
-      out += `*Time:* ${flight.arrival_time}\n\n`;
+      out += `*${flight.airline} ${flight.flight_number}*\n`;
+      out += `*${flight.departure_airport}* ${flight.departure_time} → *${flight.arrival_airport}* ${flight.arrival_time}\n`;
 
       if (isFieldValid(flight.duration)) {
-        out += `*Duration:* ${flight.duration}`;
-        if (isFieldValid(flight.stops)) out += ` (${flight.stops})`;
-        out += `\n\n`;
+        out += `Duration: *${flight.duration}*\n`;
+      }
+
+      if (isFieldValid(flight.stops)) {
+        out += `${flight.stops}\n`;
+      } else {
+        out += `Non Stop\n`;
       }
 
       if (isFieldValid(flight.baggage)) out += `*Baggage:* ${flight.baggage}\n`;
-      if (isFieldValid(flight.refundability)) out += `*${flight.refundability}*`;
+      if (isFieldValid(flight.refundability)) out += `*${flight.refundability}*`; // No newline at end to let container handle spacing if needed
 
       return out;
     }
@@ -5383,33 +5451,63 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       }
 
       let output = '';
-      const tripTypeLabel = currentTripType === 'one_way' ? 'One Way Air Travel' :
-        currentTripType === 'round_trip' ? 'Round Trip Air Travel' :
-          'Multi-City Air Travel';
-
-      output = `Your Flight Itinerary for ${tripTypeLabel} for 1 Traveller(s):\n\n`;
+      // Header removed for consistency
 
       if (currentTripType === 'round_trip') {
         let flightIdx = 0;
         Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
           if (flightIds.length === 2) {
-            output += `\n${'='.repeat(60)}\n`;
-            output += `ROUND TRIP OPTION ${unitId}\n`;
-            output += `${'='.repeat(60)}\n\n`;
+            const headerText = `ROUND TRIP OPTION ${unitId}`;
+            const separator = '='.repeat(headerText.length);
+            output += `\n${separator}\n${headerText}\n${separator}\n\n`;
 
-            // Outbound flight - WITHOUT fares
-            output += `*✈️ OUTBOUND FLIGHT*\n\n`;
+            // Define flights locally
             const outboundFlight = currentFlights[flightIdx];
-            output += formatFlightOutputWithoutFares(outboundFlight, flightIdx + 1);
-
-            // Return flight - WITHOUT fares
-            output += `\n*✈️ RETURN FLIGHT*\n\n`;
             const returnFlight = currentFlights[flightIdx + 1];
-            output += formatFlightOutputWithoutFares(returnFlight, flightIdx + 2);
 
-            // Show fares ONCE for the entire option
-            output += `\n*FARES FOR THIS OPTION:*\n`;
-            output += formatFaresOutput(outboundFlight);
+            // Deep comparison helper for fares
+            const areFaresInitiallySame = (f1, f2) => {
+              const k1 = Object.keys(f1).sort();
+              const k2 = Object.keys(f2).sort();
+              if (k1.length !== k2.length) return false;
+              if (!k1.every((key, i) => key === k2[i])) return false;
+              return k1.every(key => f1[key] === f2[key]);
+            };
+
+            // Are fares different (Split Mode)?
+            const areFaresDifferent = !areFaresInitiallySame(outboundFlight.fares, returnFlight.fares);
+
+            if (areFaresDifferent) {
+              // Split Logic for Output Text
+
+              // Outbound
+              output += `*✈️ OUTBOUND FLIGHT*\n\n`;
+              output += formatFlightOutputWithoutFares(outboundFlight, flightIdx + 1);
+              output += `\n*OUTBOUND FARES:*\n`;
+              output += formatFaresOutput(outboundFlight);
+              output += `\n`;
+
+              // Return
+              output += `\n*✈️ RETURN FLIGHT*\n\n`;
+              output += formatFlightOutputWithoutFares(returnFlight, flightIdx + 2);
+              output += `\n*RETURN FARES:*\n`;
+              output += formatFaresOutput(returnFlight);
+
+            } else {
+              // Combined Logic (Existing)
+
+              // Outbound flight - WITHOUT fares
+              output += `*✈️ OUTBOUND FLIGHT*\n\n`;
+              output += formatFlightOutputWithoutFares(outboundFlight, flightIdx + 1);
+
+              // Return flight - WITHOUT fares
+              output += `\n*✈️ RETURN FLIGHT*\n\n`;
+              output += formatFlightOutputWithoutFares(returnFlight, flightIdx + 2);
+
+              // Show fares ONCE for the entire option
+              output += `\n*FARES FOR THIS OPTION:*\n`;
+              output += formatFaresOutput(outboundFlight);
+            }
 
             flightIdx += 2;
           }
@@ -5447,7 +5545,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         });
       }
 
-      output += `\n\n*Please Note:\nTimings mentioned are in 24 hours clock\nNo booking has been made yet\nRates and inventory are subject to availability at the time of final booking*`;
+      output += `\n\n*Please Note:*\n_Timings mentioned are in 24 hours clock_\n_No booking has been made yet_\n_Rates and inventory are subject to availability at the time of final booking_`;
 
       currentFinalText = output.trim();
       const outputElement = document.getElementById("output");
@@ -5730,7 +5828,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         EMAIL ONLY (TEXT, NO IMAGE)
       ===================================================== */
       if (type === 'email') {
-        const plainText = currentFinalText.replace(/\*/g, '');
+        const plainText = currentFinalText.replace(/[*_]/g, '');
 
         try {
           if (navigator.clipboard?.writeText) {
@@ -5781,7 +5879,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         ) {
           await navigator.share({
             title: 'Flight Itinerary',
-            text: currentFinalText.replace(/\*/g, ''),
+            text: currentFinalText, // Keep stars for WhatsApp formatting
             files: [file]
           });
 
