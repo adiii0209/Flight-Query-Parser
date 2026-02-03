@@ -2022,9 +2022,11 @@
 
     .flight-divider {
       height: 1px;
-      background: linear-gradient(to right, transparent, var(--border), transparent);
-      margin: 0;
+      background: var(--border);
+      /* Solid color instead of gradient for capture stability */
+      margin: 1rem 0;
       width: 100%;
+      opacity: 0.5;
     }
 
     .footer-fare-label {
@@ -4278,61 +4280,43 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       // Group flights by unit for display
       let flightIndex = 0;
       Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
+        // Add a header for the unit if it's round-trip or multi-city
         if (currentTripType === 'round_trip' || currentTripType === 'multi_city') {
-          const unitContainer = document.createElement('div');
-          unitContainer.style.marginBottom = '2rem';
-          unitContainer.style.width = '100%';
-
           const unitHeader = document.createElement('h4');
-          unitHeader.style.marginBottom = '1rem';
+          unitHeader.style.margin = '2rem 0 1rem 0';
           unitHeader.style.color = 'var(--primary)';
           unitHeader.style.paddingBottom = '0.5rem';
-          unitHeader.style.borderBottom = '2px solid var(--primary)';
+          unitHeader.style.borderBottom = '1px solid var(--border)';
+          unitHeader.style.width = '100%';
           unitHeader.textContent = (currentTripType === 'round_trip' ? 'Round Trip Option ' : 'Multi-City Option ') + unitId;
-          unitContainer.appendChild(unitHeader);
+          cardsContainer.appendChild(unitHeader);
+        }
 
-          const cardsWrapper = document.createElement('div');
-          cardsWrapper.className = 'cards-wrapper';
-
-          // For round trip, we want to combine 2 flights into one card if possible
-          if (currentTripType === 'round_trip' && flightIds.length === 2) {
-            const outbound = flights[flightIndex];
-            const returnFlight = flights[flightIndex + 1];
-            if (outbound && returnFlight) {
-              const combinedCard = createRoundTripCardWithEditButton(outbound, returnFlight, flightIndex, unitId);
-              cardsWrapper.appendChild(combinedCard);
-              flightIndex += 2;
-            }
-          } else if (currentTripType === 'multi_city') {
-            // Multi-City Combined Card
-            const optionFlights = flights.slice(flightIndex, flightIndex + flightIds.length);
-            if (optionFlights.length > 0) {
-              const combinedCard = createMultiCityCardWithEditButton(optionFlights, flightIndex, unitId);
-              cardsWrapper.appendChild(combinedCard);
-              flightIndex += flightIds.length;
-            }
-          } else {
-            // Malformed data fallback: render individual cards
-            flightIds.forEach(() => {
-              if (flightIndex < flights.length) {
-                const flight = flights[flightIndex];
-                const card = createCardWithEditButton(flight, flightIndex);
-                cardsWrapper.appendChild(card);
-                flightIndex++;
-              }
-            });
+        if (currentTripType === 'round_trip' && flightIds.length === 2) {
+          const outbound = flights[flightIndex];
+          const returnFlight = flights[flightIndex + 1];
+          if (outbound && returnFlight) {
+            const combinedCard = createRoundTripCardWithEditButton(outbound, returnFlight, flightIndex, unitId);
+            cardsContainer.appendChild(combinedCard);
+            flightIndex += 2;
           }
-
-          unitContainer.appendChild(cardsWrapper);
-          cardsContainer.appendChild(unitContainer);
+        } else if (currentTripType === 'multi_city') {
+          const optionFlights = flights.slice(flightIndex, flightIndex + flightIds.length);
+          if (optionFlights.length > 0) {
+            const combinedCard = createMultiCityCardWithEditButton(optionFlights, flightIndex, unitId);
+            cardsContainer.appendChild(combinedCard);
+            flightIndex += flightIds.length;
+          }
         } else {
-          // One Way
-          if (unitId === Object.keys(unitFlights)[0]) {
-            for (let fi = 0; fi < flights.length; fi++) {
-              cardsContainer.appendChild(createCardWithEditButton(flights[fi], fi));
+          // One Way or fallback
+          flightIds.forEach(() => {
+            if (flightIndex < flights.length) {
+              const flight = flights[flightIndex];
+              const card = createCardWithEditButton(flight, flightIndex);
+              cardsContainer.appendChild(card);
+              flightIndex++;
             }
-            flightIndex = flights.length;
-          }
+          });
         }
       });
 
