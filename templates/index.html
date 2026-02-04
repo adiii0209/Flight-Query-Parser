@@ -2064,6 +2064,22 @@
       border-bottom: 1px solid #fed7aa;
     }
 
+    /* Distinct styles for split fares in round trips */
+    .fare-footer-outbound {
+      background-color: rgba(14, 79, 218, 0.12) !important;
+      /* very light blue */
+      border-top: 2px solid rgba(14, 79, 218, 0.6) !important;
+      backdrop-filter: blur(6px);
+    }
+
+    .fare-footer-return {
+      background-color: rgba(5, 171, 216, 0.12) !important;
+      /* very light cyan */
+      border-top: 2px solid rgba(5, 171, 216, 0.6) !important;
+      backdrop-filter: blur(6px);
+    }
+
+
     .date-btn {
       background: #c2410c;
       color: white;
@@ -3695,10 +3711,18 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         <div class="add-fare-controls" style="margin-top: 1rem; border-top: 1px dashed var(--border); padding-top: 0.75rem;">
            <select class="form-select" style="width: 100%; max-width: 200px; padding: 0.5rem; font-size: 0.9rem; border-radius: 6px; border: 1.5px solid var(--border);" onchange="handleAddFareType(this, ${unitId}, '${suffix}')">
                <option value="">+ Add Fare Type...</option>
-               <option value="corporate">Corporate Fare</option>
-               <option value="sme">SME Fare</option>
-               <option value="coupon">Coupon Fare</option>
-               <option value="flexi">Flexi Fare</option>
+               <optgroup label="Fare Types">
+                   <option value="corporate">Corporate Fare</option>
+                   <option value="sme">SME Fare</option>
+                   <option value="coupon">Coupon Fare</option>
+                   <option value="flexi">Flexi Fare</option>
+               </optgroup>
+               <optgroup label="Cabin Classes">
+                   <option value="economy">Economy</option>
+                   <option value="premium_economy">Premium Economy</option>
+                   <option value="business">Business Class</option>
+                   <option value="first">First Class</option>
+               </optgroup>
                <option value="custom">Custom...</option>
            </select>
         </div>
@@ -3808,7 +3832,14 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (!val) return;
 
       let key = val;
-      let label = val.charAt(0).toUpperCase() + val.slice(1) + ' Fare';
+      const cabinLabels = {
+        'economy': 'Economy',
+        'premium_economy': 'Premium Economy',
+        'business': 'Business Class',
+        'first': 'First Class'
+      };
+
+      let label = cabinLabels[val] || (val.charAt(0).toUpperCase() + val.slice(1).replace('_', ' ') + ' Fare');
 
       if (val === 'custom') {
         const customName = prompt("Enter Name for Custom Fare Type:");
@@ -4704,8 +4735,12 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       return card;
     }
 
-    function generateFaresFooterHTML(flight) {
-      let faresHTML = '<div class="card-footer-fares">';
+    function generateFaresFooterHTML(flight, variant = '') {
+      let extraClass = '';
+      if (variant === 'outbound') extraClass = ' fare-footer-outbound';
+      else if (variant === 'return') extraClass = ' fare-footer-return';
+
+      let faresHTML = `<div class="card-footer-fares${extraClass}">`;
       Object.entries(flight.fares).forEach(([type, base]) => {
         const perFareMU = flight.fare_mu && flight.fare_mu[type] !== undefined ? flight.fare_mu[type] : (flight.markup || 0);
         const finalFare = base + perFareMU;
@@ -4774,8 +4809,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
       if (areFaresDifferent) {
         // Split Layout
-        const outFares = generateFaresFooterHTML(outbound);
-        const retFares = generateFaresFooterHTML(returnFlight);
+        const outFares = generateFaresFooterHTML(outbound, 'outbound');
+        const retFares = generateFaresFooterHTML(returnFlight, 'return');
 
         html += outLabel + outSummary + outTimeline + outFares + divider + retLabel + retSummary + retTimeline + retFares;
       } else {
@@ -5023,7 +5058,15 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           if ((mu === '' || mu === undefined) && currentMarkup > 0) mu = currentMarkup;
           if ((svc === '' || svc === undefined) && currentServiceCharge > 0) svc = currentServiceCharge;
 
-          faresHTML += createInlineFareCard(fIdx, fareType, fareType.charAt(0).toUpperCase() + fareType.slice(1) + ' Fare', baseFare, mu, svc, true, suffix);
+          const cabinLabels = {
+            'economy': 'Economy',
+            'premium_economy': 'Premium Economy',
+            'business': 'Business Class',
+            'first': 'First Class'
+          };
+          let label = cabinLabels[fareType] || (fareType.charAt(0).toUpperCase() + fareType.slice(1).replace('_', ' ') + ' Fare');
+
+          faresHTML += createInlineFareCard(fIdx, fareType, label, baseFare, mu, svc, true, suffix);
         });
 
         html += `<div class="fare-types" id="inline-fare-list-${fIdx}${suffix}">${faresHTML}</div>`;
@@ -5032,11 +5075,18 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             <div class="add-fare-controls" style="margin-top: 0.5rem; padding-top: 0.5rem;">
                <select class="form-select" style="width: 100%; max-width: 200px; padding: 0.4rem; font-size: 0.85rem; border-radius: 6px; border: 1.5px solid var(--border);" onchange="handleInlineAddFareType(this, ${fIdx}, '${suffix}')">
                  <option value="">+ Add Fare Type...</option>
-                 <option value="saver">Saver Fare</option>
-                 <option value="corporate">Corporate Fare</option>
-                 <option value="sme">SME Fare</option>
-                 <option value="coupon">Coupon Fare</option>
-                 <option value="flexi">Flexi Fare</option>
+                 <optgroup label="Fare Types">
+                     <option value="corporate">Corporate Fare</option>
+                     <option value="sme">SME Fare</option>
+                     <option value="coupon">Coupon Fare</option>
+                     <option value="flexi">Flexi Fare</option>
+                 </optgroup>
+                 <optgroup label="Cabin Classes">
+                     <option value="economy">Economy</option>
+                     <option value="premium_economy">Premium Economy</option>
+                     <option value="business">Business Class</option>
+                     <option value="first">First Class</option>
+                 </optgroup>
                  <option value="custom">Custom...</option>
                </select>
             </div>
@@ -5158,7 +5208,14 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (!val) return;
 
       let key = val;
-      let label = val.charAt(0).toUpperCase() + val.slice(1) + ' Fare';
+      const cabinLabels = {
+        'economy': 'Economy',
+        'premium_economy': 'Premium Economy',
+        'business': 'Business Class',
+        'first': 'First Class'
+      };
+
+      let label = cabinLabels[val] || (val.charAt(0).toUpperCase() + val.slice(1).replace('_', ' ') + ' Fare');
 
       if (val === 'custom') {
         const customName = prompt("Enter Name for Custom Fare Type:");
