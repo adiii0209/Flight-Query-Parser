@@ -10,7 +10,7 @@ load_dotenv()
 
 # ==================== CONFIG ====================
 
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = "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"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 MODEL = "mistralai/mistral-small-creative"
@@ -425,11 +425,24 @@ def calculate_days_offset(dep_time: str, arr_time: str, duration_str: str = None
                 expected_apparent = duration_hours + tz_diff_hours
                 
                 # If expected apparent > 24 or spans midnight, it's next day
+                # Fix: Don't just return 1 if > 24. Calculate exact days.
                 if expected_apparent > 24:
-                    return 1
-                elif duration_hours > 20:
-                    return 1  # Very long flight, definitely next day
+                    # e.g. 26h / 24 = 1.08 -> 1 day + extra. 
+                    # If 49h / 24 = 2.04 -> 2 days.
+                    return int(expected_apparent // 24)
+                
+                # Check for lighter logic if just spanning midnight once
+                if apparent_diff_hours < 0:
+                     return 1
+
+                elif duration_hours > 20 and apparent_diff_hours < 4: 
+                    # Heuristic: Long flight (20h+) arriving shortly after departure clock-wise
+                    return 1  
         
+        # Fallback for simple overnight
+        if apparent_diff_hours < 0:
+            return 1
+            
         return 0
     except Exception as e:
         print(f"[DEBUG] days_offset calc error: {e}")
@@ -711,7 +724,20 @@ def post_process_flight(flight: dict, hints: dict = None, original_text: str = "
             fare_str = re.sub(r'[^\d]', '', str(flight['saver_fare']))
             flight['saver_fare'] = int(fare_str) if fare_str else None
     if segments and len(segments) > 0:
+        
+        # 1. Try to extract explicit layover durations from text to override calculations
+        # Pattern: "14h 20m layover" or "Layover: 5h"
+        # We try to map them to the gaps (len(segments)-1 gaps)
+        # A safer regex specifically for layover lines:
+        explicit_layovers = re.findall(r'(\d+)\s*h(?:rs?)?\s*(\d+)?\s*m(?:ins?)?\s*layover', original_text, re.IGNORECASE)
+        # Or "Layover: Xh Ym"
+        explicit_layovers_v2 = re.findall(r'Layover:?\s*(\d+)\s*h(?:rs?)?\s*(\d+)?\s*m(?:ins?)?', original_text, re.IGNORECASE)
+        
+        # Combine and prioritize
+        detected_layovers = explicit_layovers + explicit_layovers_v2
+
         layover_cities = []
+        current_cumulative_days = 0
         
         for i, seg in enumerate(segments):
             # Ensure segment has required fields
@@ -720,34 +746,71 @@ def post_process_flight(flight: dict, hints: dict = None, original_text: str = "
             seg_dep_time = seg.get('departure_time')
             seg_arr_time = seg.get('arrival_time')
             
-            # Calculate segment duration if not provided or seems wrong
-            # Only calculate if we didn't already get it from "Travel time" regex hints
+            # --- Handling Layover (Gap before this segment) ---
+            if i > 0:
+                prev_seg = segments[i-1]
+                prev_arr_time = prev_seg.get('arrival_time')
+                layover_airport = seg_dep
+                
+                layover_dur = "N/A"
+                
+                # A. Try explicit extraction
+                if i-1 < len(detected_layovers):
+                    h, m = detected_layovers[i-1]
+                    layover_dur = f"{h}h {m or 0}m"
+                
+                # B. Calculate if missing
+                if layover_dur == "N/A" and prev_arr_time and seg_dep_time:
+                    layover_dur = calculate_layover_duration(prev_arr_time, seg_dep_time, layover_airport)
+                
+                seg['layover_duration'] = layover_dur
+                
+                # C. Calculate Layover Days to add to cumulative
+                layover_days = 0
+                if layover_dur != "N/A":
+                    dur_match = re.match(r'(\d+)h', layover_dur)
+                    if dur_match:
+                        dur_h = int(dur_match.group(1))
+                        # If duration is massive (e.g. 32h), adds 1 day
+                        if dur_h >= 24:
+                            layover_days = dur_h // 24
+                        # Also check simple overnight
+                        try:
+                            pa = datetime.strptime(prev_arr_time, "%H:%M")
+                            cd = datetime.strptime(seg_dep_time, "%H:%M")
+                            if cd < pa and layover_days == 0: 
+                                layover_days = 1
+                        except:
+                            pass
+                
+                current_cumulative_days += layover_days
+                layover_cities.append(seg_dep)
+
+            # --- Segment Calculations ---
+
+            # Capture start day for this segment relative to trip start
+            seg['accumulated_dep_days'] = current_cumulative_days
+
+            # Calculate segment duration if needed
             if seg_dep_time and seg_arr_time and (not seg.get('duration') or seg['duration'] == 'N/A'):
-                calculated_dur = calculate_segment_duration(seg_dep_time, seg_arr_time, seg_dep, seg_arr)
-                seg['duration'] = calculated_dur
+                seg['duration'] = calculate_segment_duration(seg_dep_time, seg_arr_time, seg_dep, seg_arr)
             
-            # Calculate days offset for this segment
+            # Calculate flight days offset (e.g. 0 or 1 usually)
+            seg_flight_days = 0
             if seg_dep_time and seg_arr_time:
-                seg['days_offset'] = calculate_days_offset(seg_dep_time, seg_arr_time, seg.get('duration'), seg_dep, seg_arr)
+                seg_flight_days = calculate_days_offset(seg_dep_time, seg_arr_time, seg.get('duration'), seg_dep, seg_arr)
+
+            seg['days_offset'] = seg_flight_days 
+            
+            # Update cumulative for arrival
+            current_cumulative_days += seg_flight_days
+            seg['accumulated_arr_days'] = current_cumulative_days
             
             # Expand city names from airport codes
             if seg_dep in AIRPORT_CODES and not seg.get('departure_city'):
                 seg['departure_city'] = AIRPORT_CODES.get(seg_dep, seg_dep)
             if seg_arr in AIRPORT_CODES and not seg.get('arrival_city'):
                 seg['arrival_city'] = AIRPORT_CODES.get(seg_arr, seg_arr)
-            
-            # Collect layover cities (intermediate airports)
-            if i > 0:
-                layover_cities.append(seg_dep)
-            
-            # Calculate layover duration from previous segment
-            if i > 0 and segments[i-1].get('arrival_time'):
-                prev_arr_time = segments[i-1].get('arrival_time')
-                layover_airport = seg_dep
-                
-                # Calculate layover (same airport, no timezone change)
-                layover_dur = calculate_layover_duration(prev_arr_time, seg_dep_time, layover_airport)
-                seg['layover_duration'] = layover_dur
         
         # Update stops field based on segments
         num_stops = len(segments) - 1
@@ -758,22 +821,19 @@ def post_process_flight(flight: dict, hints: dict = None, original_text: str = "
         # Calculate total journey duration for multi-segment flights (sum of flight times + layovers)
         total_minutes = 0
         for seg in segments:
+            # Flight Time
             seg_dur = seg.get('duration', '')
             if seg_dur and seg_dur != 'N/A':
                 dur_match = re.match(r'(\d+)h\s*(\d+)?m?', seg_dur)
                 if dur_match:
-                    total_minutes += int(dur_match.group(1)) * 60
-                    if dur_match.group(2):
-                        total_minutes += int(dur_match.group(2))
+                    total_minutes += int(dur_match.group(1)) * 60 + int(dur_match.group(2) or 0)
             
-            # Add layover time
+            # Layover Time
             layover = seg.get('layover_duration', '')
             if layover and layover != 'N/A':
                 lay_match = re.match(r'(\d+)h\s*(\d+)?m?', layover)
                 if lay_match:
-                    total_minutes += int(lay_match.group(1)) * 60
-                    if lay_match.group(2):
-                        total_minutes += int(lay_match.group(2))
+                    total_minutes += int(lay_match.group(1)) * 60 + int(lay_match.group(2) or 0)
         
         if total_minutes > 0:
             total_hours = total_minutes // 60
@@ -781,19 +841,11 @@ def post_process_flight(flight: dict, hints: dict = None, original_text: str = "
             flight['duration'] = f"{total_hours}h {remaining_mins}m"
             flight['total_journey_duration'] = flight['duration']
     
-    # Ensure arrival_next_day exists
-    if 'arrival_next_day' not in flight:
-        flight['arrival_next_day'] = False
-    
-    # Calculate days_offset for overall journey
-    if segments and len(segments) > 1:
-        # Multi-segment: sum up all segment day offsets + check for overnight layovers
-        total_days = 0
-        for i, seg in enumerate(segments):
-            total_days += seg.get('days_offset', 0)
-        
-        flight['days_offset'] = total_days
-        flight['arrival_next_day'] = total_days > 0
+    # Calculate days_offset for overall journey using final cumulative count
+    if segments and len(segments) > 0:
+        last_seg = segments[-1]
+        flight['days_offset'] = last_seg.get('accumulated_arr_days', 0)
+        flight['arrival_next_day'] = flight['days_offset'] > 0
     else:
         # Single segment 
         if dep_time and arr_time and dep_time != 'N/A' and arr_time != 'N/A':

@@ -1925,17 +1925,27 @@
       width: calc(100% + 2px);
     }
 
-    .layover-line-fix {
+    .layover-icon-box {
       position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: 2px;
-      background-image: linear-gradient(to bottom, var(--warning) 33%, rgba(255, 255, 255, 0) 0%);
-      background-position: right;
-      background-size: 2px 6px;
-      background-repeat: repeat-y;
-      z-index: 1;
+      left: 1px;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 50px;
+      height: 50px;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+    }
+
+
+    .layover-icon-box img {
+      width: 35px;
+      height: 35px;
+      opacity: 0.7;
     }
 
     .layover-pill {
@@ -2022,11 +2032,9 @@
 
     .flight-divider {
       height: 1px;
-      background: var(--border);
-      /* Solid color instead of gradient for capture stability */
-      margin: 1rem 0;
+      background: linear-gradient(to right, transparent, var(--border), transparent);
+      margin: 0;
       width: 100%;
-      opacity: 0.5;
     }
 
     .footer-fare-label {
@@ -4280,43 +4288,61 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       // Group flights by unit for display
       let flightIndex = 0;
       Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
-        // Add a header for the unit if it's round-trip or multi-city
         if (currentTripType === 'round_trip' || currentTripType === 'multi_city') {
+          const unitContainer = document.createElement('div');
+          unitContainer.style.marginBottom = '2rem';
+          unitContainer.style.width = '100%';
+
           const unitHeader = document.createElement('h4');
-          unitHeader.style.margin = '2rem 0 1rem 0';
+          unitHeader.style.marginBottom = '1rem';
           unitHeader.style.color = 'var(--primary)';
           unitHeader.style.paddingBottom = '0.5rem';
-          unitHeader.style.borderBottom = '1px solid var(--border)';
-          unitHeader.style.width = '100%';
+          unitHeader.style.borderBottom = '2px solid var(--primary)';
           unitHeader.textContent = (currentTripType === 'round_trip' ? 'Round Trip Option ' : 'Multi-City Option ') + unitId;
-          cardsContainer.appendChild(unitHeader);
-        }
+          unitContainer.appendChild(unitHeader);
 
-        if (currentTripType === 'round_trip' && flightIds.length === 2) {
-          const outbound = flights[flightIndex];
-          const returnFlight = flights[flightIndex + 1];
-          if (outbound && returnFlight) {
-            const combinedCard = createRoundTripCardWithEditButton(outbound, returnFlight, flightIndex, unitId);
-            cardsContainer.appendChild(combinedCard);
-            flightIndex += 2;
-          }
-        } else if (currentTripType === 'multi_city') {
-          const optionFlights = flights.slice(flightIndex, flightIndex + flightIds.length);
-          if (optionFlights.length > 0) {
-            const combinedCard = createMultiCityCardWithEditButton(optionFlights, flightIndex, unitId);
-            cardsContainer.appendChild(combinedCard);
-            flightIndex += flightIds.length;
-          }
-        } else {
-          // One Way or fallback
-          flightIds.forEach(() => {
-            if (flightIndex < flights.length) {
-              const flight = flights[flightIndex];
-              const card = createCardWithEditButton(flight, flightIndex);
-              cardsContainer.appendChild(card);
-              flightIndex++;
+          const cardsWrapper = document.createElement('div');
+          cardsWrapper.className = 'cards-wrapper';
+
+          // For round trip, we want to combine 2 flights into one card if possible
+          if (currentTripType === 'round_trip' && flightIds.length === 2) {
+            const outbound = flights[flightIndex];
+            const returnFlight = flights[flightIndex + 1];
+            if (outbound && returnFlight) {
+              const combinedCard = createRoundTripCardWithEditButton(outbound, returnFlight, flightIndex, unitId);
+              cardsWrapper.appendChild(combinedCard);
+              flightIndex += 2;
             }
-          });
+          } else if (currentTripType === 'multi_city') {
+            // Multi-City Combined Card
+            const optionFlights = flights.slice(flightIndex, flightIndex + flightIds.length);
+            if (optionFlights.length > 0) {
+              const combinedCard = createMultiCityCardWithEditButton(optionFlights, flightIndex, unitId);
+              cardsWrapper.appendChild(combinedCard);
+              flightIndex += flightIds.length;
+            }
+          } else {
+            // Malformed data fallback: render individual cards
+            flightIds.forEach(() => {
+              if (flightIndex < flights.length) {
+                const flight = flights[flightIndex];
+                const card = createCardWithEditButton(flight, flightIndex);
+                cardsWrapper.appendChild(card);
+                flightIndex++;
+              }
+            });
+          }
+
+          unitContainer.appendChild(cardsWrapper);
+          cardsContainer.appendChild(unitContainer);
+        } else {
+          // One Way
+          if (unitId === Object.keys(unitFlights)[0]) {
+            for (let fi = 0; fi < flights.length; fi++) {
+              cardsContainer.appendChild(createCardWithEditButton(flights[fi], fi));
+            }
+            flightIndex = flights.length;
+          }
         }
       });
 
@@ -4550,11 +4576,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           const sBag = safe(flight.baggage, '');
 
           html += `
-                    <div class="timeline-segment">
+                        <div class="timeline-segment">
                         <div class="t-dot departure"></div>
                         ${(i === flight.segments.length - 1) ? '<div class="t-dot arrival"></div>' : ''}
                         <div class="t-time-row">
-                            <div class="t-time">${sDT}</div>
+                            <div class="t-time">${sDT}${seg.accumulated_dep_days > 0 ? `<sup style="color: #f59e0b; font-size: 0.65rem; font-weight: 600; margin-left: 2px;">+${seg.accumulated_dep_days}</sup>` : ''}</div>
                             <div class="t-city">${formatCity(sDC, sDA)}</div>
                         </div>
                         <div class="flight-info-block">
@@ -4569,7 +4595,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
                             </div>
                         </div>
                         <div class="t-time-row">
-                            <div class="t-time" style="color: var(--text-secondary); font-size: 1rem;">${sAT}${seg.days_offset > 0 ? `<sup style="color: #f59e0b; font-size: 0.65rem; font-weight: 600; margin-left: 2px;">+${seg.days_offset}</sup>` : ''}</div>
+                            <div class="t-time" style="color: var(--text-secondary); font-size: 1rem;">${sAT}${(seg.accumulated_arr_days || seg.days_offset) > 0 ? `<sup style="color: #f59e0b; font-size: 0.65rem; font-weight: 600; margin-left: 2px;">+${seg.accumulated_arr_days || seg.days_offset}</sup>` : ''}</div>
                             <div class="t-city" style="font-weight: 500; color: var(--text-secondary); font-size: 0.95rem;">${formatCity(sAC, sAA)}</div>
                         </div>
                     </div>
@@ -4589,7 +4615,9 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             const lDC = safe(nextSeg.departure_city, lDA);
             html += `
                         <div class="layover-container">
-                            <div class="layover-line-fix"></div>
+                            <div class="layover-icon-box" title="Layover">
+                                <img src="/static/travel.png" alt="Airport">
+                            </div>
                             <div class="layover-pill"><span>⏱</span><span>${lText} in ${lDC} • ${dText}</span></div>
                         </div>
                     `;
@@ -5318,22 +5346,24 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           }
         });
       } else {
-        // Single segment flight
+        // Single segment flight or fallback
         output += `*${flight.airline} ${flight.flight_number}*\n`;
         output += `*${flight.departure_airport}* ${flight.departure_time} → *${flight.arrival_airport}* ${flight.arrival_time}\n`;
         if (isFieldValid(flight.duration)) output += `Duration: *${flight.duration}*\n`;
-        if (isFieldValid(flight.stops) && flight.stops !== '0 stops') output += `${flight.stops}\n`;
+
+        if (isFieldValid(flight.stops) && flight.stops !== '0 stops') {
+          output += `${flight.stops}\n`;
+        } else {
+          output += `Non Stop\n`;
+        }
       }
 
       output += `\n`;
 
       // Fares (no dash separator)
       Object.entries(flight.fares).forEach(([type, base]) => {
-        // Use per-fare markup if available, otherwise use global markup
         const perFareMU = flight.fare_mu && flight.fare_mu[type] !== undefined ? flight.fare_mu[type] : (flight.markup || 0);
         const finalFare = base + perFareMU;
-
-        // Use per-fare SVC if available, otherwise use global SVC
         const perFareSVC = flight.fare_svc && flight.fare_svc[type] !== undefined ? flight.fare_svc[type] : (flight.service_charge || 0);
         const perFareGST = perFareSVC > 0 ? Math.round(perFareSVC * 0.18) : 0;
 
@@ -5355,21 +5385,40 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
       let out = `Flight from ${flight.departure_city} (${flight.departure_airport}) to ${flight.arrival_city} (${flight.arrival_airport}) — *${dateDisplay}*\n\n`;
 
-      out += `*${flight.airline} ${flight.flight_number}*\n`;
-      out += `*${flight.departure_airport}* ${flight.departure_time} → *${flight.arrival_airport}* ${flight.arrival_time}\n`;
+      if (flight.segments && flight.segments.length > 1) {
+        // Multi-segment detailed layout
+        flight.segments.forEach((seg, idx) => {
+          // Segment Details
+          out += `*${seg.airline || flight.airline} ${seg.flight_number || ''}*\n`;
+          out += `*${seg.departure_airport}* ${seg.departure_time} → *${seg.arrival_airport}* ${seg.arrival_time}\n`;
+          if (isFieldValid(seg.duration)) out += `Duration: *${seg.duration}*\n`;
 
-      if (isFieldValid(flight.duration)) {
-        out += `Duration: *${flight.duration}*\n`;
-      }
+          // Layover Info
+          if (idx < flight.segments.length - 1) {
+            const nextSeg = flight.segments[idx + 1];
+            const layoverCity = nextSeg.departure_city || nextSeg.departure_airport;
+            const layoverDur = nextSeg.layover_duration || '';
 
-      if (isFieldValid(flight.stops)) {
-        out += `${flight.stops}\n`;
+            out += `\n*Layover:* ${layoverCity}`;
+            if (layoverDur && layoverDur !== 'N/A') out += ` — *${layoverDur}*`;
+            out += `\n\n`;
+          }
+        });
+
       } else {
-        out += `Non Stop\n`;
+        out += `*${flight.airline} ${flight.flight_number}*\n`;
+        out += `*${flight.departure_airport}* ${flight.departure_time} → *${flight.arrival_airport}* ${flight.arrival_time}\n`;
+        if (isFieldValid(flight.duration)) out += `Duration: *${flight.duration}*\n`;
+
+        if (isFieldValid(flight.stops) && flight.stops !== '0 stops') {
+          out += `${flight.stops}\n`;
+        } else {
+          out += `Non Stop\n`;
+        }
       }
 
       if (isFieldValid(flight.baggage)) out += `*Baggage:* ${flight.baggage}\n`;
-      if (isFieldValid(flight.refundability)) out += `*${flight.refundability}*`; // No newline at end to let container handle spacing if needed
+      if (isFieldValid(flight.refundability)) out += `*${flight.refundability}*`;
 
       return out;
     }
