@@ -10,6 +10,7 @@
     href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="/static/dashboard.css">
   <style>
     * {
       margin: 0;
@@ -1593,15 +1594,27 @@
     }
 
     .app-header .header-content {
-      justify-content: flex-end;
-      /* Push title to right, toggle is at start */
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       flex-direction: row;
     }
 
-    .header-left {
-      text-align: right;
-      /* Match the layout change */
+    .app-header .header-left {
+      text-align: left;
       flex: 1;
+      margin-left: 1rem;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+      justify-content: flex-start !important;
     }
 
     @media (max-width: 600px) {
@@ -1642,7 +1655,7 @@
         /* Ensure height for button */
       }
 
-      .header-left {
+      .app-header .header-left {
         text-align: center !important;
         width: 100%;
         padding: 0 3.5rem;
@@ -2750,6 +2763,134 @@
       box-shadow: 0 8px 15px rgba(37, 99, 235, 0.3);
     }
   </style>
+  <style>
+    /* ================= MODAL OVERLAY ================= */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      background: rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(4px);
+
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+
+      /* 🔥 Faster fade */
+      transition: opacity 0.2s ease, visibility 0.2s ease;
+      z-index: 9999;
+    }
+
+    .modal-overlay.is-active {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+
+    /* ================= MODAL CONTENT ================= */
+    .modal-content {
+      background: #ffffff;
+      border-radius: 14px;
+
+      /* 🔥 INCREASED WIDTH */
+      width: 96%;
+      max-width: 1100px;
+
+      /* 🔥 INCREASED HEIGHT USABILITY */
+      max-height: 90vh;
+
+      /* Comfortable spacing */
+      padding: 32px;
+
+      /* Subtle depth */
+      box-shadow: 0 25px 55px rgba(0, 0, 0, 0.28);
+
+      /* 🔥 Faster, stronger entrance animation */
+      transform: translateY(-14px) scale(0.97);
+      transition: transform 0.2s ease-out;
+    }
+
+    .modal-overlay.is-active .modal-content {
+      transform: translateY(0) scale(1);
+    }
+
+    /* ================= MODAL HEADER ================= */
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+
+      padding-bottom: 16px;
+      margin-bottom: 22px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .modal-title {
+      font-size: 1.45rem;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.6rem;
+      cursor: pointer;
+      color: #888;
+      transition: color 0.15s ease, transform 0.15s ease;
+    }
+
+    .modal-close:hover {
+      color: #222;
+      transform: scale(1.12);
+    }
+
+    /* ================= MODAL BODY ================= */
+    .modal-body {
+      /* 🔥 MORE VERTICAL SPACE */
+      max-height: 72vh;
+      overflow-y: auto;
+      padding-right: 6px;
+    }
+
+    /* ================= FORM LAYOUT ================= */
+    .modal-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 18px;
+    }
+
+    /* Stack inputs on tablets & mobile */
+    @media (max-width: 900px) {
+      .modal-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* ================= MODAL ACTIONS ================= */
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 14px;
+      margin-top: 28px;
+      padding-top: 18px;
+      border-top: 1px solid #eee;
+    }
+
+    /* Stack buttons on small screens */
+    @media (max-width: 480px) {
+      .modal-actions {
+        flex-direction: column-reverse;
+      }
+
+      .modal-actions .btn {
+        width: 100%;
+      }
+    }
+  </style>
 </head>
 
 <body>
@@ -2774,13 +2915,12 @@
     <div class="sidebar-body">
       <nav class="sidebar-nav">
         <a href="/" class="sidebar-link active">🏠 Home</a>
-        <a href="/itineraries" class="sidebar-link">📋 My Itineraries <span class="badge-coming-soon">Coming
-            Soon</span></a>
-        <a href="#" class="sidebar-link" onclick="showNotification('Settings coming soon!', 'info')">⚙️ Settings <span
-            class="badge-coming-soon">Coming Soon</span></a>
+        <a href="/passengers" class="sidebar-link">👤 Passengers</a>
+        <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
+        <a href="/itineraries-v2" class="sidebar-link">📋 Itineraries</a>
         <div style="margin-top: 1.5rem; padding: 0 0.5rem;">
           <label class="input-label"
-            style="display: block; margin-bottom: 0.75rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Appearance</label>
+            style="display: block; margin-bottom: 0.75rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Appearance</label>
           <button class="sidebar-link" style="width: 100%; border: none; cursor: pointer;" id="sidebarThemeToggle">
             <span class="theme-icon-container">🌙</span>
             <span id="themeToggleText">Dark Mode</span>
@@ -2927,111 +3067,117 @@
   </div>
 
   <!-- Save Itinerary Modal -->
-  <div id="saveModal" class="modal-overlay" style="display: none;">
+  <div id="saveModal" class="modal-overlay">
     <div class="modal-content">
       <div class="modal-header">
         <h3 class="modal-title">💾 Save Itinerary</h3>
         <button class="modal-close" onclick="closeSaveModal()">✕</button>
       </div>
 
-      <div class="billing-tabs">
-        <button class="billing-tab active" onclick="switchBillingTab('passenger')">👤 Passenger</button>
-        <button class="billing-tab" onclick="switchBillingTab('corporate')">🏢 Corporate</button>
+      <div class="modal-body">
+        <div class="billing-tabs" style="margin-bottom: 1.5rem;">
+          <button class="billing-tab active" onclick="switchBillingTab('passenger')">👤 Passenger</button>
+          <button class="billing-tab" onclick="switchBillingTab('corporate')">🏢 Corporate</button>
+        </div>
+
+        <form id="saveForm" onsubmit="saveItinerary(event)">
+          <!-- Passenger Billing Form -->
+          <div id="passengerForm" class="billing-form">
+            <div class="customer-selector" style="margin-bottom: 1.5rem;">
+              <select id="passengerCustomerSelect" class="form-select" onchange="loadCustomerData('passenger')"
+                style="width: 100%;">
+                <option value="">Select existing passenger or enter new</option>
+              </select>
+            </div>
+
+            <div class="modal-grid">
+              <div class="form-group">
+                <label class="form-label">Passenger Name *</label>
+                <input type="text" id="passengerName" class="form-input" required>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" id="passengerEmail" class="form-input">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input type="tel" id="passengerPhone" class="form-input">
+              </div>
+
+              <div class="form-group" style="grid-column: span 2;">
+                <label class="form-label">Address</label>
+                <textarea id="passengerAddress" class="form-textarea" rows="2"></textarea>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 1rem;">
+              <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" id="savePassengerToDb">
+                <span class="form-label" style="margin: 0;">Save this passenger to database for future use</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Corporate Billing Form -->
+          <div id="corporateForm" class="billing-form" style="display: none;">
+            <div class="customer-selector" style="margin-bottom: 1.5rem;">
+              <select id="corporateCustomerSelect" class="form-select" onchange="loadCustomerData('corporate')"
+                style="width: 100%;">
+                <option value="">Select existing corporate or enter new</option>
+              </select>
+            </div>
+
+            <div class="modal-grid">
+              <div class="form-group">
+                <label class="form-label">Company Name *</label>
+                <input type="text" id="corporateCompany" class="form-input" required>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Contact Person *</label>
+                <input type="text" id="corporateName" class="form-input" required>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" id="corporateEmail" class="form-input">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input type="tel" id="corporatePhone" class="form-input">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">GST Number</label>
+                <input type="text" id="corporateGst" class="form-input">
+              </div>
+
+              <div class="form-group" style="grid-column: span 2;">
+                <label class="form-label">Address</label>
+                <textarea id="corporateAddress" class="form-textarea" rows="2"></textarea>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 1rem;">
+              <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" id="saveCorporateToDb">
+                <span class="form-label" style="margin: 0;">Save this company to database for future use</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeSaveModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary">
+              <span id="saveBtnText">💾 Save Itinerary</span>
+              <span id="saveBtnLoading" style="display: none;" class="loading"></span>
+            </button>
+          </div>
+        </form>
       </div>
-
-      <form id="saveForm" onsubmit="saveItinerary(event)">
-        <!-- Passenger Billing Form -->
-        <div id="passengerForm" class="billing-form">
-          <div class="customer-selector">
-            <select id="passengerCustomerSelect" class="form-select" onchange="loadCustomerData('passenger')">
-              <option value="">Select existing passenger or enter new</option>
-            </select>
-            <button type="button" class="btn btn-primary btn-small" onclick="refreshCustomers()">🔄</button>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Passenger Name *</label>
-            <input type="text" id="passengerName" class="form-input" required>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Email</label>
-            <input type="email" id="passengerEmail" class="form-input">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Phone</label>
-            <input type="tel" id="passengerPhone" class="form-input">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Address</label>
-            <textarea id="passengerAddress" class="form-textarea"></textarea>
-          </div>
-
-          <div class="form-group">
-            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-              <input type="checkbox" id="savePassengerToDb">
-              <span class="form-label" style="margin: 0;">Save this passenger to database for future use</span>
-            </label>
-          </div>
-        </div>
-
-        <!-- Corporate Billing Form -->
-        <div id="corporateForm" class="billing-form" style="display: none;">
-          <div class="customer-selector">
-            <select id="corporateCustomerSelect" class="form-select" onchange="loadCustomerData('corporate')">
-              <option value="">Select existing corporate or enter new</option>
-            </select>
-            <button type="button" class="btn btn-primary btn-small" onclick="refreshCustomers()">🔄</button>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Company Name *</label>
-            <input type="text" id="corporateCompany" class="form-input" required>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Contact Person Name *</label>
-            <input type="text" id="corporateName" class="form-input" required>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Email</label>
-            <input type="email" id="corporateEmail" class="form-input">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Phone</label>
-            <input type="tel" id="corporatePhone" class="form-input">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">GST Number</label>
-            <input type="text" id="corporateGst" class="form-input">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Address</label>
-            <textarea id="corporateAddress" class="form-textarea"></textarea>
-          </div>
-
-          <div class="form-group">
-            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-              <input type="checkbox" id="saveCorporateToDb">
-              <span class="form-label" style="margin: 0;">Save this company to database for future use</span>
-            </label>
-          </div>
-        </div>
-
-        <div class="modal-actions">
-          <button type="button" class="btn btn-secondary" onclick="closeSaveModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary">
-            <span id="saveBtnText">💾 Save Itinerary</span>
-            <span id="saveBtnLoading" style="display: none;" class="loading"></span>
-          </button>
-        </div>
-      </form>
     </div>
   </div>
 
@@ -3052,19 +3198,37 @@
   </div>
 
   <!-- Warning Modal -->
-  <div id="warningModal" class="modal">
-    <div class="modal-content" style="text-align: center;">
-      <h3 style="color: #f59e0b; margin-bottom: 0.5rem; font-size: 1.5rem;">⚠️</h3>
-      <h3 style="color: var(--text-primary); margin-bottom: 1rem;">Markup Not Added</h3>
-      <p id="warningMessage" style="color: var(--text-secondary); margin-bottom: 1.5rem; line-height: 1.5;">
+  <div id="warningModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 480px; text-align: center;">
+      <h3 style="color: #f59e0b; margin-bottom: 0.5rem; font-size: 2rem;">⚠️</h3>
+      <h3 style="color: var(--text-primary); margin-bottom: 0.5rem; font-size: 1.25rem; font-weight: 700;">Markup Not
+        Added</h3>
+      <p id="warningMessage"
+        style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.95rem; line-height: 1.5;">
         Are you sure you want to proceed without adding any markup?
       </p>
+      <div class="modal-actions" style="justify-content: center; margin-top: 1.5rem;">
+        <button class="btn btn-secondary" onclick="closeWarningModal(false)" style="min-width: 100px;">Go Back</button>
+        <button class="btn btn-primary" onclick="closeWarningModal(true)"
+          style="background-color: #f59e0b; border-color: #f59e0b; min-width: 100px;">Proceed</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Saved Itinerary Success Modal -->
+  <div id="savedItineraryModal" class="modal">
+    <div class="modal-content" style="text-align: center;">
+      <h3 style="color: var(--success); margin-bottom: 0.5rem; font-size: 1.5rem;">✅</h3>
+      <h3 style="color: var(--text-primary); margin-bottom: 1rem;">Itinerary Saved!</h3>
+      <p style="color: var(--text-secondary); margin-bottom: 1.5rem; line-height: 1.5;">
+        Your itinerary has been successfully saved to the database.
+      </p>
       <div class="modal-actions" style="justify-content: center; gap: 1rem;">
-        <button class="btn btn-secondary" onclick="closeWarningModal(false)" style="padding: 0.6rem 1.25rem;">Go
-          Back</button>
+        <button class="btn btn-secondary" onclick="closeSavedItineraryModal(false)"
+          style="padding: 0.6rem 1.25rem;">Stay Here</button>
         <button class="btn btn-primary"
-          style="background-color: #f59e0b; border-color: #f59e0b; padding: 0.6rem 1.25rem;"
-          onclick="closeWarningModal(true)">Proceed</button>
+          style="background-color: var(--success); border-color: var(--success); padding: 0.6rem 1.25rem;"
+          onclick="closeSavedItineraryModal(true)">View Itineraries</button>
       </div>
     </div>
   </div>
@@ -3210,14 +3374,54 @@
 
     async function loadCustomers() {
       try {
-        const response = await fetch('/api/customers');
-        if (response.ok) {
-          const data = await response.json();
-          allCustomers = data.customers;
-          populateCustomerSelects();
-        }
+        allCustomers = [];
+
+        // Fetch Passengers from V2 API
+        try {
+          const passRes = await fetch('/api/v2/passengers');
+          if (passRes.ok) {
+            const passData = await passRes.json();
+            if (passData.passengers) {
+              passData.passengers.forEach(p => {
+                allCustomers.push({
+                  id: p.id,
+                  name: p.full_name,
+                  email: p.email,
+                  phone: p.phone,
+                  address: p.address_line1,
+                  customer_type: 'passenger',
+                  raw: p
+                });
+              });
+            }
+          }
+        } catch (e) { console.error("Error fetching passengers:", e); }
+
+        // Fetch Corporates from V2 API
+        try {
+          const corpRes = await fetch('/api/v2/corporates');
+          if (corpRes.ok) {
+            const corpData = await corpRes.json();
+            if (corpData.corporates) {
+              corpData.corporates.forEach(c => {
+                allCustomers.push({
+                  id: c.id,
+                  name: c.contact_person_name || 'Contact Person',
+                  company_name: c.company_name,
+                  gst_number: c.gst_number,
+                  email: c.contact_email,
+                  phone: c.contact_phone,
+                  address: c.billing_address_line1,
+                  customer_type: 'corporate',
+                  raw: c
+                });
+              });
+            }
+          }
+        } catch (e) { console.error("Error fetching corporates:", e); }
+
+        populateCustomerSelects();
       } catch (error) {
-        // Not logged in or error loading customers
         console.log('Could not load customers:', error);
       }
     }
@@ -3295,18 +3499,24 @@
     }
 
     function switchBillingTab(type) {
-      activeBillingType = type;
+      const passengerForm = document.getElementById("passengerForm");
+      const corporateForm = document.getElementById("corporateForm");
 
-      // Update tabs
-      document.querySelectorAll('.billing-tab').forEach(tab => {
-        tab.classList.remove('active');
-      });
-      event.target.classList.add('active');
+      if (type === "passenger") {
+        passengerForm.style.display = "block";
+        corporateForm.style.display = "none";
 
-      // Update forms
-      document.getElementById('passengerForm').style.display = type === 'passenger' ? 'block' : 'none';
-      document.getElementById('corporateForm').style.display = type === 'corporate' ? 'block' : 'none';
+        passengerForm.querySelectorAll("[required]").forEach(el => el.disabled = false);
+        corporateForm.querySelectorAll("[required]").forEach(el => el.disabled = true);
+      } else {
+        corporateForm.style.display = "block";
+        passengerForm.style.display = "none";
+
+        corporateForm.querySelectorAll("[required]").forEach(el => el.disabled = false);
+        passengerForm.querySelectorAll("[required]").forEach(el => el.disabled = true);
+      }
     }
+
 
     function openSaveModal() {
       // Check if we have parsed flights
@@ -3316,25 +3526,26 @@
       }
 
       // Check if user is logged in
-      fetch('/api/user')
+      fetch('/api/user', {
+        credentials: 'include'   // 🔥 IMPORTANT
+      })
         .then(response => {
           if (!response.ok) {
-            showNotification('Please login to save itineraries', 'error');
-            setTimeout(() => {
-              window.location.href = '/login';
-            }, 1500);
-            return;
+            throw new Error('Not authenticated');
           }
+
           // User is logged in, show the modal
-          document.getElementById('saveModal').style.display = 'flex';
+          const modal = document.getElementById('saveModal');
+          modal.style.display = 'flex';
         })
-        .catch(error => {
+        .catch(() => {
           showNotification('Please login to save itineraries', 'error');
           setTimeout(() => {
             window.location.href = '/login';
           }, 1500);
         });
     }
+
 
     function closeSaveModal() {
       document.getElementById('saveModal').style.display = 'none';
@@ -3369,28 +3580,29 @@
 
           const customerId = document.getElementById('passengerCustomerSelect').value;
           if (customerId) {
-            billingData.customer_id = customerId;
+            billingData.passenger_id = customerId; // V2 uses passenger_id
           }
 
           // If save to database is checked and no customer selected, create new customer
           if (document.getElementById('savePassengerToDb').checked && !customerId) {
-            const customerData = {
-              name: billingData.bill_to_name,
+            const nameParts = billingData.bill_to_name.split(' ');
+            const passengerData = {
+              first_name: nameParts[0] || 'Unknown',
+              last_name: nameParts.slice(1).join(' ') || '.',
               email: billingData.bill_to_email,
               phone: billingData.bill_to_phone,
-              address: billingData.bill_to_address,
-              customer_type: 'passenger'
+              address_line1: billingData.bill_to_address
             };
 
-            const customerResponse = await fetch('/api/customers', {
+            const customerResponse = await fetch('/api/v2/passengers', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(customerData)
+              body: JSON.stringify(passengerData)
             });
 
             if (customerResponse.ok) {
               const customerResult = await customerResponse.json();
-              billingData.customer_id = customerResult.customer.id;
+              billingData.passenger_id = customerResult.passenger.id;
               await loadCustomers();
             }
           }
@@ -3404,37 +3616,36 @@
 
           const customerId = document.getElementById('corporateCustomerSelect').value;
           if (customerId) {
-            billingData.customer_id = customerId;
+            billingData.corporate_id = customerId; // V2 uses corporate_id
           }
 
           // If save to database is checked and no customer selected, create new customer
           if (document.getElementById('saveCorporateToDb').checked && !customerId) {
-            const customerData = {
-              name: billingData.bill_to_name,
-              email: billingData.bill_to_email,
-              phone: billingData.bill_to_phone,
-              address: billingData.bill_to_address,
-              customer_type: 'corporate',
+            const corporateData = {
               company_name: billingData.bill_to_company,
-              gst_number: billingData.bill_to_gst
+              contact_person_name: billingData.bill_to_name,
+              contact_email: billingData.bill_to_email,
+              contact_phone: billingData.bill_to_phone,
+              gst_number: billingData.bill_to_gst,
+              billing_address_line1: billingData.bill_to_address
             };
 
-            const customerResponse = await fetch('/api/customers', {
+            const customerResponse = await fetch('/api/v2/corporates', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(customerData)
+              body: JSON.stringify(corporateData)
             });
 
             if (customerResponse.ok) {
               const customerResult = await customerResponse.json();
-              billingData.customer_id = customerResult.customer.id;
+              billingData.corporate_id = customerResult.corporate.id;
               await loadCustomers();
             }
           }
         }
 
-        // Save itinerary
-        const response = await fetch('/api/itineraries', {
+        // Save itinerary to V2 API
+        const response = await fetch('/api/v2/itineraries', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(billingData)
@@ -3447,9 +3658,9 @@
 
           // Optionally redirect to itineraries page
           setTimeout(async () => {
-            const view = await showWarningModal('Itinerary saved! Would you like to view your saved itineraries now?');
+            const view = await showSavedItineraryModal();
             if (view) {
-              window.location.href = '/itineraries';
+              window.location.href = '/itineraries-v2';
             }
           }, 1000);
         } else {
@@ -3483,17 +3694,35 @@
       if (message) {
         document.getElementById('warningMessage').textContent = message;
       }
-      document.getElementById('warningModal').classList.add('show');
+      document.getElementById('warningModal').classList.add('is-active');
       return new Promise((resolve) => {
         warningModalResolve = resolve;
       });
     }
 
     function closeWarningModal(result) {
-      document.getElementById('warningModal').classList.remove('show');
+      document.getElementById('warningModal').classList.remove('is-active');
       if (warningModalResolve) {
         warningModalResolve(result);
         warningModalResolve = null;
+      }
+    }
+
+    // --- Saved Itinerary Modal Logic ---
+    let savedModalResolve = null;
+
+    function showSavedItineraryModal() {
+      document.getElementById('savedItineraryModal').classList.add('is-active');
+      return new Promise((resolve) => {
+        savedModalResolve = resolve;
+      });
+    }
+
+    function closeSavedItineraryModal(shouldRedirect) {
+      document.getElementById('savedItineraryModal').classList.remove('is-active');
+      if (savedModalResolve) {
+        savedModalResolve(shouldRedirect);
+        savedModalResolve = null;
       }
     }
 
@@ -6042,9 +6271,246 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     }
   </script>
 
+  <!-- Sidebar Overlay -->
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- Sidebar Drawer -->
+  <div class="sidebar" id="sidebar">
+    <button class="sidebar-close" id="sidebarClose">✕</button>
+    <div class="sidebar-header">
+      <div class="user-profile-section">
+        <div class="user-avatar" id="sidebarAvatar">👤</div>
+        <div class="user-info">
+          <div class="user-name" id="sidebarUserName">Guest User</div>
+          <div class="user-email" id="sidebarUserEmail">Welcome!</div>
+        </div>
+      </div>
+      <div class="auth-btn-container">
+        <button class="sidebar-auth-btn" id="sidebarAuthBtn" onclick="handleAuthClick()">
+          🔐 Login / Register
+        </button>
+      </div>
+    </div>
+    <div class="sidebar-body">
+      <nav class="sidebar-nav">
+        <a href="/" class="sidebar-link active">🏠 Home</a>
+        <a href="/passengers" class="sidebar-link">👤 Passengers</a>
+        <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
+        <a href="/itineraries-v2" class="sidebar-link">📋 Itineraries</a>
+        <div style="margin-top: 1.5rem; padding: 0 0.5rem;">
+          <label class="input-label"
+            style="display: block; margin-bottom: 0.75rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Appearance</label>
+          <button class="sidebar-link" style="width: 100%; border: none; cursor: pointer;" id="sidebarThemeToggle">
+            <span class="theme-icon-container">🌙</span>
+            <span id="themeToggleText">Dark Mode</span>
+          </button>
+        </div>
+      </nav>
+    </div>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
+  <script>
+    // Sidebar Functionality
+    document.addEventListener('DOMContentLoaded', () => {
+      const menuToggle = document.getElementById('menuToggle');
+      const sidebarClose = document.getElementById('sidebarClose');
+      const sidebarOverlay = document.getElementById('sidebarOverlay');
+      const sidebar = document.getElementById('sidebar');
 
+      if (menuToggle) {
+        menuToggle.addEventListener('click', () => {
+          sidebar.classList.add('active');
+          sidebarOverlay.classList.add('active');
+          document.body.style.overflow = 'hidden';
+        });
+      }
+
+      const closeSidebar = () => {
+        sidebar.classList.remove('active');
+        sidebarOverlay.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      if (sidebarClose) sidebarClose.addEventListener('click', closeSidebar);
+      if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
+      // Auth for sidebar
+      checkSidebarAuthStatus();
+
+      // Theme toggle for sidebar
+      const sidebarThemeToggle = document.getElementById('sidebarThemeToggle');
+      if (sidebarThemeToggle) {
+        sidebarThemeToggle.addEventListener('click', () => {
+          const current = document.documentElement.getAttribute('data-theme');
+          const next = current === 'dark' ? 'light' : 'dark';
+          localStorage.setItem('theme', next);
+          updateGlobalTheme(next);
+        });
+      }
+    });
+
+    async function checkSidebarAuthStatus() {
+      try {
+        const response = await fetch('/api/user');
+        if (response.ok) {
+          const user = await response.json();
+          document.getElementById('sidebarUserName').textContent = user.username;
+          document.getElementById('sidebarUserEmail').textContent = user.email || 'Member';
+          document.getElementById('sidebarAvatar').textContent = user.username.charAt(0).toUpperCase();
+
+          const authBtn = document.getElementById('sidebarAuthBtn');
+          authBtn.textContent = '🚪 Logout';
+          authBtn.classList.add('logout');
+          authBtn.onclick = async () => {
+            const confirmed = confirm('Are you sure you want to logout?');
+            if (confirmed) {
+              await fetch('/api/logout', { method: 'POST' });
+              window.location.href = '/login';
+            }
+          };
+        }
+      } catch (e) { }
+    }
+
+    function updateGlobalTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      const text = document.getElementById('themeToggleText');
+      const icon = document.querySelector('.theme-icon-container');
+      if (text) text.textContent = theme === 'dark' ? 'Light Mode' : 'Dark Mode';
+      if (icon) icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+
+      // Update the main dark mode toggle icon too if it exists
+      const mainIcon = document.querySelector('.dark-mode-icon');
+      if (mainIcon) mainIcon.textContent = theme === 'dark' ? '☀️' : '🌙';
+    }
+
+    function handleAuthClick() {
+      window.location.href = '/login';
+    }
+
+    // Edit Itinerary Functionality
+    async function loadItineraryForEdit(itineraryId) {
+      if (!itineraryId) return;
+
+      showNotification('Loading itinerary for edit...', 'info');
+      try {
+        const response = await fetch(`/api/v2/itineraries/${itineraryId}`);
+        if (!response.ok) throw new Error('Failed to fetch itinerary');
+
+        const itinerary = await response.json();
+
+        // Restore Parsing State
+        currentFlights = itinerary.flights || [];
+        currentMarkup = itinerary.markup || 0;
+        currentFinalText = itinerary.parser_output_text || '';
+        document.getElementById('markup').value = currentMarkup;
+
+        // Infer trip type defaults
+        currentTripType = 'one_way';
+        document.querySelector(`input[name="tripType"][value="one_way"]`).checked = true;
+        handleTripType();
+
+        // Restore unitFlights (Mocking as one big unit to ensure visibility)
+        unitFlights = { '1': currentFlights.map((_, i) => i) };
+
+        // Render Cards
+        renderResults(currentFlights);
+
+        // Restore Billing & Customer
+        activeBillingType = itinerary.billing_type || 'passenger';
+        document.querySelectorAll('.billing-tab').forEach(tab => {
+          if (tab.dataset.type === activeBillingType) tab.classList.add('active');
+          else tab.classList.remove('active');
+        });
+        document.getElementById('passengerForm').style.display = activeBillingType === 'passenger' ? 'block' : 'none';
+        document.getElementById('corporateForm').style.display = activeBillingType === 'corporate' ? 'block' : 'none';
+
+        // Wait for customers to load
+        if (allCustomers.length === 0) await loadCustomers();
+
+        if (activeBillingType === 'passenger') {
+          // Pre-fill fields
+          document.getElementById('passengerName').value = itinerary.bill_to_name || '';
+          document.getElementById('passengerEmail').value = itinerary.bill_to_email || '';
+          document.getElementById('passengerPhone').value = itinerary.bill_to_phone || '';
+          document.getElementById('passengerAddress').value = itinerary.bill_to_address || '';
+
+          if (itinerary.passenger_id) {
+            const select = document.getElementById('passengerCustomerSelect');
+            if (select) select.value = itinerary.passenger_id;
+          }
+        } else {
+          document.getElementById('corporateName').value = itinerary.bill_to_name || '';
+          document.getElementById('corporateEmail').value = itinerary.bill_to_email || '';
+          document.getElementById('corporatePhone').value = itinerary.bill_to_phone || '';
+          document.getElementById('corporateAddress').value = itinerary.bill_to_address || '';
+          document.getElementById('corporateCompany').value = itinerary.bill_to_company || '';
+          document.getElementById('corporateGst').value = itinerary.bill_to_gst || '';
+
+          if (itinerary.corporate_id) {
+            const select = document.getElementById('corporateCustomerSelect');
+            if (select) select.value = itinerary.corporate_id;
+          }
+        }
+
+        showNotification('Itinerary loaded for editing', 'success');
+
+      } catch (e) {
+        console.error("Error loading itinerary:", e);
+        showNotification('Failed to load itinerary', 'error');
+      }
+    }
+
+    // Check for edit param on load
+    window.addEventListener('DOMContentLoaded', () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const editId = urlParams.get('edit');
+      if (editId) {
+        loadItineraryForEdit(editId);
+      }
+    });
+
+    // --- Save Modal Logic ---
+    const saveModal = document.getElementById('saveModal');
+
+    function openSaveModal() {
+      console.log("openSaveModal called");
+
+      if (!Array.isArray(currentFlights) || currentFlights.length === 0) {
+        showNotification('Please parse flights first', 'warning');
+        return;
+      }
+
+      // Populate passenger fields if empty
+      const pName = document.getElementById('passengerName');
+      if (pName && !pName.value) {
+        // Could try to auto-fill from somewhere if needed, 
+        // but for now we leave it empty or user fills it.
+      }
+
+      saveModal.classList.add('is-active');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeSaveModal() {
+      saveModal.classList.remove('is-active');
+      document.body.style.overflow = '';
+    }
+
+    function switchBillingTab(type) {
+      activeBillingType = type;
+      document.querySelectorAll('.billing-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll(`.billing-tab[onclick="switchBillingTab('${type}')"]`).forEach(t => t.classList.add('active'));
+
+      document.getElementById('passengerForm').style.display = type === 'passenger' ? 'block' : 'none';
+      document.getElementById('corporateForm').style.display = type === 'corporate' ? 'block' : 'none';
+    }
+
+    // --- End Save Modal Logic ---
+
+  </script>
 </body>
 
 </html>

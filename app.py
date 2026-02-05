@@ -20,6 +20,16 @@ app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-pr
 
 db.init_app(app)
 
+# Register API v2 Blueprint
+# Register API v2 Blueprint
+from routes_v2 import api_v2
+from extensions_v2 import db_session
+app.register_blueprint(api_v2)
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    db_session.remove()
+
 # ==================== AUTHENTICATION DECORATOR ====================
 
 def login_required(f):
@@ -38,10 +48,20 @@ def home():
     """Serve the main HTML page"""
     return render_template('index.html')
 
-@app.route("/itineraries")
-def itineraries_page():
-    """Serve the itineraries management page"""
-    return render_template('itineraries.html')
+@app.route("/itineraries-v2")
+def itineraries_v2_page():
+    """Serve the new itineraries management page"""
+    return render_template('itineraries_v2.html')
+
+@app.route("/passengers")
+def passengers_page():
+    """Serve the passengers management page"""
+    return render_template('passengers.html')
+
+@app.route("/corporates")
+def corporates_page():
+    """Serve the corporates management page"""
+    return render_template('corporates.html')
 
 @app.route("/login")
 def login_page():

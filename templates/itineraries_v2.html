@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Itineraries - Travel Agent Platform</title>
+  <meta name="description" content="Manage flight itineraries, approvals, and bookings">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+
+<body>
+  <!-- Sidebar Overlay -->
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- Sidebar Drawer -->
+  <div class="sidebar" id="sidebar">
+    <button class="sidebar-close" id="sidebarClose">✕</button>
+    <div class="sidebar-header">
+      <div class="user-profile-section">
+        <div class="user-avatar" id="sidebarAvatar">👤</div>
+        <div class="user-info">
+          <div class="user-name" id="sidebarUserName">Guest User</div>
+          <div class="user-email" id="sidebarUserEmail">Welcome!</div>
+        </div>
+      </div>
+      <div class="auth-btn-container">
+        <button class="sidebar-auth-btn" id="sidebarAuthBtn" onclick="handleAuthClick()">
+          🔐 Login / Register
+        </button>
+      </div>
+    </div>
+    <div class="sidebar-body">
+      <nav class="sidebar-nav">
+        <a href="/" class="sidebar-link">🏠 Home</a>
+        <a href="/passengers" class="sidebar-link">👤 Passengers</a>
+        <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
+        <a href="/itineraries-v2" class="sidebar-link active">📋 Itineraries</a>
+        <div style="margin-top: 1.5rem; padding: 0 0.5rem;">
+          <label class="input-label"
+            style="display: block; margin-bottom: 0.75rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Appearance</label>
+          <button class="sidebar-link" style="width: 100%; border: none; cursor: pointer;" id="sidebarThemeToggle">
+            <span class="theme-icon-container">🌙</span>
+            <span id="themeToggleText">Dark Mode</span>
+          </button>
+        </div>
+      </nav>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="main-content">
+    <!-- Header -->
+    <header class="page-header">
+      <div class="header-left">
+        <h1 class="page-title">
+          <span class="title-icon">📋</span>
+          Itineraries
+        </h1>
+        <p class="page-subtitle">Manage and track all flight itineraries</p>
+      </div>
+      <div class="header-right">
+        <a href="/" class="btn btn-primary">
+          <span>✈️</span> Create Itinerary
+        </a>
+        <button class="menu-toggle" id="menuToggle" aria-label="Open Menu">
+          <span class="menu-bar"></span>
+          <span class="menu-bar"></span>
+          <span class="menu-bar"></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Stats Cards -->
+    <div class="stats-row">
+      <div class="stat-card clickable" onclick="filterByStatus('')">
+        <div class="stat-icon">📋</div>
+        <div class="stat-info">
+          <div class="stat-value" id="totalItineraries">0</div>
+          <div class="stat-label">Total</div>
+        </div>
+      </div>
+      <div class="stat-card clickable" onclick="filterByStatus('draft')">
+        <div class="stat-icon">📝</div>
+        <div class="stat-info">
+          <div class="stat-value" id="draftCount">0</div>
+          <div class="stat-label">Drafts</div>
+        </div>
+      </div>
+      <div class="stat-card clickable" onclick="filterByStatus('pending_approval')">
+        <div class="stat-icon">⏳</div>
+        <div class="stat-info">
+          <div class="stat-value" id="pendingCount">0</div>
+          <div class="stat-label">Pending</div>
+        </div>
+      </div>
+      <div class="stat-card clickable" onclick="filterByStatus('approved')">
+        <div class="stat-icon">✅</div>
+        <div class="stat-info">
+          <div class="stat-value" id="approvedCount">0</div>
+          <div class="stat-label">Approved</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filters & Search -->
+    <div class="filters-row">
+      <div class="filter-group">
+        <select id="statusFilter" class="filter-select" onchange="applyFilters()">
+          <option value="">All Statuses</option>
+          <option value="draft">Draft</option>
+          <option value="pending_approval">Pending Approval</option>
+          <option value="approved">Approved</option>
+          <option value="booked">Booked</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <select id="billingFilter" class="filter-select" onchange="applyFilters()">
+          <option value="">All Billing Types</option>
+          <option value="passenger">Individual</option>
+          <option value="corporate">Corporate</option>
+        </select>
+      </div>
+      <div class="search-box">
+        <input type="text" id="searchItineraries" placeholder="Search itineraries..." onkeyup="applyFilters()">
+        <span class="search-icon">🔍</span>
+      </div>
+    </div>
+
+    <!-- Itineraries List -->
+    <div id="itinerariesContainer" class="itineraries-list">
+      <div class="empty-state">
+        <div class="empty-icon">📋</div>
+        <h3>Loading itineraries...</h3>
+      </div>
+    </div>
+  </div>
+
+  <!-- Itinerary Detail Modal -->
+  <div class="modal-overlay" id="itineraryDetailModal">
+    <div class="modal-content modal-xl">
+      <div class="modal-header">
+        <h2 id="itineraryDetailTitle">Itinerary Details</h2>
+        <button class="modal-close" onclick="closeItineraryDetailModal()">✕</button>
+      </div>
+      <div class="modal-body" id="itineraryDetailContent">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div class="modal-overlay" id="confirmModal">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h2 id="confirmTitle">Confirm</h2>
+        <button class="modal-close" onclick="closeConfirmModal(false)">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="confirmMessage" class="confirm-message"></p>
+        <div class="form-actions">
+          <button class="btn btn-secondary" onclick="closeConfirmModal(false)">Cancel</button>
+          <button class="btn btn-danger" onclick="closeConfirmModal(true)">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification -->
+  <div id="notification" class="notification"></div>
+
+  <script>
+    // Global state
+    let itineraries = [];
+    let filteredItineraries = [];
+    let currentItinerary = null;
+    let confirmResolve = null;
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', async () => {
+      initializeSidebar();
+      await checkAuthStatus();
+      await loadItineraries();
+
+      // Check URL for specific itinerary
+      const urlParams = new URLSearchParams(window.location.search);
+      const itineraryId = urlParams.get('id');
+      if (itineraryId) {
+        viewItineraryDetails(itineraryId);
+      }
+    });
+
+    // Sidebar & Theme
+    function initializeSidebar() {
+      const menuToggle = document.getElementById('menuToggle');
+      const sidebarClose = document.getElementById('sidebarClose');
+      const sidebarOverlay = document.getElementById('sidebarOverlay');
+      const sidebar = document.getElementById('sidebar');
+
+      menuToggle.addEventListener('click', () => {
+        sidebar.classList.add('active');
+        sidebarOverlay.classList.add('active');
+        document.body.style.overflow = 'hidden';
+      });
+
+      const closeSidebar = () => {
+        sidebar.classList.remove('active');
+        sidebarOverlay.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      sidebarClose.addEventListener('click', closeSidebar);
+      sidebarOverlay.addEventListener('click', closeSidebar);
+
+      // Theme toggle
+      const savedTheme = localStorage.getItem('theme') || 'light';
+      updateTheme(savedTheme);
+      document.getElementById('sidebarThemeToggle').addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        localStorage.setItem('theme', next);
+        updateTheme(next);
+      });
+    }
+
+    function updateTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      const text = document.getElementById('themeToggleText');
+      const icon = document.querySelector('.theme-icon-container');
+      if (theme === 'dark') {
+        icon.textContent = '☀️';
+        text.textContent = 'Light Mode';
+      } else {
+        icon.textContent = '🌙';
+        text.textContent = 'Dark Mode';
+      }
+    }
+
+    // Auth
+    async function checkAuthStatus() {
+      try {
+        const response = await fetch('/api/user');
+        if (response.ok) {
+          const user = await response.json();
+          document.getElementById('sidebarUserName').textContent = user.username;
+          document.getElementById('sidebarUserEmail').textContent = user.email || 'Member';
+          document.getElementById('sidebarAvatar').textContent = user.username.charAt(0).toUpperCase();
+
+          const authBtn = document.getElementById('sidebarAuthBtn');
+          authBtn.textContent = '🚪 Logout';
+          authBtn.classList.add('logout');
+          authBtn.onclick = async () => {
+            const confirmed = await showConfirm('Logout', 'Are you sure you want to logout?');
+            if (confirmed) {
+              await fetch('/api/logout', { method: 'POST' });
+              window.location.href = '/login';
+            }
+          };
+          return true;
+        } else {
+          showLoginPrompt();
+          return false;
+        }
+      } catch (e) {
+        showLoginPrompt();
+        return false;
+      }
+    }
+
+    function handleAuthClick() {
+      window.location.href = '/login';
+    }
+
+    function showLoginPrompt() {
+      document.getElementById('itinerariesContainer').innerHTML = `
+        <div class="empty-state login-required">
+          <div class="empty-icon">🔐</div>
+          <h3>Login Required</h3>
+          <p>Please login to manage itineraries.</p>
+          <a href="/login" class="btn btn-primary">Login / Register</a>
+        </div>
+      `;
+    }
+
+    // Load Data
+    async function loadItineraries() {
+      try {
+        const response = await fetch('/api/v2/itineraries');
+        if (response.ok) {
+          const data = await response.json();
+          itineraries = data.itineraries;
+          filteredItineraries = [...itineraries];
+          updateStats();
+          renderItineraries();
+        }
+      } catch (e) {
+        console.error('Failed to load itineraries:', e);
+        showNotification('Failed to load itineraries', 'error');
+      }
+    }
+
+    function updateStats() {
+      document.getElementById('totalItineraries').textContent = itineraries.length;
+      document.getElementById('draftCount').textContent = itineraries.filter(i => i.status === 'draft').length;
+      document.getElementById('pendingCount').textContent = itineraries.filter(i => i.status === 'pending_approval').length;
+      document.getElementById('approvedCount').textContent = itineraries.filter(i => i.status === 'approved').length;
+    }
+
+    function filterByStatus(status) {
+      document.getElementById('statusFilter').value = status;
+      applyFilters();
+    }
+
+    function applyFilters() {
+      const status = document.getElementById('statusFilter').value;
+      const billing = document.getElementById('billingFilter').value;
+      const search = document.getElementById('searchItineraries').value.toLowerCase();
+
+      filteredItineraries = itineraries.filter(it => {
+        if (status && it.status !== status) return false;
+        if (billing && it.billing_type !== billing) return false;
+        if (search) {
+          const searchFields = [
+            it.title,
+            it.bill_to_name,
+            it.bill_to_company,
+            it.bill_to_gst,
+            it.passenger?.full_name,
+            it.corporate?.company_name
+          ].filter(Boolean).join(' ').toLowerCase();
+          if (!searchFields.includes(search)) return false;
+        }
+        return true;
+      });
+
+      renderItineraries();
+    }
+
+    function renderItineraries() {
+      const container = document.getElementById('itinerariesContainer');
+
+      if (filteredItineraries.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">📋</div>
+            <h3>No Itineraries Found</h3>
+            <p>Create your first itinerary or adjust filters.</p>
+            <a href="/" class="btn btn-primary">✈️ Create Itinerary</a>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filteredItineraries.map(it => `
+        <div class="itinerary-card ${it.status}" data-id="${it.id}">
+          <div class="itinerary-header">
+            <div class="itinerary-title-section">
+              <h3 class="itinerary-title">${it.title || 'Untitled Itinerary'}</h3>
+              <div class="itinerary-meta">
+                <span class="meta-item">📅 ${new Date(it.created_at).toLocaleDateString()}</span>
+                ${it.updated_at ? `<span class="meta-item">✏️ ${new Date(it.updated_at).toLocaleDateString()}</span>` : ''}
+              </div>
+            </div>
+            <div class="itinerary-badges">
+              <span class="badge badge-status badge-${it.status}">${formatStatus(it.status)}</span>
+              <span class="badge badge-billing">${it.billing_type === 'corporate' ? '🏢 Corporate' : '👤 Individual'}</span>
+            </div>
+          </div>
+          
+          <div class="itinerary-body">
+            <div class="itinerary-details">
+              <div class="detail-column">
+                <h4>Passenger</h4>
+                ${it.passenger ? `
+                  <div class="detail-value">
+                    <span class="avatar-sm">${(it.passenger.first_name || 'P').charAt(0)}</span>
+                    ${it.passenger.full_name || `${it.passenger.first_name} ${it.passenger.last_name}`}
+                  </div>
+                ` : '<span class="detail-value text-muted">Not specified</span>'}
+              </div>
+              
+              ${it.billing_type === 'corporate' ? `
+                <div class="detail-column">
+                  <h4>Corporate</h4>
+                  ${it.corporate ? `
+                    <div class="detail-value">
+                      <span class="icon-sm">🏢</span>
+                      ${it.corporate.company_name}
+                    </div>
+                    ${it.bill_to_gst ? `<div class="detail-sub">GST: ${it.bill_to_gst}</div>` : ''}
+                  ` : '<span class="detail-value text-muted">Not specified</span>'}
+                </div>
+              ` : `
+                <div class="detail-column">
+                  <h4>Bill To</h4>
+                  <div class="detail-value">${it.bill_to_name || 'Not specified'}</div>
+                </div>
+              `}
+              
+              <div class="detail-column">
+                <h4>Amount</h4>
+                <div class="detail-value amount">${it.total_amount ? '₹' + it.total_amount.toLocaleString() : '-'}</div>
+              </div>
+            </div>
+            
+            ${it.selected_flight_option !== null ? `
+              <div class="selected-flight-indicator">
+                <span class="indicator-icon">✓</span>
+                Flight option ${it.selected_flight_option + 1} selected
+              </div>
+            ` : ''}
+          </div>
+          
+          <div class="itinerary-actions">
+            <button class="btn btn-secondary" onclick="viewItineraryDetails('${it.id}')">
+              <span>👁️</span> View
+            </button>
+            <button class="btn btn-secondary" onclick="editItinerary('${it.id}')">
+              <span>✏️</span> Edit
+            </button>
+            ${it.status === 'pending_approval' && it.selected_flight_option !== null ? `
+              <button class="btn btn-success" onclick="approveItinerary('${it.id}')">
+                <span>✓</span> Approve
+              </button>
+            ` : ''}
+            <button class="btn btn-danger-outline" onclick="deleteItinerary('${it.id}')">
+              <span>🗑️</span>
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function formatStatus(status) {
+      const statusLabels = {
+        'draft': 'Draft',
+        'pending_approval': 'Pending Approval',
+        'approved': 'Approved',
+        'booked': 'Booked',
+        'cancelled': 'Cancelled',
+        'completed': 'Completed'
+      };
+      return statusLabels[status] || status;
+    }
+
+    // View Itinerary Details
+    async function viewItineraryDetails(itineraryId) {
+      try {
+        const response = await fetch(`/api/v2/itineraries/${itineraryId}`);
+        if (!response.ok) throw new Error('Failed to load itinerary');
+
+        currentItinerary = await response.json();
+        renderItineraryDetails();
+        document.getElementById('itineraryDetailModal').classList.add('active');
+      } catch (e) {
+        showNotification('Failed to load itinerary details', 'error');
+      }
+    }
+
+    function renderItineraryDetails() {
+      const it = currentItinerary;
+      const content = document.getElementById('itineraryDetailContent');
+
+      document.getElementById('itineraryDetailTitle').textContent = it.title || 'Itinerary Details';
+
+      const flights = it.flights || [];
+
+      content.innerHTML = `
+        <div class="detail-header-row">
+          <div class="status-badges">
+            <span class="badge badge-lg badge-status badge-${it.status}">${formatStatus(it.status)}</span>
+            <span class="badge badge-lg badge-billing">${it.billing_type === 'corporate' ? '🏢 Corporate' : '👤 Individual'}</span>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-secondary" onclick="editItinerary('${it.id}'); closeItineraryDetailModal();">
+              <span>✏️</span> Edit
+            </button>
+            ${it.status === 'pending_approval' && it.selected_flight_option !== null ? `
+              <button class="btn btn-success" onclick="approveItinerary('${it.id}')">
+                <span>✓</span> Approve
+              </button>
+            ` : ''}
+          </div>
+        </div>
+        
+        <div class="detail-sections">
+          <!-- Passenger & Billing -->
+          <div class="detail-section">
+            <h4>Passenger & Billing</h4>
+            <div class="detail-grid detail-grid-3">
+              <div class="detail-item">
+                <span class="detail-label">Passenger</span>
+                <span class="detail-value">${it.passenger?.full_name || it.passenger?.first_name || 'Not specified'}</span>
+              </div>
+              ${it.billing_type === 'corporate' ? `
+                <div class="detail-item">
+                  <span class="detail-label">Corporate</span>
+                  <span class="detail-value">${it.corporate?.company_name || it.bill_to_company || 'Not specified'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">GST Number</span>
+                  <span class="detail-value gst-value">${it.bill_to_gst || '-'}</span>
+                </div>
+              ` : `
+                <div class="detail-item">
+                  <span class="detail-label">Bill To</span>
+                  <span class="detail-value">${it.bill_to_name || '-'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Email</span>
+                  <span class="detail-value">${it.bill_to_email || '-'}</span>
+                </div>
+              `}
+              <div class="detail-item">
+                <span class="detail-label">Phone</span>
+                <span class="detail-value">${it.bill_to_phone || '-'}</span>
+              </div>
+              <div class="detail-item detail-item-wide">
+                <span class="detail-label">Address</span>
+                <span class="detail-value">${it.bill_to_address || '-'}</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Financials -->
+          <div class="detail-section">
+            <h4>Financial Summary</h4>
+            <div class="financial-grid">
+              <div class="financial-item">
+                <span class="financial-label">Total Amount</span>
+                <span class="financial-value">${it.total_amount ? '₹' + it.total_amount.toLocaleString() : '-'}</span>
+              </div>
+              <div class="financial-item">
+                <span class="financial-label">Markup</span>
+                <span class="financial-value">${it.markup ? '₹' + it.markup.toLocaleString() : '-'}</span>
+              </div>
+              <div class="financial-item">
+                <span class="financial-label">Service Charge</span>
+                <span class="financial-value">${it.service_charge ? '₹' + it.service_charge.toLocaleString() : '-'}</span>
+              </div>
+              <div class="financial-item">
+                <span class="financial-label">GST Amount</span>
+                <span class="financial-value">${it.gst_amount ? '₹' + it.gst_amount.toLocaleString() : '-'}</span>
+              </div>
+              ${it.promo_code_used ? `
+                <div class="financial-item">
+                  <span class="financial-label">Promo Code</span>
+                  <span class="financial-value promo">${it.promo_code_used}</span>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+          
+          <!-- Flight Options -->
+          <div class="detail-section">
+            <h4>Flight Options ${it.selected_flight_option !== null ? `<span class="selected-badge">Option ${it.selected_flight_option + 1} selected</span>` : ''}</h4>
+            <div class="flight-options">
+              ${flights.length > 0 ? flights.map((flight, index) => `
+                <div class="flight-option-card ${it.selected_flight_option === index ? 'selected' : ''}">
+                  <div class="flight-option-header">
+                    <span class="option-number">Option ${index + 1}</span>
+                    ${it.selected_flight_option === index ? '<span class="selected-indicator">✓ Selected</span>' : ''}
+                  </div>
+                  <div class="flight-details">
+                    <div class="flight-route">
+                      <div class="airport-info">
+                        <span class="airport-code">${flight.source || flight.departure?.code || '-'}</span>
+                        <span class="airport-time">${flight.departure_time || flight.departure?.time || '-'}</span>
+                      </div>
+                      <div class="flight-path">
+                        <span class="airline-info">
+                          ${flight.airline_code || flight.airline || ''}
+                          ${flight.flight_number || flight.flight_no || ''}
+                        </span>
+                        <div class="path-line">
+                          <span class="path-dot"></span>
+                          <span class="path-dashed"></span>
+                          <span class="path-dot"></span>
+                        </div>
+                        <span class="flight-duration">${flight.duration || '-'}</span>
+                      </div>
+                      <div class="airport-info">
+                        <span class="airport-code">${flight.destination || flight.arrival?.code || '-'}</span>
+                        <span class="airport-time">${flight.arrival_time || flight.arrival?.time || '-'}</span>
+                      </div>
+                    </div>
+                    <div class="flight-meta">
+                      <span class="meta-badge">${flight.date || '-'}</span>
+                      ${flight.cabin_class ? `<span class="meta-badge">${flight.cabin_class}</span>` : ''}
+                      ${flight.stops !== undefined ? `<span class="meta-badge">${flight.stops === 0 ? 'Non-stop' : flight.stops + ' stop(s)'}</span>` : ''}
+                    </div>
+                    <div class="flight-fares">
+                      ${flight.fares ? Object.entries(flight.fares).map(([type, amount]) => `
+                        <div class="fare-option">
+                          <span class="fare-type">${type}</span>
+                          <span class="fare-amount">₹${amount?.toLocaleString() || 0}</span>
+                        </div>
+                      `).join('') : '<span class="text-muted">No fares</span>'}
+                    </div>
+                  </div>
+                </div>
+              `).join('') : '<p class="empty-text">No flight options available.</p>'}
+            </div>
+          </div>
+          
+          <!-- Parser Output -->
+          ${it.parser_output_text ? `
+            <div class="detail-section collapsible">
+              <h4 class="collapsible-header" onclick="toggleSection(this)">
+                <span>📝 Parser Output</span>
+                <span class="collapse-icon">▼</span>
+              </h4>
+              <div class="collapsible-content">
+                <pre class="parser-output">${escapeHtml(it.parser_output_text)}</pre>
+              </div>
+            </div>
+          ` : ''}
+          
+          <!-- Approval Info -->
+          ${it.approved_at ? `
+            <div class="detail-section">
+              <h4>Approval Information</h4>
+              <div class="detail-grid">
+                <div class="detail-item">
+                  <span class="detail-label">Approved By</span>
+                  <span class="detail-value">${it.approved_by || 'System'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Approved At</span>
+                  <span class="detail-value">${new Date(it.approved_at).toLocaleString()}</span>
+                </div>
+                ${it.approval_remarks ? `
+                  <div class="detail-item detail-item-wide">
+                    <span class="detail-label">Remarks</span>
+                    <span class="detail-value">${it.approval_remarks}</span>
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          ` : ''}
+          
+          <!-- Timestamps -->
+          <div class="detail-section">
+            <h4>Timeline</h4>
+            <div class="timeline">
+              <div class="timeline-item">
+                <span class="timeline-label">Created</span>
+                <span class="timeline-value">${new Date(it.created_at).toLocaleString()}</span>
+              </div>
+              ${it.updated_at ? `
+                <div class="timeline-item">
+                  <span class="timeline-label">Last Updated</span>
+                  <span class="timeline-value">${new Date(it.updated_at).toLocaleString()}</span>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function toggleSection(header) {
+      const content = header.nextElementSibling;
+      const icon = header.querySelector('.collapse-icon');
+      content.classList.toggle('collapsed');
+      icon.textContent = content.classList.contains('collapsed') ? '▶' : '▼';
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function closeItineraryDetailModal() {
+      document.getElementById('itineraryDetailModal').classList.remove('active');
+      currentItinerary = null;
+
+      // Clear URL parameter
+      const url = new URL(window.location);
+      url.searchParams.delete('id');
+      window.history.replaceState({}, '', url);
+    }
+
+    // Edit Itinerary - Redirect to main page with state
+    function editItinerary(itineraryId) {
+      // Store the itinerary ID in session storage and redirect to home
+      sessionStorage.setItem('editItineraryId', itineraryId);
+      window.location.href = '/?edit=' + itineraryId;
+    }
+
+    // Approve Itinerary
+    async function approveItinerary(itineraryId) {
+      const confirmed = await showConfirm('Approve Itinerary', 'Are you sure you want to approve this itinerary? This action cannot be undone.');
+      if (!confirmed) return;
+
+      try {
+        const response = await fetch(`/api/v2/itineraries/${itineraryId}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.ok) {
+          showNotification('Itinerary approved successfully', 'success');
+          closeItineraryDetailModal();
+          await loadItineraries();
+        } else {
+          const error = await response.json();
+          showNotification(error.error || 'Failed to approve itinerary', 'error');
+        }
+      } catch (e) {
+        showNotification('Failed to approve itinerary', 'error');
+      }
+    }
+
+    // Delete Itinerary
+    async function deleteItinerary(itineraryId) {
+      const confirmed = await showConfirm('Delete Itinerary', 'Are you sure you want to delete this itinerary? This action cannot be undone.');
+      if (!confirmed) return;
+
+      try {
+        const response = await fetch(`/api/v2/itineraries/${itineraryId}`, { method: 'DELETE' });
+        if (response.ok) {
+          showNotification('Itinerary deleted successfully', 'success');
+          await loadItineraries();
+        } else {
+          showNotification('Failed to delete itinerary', 'error');
+        }
+      } catch (e) {
+        showNotification('Failed to delete itinerary', 'error');
+      }
+    }
+
+    // Utility functions
+    function showNotification(message, type = 'success') {
+      const notification = document.getElementById('notification');
+      notification.textContent = message;
+      notification.className = `notification ${type} show`;
+
+      setTimeout(() => {
+        notification.classList.remove('show');
+      }, 3000);
+    }
+
+    function showConfirm(title, message) {
+      return new Promise(resolve => {
+        confirmResolve = resolve;
+        document.getElementById('confirmTitle').textContent = title;
+        document.getElementById('confirmMessage').textContent = message;
+        document.getElementById('confirmModal').classList.add('active');
+      });
+    }
+
+    function closeConfirmModal(result) {
+      document.getElementById('confirmModal').classList.remove('active');
+      if (confirmResolve) {
+        confirmResolve(result);
+        confirmResolve = null;
+      }
+    }
+  </script>
+</body>
+
+</html>

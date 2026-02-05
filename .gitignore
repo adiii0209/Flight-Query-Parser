@@ -6,3 +6,5 @@ instance/
 .vscode/
 .idea/
 venv/
+*.db
+travel_agent.db
