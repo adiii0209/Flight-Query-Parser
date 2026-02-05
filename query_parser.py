@@ -87,6 +87,7 @@ CRITICAL RULES:
 9. DATE ACCURACY: Extract day numbers exactly as written. If the text has "30th", the date is 30. NEVER perform math or truncation on these numbers.
 10. Day Name Format: If the text contains "Mon, Jul 6" or similar, the date is "6 Jul". Ignore the day name (Mon) and extract the Day and Month (6 Jul).
 11. OFFSET LOGIC: Offsets (+1, +2) refer to ARRIVAL times only. NEVER change the Departure Date based on a +1. Departure Date is FIXED from the start of the text.
+12. MISSING DATA: If a field like baggage or duration is not present in the text, use "N/A". NEVER use "Not Specified".
 
 AIRLINE CODE MAPPING (use these to get full names):
 6E=IndiGo, AI=Air India, QP=Akasa Air, SG=SpiceJet, UK=Vistara, G8=GoAir,

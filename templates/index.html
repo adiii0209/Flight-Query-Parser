@@ -4387,7 +4387,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     function isFieldValid(val) {
       if (!val) return false;
       const s = String(val).trim().toLowerCase();
-      return s !== '' && s !== 'n/a' && s !== 'null' && s !== 'undefined' && s !== 'unknown';
+      return s !== '' && s !== 'n/a' && s !== 'null' && s !== 'undefined' && s !== 'unknown' && s !== 'not specified';
     }
 
     function getTimeCategory(timeStr) {
@@ -4409,7 +4409,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     function generateFlightSummaryHTML(flight, index, uniqueId) {
       // Helper to safely display values - never show undefined, null, N/A
       const safe = (val, fallback = '') => {
-        if (val === undefined || val === null || val === 'N/A' || val === 'undefined' || val === 'null') {
+        if (val === undefined || val === null || val === 'N/A' || val === 'Not Specified' || val === 'undefined' || val === 'null') {
           return fallback;
         }
         return val;
@@ -4485,7 +4485,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     function generateFlightTimelineHTML(flight, index, uniqueId) {
       // Helper to safely display values - never show undefined, null, N/A
       const safe = (val, fallback = '') => {
-        if (val === undefined || val === null || val === 'N/A' || val === 'undefined' || val === 'null') {
+        if (val === undefined || val === null || val === 'N/A' || val === 'Not Specified' || val === 'undefined' || val === 'null') {
           return fallback;
         }
         return val;
