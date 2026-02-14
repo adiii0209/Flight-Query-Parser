@@ -56,7 +56,11 @@ function updateTheme(theme) {
 async function checkAuth() {
   try {
     const r = await fetch('/api/user');
-    if (!r.ok) { window.location.href = '/login'; return; }
+    if (!r.ok) {
+      const next = encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.href = '/login?next=' + next;
+      return;
+    }
     const u = await r.json();
     const nameEl = document.getElementById('sidebarUserName');
     if (nameEl) nameEl.textContent = u.full_name || u.username;
@@ -78,10 +82,16 @@ async function checkAuth() {
         }
       };
     }
-  } catch (e) { window.location.href = '/login'; }
+  } catch (e) {
+    const next = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = '/login?next=' + next;
+  }
 }
 
-function handleAuthClick() { window.location.href = '/login'; }
+function handleAuthClick() {
+  const next = encodeURIComponent(window.location.pathname + window.location.search);
+  window.location.href = '/login?next=' + next;
+}
 
 // ==================== HELPERS ====================
 function formatCurrency(n) { if (!n && n !== 0) return '₹0'; return '₹' + Number(n).toLocaleString('en-IN'); }
@@ -252,7 +262,7 @@ function renderItineraryCards() {
           ${routeText ? `<span class="meta-item"><b>Route:</b> ${routeText}${hasLayover ? ' (Layover)' : ''}</span>` : ''}
           <span class="meta-item"><b>Type:</b> ${getTripTypeLabel(it.trip_type)} ${numOpts > 1 ? '• ' + numOpts + ' option' + (numOpts > 1 ? 's' : '') : ''}</span>
           ${billingInfo}
-          <span class="meta-item"><b>Passengers:</b> ${it.num_passengers || 1}</span>
+          <span class="meta-item"><b>Passengers:</b> ${(it.passengers_data && it.passengers_data.length > 0) ? it.passengers_data.length : 'Not Added'}</span>
         </div>
         <div class="itin-card-footer">
           ${shouldShowFinancials(it) ? `<span class="itin-amount">${formatCurrency(getEffectiveTotal(it))}</span>` : ''}
@@ -361,7 +371,7 @@ function renderInfoCards() {
 
   document.getElementById('infoCards').innerHTML = `
     <div class="info-mini-card"><div class="label">Trip Type</div><div class="value">${getTripTypeLabel(it.trip_type)}</div></div>
-    <div class="info-mini-card"><div class="label">Passengers</div><div class="value">${it.num_passengers || 1}</div></div>
+    <div class="info-mini-card"><div class="label">Passengers</div><div class="value">${(it.passengers_data && it.passengers_data.length > 0) ? it.passengers_data.length : 'Not Added'}</div></div>
     ${shouldShowFinancials(it) ? `<div class="info-mini-card"><div class="label">Total Amount</div><div class="value" style="color:var(--primary)">${formatCurrency(getEffectiveTotal(it))}</div></div>` : ''}
     <div class="info-mini-card"><div class="label">Created</div><div class="value">${formatDate(it.created_at)}</div></div>
     ${it.reference_number ? '<div class="info-mini-card"><div class="label">Reference</div><div class="value">' + it.reference_number + '</div></div>' : ''}
@@ -1058,7 +1068,7 @@ function renderBilling() {
 
   document.getElementById('billingContainer').innerHTML = `<div class="billing-grid">
     ${accountInfo}
-    <div class="billing-item"><div class="label">Billed To</div><div class="value">${it.bill_to_name || '-'}</div></div>
+    <div class="billing-item"><div class="label">Display Name</div><div class="value">${it.bill_to_name || '-'}</div></div>
     <div class="billing-item"><div class="label">Company</div><div class="value">${it.bill_to_company || '-'}</div></div>
     <div class="billing-item"><div class="label">Email</div><div class="value">${it.bill_to_email || '-'}</div></div>
     <div class="billing-item"><div class="label">Phone</div><div class="value">${it.bill_to_phone || '-'}</div></div>
@@ -1187,6 +1197,7 @@ function showAddPassengerModal() {
   document.getElementById('paxGender').value = '';
   const cb = document.getElementById('paxSaveToDB');
   if (cb) cb.checked = false;
+  document.getElementById('paxSubmitBtn').textContent = 'Add Passenger';
 }
 
 async function addPassenger() {
@@ -1206,6 +1217,8 @@ async function addPassenger() {
   const shouldSave = document.getElementById('paxSaveToDB')?.checked;
   if (shouldSave) {
     try {
+      // If we're updating current passengers, find if this one has an ID already
+      // This is simplified as the modal doesn't currently track 'which' passenger we're editing if it was manual
       const resp = await fetch('/api/v2/passengers', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPax)
@@ -1218,8 +1231,8 @@ async function addPassenger() {
         }
       } else if (resp.status === 409) {
         const err = await resp.json();
-        showToast(err.error || 'Duplicate passenger found. Please add email/phone/DOB to distinguish.', 'warning');
-        return; // Stop here, do not add to itinerary yet
+        showToast(err.error || 'Duplicate passenger found.', 'warning');
+        return;
       } else {
         showToast('Failed to save to DB, adding manually', 'warning');
       }
@@ -1321,7 +1334,25 @@ function showEditBillingModal() {
   document.getElementById('billAddress').value = it.bill_to_address || '';
   document.getElementById('billGST').value = it.bill_to_gst || '';
   const cb = document.getElementById('billSaveToDB');
-  if (cb) cb.checked = false;
+  if (cb) cb.checked = it.billing_account_id ? true : false;
+
+  const submitBtn = document.getElementById('billSubmitBtn');
+  if (it.billing_account_id) {
+    submitBtn.textContent = 'Update to DB';
+  } else {
+    submitBtn.textContent = 'Save Billing';
+  }
+
+  // Setup live sync for names if not already set
+  const nameInput = document.getElementById('billName');
+  const companyInput = document.getElementById('billCompany');
+
+  if (!nameInput.dataset.listener) {
+    nameInput.addEventListener('input', () => {
+      // Sync logic or labels can go here if needed
+    });
+    nameInput.dataset.listener = 'true';
+  }
 }
 
 async function saveBilling() {
@@ -1335,33 +1366,44 @@ async function saveBilling() {
   };
 
   const shouldSave = document.getElementById('billSaveToDB')?.checked;
+  const existingId = currentItinerary.billing_account_id;
+
   if (shouldSave) {
     try {
+      // Logic: If company OR GST is present, it's corporate. Otherwise personal.
+      const isCorporate = !!(data.bill_to_company || data.bill_to_gst);
+
       const payload = {
-        display_name: data.bill_to_name || data.bill_to_company || 'New Account',
+        display_name: data.bill_to_name, // Only use the bill_to_name
         company_name: data.bill_to_company,
-        contact_name: data.bill_to_name,
         email: data.bill_to_email,
         phone: data.bill_to_phone,
         address: data.bill_to_address,
         gst_number: data.bill_to_gst,
-        account_type: data.bill_to_company ? 'corporate' : 'personal'
+        account_type: isCorporate ? 'corporate' : 'personal'
       };
 
-      const resp = await fetch('/api/v2/billing-accounts', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      let url = '/api/v2/billing-accounts';
+      let method = 'POST';
+      if (existingId) {
+        url += '/' + existingId;
+        method = 'PUT';
+      }
+
+      const resp = await fetch(url, {
+        method: method, headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       if (resp.ok) {
         const d = await resp.json();
         if (d.billing_account && d.billing_account.id) {
           data.billing_account_id = d.billing_account.id;
-          showToast('Billing Account saved to Database', 'success');
+          showToast(`Billing Account ${method === 'POST' ? 'saved to' : 'updated in'} Database`, 'success');
         }
       } else if (resp.status === 409) {
         const err = await resp.json();
-        showToast(err.error || 'Duplicate account found. Please provide distinct email/GST/Address.', 'warning');
-        return; // Stop, do not link yet
+        showToast(err.error || 'Duplicate account found.', 'warning');
+        return;
       }
     } catch (e) { console.error('Error saving billing to DB:', e); }
   }
@@ -1440,11 +1482,11 @@ async function linkBillingFromDB() {
     const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
         billing_account_id: accId,
-        bill_to_name: acc.contact_name || acc.display_name,
+        bill_to_name: acc.display_name || acc.contact_name, // Use display_name primarily
         bill_to_company: acc.company_name || '',
         bill_to_email: acc.email || '', bill_to_phone: acc.phone || '',
         bill_to_address: acc.address || '', bill_to_gst: acc.gst_number || '',
-        billing_type: acc.account_type
+        billing_type: (acc.company_name || acc.gst_number) ? 'corporate' : (acc.account_type || 'personal')
       })
     });
     if (r.ok) { const d = await r.json(); currentItinerary = d.itinerary; renderBilling(); renderInfoCards(); closeModal(); showToast('Billing account linked', 'success'); }

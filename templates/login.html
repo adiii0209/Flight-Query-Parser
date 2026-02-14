@@ -404,7 +404,10 @@
         const data = await response.json();
         if (response.ok) {
           showNotification('Login successful! Redirecting...', 'success');
-          setTimeout(() => window.location.href = '/', 1000);
+          // Check for 'next' parameter in URL
+          const urlParams = new URLSearchParams(window.location.search);
+          const nextUrl = urlParams.get('next') || '/';
+          setTimeout(() => window.location.href = nextUrl, 1000);
         } else {
           showNotification(data.error || 'Login failed', 'error');
         }

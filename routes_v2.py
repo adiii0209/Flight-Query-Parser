@@ -1068,7 +1068,7 @@ def create_itinerary():
             gst_amount=safe_float(data.get('gst_amount')),
             discount_amount=safe_float(data.get('discount_amount')),
             promo_code_used=data.get('promo_code_used'),
-            billing_type=data.get('billing_type'),
+            billing_type='corporate' if (data.get('bill_to_company') or data.get('bill_to_gst')) else data.get('billing_type', 'personal'),
             bill_to_name=data.get('bill_to_name'),
             bill_to_email=data.get('bill_to_email'),
             bill_to_phone=data.get('bill_to_phone'),
@@ -1140,7 +1140,7 @@ def update_itinerary(itinerary_id):
 
         for field in ['title', 'description', 'status', 'selected_flight_option',
                       'total_amount', 'markup', 'service_charge', 'gst_amount',
-                      'discount_amount', 'promo_code_used', 'billing_type',
+                      'discount_amount', 'promo_code_used',
                       'bill_to_name', 'bill_to_email', 'bill_to_phone',
                       'bill_to_address', 'bill_to_company', 'bill_to_gst',
                       'requires_approval', 'approved_by', 'approval_remarks',
@@ -1152,6 +1152,14 @@ def update_itinerary(itinerary_id):
                 if field in numeric_fields:
                     val = safe_float(val)
                 setattr(itinerary, field, val)
+        
+        # Auto-detect billing_type
+        if 'bill_to_company' in data or 'bill_to_gst' in data:
+            c_name = data.get('bill_to_company', itinerary.bill_to_company)
+            gst = data.get('bill_to_gst', itinerary.bill_to_gst)
+            itinerary.billing_type = 'corporate' if (c_name or gst) else 'personal'
+        elif 'billing_type' in data:
+            itinerary.billing_type = data['billing_type']
         
         if 'passengers_data' in data:
             itinerary.passengers_data = json.dumps(data['passengers_data'])
@@ -1412,15 +1420,21 @@ def create_billing_account():
         if not all(field in data for field in required_fields):
             return jsonify({"error": "Missing required fields"}), 400
             
+        company_name = data.get('company_name')
+        gst_number = data.get('gst_number')
+        
+        # Auto-detect account type
+        account_type = 'corporate' if (company_name or gst_number) else 'personal'
+            
         account = BillingAccount(
-            account_type=data['account_type'],
+            account_type=account_type,
             display_name=data['display_name'],
-            company_name=data.get('company_name'),
-            contact_name=data.get('contact_name'),
+            company_name=company_name,
+            contact_name=data.get('contact_name') or data['display_name'],
             email=data.get('email'),
             phone=data.get('phone'),
             address=data.get('address'),
-            gst_number=data.get('gst_number'),
+            gst_number=gst_number,
             passenger_id=data.get('passenger_id'),
             corporate_id=data.get('corporate_id'),
             user_id=session['user_id']
@@ -1471,7 +1485,14 @@ def update_billing_account(account_id):
         
         data = request.get_json()
         
-        for field in ['account_type', 'display_name', 'company_name', 'contact_name',
+        # Auto-detect account type if relevant fields are being updated
+        company_name = data.get('company_name', account.company_name)
+        gst_number = data.get('gst_number', account.gst_number)
+        
+        if 'company_name' in data or 'gst_number' in data:
+            account.account_type = 'corporate' if (company_name or gst_number) else 'personal'
+            
+        for field in ['display_name', 'company_name', 'contact_name',
                       'email', 'phone', 'address', 'gst_number',
                       'passenger_id', 'corporate_id']:
             if field in data:

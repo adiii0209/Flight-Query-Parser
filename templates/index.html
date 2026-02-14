@@ -3835,7 +3835,8 @@
     }
 
     function handleAuthClick() {
-      window.location.href = '/login';
+      const next = encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.href = '/login?next=' + next;
     }
 
     async function logout() {
@@ -7854,7 +7855,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     }
 
     function handleAuthClick() {
-      window.location.href = '/login';
+      const next = encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.href = '/login?next=' + next;
     }
 
     // --- Utility Functions for Save Modal ---

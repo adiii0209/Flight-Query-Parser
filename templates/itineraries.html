@@ -210,9 +210,13 @@
                     <option value="Other">Other</option>
                 </select>
             </div>
+            <div class="modal-field" style="flex-direction: row; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                <input type="checkbox" id="paxSaveToDB" style="width: auto;">
+                <label for="paxSaveToDB" style="margin-bottom: 0;">Add/Update in Database</label>
+            </div>
             <div class="modal-actions">
                 <button class="btn-action secondary" onclick="closeModal()">Cancel</button>
-                <button class="btn-action primary" onclick="addPassenger()">Add Passenger</button>
+                <button class="btn-action primary" id="paxSubmitBtn" onclick="addPassenger()">Add Passenger</button>
             </div>
         </div>
 
@@ -237,7 +241,8 @@
         <!-- Edit Billing Modal -->
         <div class="modal" id="billingModal" onclick="event.stopPropagation()">
             <h3>✏️ Edit Billing Details</h3>
-            <div class="modal-field"><label>Billed To Name</label><input type="text" id="billName" placeholder="Name">
+            <div class="modal-field"><label>Display Name</label><input type="text" id="billName"
+                    placeholder="Name or Company Name">
             </div>
             <div class="modal-field"><label>Company</label><input type="text" id="billCompany"
                     placeholder="Company name"></div>
@@ -249,9 +254,13 @@
                     placeholder="Billing address"></textarea></div>
             <div class="modal-field"><label>GST Number</label><input type="text" id="billGST" placeholder="GST Number">
             </div>
+            <div class="modal-field" style="flex-direction: row; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                <input type="checkbox" id="billSaveToDB" style="width: auto;">
+                <label for="billSaveToDB" style="margin-bottom: 0;">Add/Update in Database</label>
+            </div>
             <div class="modal-actions">
                 <button class="btn-action secondary" onclick="closeModal()">Cancel</button>
-                <button class="btn-action primary" onclick="saveBilling()">Save Billing</button>
+                <button class="btn-action primary" id="billSubmitBtn" onclick="saveBilling()">Save Billing</button>
             </div>
         </div>
 

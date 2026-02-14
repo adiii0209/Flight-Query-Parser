@@ -1047,7 +1047,11 @@
         async function checkAuth() {
             try {
                 const r = await fetch('/api/user');
-                if (!r.ok) { window.location.href = '/login'; return; }
+                if (!r.ok) {
+                    const next = encodeURIComponent(window.location.pathname + window.location.search);
+                    window.location.href = '/login?next=' + next;
+                    return;
+                }
                 const u = await r.json();
                 document.getElementById('sidebarUserName').textContent = u.full_name || u.username;
                 document.getElementById('sidebarUserEmail').textContent = u.email || 'Member';
@@ -1056,10 +1060,16 @@
                 authBtn.textContent = '🚪 Logout';
                 authBtn.classList.add('logout');
                 authBtn.onclick = async () => { if (confirm('Logout?')) { await fetch('/api/logout', { method: 'POST' }); window.location.href = '/login'; } };
-            } catch (e) { window.location.href = '/login'; }
+            } catch (e) {
+                const next = encodeURIComponent(window.location.pathname + window.location.search);
+                window.location.href = '/login?next=' + next;
+            }
         }
 
-        function handleAuthClick() { window.location.href = '/login'; }
+        function handleAuthClick() {
+            const next = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = '/login?next=' + next;
+        }
 
         // ==================== HELPERS ====================
         function formatCurrency(n) { if (!n) return '₹0'; return '₹' + Number(n).toLocaleString('en-IN'); }

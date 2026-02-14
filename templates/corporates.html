@@ -500,16 +500,18 @@
         }
 
         function handleAuthClick() {
-            window.location.href = '/login';
+            const next = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = '/login?next=' + next;
         }
 
         function showLoginPrompt() {
+            const next = encodeURIComponent(window.location.pathname + window.location.search);
             document.getElementById('corporatesContainer').innerHTML = `
         <div class="empty-state login-required">
           <div class="empty-icon">🔐</div>
           <h3>Login Required</h3>
           <p>Please login to manage corporates.</p>
-          <a href="/login" class="btn btn-primary">Login / Register</a>
+          <a href="/login?next=${next}" class="btn btn-primary">Login / Register</a>
         </div>
       `;
         }
