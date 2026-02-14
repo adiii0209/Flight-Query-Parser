@@ -10,7 +10,7 @@ from datetime import datetime, date
 from typing import Optional, List
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from sqlalchemy import String, Text, Integer, Float, Boolean, DateTime, Date, ForeignKey, Index
+from sqlalchemy import String, Text, Integer, Float, Boolean, DateTime, Date, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship, DeclarativeBase
 
 
@@ -45,6 +45,7 @@ class User(Base):
     corporates: Mapped[List["Corporate"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     passengers: Mapped[List["Passenger"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     itineraries: Mapped[List["Itinerary"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    billing_accounts: Mapped[List["BillingAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -111,6 +112,7 @@ class Corporate(Base):
     __table_args__ = (
         Index("idx_corporate_gst", "gst_number"),
         Index("idx_corporate_user", "user_id"),
+        UniqueConstraint("company_name", "user_id", name="uq_corporate_name_user")
     )
     
     def to_dict(self) -> dict:
@@ -195,6 +197,7 @@ class Passenger(Base):
     __table_args__ = (
         Index("idx_passenger_name", "first_name", "last_name"),
         Index("idx_passenger_user", "user_id"),
+        UniqueConstraint("first_name", "last_name", "user_id", "email", "phone", "date_of_birth", name="uq_passenger_identity")
     )
     
     @property
@@ -541,17 +544,28 @@ class Itinerary(Base):
     
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     
-    # Status: draft, pending_approval, approved, booked, cancelled, completed
+    # Status: draft, approved, on_hold, confirmed, reverted, cancelled
     status: Mapped[str] = mapped_column(String(30), default="draft", index=True)
     
     # Core Data
     title: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reference_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    
+    # Trip Type: one_way, round_trip, multi_city
+    trip_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, default="one_way")
+    
+    # Passenger Management
+    num_passengers: Mapped[int] = mapped_column(Integer, default=1)
+    passengers_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON string of secondary passenger data
     
     # Flight Parser Output
     flights_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON string of flight data
     parser_output_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Original parser output
     selected_flight_option: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # Index of selected flight
+    
+    # Raw input data for edit capability (preserves original parser input state)
+    raw_input_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: {flights_text, fares, layover_flags, etc.}
     
     # Financials
     total_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -578,6 +592,11 @@ class Itinerary(Base):
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     approval_remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
+    # Hold / Confirm tracking
+    held_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    reverted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -586,11 +605,13 @@ class Itinerary(Base):
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("user.id"), nullable=False)
     passenger_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("passengers.id"), nullable=True)
     corporate_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("corporates.id"), nullable=True)
+    billing_account_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("billing_accounts.id"), nullable=True)
     
     # Relationships
     user: Mapped["User"] = relationship(back_populates="itineraries")
     passenger: Mapped[Optional["Passenger"]] = relationship(back_populates="itineraries")
     corporate: Mapped[Optional["Corporate"]] = relationship(back_populates="itineraries")
+    billing_account: Mapped[Optional["BillingAccount"]] = relationship(back_populates="itineraries")
     
     # Indexes
     __table_args__ = (
@@ -598,6 +619,7 @@ class Itinerary(Base):
         Index("idx_itinerary_user", "user_id"),
         Index("idx_itinerary_passenger", "passenger_id"),
         Index("idx_itinerary_corporate", "corporate_id"),
+        Index("idx_itinerary_billing_account", "billing_account_id"),
     )
     
     def to_dict(self, include_flights: bool = False) -> dict:
@@ -608,6 +630,10 @@ class Itinerary(Base):
             "status": self.status,
             "title": self.title,
             "description": self.description,
+            "reference_number": self.reference_number,
+            "trip_type": self.trip_type,
+            "num_passengers": self.num_passengers,
+            "passengers_data": json.loads(self.passengers_data) if self.passengers_data else [],
             "selected_flight_option": self.selected_flight_option,
             "total_amount": self.total_amount,
             "markup": self.markup,
@@ -616,6 +642,7 @@ class Itinerary(Base):
             "discount_amount": self.discount_amount,
             "promo_code_used": self.promo_code_used,
             "billing_type": self.billing_type,
+            "billing_account_id": self.billing_account_id,
             "bill_to_name": self.bill_to_name,
             "bill_to_email": self.bill_to_email,
             "bill_to_phone": self.bill_to_phone,
@@ -626,17 +653,82 @@ class Itinerary(Base):
             "approved_by": self.approved_by,
             "approved_at": self.approved_at.isoformat() if self.approved_at else None,
             "approval_remarks": self.approval_remarks,
+            "held_at": self.held_at.isoformat() if self.held_at else None,
+            "confirmed_at": self.confirmed_at.isoformat() if self.confirmed_at else None,
+            "reverted_at": self.reverted_at.isoformat() if self.reverted_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "user_id": self.user_id,
             "passenger_id": self.passenger_id,
             "corporate_id": self.corporate_id,
             "passenger": self.passenger.to_dict() if self.passenger else None,
-            "corporate": self.corporate.to_dict() if self.corporate else None
+            "corporate": self.corporate.to_dict() if self.corporate else None,
+            "billing_account": self.billing_account.to_dict() if self.billing_account else None
         }
         
         if include_flights:
             data["flights"] = json.loads(self.flights_data) if self.flights_data else []
             data["parser_output_text"] = self.parser_output_text
+            data["raw_input_data"] = json.loads(self.raw_input_data) if self.raw_input_data else None
         
         return data
+
+
+# ==================== BILLING ACCOUNT MODEL ====================
+
+class BillingAccount(Base):
+    """Unified billing profile for generating invoices."""
+    __tablename__ = "billing_accounts"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    
+    # Type: individual, corporate
+    account_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    
+    # Display Name / Label
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    
+    # Billing fields
+    company_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    contact_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    gst_number: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    
+    # Links to existing entities (optional)
+    passenger_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("passengers.id"), nullable=True)
+    corporate_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("corporates.id"), nullable=True)
+    
+    # User ownership
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("user.id"), nullable=False)
+    
+    # Timestamps & Active
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="billing_accounts")
+    itineraries: Mapped[List["Itinerary"]] = relationship(back_populates="billing_account")
+    
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint("display_name", "user_id", name="uq_billing_account_name_user"),
+    )
+    
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "account_type": self.account_type,
+            "display_name": self.display_name,
+            "company_name": self.company_name,
+            "contact_name": self.contact_name,
+            "email": self.email,
+            "phone": self.phone,
+            "address": self.address,
+            "gst_number": self.gst_number,
+            "passenger_id": self.passenger_id,
+            "corporate_id": self.corporate_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "is_active": self.is_active
+        }

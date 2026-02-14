@@ -7,8 +7,18 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
 from models_v2 import Base
 
-# Database URL - can be overridden
-DATABASE_URL = "sqlite:///app.db"
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Database URL from environment or derive from Flask's instance folder
+# Flask-SQLAlchemy uses instance/ by default, so we match that
+_base_dir = os.path.abspath(os.path.dirname(__file__))
+_instance_dir = os.path.join(_base_dir, 'instance')
+os.makedirs(_instance_dir, exist_ok=True)
+_default_db = f"sqlite:///{os.path.join(_instance_dir, 'app.db')}"
+DATABASE_URL = os.getenv("DATABASE_URL", _default_db)
 
 # Create engine with SQLAlchemy 2.0 style
 engine = create_engine(DATABASE_URL, echo=False)

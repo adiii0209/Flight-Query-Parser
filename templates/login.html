@@ -264,10 +264,23 @@
 
         <div class="form-group">
           <label class="form-label">Password</label>
-          <input type="password" id="loginPassword" class="form-input" placeholder="Enter your password" required>
+          <div style="position: relative; display: flex; align-items: center;">
+            <input type="password" id="loginPassword" class="form-input" placeholder="Enter your password" required
+              style="padding-right: 2.5rem;">
+            <span onclick="togglePasswordVisibility('loginPassword')"
+              style="position: absolute; right: 1rem; cursor: pointer; user-select: none; font-size: 1.2rem;"
+              title="Show/Hide Password">
+              👁️
+            </span>
+          </div>
         </div>
 
         <button type="submit" class="btn btn-primary" id="loginBtn">Login</button>
+        <button type="button" class="btn"
+          style="margin-top: 1rem; background: transparent; border: 2px solid var(--border); color: var(--text-primary);"
+          onclick="loginTestUser()">
+          🧪 Login as Test User
+        </button>
       </form>
 
       <!-- Register Form -->
@@ -436,6 +449,20 @@
       } finally {
         btn.disabled = false;
       }
+    }
+    function togglePasswordVisibility(id) {
+      const input = document.getElementById(id);
+      if (input.type === 'password') {
+        input.type = 'text';
+      } else {
+        input.type = 'password';
+      }
+    }
+
+    function loginTestUser() {
+      document.getElementById('loginUsername').value = 'adi.is.tired';
+      document.getElementById('loginPassword').value = 'password123';
+      document.getElementById('loginBtn').click();
     }
   </script>
 

@@ -48,10 +48,10 @@ def home():
     """Serve the main HTML page"""
     return render_template('index.html')
 
-@app.route("/itineraries-v2")
-def itineraries_v2_page():
-    """Serve the new itineraries management page"""
-    return render_template('itineraries_v2.html')
+@app.route("/itineraries")
+def itineraries_page():
+    """Serve the itineraries management page"""
+    return render_template('itineraries.html')
 
 @app.route("/passengers")
 def passengers_page():
@@ -62,6 +62,11 @@ def passengers_page():
 def corporates_page():
     """Serve the corporates management page"""
     return render_template('corporates.html')
+
+@app.route("/billing")
+def billing_dashboard_page():
+    """Serve the billing dashboard page"""
+    return render_template('billing_dashboard.html')
 
 @app.route("/login")
 def login_page():
@@ -270,6 +275,8 @@ def parse():
         markup = payload.get("markup", 0)
         global_svc = payload.get("global_svc", 0)
 
+        fare_extra_details_list = payload.get("fare_extra_details", [])
+        
         if not raw_flights:
             print("[ERROR] No flights provided")
             return jsonify({"error": "No flights provided"}), 400
@@ -290,6 +297,7 @@ def parse():
             user_fares = fares_list[i] if i < len(fares_list) else {}
             user_fare_mu = fare_mu_list[i] if i < len(fare_mu_list) else {}  # Per-fare MU
             user_fare_svc = fare_svc_list[i] if i < len(fare_svc_list) else {}  # Per-fare SVC
+            user_fare_extras = fare_extra_details_list[i] if i < len(fare_extra_details_list) else {} # Per-fare extras
             
             if is_multiple:
                 # Parse as multiple flights
@@ -304,36 +312,27 @@ def parse():
                 print(f"[DEBUG] Found {len(flights_parsed)} flights in block {i+1}")
                 
                 for j, flight_data in enumerate(flights_parsed):
-                    # Clone user_fares for each flight
+                    # Only include fares that were checked by the user
                     flight_fares = {}
-                    saver_was_auto_extract = False
                     
-                    # Copy non-null fares from user_fares
                     for key, val in user_fares.items():
-                        if val is not None:
+                        if key == "saver":
+                            # If saver is checked, use manual value or extracted value
+                            if val is not None:
+                                flight_fares[key] = val
+                            elif flight_data.get("saver_fare") is not None:
+                                flight_fares[key] = flight_data["saver_fare"]
+                            else:
+                                flight_fares[key] = 0
+                        else:
+                            # Other fare types use manual values
                             flight_fares[key] = val
-                        elif key == "saver":
-                            # saver: null means auto-extract mode
-                            saver_was_auto_extract = True
-                    
-                    # Merge extracted saver_fare (overrides null or missing saver)
-                    if flight_data.get("saver_fare") is not None:
-                        flight_fares["saver"] = flight_data["saver_fare"]
-                    elif saver_was_auto_extract:
-                        # Saver checkbox was checked but LLM couldn't extract fare
-                        # Default to 0 - user can edit in the card
-                        flight_fares["saver"] = 0
-                        print(f"[WARN] No fare extracted for flight #{j+1} in block #{i+1}, defaulting to 0")
-                    
-                    # If still no fares, default to saver: 0
-                    if not flight_fares or len(flight_fares) == 0:
-                        flight_fares["saver"] = 0
-                        print(f"[WARN] No fares for flight #{j+1} in block #{i+1}, defaulting saver to 0")
                     
                     flight_data["fares"] = flight_fares
                     flight_data["markup"] = markup
                     flight_data["fare_mu"] = user_fare_mu      # Per-fare markups
                     flight_data["fare_svc"] = user_fare_svc    # Per-fare service charges
+                    flight_data["fare_extra_details"] = user_fare_extras # Per-fare extras
                     flight_data["service_charge"] = global_svc
                     flight_data["gst"] = int(global_svc * 0.18) if global_svc > 0 else 0
                     flight_data["is_editable"] = True  # Flag for cards from Multiple Flights mode
@@ -347,34 +346,24 @@ def parse():
                 # Normal single flight parsing
                 flight_data = extract_flight(raw_text, has_layover=has_layover)
                 
-                # Build fares dict, filtering out null values and merging extracted saver
+                # Only include fares that were checked by the user
                 flight_fares = {}
-                saver_was_auto_extract = False
-                
                 for key, val in user_fares.items():
-                    if val is not None:
+                    if key == "saver":
+                        if val is not None:
+                            flight_fares[key] = val
+                        elif flight_data.get("saver_fare") is not None:
+                            flight_fares[key] = flight_data["saver_fare"]
+                        else:
+                            flight_fares[key] = 0
+                    else:
                         flight_fares[key] = val
-                    elif key == "saver":
-                        saver_was_auto_extract = True
-                
-                # Merge extracted saver_fare (overrides null or missing saver)
-                if flight_data.get("saver_fare") is not None:
-                    flight_fares["saver"] = flight_data["saver_fare"]
-                elif saver_was_auto_extract:
-                    # Saver checkbox was checked but LLM couldn't extract fare
-                    # Default to 0 - user can edit later
-                    flight_fares["saver"] = 0
-                    print(f"[WARN] No fare extracted for flight #{i+1}, defaulting to 0")
-                
-                # If still no fares at all, default saver to 0
-                if not flight_fares or len(flight_fares) == 0:
-                    flight_fares["saver"] = 0
-                    print(f"[WARN] No fares for flight #{i+1}, defaulting saver to 0")
                 
                 flight_data["fares"] = flight_fares
                 flight_data["markup"] = markup
                 flight_data["fare_mu"] = user_fare_mu      # Per-fare markups
                 flight_data["fare_svc"] = user_fare_svc    # Per-fare service charges
+                flight_data["fare_extra_details"] = user_fare_extras # Per-fare extras
                 flight_data["service_charge"] = global_svc
                 flight_data["gst"] = int(global_svc * 0.18) if global_svc > 0 else 0
                 flight_data["is_editable"] = True
@@ -589,6 +578,9 @@ def init_db():
     """Initialize the database"""
     with app.app_context():
         db.create_all()
+        # Also initialize v2 tables
+        from extensions_v2 import init_db as init_db_v2
+        init_db_v2()
         print("Database initialized successfully!")
 
 if __name__ == "__main__":

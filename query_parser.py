@@ -10,10 +10,10 @@ load_dotenv()
 
 # ==================== CONFIG ====================
 
-OPENROUTER_API_KEY = "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"
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_URL = os.getenv("OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions")
 
-MODEL = "mistralai/mistral-small-creative"
+MODEL = os.getenv("MODEL", "mistralai/mistral-small-creative")
 
 MAX_TOKENS = 400        # Increased for better accuracy
 TEMPERATURE = 0
@@ -73,21 +73,24 @@ CRITICAL RULES:
    - If flight number is "LX 39", use "LX 39". NEVER use "LX 1234".
    - If flight number is "LX 154", use "LX 154". NEVER use "LX 5678".
    - Placeholders like "1234", "5678", "9012" are FORBIDDEN.
-4. DAY OFFSETS: If input has "+1", "+2", or "next day":
+4. DATE HALLUCINATION: NEVER assume or hallucinate a date. If a date is not present in the itinerary text, use "N/A".
+5. NO TODAY'S DATE: NEVER use today's date if no date is found.
+6. MISSING DATA: If a field like baggage, duration, or DATE is not present in the text, use "N/A". NEVER use "Not Specified".
+7. YEAR: Only use the year 2026 if a day and month are found but the year is missing. If no day/month is found at all, use "N/A" for the entire date.
+8. DAY OFFSETS: If input has "+1", "+2", or "next day":
    - Set "arrival_next_day": true
    - Set "days_offset": 1 or 2 as indicated.
    - This applies to BOTH the main journey and individual segments.
-5. Dates: If input says "Aug 5" and today is Feb 2026, the year is 2026.
-6. Multi-segment flights:
+9. Dates: If input says "Aug 5" and today is Feb 2026, the year is 2026.
+10. Multi-segment flights:
    - Extract EVERY segment in the "segments" list.
    - "stops" should reflect the total count and via cities (e.g., "2 Stops via ZRH, BOM").
    - "total_journey_duration" is the very first departure to the very last arrival.
-7. IGNORE PREVIOUS RESULTS: If the input text contains a JSON block or lines like '"departure_date": "..."', IGNORE THEM. Only extract data from the raw itinerary text.
-8. Dates: Treat "30th June", "1st Feb" as "30 Jun", "1 Feb". Preserve the exact day number. "30th" is 30, NOT 3. Truncating "30th" to "3" is a CRITICAL ERROR.
-9. DATE ACCURACY: Extract day numbers exactly as written. If the text has "30th", the date is 30. NEVER perform math or truncation on these numbers.
-10. Day Name Format: If the text contains "Mon, Jul 6" or similar, the date is "6 Jul". Ignore the day name (Mon) and extract the Day and Month (6 Jul).
-11. OFFSET LOGIC: Offsets (+1, +2) refer to ARRIVAL times only. NEVER change the Departure Date based on a +1. Departure Date is FIXED from the start of the text.
-12. MISSING DATA: If a field like baggage or duration is not present in the text, use "N/A". NEVER use "Not Specified".
+11. IGNORE PREVIOUS RESULTS: If the input text contains a JSON block or lines like '"departure_date": "..."', IGNORE THEM. Only extract data from the raw itinerary text.
+12. Dates: Treat "30th June", "1st Feb" as "30 Jun", "1 Feb". Preserve the exact day number. "30th" is 30, NOT 3. Truncating "30th" to "3" is a CRITICAL ERROR.
+13. DATE ACCURACY: Extract day numbers exactly as written. If the text has "30th", the date is 30. NEVER perform math or truncation on these numbers.
+14. Day Name Format: If the text contains "Mon, Jul 6" or similar, the date is "6 Jul". Ignore the day name (Mon) and extract the Day and Month (6 Jul).
+15. OFFSET LOGIC: Offsets (+1, +2) refer to ARRIVAL times only. NEVER change the Departure Date based on a +1. Departure Date is FIXED from the start of the text.
 
 AIRLINE CODE MAPPING (use these to get full names):
 6E=IndiGo, AI=Air India, QP=Akasa Air, SG=SpiceJet, UK=Vistara, G8=GoAir,
@@ -140,7 +143,29 @@ OUTPUT JSON FORMAT:
       "days_offset": 0 or 1
     }
   ]
+
 }
+
+SPECIFIC INSTRUCTION FOR GDS / TERMINAL MULTI-SEGMENT OUTPUTS:
+If you see input formatted like this (Standard GDS/PPC Codes):
+   EY 156 E 18APR 6*PRGAUH DK1  1120 1905  18APR  E  0 789 M
+        SEE RTSVC
+   EY 232 E 18APR 6*AUHBLR DK1  2135 0315  19APR  E  0 789 M
+        SEE RTSVC
+
+INTERPRETATION:
+1. Each line with an Airline Code (EY) + Number is a SEGMENT.
+2. Ignore lines starting with "SEE" or containing auxiliary info.
+3. Group these segments into ONE single flight option (Itinerary).
+4. Set "itineraryType": "CONNECTING".
+5. Set "stops": "1 Stop" (or Number of segments - 1).
+6. "departure_airport" is the First Segment's departure (PRG).
+7. "arrival_airport" is the Last Segment's arrival (BLR).
+8. "departure_time" is Segment 1 departure (1120 -> 11:20).
+9. "arrival_time" is Segment N arrival (0315 -> 03:15).
+10. "total_journey_duration" should include layovers.
+11. Populate the "segments" array with both flights.
+DO NOT split them into separate flight options.
 
 PRIORITY: 
 - Extract as much as possible FROM THE RAW ITINERARY TEXT. 
@@ -530,11 +555,31 @@ def extract_info_regex(text: str) -> dict:
     # Filter out dates that look like they are part of a JSON key (e.g. following "departure_date":)
     # Actually the negative lookbehind (?<![:"\'\w]) already helps.
     
-    if found_dates:
+    # Filter out dates that look like metadata (e.g. "Generated on 12 Feb")
+    # or are effectively today's date if appearing in a non-flight context.
+    
+    valid_dates = []
+    metadata_indicators = ['generated', 'printed', 'run date', 'system date', 'current date']
+    
+    for d in found_dates:
+        # Check context in original text for this specific date string
+        # This is a basic heuristics check
+        is_metadata = False
+        start_idx = text.find(d)
+        if start_idx > -1:
+             # Look at 20 chars before
+             prefix = text[max(0, start_idx-25):start_idx].lower()
+             if any(ind in prefix for ind in metadata_indicators):
+                 is_metadata = True
+        
+        if not is_metadata:
+            valid_dates.append(d)
+
+    if valid_dates:
         # Sanity check: Prefer dates that appear near the start or follow "Departs" or "Flight"
         # For now, just take the first unique non-JSON date
-        hints['all_dates'] = list(dict.fromkeys(found_dates))
-        hints['departure_date'] = found_dates[0]
+        hints['all_dates'] = list(dict.fromkeys(valid_dates))
+        hints['departure_date'] = valid_dates[0]
 
     # 5. Extract duration patterns
     dur_matches = re.findall(r'(\d{1,2})\s*h(?:rs?)?\s*(\d{1,2})?\s*m(?:ins?)?', text, re.IGNORECASE)
@@ -653,17 +698,33 @@ def post_process_flight(flight: dict, hints: dict = None, original_text: str = "
     hints = hints or {}
     
     # 1. Apply regex hints
-    # CRITICAL: Regex for date is now strictly validated and accurate. 
-    # TRUST REGEX over LLM for date to prevent off-by-one errors (e.g. LLM seeing +1 and changing date).
+    # 1. Apply regex hints (PRIORITY: Regex over LLM for dates)
     if hints.get('departure_date'):
         flight['departure_date'] = hints['departure_date']
 
-    # Apply other hints only if LLM failed
     for key in ['airline', 'flight_number', 'departure_airport', 'departure_city',
                 'arrival_airport', 'arrival_city', 'departure_time', 'arrival_time',
                 'duration', 'stops', 'baggage', 'saver_fare']:
         if flight.get(key) in [None, '', 'N/A', 'null', 'undefined'] and key in hints:
             flight[key] = hints[key]
+    
+    # 1.5 Special check for "Today's Date" hallucination
+    # If the date is exactly today's date, check if the text actually contains it.
+    dep_date_raw = flight.get('departure_date')
+    if dep_date_raw and dep_date_raw not in ['N/A', '']:
+        try:
+             # Basic attempt to see if it matches today
+             today = datetime.now()
+             # Check if it looks like just a number (e.g. "12") which is bad
+             if re.match(r'^\d{1,2}(st|nd|rd|th)?$', dep_date_raw.strip(), re.IGNORECASE):
+                 # It's just a number like "13" or "13th". This is likely a hallucination of today's day.
+                 # Unless the text implies "today".
+                 flight['departure_date'] = "N/A"
+             
+             # If it parses to today, verify existence in text
+             # (This logic is complex without re-parsing, but the Regex hints are safer now)
+        except: pass
+
     
     # 2. Date Normalization (Year fix)
     current_year = datetime.now().year
@@ -1011,7 +1072,9 @@ RULES:
 - Airport codes: 3-letter uppercase (CCU, SIN, DEL)
 - Duration format: "Xh Ym" (e.g. "2h 30m")
 - Extract fare as NUMBER only (₹6,314 → 6314)
-- If a field cannot be determined, use "N/A"
+- If a field cannot be determined, use "N/A". NEVER hallucinate dates or times.
+- If departure date is not explicitly mentioned, use "N/A".
+- NEVER use today's date as a fallback.
 
 AIRLINE CODES:
 6E=IndiGo, AI=Air India, QP=Akasa Air, SG=SpiceJet, UK=Vistara, G8=GoAir,
@@ -1026,6 +1089,12 @@ DURATION HANDLING:
 - Parse duration from "2h 30m", "2:30", "2 hrs 30 min", "150 mins"
 - For international flights, duration may be 5-15+ hours
 - If arrival time < departure time, the flight may arrive next day
+
+CONNECTING FLIGHTS / MULTI-SEGMENT GDS:
+- If sequential segments form a connection (A->B, B->C), combine them into ONE flight object.
+- Populate the "segments" list with each leg.
+- Set "stops" correctly (e.g. "1 Stop").
+- Output distinct trips as separate objects.
 
 OUTPUT FORMAT (JSON ARRAY):
 [
@@ -1044,7 +1113,19 @@ OUTPUT FORMAT (JSON ARRAY):
     "stops": "Non Stop",
     "baggage": "XXkg (IGNORE emissions like 286 kg CO2e)",
     "refundability": "Refundable",
-    "saver_fare": 12345
+    "saver_fare": 12345,
+    "segments": [
+      {
+        "airline": "...",
+        "flight_number": "...",
+        "departure_airport": "...",
+        "departure_time": "...",
+        "arrival_airport": "...",
+        "arrival_time": "...",
+        "duration": "...",
+        "layover_duration": "..."
+      }
+    ]
   }
 ]
 

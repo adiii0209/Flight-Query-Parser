@@ -38,8 +38,9 @@
       --success-dark-mode: #22c55e;
       --danger-dark-mode: #f87171;
       --warning-dark-mode: #fbbf24;
-      --bg-main-dark-mode: #0f172a;
-      --bg-card-dark-mode: #1e293b;
+      --bg-main-dark-mode: transparent;
+      --bg-card-dark-mode: rgba(30, 41, 59, 0.8);
+      /* Semi-transparent card for glassmorphism */
       --text-primary-dark-mode: #f1f5f9;
       --text-secondary-dark-mode: #94a3b8;
       --border-dark-mode: #334155;
@@ -57,10 +58,123 @@
       --bg-main: var(--bg-main-dark-mode);
       --bg-card: var(--bg-card-dark-mode);
       --text-primary: var(--text-primary-dark-mode);
-      --text-secondary: var(--text-secondary-dark-mode);
-      --border: var(--border-dark-mode);
-      --shadow: var(--shadow-dark-mode);
-      --shadow-lg: var(--shadow-lg-dark-mode);
+    }
+
+    [data-theme="valentine"] {
+      --primary: #ff69b4;
+      --primary-dark: #ff1493;
+      --secondary: #ffb6c1;
+      --success: #ff8da1;
+      --danger: #ff4d6d;
+      --warning: #ffccd5;
+      --bg-main: #fff0f3;
+      --bg-card: rgba(255, 255, 255, 0.9);
+      --text-primary: #590d22;
+      --text-secondary: #800f2f;
+      --border: #ffccd5;
+      --shadow: rgba(255, 77, 109, 0.1);
+      --shadow-lg: rgba(255, 77, 109, 0.2);
+    }
+
+    [data-theme="valentine"] body {
+      background-image: radial-gradient(#ffccd5 2px, transparent 2px);
+      background-size: 30px 30px;
+    }
+
+    [data-theme="valentine"] .app-header {
+      background: linear-gradient(135deg, #ff4d6d 0%, #ff758f 50%, #ff8da1 100%) !important;
+      border-bottom: 2px solid #ffccd5;
+    }
+
+    [data-theme="valentine"] .animated-title {
+      background: linear-gradient(to right, #ffffff, #ffccd5, #ffb6c1, #ffffff) !important;
+      -webkit-background-clip: text !important;
+      background-clip: text !important;
+      color: transparent !important;
+      animation: shine 6s linear infinite;
+    }
+
+    /* Floating Heart Animation for Header */
+    [data-theme="valentine"] .app-header::before {
+      content: '💖';
+      font-size: 20px;
+      position: absolute;
+      opacity: 0;
+      animation: float-hearts 10s linear infinite;
+      z-index: 1;
+    }
+
+    @keyframes float-hearts {
+      0% {
+        transform: translateY(100%) translateX(0) scale(0);
+        opacity: 0;
+      }
+
+      20% {
+        opacity: 0.6;
+      }
+
+      80% {
+        opacity: 0.6;
+      }
+
+      100% {
+        transform: translateY(-100%) translateX(100px) scale(1.5);
+        opacity: 0;
+      }
+    }
+
+
+
+
+
+    /* Theme Transition Curtain */
+    .theme-curtain {
+      position: fixed;
+      top: -100%;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 10001;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.8s cubic-bezier(0.77, 0, 0.175, 1);
+      pointer-events: none;
+    }
+
+    .curtain-light {
+      background: #2563eb !important;
+    }
+
+    .curtain-dark {
+      background: #022c22 !important;
+    }
+
+    .curtain-valentine {
+      background: #ff69b4 !important;
+    }
+
+    .theme-curtain.active {
+      transform: translateY(100%);
+    }
+
+    .theme-curtain-icon {
+      font-size: 5rem;
+      filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.5));
+      animation: pulse-icon 1s ease-in-out infinite alternate;
+    }
+
+    @keyframes pulse-icon {
+      from {
+        transform: scale(0.8);
+        opacity: 0.5;
+      }
+
+      to {
+        transform: scale(1.2);
+        opacity: 1;
+      }
     }
 
     body {
@@ -79,11 +193,100 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
     }
 
+    /* Futreistic Dark Header */
+    [data-theme="dark"] .app-header {
+      background: linear-gradient(135deg, #022c22 0%, #052e16 50%, #000 100%);
+      border-bottom: 1px solid rgba(16, 185, 129, 0.4);
+    }
+
+    /* Grid Overlay */
+    .app-header::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      right: -50%;
+      bottom: -50%;
+      background-image:
+        linear-gradient(rgba(16, 185, 129, 0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(16, 185, 129, 0.1) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+      z-index: 0;
+    }
+
+    /* Scanline Overlay */
+    .app-header::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(rgba(16, 185, 129, 0.08) 50%, transparent 50%);
+      background-size: 100% 4px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+      z-index: 1;
+    }
+
+    /* Energy pulse highlight */
     .header-content {
+      position: relative;
+      z-index: 2;
+      /* Keep content above grids */
       max-width: 1200px;
       margin: 0 auto;
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    [data-theme="dark"] .app-header::before {
+      opacity: 1;
+      animation: grid-move 60s linear infinite;
+      transform: perspective(500px) rotateX(25deg);
+    }
+
+    [data-theme="dark"] .app-header::after {
+      opacity: 1;
+      animation: scanline 8s linear infinite;
+    }
+
+    @keyframes grid-move {
+      from {
+        background-position: 0 0;
+      }
+
+      to {
+        background-position: 400px 400px;
+      }
+    }
+
+    @keyframes scanline {
+      from {
+        background-position: 0 0;
+      }
+
+      to {
+        background-position: 0 100%;
+      }
+    }
+
+    .app-header:hover {
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    [data-theme="dark"] .app-header:hover {
       width: 100%;
       display: flex;
       justify-content: space-between;
@@ -247,6 +450,28 @@
     .remove-btn:hover {
       background: #dc2626;
       transform: translateY(-1px);
+    }
+
+    .search-results {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 4px 12px var(--shadow);
+      max-height: 250px;
+      overflow-y: auto;
+      margin-top: 5px;
+      position: absolute;
+      width: 100%;
+      z-index: 9999;
+    }
+
+    .search-item {
+      padding: 10px;
+      transition: background 0.2s;
+    }
+
+    .search-item:hover {
+      background: var(--bg-main);
     }
 
     .textarea-wrapper {
@@ -673,7 +898,7 @@
       border: 1px solid var(--border);
       border-radius: 16px;
       width: 90%;
-      max-width: 420px;
+      max-width: 600px;
       box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
       animation: modalSlideIn 0.3s ease-out;
       position: relative;
@@ -1391,9 +1616,10 @@
     .sidebar {
       position: fixed;
       top: 0;
-      right: -390px;
-      /* Hidden by default */
-      width: 320px;
+      right: -320px;
+      /* Adjusted from -390px */
+      width: 260px;
+      /* Reduced from 320px */
       height: 100vh;
       background: var(--bg-card);
       box-shadow: -4px 0 25px rgba(0, 0, 0, 0.2);
@@ -1403,12 +1629,19 @@
       flex-direction: column;
     }
 
+    [data-theme="dark"] .sidebar {
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(10px);
+      border-left: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
     .sidebar.active {
       right: 0;
     }
 
     .sidebar-header {
-      padding: 3rem 1.5rem 2rem;
+      padding: 2rem 1.25rem 1.5rem;
+      /* Reduced padding */
       background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
       color: white;
       position: relative;
@@ -1418,19 +1651,22 @@
     .user-profile-section {
       display: flex;
       align-items: center;
-      gap: 1rem;
-      margin-bottom: 1.5rem;
+      gap: 0.75rem;
+      /* Reduced gap */
+      margin-bottom: 1.25rem;
     }
 
     .user-avatar {
-      width: 48px;
-      height: 48px;
+      width: 40px;
+      /* Reduced from 48px */
+      height: 40px;
       background: linear-gradient(135deg, var(--primary), var(--secondary));
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.5rem;
+      font-size: 1.25rem;
+      /* Reduced from 1.5rem */
       font-weight: 700;
       color: white;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
@@ -1443,14 +1679,16 @@
 
     .user-name {
       font-weight: 700;
-      font-size: 1.1rem;
+      font-size: 0.95rem;
+      /* Reduced from 1.1rem */
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
     .user-email {
-      font-size: 0.85rem;
+      font-size: 0.75rem;
+      /* Reduced from 0.85rem */
       opacity: 0.7;
       white-space: nowrap;
       overflow: hidden;
@@ -1512,7 +1750,8 @@
     }
 
     .sidebar-body {
-      padding: 1.5rem;
+      padding: 1rem;
+      /* Reduced from 1.5rem */
       flex: 1;
       display: flex;
       flex-direction: column;
@@ -1521,18 +1760,24 @@
     .sidebar-nav {
       display: flex;
       flex-direction: column;
-      gap: 0.75rem;
+      gap: 0.5rem;
+      /* Reduced from 0.75rem */
     }
 
     .sidebar-link {
       display: flex;
       align-items: center;
-      gap: 1rem;
-      padding: 1rem 1.25rem;
-      border-radius: 12px;
+      gap: 0.75rem;
+      /* Reduced from 1rem */
+      padding: 0.75rem 1rem;
+      /* Reduced from 1rem 1.25rem */
+      border-radius: 8px;
+      /* Reduced from 12px */
       color: var(--text-primary);
       text-decoration: none;
       font-weight: 600;
+      font-size: 0.875rem;
+      /* Reduced */
       transition: all 0.3s ease;
       background: var(--bg-main);
       border: 1px solid var(--border);
@@ -1541,7 +1786,8 @@
     .sidebar-link:hover {
       background: var(--primary);
       color: white;
-      transform: translateX(5px);
+      transform: translateX(3px);
+      /* Reduced from 5px */
       box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
     }
 
@@ -2383,6 +2629,10 @@
         background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
       }
 
+      [data-theme="dark"] .app-header {
+        background: linear-gradient(135deg, #064e3b 0%, #022c22 100%) !important;
+      }
+
       .header-content {
         gap: 1rem !important;
       }
@@ -2784,7 +3034,8 @@
       z-index: 9999;
     }
 
-    .modal-overlay.is-active {
+    .modal-overlay.is-active,
+    .modal-overlay.active {
       opacity: 1;
       visibility: visible;
       pointer-events: auto;
@@ -2813,7 +3064,8 @@
       transition: transform 0.2s ease-out;
     }
 
-    .modal-overlay.is-active .modal-content {
+    .modal-overlay.is-active .modal-content,
+    .modal-overlay.active .modal-content {
       transform: translateY(0) scale(1);
     }
 
@@ -2894,6 +3146,9 @@
 </head>
 
 <body>
+  <div class="theme-curtain" id="themeCurtain">
+    <div class="theme-curtain-icon" id="curtainIcon">✈️</div>
+  </div>
 
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
   <div class="sidebar" id="sidebar">
@@ -2917,13 +3172,20 @@
         <a href="/" class="sidebar-link active">🏠 Home</a>
         <a href="/passengers" class="sidebar-link">👤 Passengers</a>
         <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
-        <a href="/itineraries-v2" class="sidebar-link">📋 Itineraries</a>
+        <a href="/itineraries" class="sidebar-link">📋 Itineraries</a>
+        <a href="/billing" class="sidebar-link">💰 Billing</a>
         <div style="margin-top: 1.5rem; padding: 0 0.5rem;">
           <label class="input-label"
             style="display: block; margin-bottom: 0.75rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Appearance</label>
           <button class="sidebar-link" style="width: 100%; border: none; cursor: pointer;" id="sidebarThemeToggle">
             <span class="theme-icon-container">🌙</span>
             <span id="themeToggleText">Dark Mode</span>
+          </button>
+          <button class="sidebar-link"
+            style="width: 100%; border: none; cursor: pointer; margin-top: 0.5rem; background: rgba(255, 105, 180, 0.1); color: #ff69b4;"
+            id="sidebarValentineToggle">
+            <span>💖</span>
+            <span>Valentine Mode</span>
           </button>
         </div>
       </nav>
@@ -2942,8 +3204,11 @@
         <h1 class="animated-title">Time Travels Query</h1>
         <p class="header-subtitle">Travel with ease ✈️</p>
       </div>
-      <div class="header-actions">
-        <!-- Hidden header actions, now in sidebar -->
+      <div class="header-actions" style="display: flex !important;">
+        <button id="valentineToggle" class="btn"
+          style="background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.4); color: white; padding: 0.5rem 1rem; font-size: 0.9rem;">
+          💖 Valentine Mode
+        </button>
       </div>
     </div>
   </div>
@@ -3067,116 +3332,199 @@
   </div>
 
   <!-- Save Itinerary Modal -->
+  <!-- Save Itinerary Modal V2 (Wizard) -->
   <div id="saveModal" class="modal-overlay">
-    <div class="modal-content">
+    <div class="modal-content modal-large" style="max-width: 800px;">
       <div class="modal-header">
         <h3 class="modal-title">💾 Save Itinerary</h3>
         <button class="modal-close" onclick="closeSaveModal()">✕</button>
       </div>
 
+      <div class="header-actions" style="display: flex !important;">
+        <button id="valentineToggle" class="btn"
+          style="background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.4); color: white; padding: 0.5rem 1rem; font-size: 0.9rem;">
+          💖 Valentine Mode
+        </button>
+      </div>
       <div class="modal-body">
-        <div class="billing-tabs" style="margin-bottom: 1.5rem;">
-          <button class="billing-tab active" onclick="switchBillingTab('passenger')">👤 Passenger</button>
-          <button class="billing-tab" onclick="switchBillingTab('corporate')">🏢 Corporate</button>
+
+        <!-- Steps Indicator -->
+        <div class="save-steps"
+          style="display:flex; justify-content:space-between; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:10px;">
+          <span id="stepIndicator1" class="step-indicator active"
+            style="font-weight:bold; color:var(--primary-color);">1. Billing</span>
+          <span id="stepIndicator2" class="step-indicator" style="color:var(--text-secondary);">2. Passengers</span>
+          <span id="stepIndicator3" class="step-indicator" style="color:var(--text-secondary);">3. Reference</span>
         </div>
 
-        <form id="saveForm" onsubmit="saveItinerary(event)">
-          <!-- Passenger Billing Form -->
-          <div id="passengerForm" class="billing-form">
-            <div class="customer-selector" style="margin-bottom: 1.5rem;">
-              <select id="passengerCustomerSelect" class="form-select" onchange="loadCustomerData('passenger')"
-                style="width: 100%;">
-                <option value="">Select existing passenger or enter new</option>
-              </select>
-            </div>
-
-            <div class="modal-grid">
-              <div class="form-group">
-                <label class="form-label">Passenger Name *</label>
-                <input type="text" id="passengerName" class="form-input" required>
+        <!-- Step 1: Billing -->
+        <div id="saveStep1" class="save-step">
+          <div class="form-group">
+            <label class="form-label">Search Billing Account</label>
+            <div style="position:relative;">
+              <div style="display:flex; gap:10px;">
+                <input type="text" id="billingSearchInput" class="form-input"
+                  placeholder="Search accounts, passengers or corporates..." oninput="searchBillingUnified()"
+                  onclick="searchBillingUnified()" onfocus="searchBillingUnified()">
+                <button class="btn btn-secondary" onclick="toggleNewBillingForm()">+ New</button>
               </div>
-
-              <div class="form-group">
-                <label class="form-label">Email</label>
-                <input type="email" id="passengerEmail" class="form-input">
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">Phone</label>
-                <input type="tel" id="passengerPhone" class="form-input">
-              </div>
-
-              <div class="form-group" style="grid-column: span 2;">
-                <label class="form-label">Address</label>
-                <textarea id="passengerAddress" class="form-textarea" rows="2"></textarea>
+              <div id="billingSearchResults" class="search-results"
+                style="display:none; width:100%; top:100%; z-index:10000; position:absolute; background:var(--bg-card); border:1px solid var(--border); max-height:200px; overflow-y:auto; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
               </div>
             </div>
 
-            <div class="form-group" style="margin-top: 1rem;">
-              <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                <input type="checkbox" id="savePassengerToDb">
-                <span class="form-label" style="margin: 0;">Save this passenger to database for future use</span>
-              </label>
+            <input type="hidden" id="billingAccountSelect">
+          </div>
+
+          <!-- New Billing Form -->
+          <div id="newBillingForm"
+            style="display:none; background:var(--bg-card); padding:15px; margin-top:15px; border-radius:8px; border:1px solid var(--border-color);">
+            <h4 style="margin-top:0;">New Billing Account</h4>
+            <div class="grid-row" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
+              <div>
+                <label class="form-label">Type</label>
+                <select id="newBillType" class="form-select">
+                  <option value="individual">Individual</option>
+                  <option value="corporate">Corporate</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label">Display Name *</label>
+                <input id="newBillDisplay" class="form-input" placeholder="e.g. Acme Corp or John Doe">
+              </div>
+            </div>
+
+            <div class="grid-row" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">
+              <div><label class="form-label">Company Name</label><input id="newBillCompany" class="form-input"></div>
+              <div><label class="form-label">Contact Name</label><input id="newBillContact" class="form-input"></div>
+            </div>
+
+            <div class="grid-row" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">
+              <div><label class="form-label">Email</label><input id="newBillEmail" class="form-input"></div>
+              <div><label class="form-label">Phone</label><input id="newBillPhone" class="form-input"></div>
+            </div>
+
+            <div style="margin-top:10px;">
+              <label class="form-label">GST Number</label>
+              <input id="newBillGst" class="form-input">
+            </div>
+
+            <div style="margin-top:10px;">
+              <label class="form-label">Address</label>
+              <textarea id="newBillAddress" class="form-textarea" rows="2"></textarea>
+            </div>
+
+            <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="saveBillingToDb" checked>
+              <label for="saveBillingToDb" style="cursor:pointer; font-weight:500;">Save this billing account for future
+                use</label>
+            </div>
+
+            <div style="margin-top:15px; text-align:right;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="toggleNewBillingForm()">Cancel</button>
+              <button type="button" class="btn btn-primary btn-sm" onclick="useNewBillingAccount()">Use This
+                Account</button>
             </div>
           </div>
 
-          <!-- Corporate Billing Form -->
-          <div id="corporateForm" class="billing-form" style="display: none;">
-            <div class="customer-selector" style="margin-bottom: 1.5rem;">
-              <select id="corporateCustomerSelect" class="form-select" onchange="loadCustomerData('corporate')"
-                style="width: 100%;">
-                <option value="">Select existing corporate or enter new</option>
-              </select>
-            </div>
-
-            <div class="modal-grid">
-              <div class="form-group">
-                <label class="form-label">Company Name *</label>
-                <input type="text" id="corporateCompany" class="form-input" required>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">Contact Person *</label>
-                <input type="text" id="corporateName" class="form-input" required>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">Email</label>
-                <input type="email" id="corporateEmail" class="form-input">
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">Phone</label>
-                <input type="tel" id="corporatePhone" class="form-input">
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">GST Number</label>
-                <input type="text" id="corporateGst" class="form-input">
-              </div>
-
-              <div class="form-group" style="grid-column: span 2;">
-                <label class="form-label">Address</label>
-                <textarea id="corporateAddress" class="form-textarea" rows="2"></textarea>
-              </div>
-            </div>
-
-            <div class="form-group" style="margin-top: 1rem;">
-              <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                <input type="checkbox" id="saveCorporateToDb">
-                <span class="form-label" style="margin: 0;">Save this company to database for future use</span>
-              </label>
+          <div id="billingSummary"
+            style="margin-top:20px; padding:10px; border:1px solid var(--border-color); border-radius:8px; display:none; background:var(--bg-main);">
+            <strong>Billing To:</strong> <span id="selectedBillingName"
+              style="color:var(--primary-color); font-weight:600;"></span>
+            <div id="selectedBillingDetails" style="font-size:0.9em; color:var(--text-secondary); margin-top:5px;">
             </div>
           </div>
 
-          <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" onclick="closeSaveModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary">
+          <div style="margin-top:20px; text-align:right;">
+            <button class="btn btn-primary" onclick="goToStep(2)">Next: Passengers &rarr;</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Passengers -->
+        <div id="saveStep2" class="save-step" style="display:none;">
+
+          <div class="form-group">
+            <label class="form-label" style="display:none;">Search Passenger</label>
+            <!-- Hidden label for accessibility/omission -->
+            <div style="position:relative;">
+              <div style="display:flex; gap:10px;">
+                <input type="text" id="savePassengerSearch" class="form-input"
+                  placeholder="Search passenger by name, email, phone..." autocomplete="off"
+                  onkeyup="handleSavePassengerSearch()" onclick="handleSavePassengerSearch()"
+                  onfocus="handleSavePassengerSearch()">
+                <button class="btn btn-secondary" onclick="toggleQuickAddPassenger()">+ New</button>
+              </div>
+              <div id="savePassengerResults" class="search-results custom-scroll"
+                style="display:none; width:100%; top:100%; z-index:10000; position:absolute; background:var(--bg-card); border:1px solid var(--border); max-height:200px; overflow-y:auto; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick add new temp passenger FORM -->
+          <div id="quickAddPassengerForm"
+            style="display:none; background:var(--bg-card); padding:15px; margin-top:15px; border-radius:8px; border:1px solid var(--border-color); margin-bottom: 15px;">
+            <h4 style="margin-top:0; font-size:1rem; margin-bottom:10px;">New Passenger Details</h4>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom: 10px;">
+              <div><label class="form-label">First Name *</label><input id="qaFirst" class="form-input input-sm"></div>
+              <div><label class="form-label">Last Name *</label><input id="qaLast" class="form-input input-sm"></div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom: 10px;">
+              <div><label class="form-label">Email</label><input id="qaEmail" class="form-input input-sm"></div>
+              <div><label class="form-label">Phone</label><input id="qaPhone" class="form-input input-sm"></div>
+            </div>
+
+            <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="qaSaveToDB" checked>
+              <label for="qaSaveToDB" style="cursor:pointer; font-weight:500; margin-bottom:0;">Save to Database</label>
+            </div>
+
+            <div style="margin-top:15px; text-align:right; display: flex; justify-content: flex-end; gap: 10px;">
+              <button class="btn btn-secondary btn-sm" onclick="toggleQuickAddPassenger()">Cancel</button>
+              <button class="btn btn-primary btn-sm" onclick="addQuickPassenger()">Add Passenger</button>
+            </div>
+          </div>
+
+          <div id="savePassengerList" class="items-list custom-scroll"
+            style="margin-top:15px; max-height:220px; overflow-y:auto; padding-right: 5px;">
+            <!-- Filled by JS -->
+            <div style="text-align: center; color: var(--text-secondary); padding: 20px; font-style: italic;">
+              No passengers added yet. Search or create new.
+            </div>
+          </div>
+
+          <div style="margin-top:20px; display:flex; justify-content:space-between; align-items: center;">
+            <button class="btn btn-secondary" onclick="goToStep(1)">&larr; Back</button>
+            <div style="font-size: 0.9rem; color: var(--text-secondary);">
+              <span id="passengerCountDisplay">0</span> Passengers Added
+            </div>
+            <button class="btn btn-primary" onclick="goToStep(3)">Next: Reference &rarr;</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Reference -->
+        <div id="saveStep3" class="save-step" style="display:none;">
+          <div class="form-group">
+            <label class="form-label">Itinerary Title / Reference Name *</label>
+            <input type="text" id="saveItineraryTitle" class="form-input" placeholder="e.g. Trip to Dubai for John Doe"
+              style="font-size:1.1em; padding:10px;" required>
+          </div>
+          <div class="form-group" style="margin-top:10px;">
+            <label class="form-label">Reference Number (optional)</label>
+            <input type="text" id="saveReferenceNumber" class="form-input"
+              placeholder="e.g. PNR, Booking Ref, Internal ID">
+          </div>
+
+          <div style="margin-top:20px; display:flex; justify-content:space-between;">
+            <button class="btn btn-secondary" onclick="goToStep(2)">&larr; Back</button>
+            <button class="btn btn-success" id="finalSaveBtn" onclick="submitItinerary()">
               <span id="saveBtnText">💾 Save Itinerary</span>
-              <span id="saveBtnLoading" style="display: none;" class="loading"></span>
+              <span id="saveBtnLoading" style="display:none;">⏳ Saving...</span>
             </button>
           </div>
-        </form>
+        </div>
+
       </div>
     </div>
   </div>
@@ -3216,19 +3564,38 @@
   </div>
 
   <!-- Saved Itinerary Success Modal -->
-  <div id="savedItineraryModal" class="modal">
-    <div class="modal-content" style="text-align: center;">
-      <h3 style="color: var(--success); margin-bottom: 0.5rem; font-size: 1.5rem;">✅</h3>
-      <h3 style="color: var(--text-primary); margin-bottom: 1rem;">Itinerary Saved!</h3>
-      <p style="color: var(--text-secondary); margin-bottom: 1.5rem; line-height: 1.5;">
+  <!-- Saved Itinerary Success Modal -->
+  <div id="savedItineraryModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 480px; text-align: center;">
+      <h3 style="color: var(--success); margin-bottom: 0.5rem; font-size: 2rem;">✅</h3>
+      <h3 style="color: var(--text-primary); margin-bottom: 0.5rem; font-size: 1.25rem; font-weight: 700;">Itinerary
+        Saved!</h3>
+      <p style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.95rem; line-height: 1.5;">
         Your itinerary has been successfully saved to the database.
       </p>
       <div class="modal-actions" style="justify-content: center; gap: 1rem;">
-        <button class="btn btn-secondary" onclick="closeSavedItineraryModal(false)"
-          style="padding: 0.6rem 1.25rem;">Stay Here</button>
-        <button class="btn btn-primary"
-          style="background-color: var(--success); border-color: var(--success); padding: 0.6rem 1.25rem;"
-          onclick="closeSavedItineraryModal(true)">View Itineraries</button>
+        <button class="btn btn-secondary" onclick="closeSavedItineraryModal(false)" style="min-width: 100px;">Stay
+          Here</button>
+        <button class="btn btn-primary" onclick="closeSavedItineraryModal(true)"
+          style="min-width: 100px; background-color: var(--success); border-color: var(--success);">View
+          Itineraries</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Required Modal -->
+  <div id="loginRequiredModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 480px; text-align: center;">
+      <h3 style="color: var(--primary); margin-bottom: 0.5rem; font-size: 2rem;">👤</h3>
+      <h3 style="color: var(--text-primary); margin-bottom: 0.5rem; font-size: 1.25rem; font-weight: 700;">Login
+        Required</h3>
+      <p style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.95rem; line-height: 1.5;">
+        You need to be logged in to save itineraries to the database. Your current work will be saved automatically.
+      </p>
+      <div class="modal-actions" style="justify-content: center; gap: 1rem;">
+        <button class="btn btn-secondary" onclick="closeLoginRequiredModal()" style="min-width: 100px;">Cancel</button>
+        <button class="btn btn-primary" onclick="saveDraft(); window.location.href='/login'"
+          style="min-width: 100px;">Login/Register</button>
       </div>
     </div>
   </div>
@@ -3249,6 +3616,9 @@
     let unitFlights = {}; // Store flights organized by unit
     let isGlobalEditMode = false; // Track if we're in edit mode for fare cards
     let hasUnsavedFareChanges = false; // Track if there are unsaved fare changes
+    let billingAccounts = [];
+    let savePassengers = []; // Temporary list of passengers to be saved with itinerary
+    let saveWizardStep = 1;
 
     // Check authentication status on load
     window.addEventListener('DOMContentLoaded', async () => {
@@ -3257,7 +3627,113 @@
       initializeTripType();
       initializeDarkMode();
       initializeSidebar();
+
+      // Load draft if exists
+      setTimeout(loadDraft, 500);
+
+      // Check for edit mode from itinerary
+      const urlParams = new URLSearchParams(window.location.search);
+      const editId = urlParams.get('edit');
+      if (editId) {
+        await loadItineraryForEdit(editId);
+      }
     });
+
+    let editingItineraryId = null; // Track if we're editing an existing itinerary
+
+    async function loadItineraryForEdit(id) {
+      try {
+        const r = await fetch('/api/v2/itineraries/' + id);
+        if (!r.ok) { showNotification('Failed to load itinerary for editing', 'error'); return; }
+        const it = await r.json();
+        editingItineraryId = id;
+
+        // Restore trip type mode using radio buttons
+        const tripType = it.trip_type || 'one_way';
+        const radio = document.querySelector(`input[name="tripType"][value="${tripType}"]`);
+        if (radio) {
+          radio.checked = true;
+          handleTripType(); // This rebuilds input UI (Unit 1) and resets unitFlights
+        }
+
+        // Reconstruct Units (Add missing units)
+        let neededUnits = 1;
+        if (tripType === 'round_trip') {
+          neededUnits = Math.ceil((it.flights || []).length / 2);
+        } else if (tripType === 'multi_city') {
+          const s = new Set((it.flights || []).map(f => f.unit_id));
+          neededUnits = s.size || 1;
+          if (neededUnits === 1 && (it.flights || []).length > 1) neededUnits = (it.flights || []).length;
+        } else {
+          neededUnits = (it.flights || []).length;
+        }
+
+        for (let i = 1; i < neededUnits; i++) {
+          addUnit();
+        }
+
+        // Restore raw input texts to textareas if available
+        if (it.raw_input_data && it.raw_input_data.flight_texts) {
+          const textareas = document.querySelectorAll('#flightInputs textarea');
+          it.raw_input_data.flight_texts.forEach((text, idx) => {
+            if (textareas[idx]) textareas[idx].value = text;
+          });
+        }
+
+        // Restore flights
+        if (it.flights && it.flights.length > 0) {
+          currentFlights = it.flights;
+          if (it.parser_output_text) {
+            const outputEl = document.getElementById('output');
+            if (outputEl) outputEl.textContent = it.parser_output_text;
+            currentFinalText = it.parser_output_text;
+          }
+
+          // Re-render
+          renderResults(currentFlights);
+          document.getElementById('cardsSection').style.display = 'block';
+          document.getElementById('outputSection').style.display = 'block';
+        }
+
+        // --- Restore Save Modal Data ---
+        document.getElementById('saveItineraryTitle').value = it.title || '';
+        if (document.getElementById('saveReferenceNumber')) document.getElementById('saveReferenceNumber').value = it.reference_number || '';
+        if (document.getElementById('saveReferenceNumber')) document.getElementById('saveReferenceNumber').value = it.reference_number || '';
+
+        // Restore Passengers
+        if (it.passengers_data && Array.isArray(it.passengers_data)) {
+          // Map to ensure format matches what renderSavePassengers experts
+          savePassengers = it.passengers_data.map(p => ({
+            first_name: p.first_name || (p.name ? p.name.split(' ')[0] : ''),
+            last_name: p.last_name || (p.name ? p.name.split(' ').slice(1).join(' ') : ''),
+            email: p.email || '',
+            phone: p.phone || '',
+            is_db: !!p.passenger_id, // If passenger_id exists, it is from DB
+            id: p.passenger_id,      // Ensure ID is set for lookup
+            passenger_id: p.passenger_id
+          }));
+          renderSavePassengers();
+        }
+
+        // Restore Billing Account Selection
+        if (it.billing_account_id && document.getElementById('billingAccountSelect')) {
+          document.getElementById('billingAccountSelect').value = it.billing_account_id;
+        }
+        // --- End Restore ---
+
+        // Update save button text for edit mode
+        const saveBtnLabel = document.querySelector('.btn-save');
+        if (saveBtnLabel) saveBtnLabel.innerHTML = '🔄 Update Itinerary';
+
+        const modalTitle = document.querySelector('#saveModal .modal-title');
+        if (modalTitle) modalTitle.textContent = '🔄 Update Itinerary';
+
+        showNotification('Itinerary loaded for editing. Make your changes and click Update.', 'info');
+      } catch (e) {
+        console.error('Edit load error:', e);
+        showNotification('Error loading itinerary', 'error');
+      }
+    }
 
     // Dark mode functionality
     function initializeDarkMode() {
@@ -3450,7 +3926,7 @@
       });
     }
 
-    function loadCustomerData(type) {
+    async function loadCustomerData(type) {
       const select = document.getElementById(`${type}CustomerSelect`);
       const customerId = select.value;
 
@@ -3467,6 +3943,66 @@
         document.getElementById('passengerEmail').value = customer.email || '';
         document.getElementById('passengerPhone').value = customer.phone || '';
         document.getElementById('passengerAddress').value = customer.address || '';
+
+        // Fetch full passenger details including preferences & FF
+        const extraInfoDiv = document.getElementById('passengerExtraInfo');
+        const prefDisplay = document.getElementById('prefDisplay');
+        const ffDisplay = document.getElementById('ffDisplay');
+
+        try {
+          const response = await fetch(`/api/v2/passengers/${customerId}`);
+          if (response.ok) {
+            const data = await response.json();
+
+            // 1. Preferences
+            let prefHtml = '';
+            if (data.preferences) {
+              if (data.preferences.meal_preference) {
+                prefHtml += `<div><strong>Meal:</strong> ${data.preferences.meal_preference}</div>`;
+              }
+              if (data.preferences.seat_preference) {
+                prefHtml += `<div><strong>Seat:</strong> ${data.preferences.seat_preference}</div>`;
+              }
+            }
+            if (!prefHtml) prefHtml = '<div>No specific preferences found.</div>';
+            prefDisplay.innerHTML = prefHtml;
+
+
+            // 2. Frequent Flyer (Filtered by Airlines in currentFlights)
+            let ffHtml = '';
+            if (data.frequent_flyer_accounts && data.frequent_flyer_accounts.length > 0) {
+              // Get unique airline names from currentFlights
+              // Assuming currentFlights has 'airline' property which is the name
+              const flightAirlines = [...new Set(currentFlights.map(f => f.airline ? f.airline.toLowerCase() : ''))];
+
+              const relevantFF = data.frequent_flyer_accounts.filter(ff => {
+                const ffAirline = ff.airline_name ? ff.airline_name.toLowerCase() : '';
+                // Check if flight airline includes FF airline or vice versa
+                return flightAirlines.some(fa => fa && (fa.includes(ffAirline) || ffAirline.includes(fa)));
+              });
+
+              if (relevantFF.length > 0) {
+                relevantFF.forEach(ff => {
+                  ffHtml += `<div style="margin-bottom: 0.25rem;">
+                      <strong>${ff.airline_name}:</strong> <span style="font-family: monospace; background: var(--bg-card); padding: 2px 4px; border-radius: 4px; border: 1px solid var(--border);">${ff.frequent_flyer_number}</span> 
+                      ${ff.tier_status ? `<span style="font-size: 0.75em; color: var(--primary); border: 1px solid var(--primary); padding: 0 4px; border-radius: 99px;">${ff.tier_status}</span>` : ''}
+                   </div>`;
+                });
+              } else {
+                ffHtml = '<div>No matching frequent flyer numbers for these flights.</div>';
+              }
+            } else {
+              ffHtml = '<div>No frequent flyer accounts found.</div>';
+            }
+            ffDisplay.innerHTML = ffHtml;
+
+            extraInfoDiv.style.display = 'grid'; // Show the container
+          }
+        } catch (e) {
+          console.error("Error fetching passenger details:", e);
+          extraInfoDiv.style.display = 'none';
+        }
+
       } else {
         document.getElementById('corporateCompany').value = customer.company_name || '';
         document.getElementById('corporateName').value = customer.name || '';
@@ -3483,6 +4019,7 @@
         document.getElementById('passengerEmail').value = '';
         document.getElementById('passengerPhone').value = '';
         document.getElementById('passengerAddress').value = '';
+        document.getElementById('passengerExtraInfo').style.display = 'none';
       } else {
         document.getElementById('corporateCompany').value = '';
         document.getElementById('corporateName').value = '';
@@ -3498,191 +4035,721 @@
       showNotification('Customer list refreshed', 'success');
     }
 
-    function switchBillingTab(type) {
-      const passengerForm = document.getElementById("passengerForm");
-      const corporateForm = document.getElementById("corporateForm");
 
-      if (type === "passenger") {
-        passengerForm.style.display = "block";
-        corporateForm.style.display = "none";
 
-        passengerForm.querySelectorAll("[required]").forEach(el => el.disabled = false);
-        corporateForm.querySelectorAll("[required]").forEach(el => el.disabled = true);
+
+
+
+    // --- Save Wizard Logic ---
+
+    async function openSaveModal() {
+      // Reset State
+      saveWizardStep = 1;
+      savePassengers = [];
+      document.getElementById('saveItineraryTitle').value = '';
+      document.getElementById('billingAccountSelect').value = '';
+      document.getElementById('billingSearchInput').value = '';
+      document.getElementById('billingSummary').style.display = 'none';
+      document.getElementById('newBillingForm').style.display = 'none';
+      document.getElementById('savePassengerList').innerHTML = '';
+      tempBillingDetails = null;
+
+      // Load Data
+      await Promise.all([loadBillingAccounts(), loadCustomers()]);
+
+      // If editing, pre-fill saved data
+      if (editingItineraryId) {
+        try {
+          const r = await fetch('/api/v2/itineraries/' + editingItineraryId);
+          if (r.ok) {
+            const it = await r.json();
+            // Pre-fill title and reference
+            document.getElementById('saveItineraryTitle').value = it.title || '';
+            const refEl = document.getElementById('saveReferenceNumber');
+            if (refEl) refEl.value = it.reference_number || '';
+
+            // Pre-fill billing account
+            if (it.billing_account_id) {
+              document.getElementById('billingAccountSelect').value = it.billing_account_id;
+              // Trigger visual update so user sees what's selected
+              const acc = billingAccounts.find(a => a.id == it.billing_account_id);
+              if (acc) {
+                document.getElementById('billingSearchInput').value = acc.display_name;
+                document.getElementById('selectedBillingName').textContent = acc.display_name;
+                document.getElementById('selectedBillingDetails').innerHTML = `
+                      ${acc.company_name ? `<div><strong>Company:</strong> ${acc.company_name}</div>` : ''}
+                      ${acc.gst_number ? `<div><strong>GST:</strong> ${acc.gst_number}</div>` : ''}
+                      ${acc.email ? `<div><strong>Email:</strong> ${acc.email}</div>` : ''}
+                      ${acc.phone ? `<div><strong>Phone:</strong> ${acc.phone}</div>` : ''}
+                  `;
+                document.getElementById('billingSummary').style.display = 'block';
+              }
+            } else if (it.bill_to_name) {
+              // Manual billing restoration
+              tempBillingDetails = {
+                display_name: it.bill_to_name,
+                company_name: it.bill_to_company,
+                address: it.bill_to_address,
+                gst_number: it.bill_to_gst,
+                email: it.bill_to_email,
+                phone: it.bill_to_phone
+              };
+              renderTempBillingSummary();
+              document.getElementById('billingSummary').style.display = 'block';
+              document.getElementById('billingSearchInput').value = it.bill_to_name;
+            }
+
+            // Pre-fill passengers
+            if (it.passengers_data && it.passengers_data.length > 0) {
+              savePassengers = it.passengers_data.map(p => ({
+                id: p.passenger_id || p.id,
+                first_name: p.first_name || (p.name ? p.name.split(' ')[0] : ''),
+                last_name: p.last_name || (p.name ? p.name.split(' ').slice(1).join(' ') : ''),
+                email: p.email,
+                phone: p.phone,
+                is_db: !!p.passenger_id
+              }));
+              renderSavePassengers();
+            }
+
+            // Update modal title and button text for edit mode
+            const modalTitle = document.querySelector('#saveModal .modal-title');
+            if (modalTitle) modalTitle.textContent = '🔄 Update Itinerary';
+            const saveBtnText = document.getElementById('saveBtnText');
+            if (saveBtnText) saveBtnText.textContent = '🔄 Update Itinerary';
+          }
+        } catch (e) { console.error('Error pre-filling edit data:', e); }
       } else {
-        corporateForm.style.display = "block";
-        passengerForm.style.display = "none";
+        // Ensure we show "Save" text for new itineraries
+        const modalTitle = document.querySelector('#saveModal .modal-title');
+        if (modalTitle) modalTitle.textContent = '💾 Save Itinerary';
+        const saveBtnText = document.getElementById('saveBtnText');
+        if (saveBtnText) saveBtnText.textContent = '💾 Save Itinerary';
+      }
 
-        corporateForm.querySelectorAll("[required]").forEach(el => el.disabled = false);
-        passengerForm.querySelectorAll("[required]").forEach(el => el.disabled = true);
+      // Show Modal
+      document.getElementById('saveModal').classList.add('active');
+      goToStep(1);
+    }
+
+    function closeSaveModal() {
+      document.getElementById('saveModal').classList.remove('active');
+    }
+
+    function goToStep(step) {
+      saveWizardStep = step;
+      document.querySelectorAll('.save-step').forEach(el => el.style.display = 'none');
+      document.getElementById(`saveStep${step}`).style.display = 'block';
+
+      // Update Indicators
+      document.querySelectorAll('.step-indicator').forEach(el => {
+        el.classList.remove('active');
+        el.style.fontWeight = 'normal';
+        el.style.color = 'var(--text-secondary)';
+      });
+      const activeInd = document.getElementById(`stepIndicator${step}`);
+      activeInd.classList.add('active');
+      activeInd.style.fontWeight = 'bold';
+      activeInd.style.color = 'var(--primary-color)';
+    }
+
+    // --- Step 1: Billing ---
+    async function loadBillingAccounts() {
+      try {
+        const response = await fetch('/api/v2/billing-accounts');
+        if (response.ok) {
+          const data = await response.json();
+          billingAccounts = data.billing_accounts || [];
+          console.log('Loaded', billingAccounts.length, 'billing accounts');
+        }
+      } catch (e) {
+        console.error('Failed to load billing accounts', e);
       }
     }
 
+    let currentBillingResults = [];
 
-    function openSaveModal() {
-      // Check if we have parsed flights
-      if (!currentFlights || currentFlights.length === 0) {
-        showNotification('Please parse flights first', 'warning');
+    function searchBillingUnified() {
+      const q = document.getElementById('billingSearchInput').value.toLowerCase().trim();
+      const resultsDiv = document.getElementById('billingSearchResults');
+
+      // Show everything if empty
+
+      currentBillingResults = [];
+
+      // 1. Search existing BillingAccounts
+      billingAccounts.forEach(acc => {
+        const displayName = (acc.display_name || '').toLowerCase();
+        const companyName = (acc.company_name || '').toLowerCase();
+        if (!q || displayName.includes(q) || companyName.includes(q)) {
+          currentBillingResults.push({
+            type: 'billing',
+            id: acc.id,
+            display: acc.display_name || 'Unnamed Account',
+            sub: acc.company_name ? 'B2B Customer' : 'B2C Customer',
+            raw: acc
+          });
+        }
+      });
+
+      // 2. Search Customers (Passengers/Corporates)
+      allCustomers.forEach(c => {
+        const name = (c.name || '').toLowerCase();
+        const company = (c.company_name || '').toLowerCase();
+        if (!q || name.includes(q) || company.includes(q)) {
+          currentBillingResults.push({
+            type: c.customer_type,
+            id: c.id,
+            display: c.customer_type === 'corporate' ? ((c.company_name || '') + (c.name ? ' (' + c.name + ')' : '')) : (c.name || 'Unnamed Passenger'),
+            sub: c.customer_type === 'corporate' ? (c.company_name ? 'B2B Customer' : 'B2C Customer') : 'B2C Customer',
+            raw: c
+          });
+        }
+      });
+
+      if (currentBillingResults.length === 0) {
+        resultsDiv.innerHTML = '<div style="padding:15px; text-align:center; color:var(--text-secondary);"><i class="fas fa-search" style="display:block; font-size:1.5rem; margin-bottom:10px; opacity:0.3;"></i>No matches found. Use "+ New" to create.</div>';
+      } else {
+        resultsDiv.innerHTML = currentBillingResults.slice(0, 10).map((r, idx) => `
+            <div class="search-item" onclick="selectBillingRecordByIndex(${idx})" 
+                 style="padding:12px 15px; cursor:pointer; border-bottom:1px solid var(--border-color); display:flex; align-items:center; gap:12px; transition: background 0.2s;">
+                <div class="avatar" style="width:36px; height:36px; border-radius:50%; background:#2563eb; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; flex-shrink:0; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
+                  ${(r.display && r.display.trim().length > 0) ? r.display.trim()[0].toUpperCase() : '?'}
+                </div>
+                <div style="flex-grow:1; line-height:1.4;">
+                  <div style="font-weight:600; color:var(--text-primary); font-size:0.95rem;">${r.display}</div>
+                  <div style="font-size:0.8rem; color:var(--text-secondary); display:flex; align-items:center; gap:5px;">
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${r.sub.includes('B2B') ? '#4caf50' : '#2196f3'};"></span>
+                    ${r.sub}
+                  </div>
+                </div>
+            </div>
+        `).join('');
+      }
+      resultsDiv.style.display = 'block';
+    }
+
+    function selectBillingRecordByIndex(idx) {
+      const res = currentBillingResults[idx];
+      if (!res) return;
+
+      const resultsDiv = document.getElementById('billingSearchResults');
+      const input = document.getElementById('billingSearchInput');
+      const container = document.getElementById('billingSummary');
+      const idInput = document.getElementById('billingAccountSelect');
+
+      resultsDiv.style.display = 'none';
+      tempBillingDetails = null;
+      const raw = res.raw;
+
+      if (res.type === 'billing') {
+        idInput.value = raw.id;
+        input.value = raw.display_name;
+        document.getElementById('selectedBillingName').textContent = raw.display_name;
+        document.getElementById('selectedBillingDetails').innerHTML = `
+                ${raw.company_name ? `<div><strong>Company:</strong> ${raw.company_name}</div>` : ''}
+                ${raw.gst_number ? `<div><strong>GST:</strong> ${raw.gst_number}</div>` : ''}
+                ${raw.email ? `<div><strong>Email:</strong> ${raw.email}</div>` : ''}
+                ${raw.phone ? `<div><strong>Phone:</strong> ${raw.phone}</div>` : ''}
+          `;
+      } else if (res.type === 'passenger') {
+        idInput.value = '';
+        input.value = raw.name;
+        tempBillingDetails = {
+          account_type: 'individual',
+          display_name: raw.name,
+          contact_name: raw.name,
+          email: raw.email,
+          phone: raw.phone,
+          address: raw.address,
+          passenger_id: raw.id
+        };
+        renderTempBillingSummary();
+      } else if (res.type === 'corporate') {
+        idInput.value = '';
+        input.value = raw.company_name;
+        tempBillingDetails = {
+          account_type: 'corporate',
+          display_name: raw.company_name,
+          company_name: raw.company_name,
+          contact_name: raw.name,
+          email: raw.email,
+          phone: raw.phone,
+          address: raw.address,
+          gst_number: raw.gst_number,
+          corporate_id: raw.id
+        };
+        renderTempBillingSummary();
+      }
+      container.style.display = 'block';
+    }
+
+    function renderTempBillingSummary() {
+      if (!tempBillingDetails) return;
+      document.getElementById('selectedBillingName').textContent = tempBillingDetails.display_name;
+      document.getElementById('selectedBillingDetails').innerHTML = `
+            ${tempBillingDetails.company_name ? `<div><strong>Company:</strong> ${tempBillingDetails.company_name}</div>` : ''}
+            ${tempBillingDetails.gst_number ? `<div><strong>GST:</strong> ${tempBillingDetails.gst_number}</div>` : ''}
+            ${tempBillingDetails.email ? `<div><strong>Email:</strong> ${tempBillingDetails.email}</div>` : ''}
+            ${tempBillingDetails.phone ? `<div><strong>Phone:</strong> ${tempBillingDetails.phone}</div>` : ''}
+      `;
+    }
+
+    function toggleNewBillingForm() {
+      const form = document.getElementById('newBillingForm');
+      form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    }
+
+    let tempBillingDetails = null; // Store ad-hoc details
+
+    async function useNewBillingAccount() {
+      const type = document.getElementById('newBillType').value;
+      const display = document.getElementById('newBillDisplay').value;
+      const saveToDb = document.getElementById('saveBillingToDb').checked;
+
+      if (!display) {
+        showNotification('Display Name is required', 'error');
         return;
       }
 
-      // Check if user is logged in
-      fetch('/api/user', {
-        credentials: 'include'   // 🔥 IMPORTANT
-      })
-        .then(response => {
-          if (!response.ok) {
-            throw new Error('Not authenticated');
+      const payload = {
+        account_type: type,
+        display_name: display,
+        company_name: document.getElementById('newBillCompany').value,
+        contact_name: document.getElementById('newBillContact').value,
+        email: document.getElementById('newBillEmail').value,
+        phone: document.getElementById('newBillPhone').value,
+        gst_number: document.getElementById('newBillGst').value,
+        address: document.getElementById('newBillAddress').value
+      };
+
+      if (saveToDb) {
+        // Create in DB and select it
+        try {
+          const response = await fetch('/api/v2/billing-accounts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            await loadBillingAccounts();
+
+            // Set selection in UI
+            document.getElementById('billingAccountSelect').value = result.billing_account.id;
+            document.getElementById('billingSearchInput').value = result.billing_account.display_name;
+
+            // Render Summary
+            document.getElementById('selectedBillingName').textContent = result.billing_account.display_name;
+            document.getElementById('selectedBillingDetails').innerHTML = `
+                ${result.billing_account.company_name ? `<div>${result.billing_account.company_name}</div>` : ''}
+                ${result.billing_account.gst_number ? `<div>GST: ${result.billing_account.gst_number}</div>` : ''}
+                ${result.billing_account.email ? `<div>${result.billing_account.email}</div>` : ''}
+            `;
+            document.getElementById('billingSummary').style.display = 'block';
+
+            toggleNewBillingForm();
+            showNotification('Billing Account saved & selected', 'success');
+            tempBillingDetails = null; // Clear temp as we are using a real ID
+          } else {
+            const err = await response.json();
+            showNotification(err.error || 'Failed to create account', 'error');
           }
+        } catch (e) {
+          console.error(e);
+          showNotification('Error creating account', 'error');
+        }
+      } else {
+        // Ad-hoc usage
+        tempBillingDetails = payload; // Store for submit step
 
-          // User is logged in, show the modal
-          const modal = document.getElementById('saveModal');
-          modal.style.display = 'flex';
-        })
-        .catch(() => {
-          showNotification('Please login to save itineraries', 'error');
-          setTimeout(() => {
-            window.location.href = '/login';
-          }, 1500);
+        // Set UI to show this is selected
+        document.getElementById('billingAccountSelect').value = ''; // Deselect specific account
+        document.getElementById('selectedBillingName').textContent = display + " (Unsaved)";
+        document.getElementById('selectedBillingDetails').innerHTML = `
+                ${payload.company_name ? `<div>${payload.company_name}</div>` : ''}
+                ${payload.gst_number ? `<div>GST: ${payload.gst_number}</div>` : ''}
+                ${payload.email ? `<div>${payload.email}</div>` : ''}
+          `;
+        document.getElementById('billingSummary').style.display = 'block';
+
+        toggleNewBillingForm();
+        showNotification('Using temporary billing details', 'info');
+      }
+    }
+
+    // --- Step 2: Passengers ---
+    // Reuse existing customer loader logic slightly or fetch new
+    let allPassengersCache = [];
+
+    async function handleSavePassengerSearch() {
+      const query = document.getElementById('savePassengerSearch').value.toLowerCase();
+      const resultsDiv = document.getElementById('savePassengerResults');
+
+      // Proceed even if query is short/empty
+
+      if (allPassengersCache.length === 0) {
+        const res = await fetch('/api/v2/passengers');
+        const data = await res.json();
+        allPassengersCache = data.passengers;
+      }
+
+      const filtered = allPassengersCache.filter(p =>
+        (p.first_name + ' ' + p.last_name).toLowerCase().includes(query) ||
+        (p.email && p.email.toLowerCase().includes(query))
+      ).slice(0, 5);
+
+      if (filtered.length > 0) {
+        resultsDiv.innerHTML = filtered.map((p, idx) => `
+            <div class="search-item" onclick='addSavePassenger(${JSON.stringify(p).replace(/'/g, "&apos;")})' 
+                 style="padding:12px 15px; cursor:pointer; border-bottom:1px solid var(--border-color); display:flex; align-items:center; gap:12px; transition: background 0.2s;">
+                <div class="avatar" style="width:32px; height:32px; border-radius:50%; background:#8b5cf6; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; flex-shrink:0; font-size:13px;">
+                  ${(p.first_name || '').charAt(0)}${(p.last_name || '').charAt(0)}
+                </div>
+                <div style="flex-grow:1; line-height:1.4;">
+                  <div style="font-weight:600; color:var(--text-primary); font-size:0.95rem;">${p.first_name} ${p.last_name}</div>
+                  <div style="font-size:0.8rem; color:var(--text-secondary);">${p.email || 'No email'} ${p.phone ? '• ' + p.phone : ''}</div>
+                </div>
+            </div>
+        `).join('');
+        resultsDiv.style.display = 'block';
+      } else {
+        resultsDiv.style.display = 'none';
+      }
+    }
+
+    function addSavePassenger(p) {
+      if (savePassengers.some(existing => existing.id === p.id)) {
+        showNotification('Passenger already added', 'warning');
+        return;
+      }
+
+
+
+      // Explicitly mark as DB passenger
+      savePassengers.push({
+        id: p.id,
+        first_name: p.first_name,
+        last_name: p.last_name,
+        email: p.email,
+        phone: p.phone,
+        is_db: true
+      });
+
+      renderSavePassengers();
+      document.getElementById('savePassengerSearch').value = '';
+      document.getElementById('savePassengerResults').style.display = 'none';
+      showNotification('Passenger added', 'success');
+    }
+
+    function updatePassengerCapacity() {
+      // Just validation visual if needed
+    }
+
+    function toggleQuickAddPassenger() {
+      const form = document.getElementById('quickAddPassengerForm');
+      form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function addQuickPassenger() {
+      const first = document.getElementById('qaFirst').value.trim();
+      const last = document.getElementById('qaLast').value.trim();
+      const email = document.getElementById('qaEmail').value.trim();
+      const phone = document.getElementById('qaPhone').value.trim();
+      const saveToDb = document.getElementById('qaSaveToDB').checked;
+
+      if (!first || !last) {
+        showNotification('First and Last Name are required', 'warning'); return;
+      }
+
+      const newPax = {
+        first_name: first,
+        last_name: last,
+        email: email,
+        phone: phone,
+        is_db: false
+      };
+
+      if (saveToDb) {
+        try {
+          const r = await fetch('/api/v2/passengers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newPax)
+          });
+
+          if (r.ok) {
+            const d = await r.json();
+            newPax.is_db = true;
+            newPax.id = d.passenger.id;
+            newPax.passenger_id = d.passenger.id;
+            showNotification('Passenger saved to Database', 'success');
+            allPassengersCache = []; // Clear cache
+          } else if (r.status === 409) {
+            const err = await r.json();
+            showNotification(err.error || 'Duplicate passenger found. Please check details.', 'error');
+            return; // Strict: do not add to list if failed
+          } else {
+            showNotification('Failed to save to DB. Please try again.', 'error');
+            return; // Strict
+          }
+        } catch (e) {
+          console.error(e);
+          showNotification('Error saving passenger', 'error');
+          return;
+        }
+      }
+
+      savePassengers.push(newPax);
+
+      renderSavePassengers();
+      toggleQuickAddPassenger();
+
+      // Clear form
+      document.getElementById('qaFirst').value = '';
+      document.getElementById('qaLast').value = '';
+      document.getElementById('qaEmail').value = '';
+      document.getElementById('qaPhone').value = '';
+    }
+
+    function removeSavePassenger(index) {
+      savePassengers.splice(index, 1);
+      renderSavePassengers();
+    }
+
+    function renderSavePassengers() {
+      const container = document.getElementById('savePassengerList');
+      const countDisplay = document.getElementById('passengerCountDisplay');
+
+      if (countDisplay) countDisplay.textContent = savePassengers.length;
+
+      if (savePassengers.length === 0) {
+        container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 20px; font-style: italic;">No passengers added yet. Search above to add.</div>';
+        return;
+      }
+
+      container.innerHTML = savePassengers.map((p, i) => `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border:1px solid var(--border-color); margin-bottom:8px; border-radius:8px; background:var(--bg-card); box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+                <div style="flex-grow:1; display:flex; align-items:center; gap:12px;">
+                    <div class="avatar" style="width:36px; height:36px; border-radius:50%; background:${p.is_db ? '#10b981' : '#f59e0b'}; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; flex-shrink:0; font-size:14px;">
+                      ${(p.first_name || '').charAt(0)}${(p.last_name || '').charAt(0)}
+                    </div>
+                    <div>
+                        <div style="display:flex; align-items:center;">
+                            <span style="font-weight:600; color:var(--text-primary); margin-right:8px; font-size:0.95rem;">${p.first_name || ''} ${p.last_name || ''}</span>
+                        </div>
+                        <div style="font-size:0.85em; color:var(--text-secondary); margin-top:2px;">${p.email || 'No email'} ${p.phone ? ' • ' + p.phone : ''}</div>
+                    </div>
+                </div>
+                <div>
+                   <button onclick="removeSavePassenger(${i})" style="background:none; border:none; color:var(--text-secondary); cursor:pointer; width:32px; height:32px; border-radius:4px; display:flex; align-items:center; justify-content:center; transition:all 0.2s;" onmouseover="this.style.color='var(--danger)';this.style.background='rgba(239, 68, 68, 0.1)'" onmouseout="this.style.color='var(--text-secondary)';this.style.background='none'">
+                     ✕
+                   </button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function savePaxToDB(index) {
+      const p = savePassengers[index];
+      if (!p || p.is_db) return;
+      try {
+        const r = await fetch('/api/v2/passengers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            first_name: p.first_name || '',
+            last_name: p.last_name || '',
+            email: p.email || '',
+            phone: p.phone || ''
+          })
         });
+        if (r.ok) {
+          const data = await r.json();
+          // Update the local passenger to reflect DB status
+          savePassengers[index].is_db = true;
+          savePassengers[index].id = data.passenger ? data.passenger.id : data.id;
+          savePassengers[index].passenger_id = data.passenger ? data.passenger.id : data.id;
+          renderSavePassengers();
+          // Refresh cache
+          allPassengersCache = [];
+          showNotification('Passenger saved to database!', 'success');
+        } else {
+          const e = await r.json();
+          showNotification(e.error || 'Failed to save passenger', 'error');
+        }
+      } catch (e) { showNotification('Error saving passenger', 'error'); }
     }
 
+    function calculateTotalAmount() {
+      if (!Array.isArray(currentFlights) || currentFlights.length === 0) return 0;
 
-    function closeSaveModal() {
-      document.getElementById('saveModal').style.display = 'none';
-      document.getElementById('saveForm').reset();
-      clearForm('passenger');
-      clearForm('corporate');
+      let grandTotal = 0;
+      // Get trip type from radio buttons
+      let tripType = 'one_way';
+      const tripRadio = document.querySelector('input[name="tripType"]:checked');
+      if (tripRadio) tripType = tripRadio.value;
+
+      const globalMU = parseFloat(document.getElementById('markup').value) || 0;
+      const globalSVC = parseFloat(document.getElementById('serviceCharge').value) || 0;
+
+      const getFlightTotal = (f) => {
+        if (!f) return 0;
+        let base = 0;
+        let type = 'saver';
+
+        if (f.fares && Object.keys(f.fares).length > 0) {
+          type = Object.keys(f.fares)[0];
+          base = parseFloat(f.fares[type]) || 0;
+        } else {
+          base = parseFloat(f.saver_fare) || parseFloat(f.price) || 0;
+        }
+
+        const mu = (f.fare_mu && f.fare_mu[type] !== undefined) ? parseFloat(f.fare_mu[type]) : (f.markup !== undefined ? parseFloat(f.markup) : globalMU);
+        const svc = (f.fare_svc && f.fare_svc[type] !== undefined) ? parseFloat(f.fare_svc[type]) : (f.service_charge !== undefined ? parseFloat(f.service_charge) : globalSVC);
+        const gst = svc > 0 ? Math.round(svc * 0.18) : 0;
+
+        return base + mu + svc + gst;
+      };
+
+      if (tripType === 'round_trip') {
+        // Use first two segments (assuming they are outbound and return for first option)
+        grandTotal = getFlightTotal(currentFlights[0]) + getFlightTotal(currentFlights[1]);
+      } else if (tripType === 'multi_city') {
+        // Sum segments belonging to the first unit
+        const firstUnitId = (currentFlights[0] && currentFlights[0].unit_id) || '1';
+        currentFlights.forEach(f => {
+          if ((f.unit_id || '1') === firstUnitId) {
+            grandTotal += getFlightTotal(f);
+          }
+        });
+      } else {
+        // One way: use first flight result as default baseline
+        grandTotal = getFlightTotal(currentFlights[0]);
+      }
+
+      return grandTotal;
     }
 
-    async function saveItinerary(event) {
-      event.preventDefault();
+    // --- Final Submit ---
+    async function submitItinerary() {
+      const btn = document.getElementById('finalSaveBtn');
+      const loading = document.getElementById('saveBtnLoading');
+      const text = document.getElementById('saveBtnText');
+      let title = document.getElementById('saveItineraryTitle').value;
+      const billingId = document.getElementById('billingAccountSelect').value;
 
-      const saveBtnText = document.getElementById('saveBtnText');
-      const saveBtnLoading = document.getElementById('saveBtnLoading');
+      if (!title) {
+        title = "Itinerary - " + new Date().toLocaleDateString();
+      }
 
-      saveBtnText.style.display = 'none';
-      saveBtnLoading.style.display = 'inline-block';
+      btn.disabled = true;
+      loading.style.display = 'block';
+      text.style.display = 'none';
 
       try {
-        // Gather billing data based on active tab
-        let billingData = {
-          billing_type: activeBillingType,
-          flights: currentFlights,
-          final_text: currentFinalText,
-          markup: currentMarkup
+        const firstDbPassenger = savePassengers.find(p => p.is_db);
+
+        // Determine billing details and type
+        let finalBillingType = 'passenger';
+        const billData = {
+          name: null, company: null, address: null,
+          gst: null, email: null, phone: null
         };
 
-        if (activeBillingType === 'passenger') {
-          billingData.bill_to_name = document.getElementById('passengerName').value;
-          billingData.bill_to_email = document.getElementById('passengerEmail').value;
-          billingData.bill_to_phone = document.getElementById('passengerPhone').value;
-          billingData.bill_to_address = document.getElementById('passengerAddress').value;
-
-          const customerId = document.getElementById('passengerCustomerSelect').value;
-          if (customerId) {
-            billingData.passenger_id = customerId; // V2 uses passenger_id
-          }
-
-          // If save to database is checked and no customer selected, create new customer
-          if (document.getElementById('savePassengerToDb').checked && !customerId) {
-            const nameParts = billingData.bill_to_name.split(' ');
-            const passengerData = {
-              first_name: nameParts[0] || 'Unknown',
-              last_name: nameParts.slice(1).join(' ') || '.',
-              email: billingData.bill_to_email,
-              phone: billingData.bill_to_phone,
-              address_line1: billingData.bill_to_address
-            };
-
-            const customerResponse = await fetch('/api/v2/passengers', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(passengerData)
-            });
-
-            if (customerResponse.ok) {
-              const customerResult = await customerResponse.json();
-              billingData.passenger_id = customerResult.passenger.id;
-              await loadCustomers();
-            }
-          }
-        } else {
-          billingData.bill_to_name = document.getElementById('corporateName').value;
-          billingData.bill_to_email = document.getElementById('corporateEmail').value;
-          billingData.bill_to_phone = document.getElementById('corporatePhone').value;
-          billingData.bill_to_address = document.getElementById('corporateAddress').value;
-          billingData.bill_to_company = document.getElementById('corporateCompany').value;
-          billingData.bill_to_gst = document.getElementById('corporateGst').value;
-
-          const customerId = document.getElementById('corporateCustomerSelect').value;
-          if (customerId) {
-            billingData.corporate_id = customerId; // V2 uses corporate_id
-          }
-
-          // If save to database is checked and no customer selected, create new customer
-          if (document.getElementById('saveCorporateToDb').checked && !customerId) {
-            const corporateData = {
-              company_name: billingData.bill_to_company,
-              contact_person_name: billingData.bill_to_name,
-              contact_email: billingData.bill_to_email,
-              contact_phone: billingData.bill_to_phone,
-              gst_number: billingData.bill_to_gst,
-              billing_address_line1: billingData.bill_to_address
-            };
-
-            const customerResponse = await fetch('/api/v2/corporates', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(corporateData)
-            });
-
-            if (customerResponse.ok) {
-              const customerResult = await customerResponse.json();
-              billingData.corporate_id = customerResult.corporate.id;
-              await loadCustomers();
-            }
+        if (tempBillingDetails) {
+          finalBillingType = tempBillingDetails.company_name ? 'corporate' : 'passenger';
+          billData.name = tempBillingDetails.display_name;
+          billData.company = tempBillingDetails.company_name;
+          billData.address = tempBillingDetails.address;
+          billData.gst = tempBillingDetails.gst_number;
+          billData.email = tempBillingDetails.email;
+          billData.phone = tempBillingDetails.phone;
+        } else if (billingId) {
+          const acc = billingAccounts.find(a => a.id == billingId);
+          if (acc) {
+            finalBillingType = acc.company_name ? 'corporate' : 'passenger';
+            billData.name = acc.contact_name || acc.display_name;
+            billData.company = acc.company_name;
+            billData.address = acc.address;
+            billData.gst = acc.gst_number;
+            billData.email = acc.email;
+            billData.phone = acc.phone;
           }
         }
 
-        // Save itinerary to V2 API
-        const response = await fetch('/api/v2/itineraries', {
-          method: 'POST',
+        // Determine trip type from radio buttons
+        let tripType = 'one_way';
+        const tripRadio = document.querySelector('input[name="tripType"]:checked');
+        if (tripRadio) tripType = tripRadio.value;
+
+        // Capture raw input state for edit capability
+        const rawInputData = { mode: tripType };
+        try {
+          const textareas = document.querySelectorAll('textarea');
+          rawInputData.flight_texts = Array.from(textareas).map(ta => ta.value);
+        } catch (e) { }
+
+        const payload = {
+          title: title,
+          reference_number: document.getElementById('saveReferenceNumber') ? document.getElementById('saveReferenceNumber').value : '',
+          trip_type: tripType,
+          passenger_id: firstDbPassenger ? firstDbPassenger.id : null,
+          billing_account_id: billingId || null,
+          num_passengers: savePassengers.length || 1,
+          passengers_data: savePassengers,
+          // Flight Data
+          flights: currentFlights,
+          final_text: currentFinalText,
+          raw_input_data: rawInputData,
+          // Costing
+          markup: parseFloat(document.getElementById('markup').value) || 0,
+          service_charge: parseFloat(document.getElementById('serviceCharge').value) || 0,
+          total_amount: calculateTotalAmount(),
+          // Explicit Billing Details
+          bill_to_name: billData.name,
+          bill_to_company: billData.company,
+          bill_to_address: billData.address,
+          bill_to_gst: billData.gst,
+          bill_to_email: billData.email,
+          bill_to_phone: billData.phone,
+          billing_type: finalBillingType
+        };
+
+        // If editing existing itinerary, update it; otherwise create new
+        const isEditing = !!editingItineraryId;
+        const apiUrl = isEditing ? '/api/v2/itineraries/' + editingItineraryId : '/api/v2/itineraries';
+        const method = isEditing ? 'PUT' : 'POST';
+
+        const response = await fetch(apiUrl, {
+          method: method,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(billingData)
+          body: JSON.stringify(payload)
         });
 
         if (response.ok) {
           const result = await response.json();
-          showNotification('Itinerary saved successfully!', 'success');
+          const itinId = result.itinerary ? result.itinerary.id : editingItineraryId;
+          showNotification(isEditing ? 'Itinerary updated successfully!' : 'Itinerary saved successfully!', 'success');
           closeSaveModal();
+          localStorage.removeItem('flight_itinerary_draft');
 
-          // Optionally redirect to itineraries page
-          setTimeout(async () => {
-            const view = await showSavedItineraryModal();
-            if (view) {
-              window.location.href = '/itineraries-v2';
-            }
-          }, 1000);
+          // Redirect to the itinerary detail
+          setTimeout(() => {
+            window.location.href = '/itineraries' + (itinId ? '#' + itinId : '');
+          }, 1500);
         } else {
-          const error = await response.json();
-          console.error('Save error response:', error);
-
-          if (response.status === 401) {
-            showNotification('Session expired. Please login again.', 'error');
-            setTimeout(() => {
-              window.location.href = '/login';
-            }, 1500);
-          } else {
-            showNotification(error.error || 'Failed to save itinerary', 'error');
-          }
+          const err = await response.json();
+          showNotification(err.error || 'Failed to save itinerary', 'error');
         }
-      } catch (error) {
-        console.error('Save error:', error);
-        showNotification('An error occurred while saving', 'error');
+      } catch (e) {
+        console.error(e);
+        showNotification('Error saving itinerary', 'error');
       } finally {
-        saveBtnLoading.style.display = 'none';
-        saveBtnText.style.display = 'inline';
-        submitBtn.disabled = false;
+        btn.disabled = false;
+        text.style.display = 'inline';
+        loading.style.display = 'none';
       }
     }
 
@@ -3720,6 +4787,7 @@
 
     function closeSavedItineraryModal(shouldRedirect) {
       document.getElementById('savedItineraryModal').classList.remove('is-active');
+      document.body.style.overflow = '';
       if (savedModalResolve) {
         savedModalResolve(shouldRedirect);
         savedModalResolve = null;
@@ -3960,9 +5028,40 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
   `;
     }
 
+    function formatBaggageInput(input) {
+      let val = input.value.trim();
+      // If value is just a number (integer or decimal), append 'kg'
+      if (/^\d+(\.\d+)?$/.test(val)) {
+        input.value = val + 'kg';
+      }
+    }
+
+    function formatPiecesInput(input) {
+      let val = input.value.trim();
+      // If value is just a number (integer), append 'pcs'
+      if (/^\d+$/.test(val)) {
+        input.value = val + 'pcs';
+      }
+    }
+
+
     function toggleFareSection(unitId, suffix = '') {
       const section = document.getElementById(`fare-section-${unitId}${suffix}`);
       if (section) section.classList.toggle('expanded');
+    }
+
+    function toggleFareDetails(fareUniqueId) {
+      const details = document.getElementById(fareUniqueId);
+      const icon = document.getElementById(`fare-toggle-icon-${fareUniqueId}`);
+      if (!details) return;
+
+      if (details.style.display === 'none') {
+        details.style.display = 'block';
+        if (icon) icon.style.transform = 'rotate(180deg)';
+      } else {
+        details.style.display = 'none';
+        if (icon) icon.style.transform = 'rotate(0deg)';
+      }
     }
 
     function createFareCard(key, label, unitId, isChecked, suffix = '') {
@@ -3970,6 +5069,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const disabledAttr = isChecked ? '' : 'disabled';
       const cardClass = isChecked ? 'fare-card' : 'fare-card disabled';
       const uniqueKey = `${key}-unit-${unitId}${suffix}`;
+      const detailsId = `fare-details-input-${uniqueKey}`;
 
       return `
         <div class="${cardClass}" data-fare-key="${key}" id="fare-card-${uniqueKey}">
@@ -3990,6 +5090,53 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
               <span class="fare-field-label">SVC</span>
               <input type="number" class="fare-field-input svc-${uniqueKey}" placeholder="SVC" min="0" ${disabledAttr}>
             </div>
+          </div>
+          
+          <div class="fare-extras-toggle" style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px;">
+            <button type="button" onclick="toggleFareDetails('${detailsId}')" style="background: none; border: none; color: var(--primary); font-size: 0.75rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 0;">
+              <span>➕ Add Baggage & Extras</span>
+              <span id="fare-toggle-icon-${detailsId}" style="transition: transform 0.3s ease;">▼</span>
+            </button>
+          </div>
+          
+          <div id="${detailsId}" style="display: none; margin-top: 10px; padding: 8px; background: rgba(0,0,0,0.02); border-radius: 6px;">
+             <!-- Baggage -->
+             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                <div>
+                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Cabin</label>
+                   <input type="text" class="form-input fare-cabin-${uniqueKey}" placeholder="7kg" style="padding: 4px 6px; font-size: 0.75rem;" onblur="formatBaggageInput(this)">
+                </div>
+                <div>
+                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Check-in</label>
+                   <input type="text" class="form-input fare-checkin-${uniqueKey}" placeholder="15kg" style="padding: 4px 6px; font-size: 0.75rem;" onblur="formatBaggageInput(this)">
+                </div>
+                <div>
+                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Pieces</label>
+                   <input type="text" class="form-input fare-pcs-${uniqueKey}" placeholder="2pcs" style="padding: 4px 6px; font-size: 0.75rem;" onblur="formatPiecesInput(this)">
+                </div>
+             </div>
+             <!-- Meal / Seat -->
+             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                <div>
+                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Seat</label>
+                   <input type="text" class="form-input fare-seat-${uniqueKey}" placeholder="A12" style="padding: 4px 6px; font-size: 0.75rem;">
+                </div>
+                <div>
+                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Meal</label>
+                   <input type="text" class="form-input fare-meal-${uniqueKey}" placeholder="Veg" style="padding: 4px 6px; font-size: 0.75rem;">
+                </div>
+             </div>
+             <!-- Charges -->
+             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div>
+                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Cancel</label>
+                   <input type="text" class="form-input fare-cancellation-${uniqueKey}" placeholder="3000" style="padding: 4px 6px; font-size: 0.75rem;">
+                </div>
+                <div>
+                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Change</label>
+                   <input type="text" class="form-input fare-penalty-${uniqueKey}" placeholder="5000" style="padding: 4px 6px; font-size: 0.75rem;">
+                </div>
+             </div>
           </div>
         </div>
       `;
@@ -4094,32 +5241,12 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     function appendFareRow(unitId, key, label, suffix = '') {
       const list = document.getElementById(`fare-list-${unitId}${suffix}`);
-      const uniqueKey = `${key}-unit-${unitId}${suffix}`;
       const div = document.createElement('div');
-      div.className = 'fare-card';
-      div.dataset.fareKey = key;
-      div.id = `fare-card-${uniqueKey}`;
-      div.innerHTML = `
-          <div class="fare-card-header">
-            <input type="checkbox" id="chk-${uniqueKey}" onchange="toggleFareCard(this, '${key}', ${unitId}, '${suffix}')" checked>
-            <label for="chk-${uniqueKey}">${label}</label>
-          </div>
-          <div class="fare-card-fields">
-            <div class="fare-field-row">
-              <span class="fare-field-label">Fare</span>
-              <input type="number" class="fare-field-input fare-${uniqueKey}" placeholder="₹ 0" min="0">
-            </div>
-            <div class="fare-field-row">
-              <span class="fare-field-label">MU</span>
-              <input type="number" class="fare-field-input mu-${uniqueKey}" placeholder="Markup" min="0">
-            </div>
-            <div class="fare-field-row">
-              <span class="fare-field-label">SVC</span>
-              <input type="number" class="fare-field-input svc-${uniqueKey}" placeholder="SVC" min="0">
-            </div>
-          </div>
-        `;
-      list.appendChild(div);
+      div.innerHTML = createFareCard(key, label, unitId, true, suffix);
+      list.appendChild(div.firstElementChild);
+
+      // Check if we need global markup
+      updateGlobalMarkupRequirement();
     }
 
     function initializeUnitFares(unitId) {
@@ -4264,7 +5391,9 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           const fares = {};
           const mus = {};
           const svcs = {};
+          const fareExtras = {}; // New object for extra details
           const fareCards = document.querySelectorAll(`#fare-list-${unitId}${suffix} .fare-card`);
+
           let localError = false;
 
           fareCards.forEach(card => {
@@ -4277,6 +5406,15 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             const fareInput = card.querySelector(`.fare-${uniqueKey}`);
             const muInput = card.querySelector(`.mu-${uniqueKey}`);
             const svcInput = card.querySelector(`.svc-${uniqueKey}`);
+
+            // Collecting extra fields per fare
+            const cabinInp = card.querySelector(`.fare-cabin-${uniqueKey}`);
+            const checkinInp = card.querySelector(`.fare-checkin-${uniqueKey}`);
+            const pcsInp = card.querySelector(`.fare-pcs-${uniqueKey}`);
+            const seatInp = card.querySelector(`.fare-seat-${uniqueKey}`);
+            const mealInp = card.querySelector(`.fare-meal-${uniqueKey}`);
+            const cancelInp = card.querySelector(`.fare-cancellation-${uniqueKey}`);
+            const penInp = card.querySelector(`.fare-penalty-${uniqueKey}`);
 
             if (fareKey === 'saver') {
               if (fareInput && fareInput.value && fareInput.value.trim() !== '') {
@@ -4302,6 +5440,19 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             if (svcInput && svcInput.value && svcInput.value.trim() !== '') {
               svcs[fareKey] = Number(svcInput.value);
             }
+
+            // Only store extra if at least one field is filled
+            if (cabinInp?.value || checkinInp?.value || pcsInp?.value || seatInp?.value || mealInp?.value || cancelInp?.value || penInp?.value) {
+              fareExtras[fareKey] = {
+                baggage_cabin: cabinInp?.value?.trim(),
+                baggage_checkin: checkinInp?.value?.trim(),
+                baggage_pcs: pcsInp?.value?.trim(),
+                seat: seatInp?.value?.trim(),
+                meal: mealInp?.value?.trim(),
+                cancellation_charges: cancelInp?.value?.trim(),
+                penalty_charges: penInp?.value?.trim()
+              };
+            }
           });
 
           // Check if at least one fare is selected (if saver not auto-selected)
@@ -4310,7 +5461,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           // But we iterate over *selected* cards.
           // So just check if fares is empty.
           // However, we need to know if saver was checked.
-          // If fares is empty, that means no checkboxes were checked.
+          // If completely empty -> Error.
           if (Object.keys(fares).length === 0) {
             // Exception: User might want to proceed without fares? 
             // Existing logic allowed proceeding if saver was checked (auto-extract).
@@ -4321,7 +5472,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             hasError = true;
           }
 
-          return { fares, mus, svcs, error: localError };
+          return { fares, mus, svcs, fareExtras, error: localError };
         };
 
         const isSplit = document.getElementById(`split-fares-toggle-${unitId}`)?.checked;
@@ -4354,21 +5505,25 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           let faresToUse = {};
           let muToUse = {};
           let svcToUse = {};
+          let extrasToUse = {};
 
           if (isSplit && flightIds.length === 2) {
             if (idx === 0 && outboundData) { // Outbound
               faresToUse = outboundData.fares;
               muToUse = outboundData.mus;
               svcToUse = outboundData.svcs;
+              extrasToUse = outboundData.fareExtras;
             } else if (idx === 1 && returnData) { // Return
               faresToUse = returnData.fares;
               muToUse = returnData.mus;
               svcToUse = returnData.svcs;
+              extrasToUse = returnData.fareExtras;
             }
           } else if (sharedData) {
             faresToUse = sharedData.fares;
             muToUse = sharedData.mus;
             svcToUse = sharedData.svcs;
+            extrasToUse = sharedData.fareExtras;
           }
 
           flightTexturesByUnit[unitId] = flightTexturesByUnit[unitId] || [];
@@ -4379,8 +5534,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             fares: faresToUse,
             fare_mu: muToUse,
             fare_svc: svcToUse,
+            fare_extra_details: extrasToUse,
             has_layover: hasLayover,
-            is_multiple: isMultiple
+            is_multiple: isMultiple,
+            is_split: isSplit, // Track if unit was split
+            unitId: unitId
           });
         });
       });
@@ -4445,6 +5603,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             fares: flights.map(f => f.fares), // Send user-selected fares for each flight
             fare_mu: flights.map(f => f.fare_mu || {}),  // Per-fare markups
             fare_svc: flights.map(f => f.fare_svc || {}), // Per-fare service charges
+            fare_extra_details: flights.map(f => f.fare_extra_details || {}), // Per-fare extra details
             layover_flags: flights.map(f => f.has_layover),
             multiple_flight_flags: flights.map(f => f.is_multiple),
             markup: Number(markup),
@@ -4492,6 +5651,31 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         data.flights.forEach(f => {
           f.service_charge = currentServiceCharge;
           f.gst = currentGST;
+        });
+
+        // Promote single-fare extras and split flag to results
+        data.flights.forEach((f, i) => {
+          const userFlight = flights[i];
+          if (userFlight) {
+            f.is_split = userFlight.is_split; // Propagate split flag
+            if (userFlight.fare_extra_details) {
+              const fareKeys = Object.keys(userFlight.fares || {});
+              if (fareKeys.length === 1) {
+                const singleFareType = fareKeys[0];
+                const extras = userFlight.fare_extra_details[singleFareType];
+                if (extras) {
+                  // Copy properties to the main flight object for timeline rendering
+                  f.baggage_cabin = extras.baggage_cabin || f.baggage_cabin;
+                  f.baggage_checkin = extras.baggage_checkin || f.baggage_checkin;
+                  f.baggage_pcs = extras.baggage_pcs || f.baggage_pcs;
+                  f.meal = extras.meal || f.meal;
+                  f.seat = extras.seat || f.seat;
+                  f.cancellation_charges = extras.cancellation_charges || f.cancellation_charges;
+                  f.penalty_charges = extras.penalty_charges || f.penalty_charges;
+                }
+              }
+            }
+          }
         });
 
         currentFlights = data.flights;
@@ -4685,7 +5869,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
                             `
         }
                     </div>
-                    <div id="date-display-${index}" class="summary-date" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.25rem;">${isMissingDate ? '' : flight.departure_date}</div>
+                    <div id="date-display-${index}" class="summary-date" style="font-size: 0.8rem; font-weight: 600; color: #2563eb; margin-top: 0.25rem;">${isMissingDate ? '' : flight.departure_date}</div>
                 </div>
                 
                 <div class="flight-route-visual">
@@ -4711,7 +5895,58 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       `;
     }
 
+    function generateFareSpecificDetailsHTML(details) {
+      const { baggage_cabin, baggage_checkin, baggage_pcs, meal, seat, cancellation_charges, penalty_charges } = details;
+
+      const hasBaggage = baggage_cabin || baggage_checkin || baggage_pcs;
+      const hasExtras = meal || seat;
+      const hasCharges = cancellation_charges || penalty_charges;
+
+      if (!hasBaggage && !hasExtras && !hasCharges) return '';
+
+      let html = '<div style="display: flex; flex-direction: column; gap: 0.85rem;">';
+
+      // Baggage Grid
+      if (hasBaggage) {
+        html += `
+          <div>
+            <div style="font-size: 0.65rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.05em;">Baggage</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; font-size: 0.85rem;">
+                ${baggage_cabin ? `<div><small style="color:var(--text-secondary); display:block; font-size: 0.6rem;">Cabin</small><span>${baggage_cabin}</span></div>` : ''}
+                ${baggage_checkin ? `<div><small style="color:var(--text-secondary); display:block; font-size: 0.6rem;">Check-in</small><span>${baggage_checkin}</span></div>` : ''}
+                ${baggage_pcs ? `<div><small style="color:var(--text-secondary); display:block; font-size: 0.6rem;">Pieces</small><span>${baggage_pcs}</span></div>` : ''}
+            </div>
+          </div>
+        `;
+      }
+
+      // Extras Grid
+      if (hasExtras) {
+        html += `
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+             ${meal ? `<div><small style="color:var(--text-secondary); display:block; font-size: 0.6rem;">Meal</small><span style="font-size: 0.85rem;">${meal}</span></div>` : ''}
+             ${seat ? `<div><small style="color:var(--text-secondary); display:block; font-size: 0.6rem;">Seat</small><span style="font-size: 0.85rem;">${seat}</span></div>` : ''}
+          </div>
+        `;
+      }
+
+      // Charges Grid
+      if (hasCharges) {
+        html += `
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+             ${details.cancellation_charges ? `<div><small style="color:var(--text-secondary); display:block; font-size: 0.6rem;">Cancellation</small><span style="font-weight:600; font-size:0.85rem; color:var(--danger);">${details.cancellation_charges} <small style="font-weight:400; color:var(--text-secondary);">+GST</small></span></div>` : ''}
+             ${details.penalty_charges ? `<div><small style="color:var(--text-secondary); display:block; font-size: 0.6rem;">Change Penalty</small><span style="font-weight:600; font-size:0.85rem; color:var(--warning);">${details.penalty_charges} <small style="font-weight:400; color:var(--text-secondary);">+GST</small></span></div>` : ''}
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      return html;
+    }
+
     function generateFlightTimelineHTML(flight, index, uniqueId) {
+      const numFares = Object.keys(flight.fares || {}).length;
+
       // Helper to safely display values - never show undefined, null, N/A
       const safe = (val, fallback = '') => {
         if (val === undefined || val === null || val === 'N/A' || val === 'Not Specified' || val === 'undefined' || val === 'null') {
@@ -4848,10 +6083,9 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
                                  <div class="info-icon">✈</div>
                                  <span style="font-weight: 600; color: var(--text-primary);">${sAir} ${sNum}</span>
                             </div>
-                            <div class="info-row">
+                            <div class="info-row" style="flex-wrap: wrap; gap: 0.5rem 1.25rem;">
                                  <div class="info-icon">⏱</div>
                                  <span>${sDur}</span>
-                                 ${sBag ? `<span>•</span><span>${sBag}</span>` : ''}
                             </div>
                         </div>
                         <div class="t-time-row">
@@ -4897,13 +6131,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
                              <span style="font-weight: 600; color: var(--text-primary);">${airlineName} ${flightNumber}</span>
                         </div>
                         ${duration && duration !== '--' ? `<div class="info-row"><div class="info-icon">⏱</div><span>${duration}</span></div>` : ''}
-                        ${(baggage || flight.refundability) ? `
-                         <div class="info-row">
-                             ${baggage ? `<div class="info-icon">🧳</div><span>${baggage}</span>` : ''}
-                             ${baggage && safe(flight.refundability, '') ? `<span>•</span>` : ''}
-                             ${safe(flight.refundability, '') ? `<span>${flight.refundability}</span>` : ''}
-                        </div>` : ''}
                     </div>
+
                     <div class="t-dot arrival"></div>
                     <div class="t-time-row">
                         <div class="t-time">${arrTime}</div>
@@ -4969,6 +6198,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (variant === 'outbound') extraClass = ' fare-footer-outbound';
       else if (variant === 'return') extraClass = ' fare-footer-return';
 
+      const numFares = Object.keys(flight.fares || {}).length;
+
       let faresHTML = `<div class="card-footer-fares${extraClass}">`;
       Object.entries(flight.fares).forEach(([type, base]) => {
         const perFareMU = flight.fare_mu && flight.fare_mu[type] !== undefined ? flight.fare_mu[type] : (flight.markup || 0);
@@ -4979,10 +6210,40 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         if (perFareSVC > 0) {
           extraText = ` <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(+ ₹${perFareSVC} SVC + ₹${perFareGST} GST)</span>`;
         }
+
+        const fareUniqueId = `fare-${type}-${Math.random().toString(36).substr(2, 5)}`;
+
+        // Decide which details to show in the collapsible
+        let detailsToRender = (flight.fare_extra_details && flight.fare_extra_details[type]) || {};
+
+        // If single fare, ensure we have the main baggage/extra info if not already there
+        if (numFares === 1) {
+          detailsToRender = { ...detailsToRender };
+          if (!detailsToRender.baggage_cabin && flight.baggage_cabin) detailsToRender.baggage_cabin = flight.baggage_cabin;
+          if (!detailsToRender.baggage_checkin && flight.baggage_checkin) detailsToRender.baggage_checkin = flight.baggage_checkin;
+          if (!detailsToRender.baggage_pcs && flight.baggage_pcs) detailsToRender.baggage_pcs = flight.baggage_pcs;
+          if (!detailsToRender.meal && flight.meal) detailsToRender.meal = flight.meal;
+          if (!detailsToRender.seat && flight.seat) detailsToRender.seat = flight.seat;
+          if (!detailsToRender.cancellation_charges && flight.cancellation_charges) detailsToRender.cancellation_charges = flight.cancellation_charges;
+          if (!detailsToRender.penalty_charges && flight.penalty_charges) detailsToRender.penalty_charges = flight.penalty_charges;
+        }
+
+        const fareDetailsHTML = generateFareSpecificDetailsHTML(detailsToRender);
+        const hasClickableDetails = fareDetailsHTML.trim().length > 0;
+
         faresHTML += `
-              <div class="footer-fare-item">
-                <span class="footer-fare-label">${type}</span>
+              <div class="footer-fare-item" ${hasClickableDetails ? `onclick="toggleFareDetails('${fareUniqueId}')" style="cursor:pointer;"` : ''}>
+                <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                    <span class="footer-fare-label">${type}</span>
+                    ${hasClickableDetails ? `<span id="fare-toggle-icon-${fareUniqueId}" style="font-size:0.7rem; color:var(--text-secondary); transition: transform 0.3s ease;">▼</span>` : ''}
+                </div>
                 <span class="footer-fare-price">₹ ${finalFare.toLocaleString('en-IN')}${extraText}</span>
+                
+                ${hasClickableDetails ? `
+                <div id="${fareUniqueId}" class="fare-details-collapsible" style="display:none; width:100%; margin-top:0.5rem; border-top:1px solid var(--border); padding-top:0.5rem; text-align: left;">
+                    ${fareDetailsHTML}
+                </div>
+                ` : ''}
               </div>
             `;
       });
@@ -5011,10 +6272,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       // Date warnings
       let dateHeaderHTML = '';
       if ((!outbound.departure_date || outbound.departure_date === 'N/A')) {
-        dateHeaderHTML += `<div class="date-warning-strip"><span>⚠️ Outbound Date Required</span><button class="date-btn" onclick="promptDateInput(${index})">Select</button></div>`;
+        dateHeaderHTML += `<div class="date-warning-strip" id="date-warning-${index}"><span>⚠️ Outbound Date Required</span><button class="date-btn" onclick="promptDateInput(${index})">Select</button></div>`;
       }
       if ((!returnFlight.departure_date || returnFlight.departure_date === 'N/A')) {
-        dateHeaderHTML += `<div class="date-warning-strip"><span>⚠️ Return Date Required</span><button class="date-btn" onclick="promptDateInput(${index + 1})">Select</button></div>`;
+        dateHeaderHTML += `<div class="date-warning-strip" id="date-warning-${index + 1}"><span>⚠️ Return Date Required</span><button class="date-btn" onclick="promptDateInput(${index + 1})">Select</button></div>`;
       }
 
       // Dividers and Labels
@@ -5032,7 +6293,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         return k1.every(key => f1[key] === f2[key]);
       };
 
-      const areFaresDifferent = !areFaresInitiallySame(outbound.fares, returnFlight.fares);
+      // Only show split layout if:
+      // 1. User original choice was split (is_split)
+      // 2. OR the fares are actually different (fallback)
+      const areFaresDifferent = (outbound.is_split === true) || !areFaresInitiallySame(outbound.fares, returnFlight.fares);
 
       let html = optionLabelHTML + dateHeaderHTML;
 
@@ -5098,7 +6362,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
         const isMissingDate = !flight.departure_date || flight.departure_date === 'N/A';
         if (isMissingDate) {
-          contentHTML += `<div class="date-warning-strip"><span>⚠️ Date Required for Flight ${i + 1}</span><button class="date-btn" onclick="promptDateInput(${flightIndex})">Select</button></div>`;
+          contentHTML += `<div class="date-warning-strip" id="date-warning-${flightIndex}"><span>⚠️ Date Required for Flight ${i + 1}</span><button class="date-btn" onclick="promptDateInput(${flightIndex})">Select</button></div>`;
         }
 
         const label = `<div class="combined-label">Flight ${i + 1}</div>`;
@@ -5270,18 +6534,29 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           if (!k1.every((key, i) => key === k2[i])) return false;
           return k1.every(key => f1[key] === f2[key]);
         };
-        isSplit = !areFaresSame(flight.fares, returnFlight.fares);
+        // Use flag if set, otherwise check content
+        isSplit = (flight.is_split === true) || !areFaresSame(flight.fares, returnFlight.fares);
       }
 
       // Helper to generate a section
-      const generateSectionHTML = (fData, fIdx, suffix, title, displayStyle = 'block') => {
+      const generateSectionHTML = (fData, fIdx, suffix, title, displayStyle = 'block', hideFares = false) => {
         let html = `<div id="inline-section-${fIdx}${suffix}" style="display: ${displayStyle}; margin-bottom: 1.5rem;">`;
         if (title) html += `<h5 style="margin: 0 0 0.5rem 0; color: var(--text-secondary); border-bottom: 1px dashed var(--border); padding-bottom: 0.25rem;">${title}</h5>`;
+
+        // Add Date Editor
+        const dateVal = (!fData.departure_date || fData.departure_date === 'N/A') ? '' : fData.departure_date;
+        html += `
+            <div style="margin-bottom: 1rem;">
+                <label style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 600; display: block; margin-bottom: 4px;">Departure Date</label>
+                <input type="text" class="form-input inline-date-${fIdx}${suffix}" placeholder="e.g. 12 Feb 26" value="${dateVal}" style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px;">
+            </div>
+        `;
 
         let faresHTML = '';
         Object.entries(fData.fares).forEach(([fareType, baseFare]) => {
           let mu = fData.fare_mu && fData.fare_mu[fareType] !== undefined ? fData.fare_mu[fareType] : '';
           let svc = fData.fare_svc && fData.fare_svc[fareType] !== undefined ? fData.fare_svc[fareType] : '';
+          let extras = fData.fare_extra_details && fData.fare_extra_details[fareType] ? fData.fare_extra_details[fareType] : {};
 
           // Fallback to global if empty
           if ((mu === '' || mu === undefined) && currentMarkup > 0) mu = currentMarkup;
@@ -5295,13 +6570,15 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           };
           let label = cabinLabels[fareType] || (fareType.charAt(0).toUpperCase() + fareType.slice(1).replace('_', ' ') + ' Fare');
 
-          faresHTML += createInlineFareCard(fIdx, fareType, label, baseFare, mu, svc, true, suffix);
+          faresHTML += createInlineFareCard(fIdx, fareType, label, baseFare, mu, svc, extras, true, suffix);
         });
 
-        html += `<div class="fare-types" id="inline-fare-list-${fIdx}${suffix}">${faresHTML}</div>`;
+        const faresStyle = hideFares ? 'display: none;' : '';
+
+        html += `<div class="fare-types" id="inline-fare-list-${fIdx}${suffix}" style="${faresStyle}">${faresHTML}</div>`;
 
         html += `
-            <div class="add-fare-controls" style="margin-top: 0.5rem; padding-top: 0.5rem;">
+            <div class="add-fare-controls" id="inline-fare-controls-${fIdx}${suffix}" style="margin-top: 0.5rem; padding-top: 0.5rem; ${faresStyle}">
                <select class="form-select" style="width: 100%; max-width: 200px; padding: 0.4rem; font-size: 0.85rem; border-radius: 6px; border: 1.5px solid var(--border);" onchange="handleInlineAddFareType(this, ${fIdx}, '${suffix}')">
                  <option value="">+ Add Fare Type...</option>
                  <optgroup label="Fare Types">
@@ -5339,7 +6616,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           `;
 
         contentHTML += generateSectionHTML(flight, flightIndex, '_out', isSplit ? '✈️ Outbound Fares' : '📊 Combined Fares');
-        contentHTML += generateSectionHTML(returnFlight, flightIndex, '_ret', '✈️ Return Fares', isSplit ? 'block' : 'none');
+        contentHTML += generateSectionHTML(returnFlight, flightIndex, '_ret', '✈️ Return Fares', 'block', !isSplit); // Always show section for Date, hide fares if !isSplit
       } else {
         // Normal One-Way / Multi-City (Single List)
         contentHTML += generateSectionHTML(flight, flightIndex, '', '');
@@ -5357,23 +6634,33 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     function toggleInlineSplit(flightIndex) {
       const toggle = document.getElementById(`inline-split-toggle-${flightIndex}`);
-      const retSection = document.getElementById(`inline-section-${flightIndex}_ret`);
+      // Return section is now ALWAYS visible (for Date), but we toggle Fares visibility
+      const retFareList = document.getElementById(`inline-fare-list-${flightIndex}_ret`);
+      const retControls = document.getElementById(`inline-fare-controls-${flightIndex}_ret`);
       const outHeader = document.querySelector(`#inline-section-${flightIndex}_out h5`);
 
       if (toggle && toggle.checked) {
-        retSection.style.display = 'block';
+        // Show Return Fares
+        if (retFareList) retFareList.style.display = 'block';
+        if (retControls) retControls.style.display = 'block';
         if (outHeader) outHeader.textContent = '✈️ Outbound Fares';
       } else {
-        retSection.style.display = 'none';
+        // Hide Return Fares (Date stays)
+        if (retFareList) retFareList.style.display = 'none';
+        if (retControls) retControls.style.display = 'none';
         if (outHeader) outHeader.textContent = '📊 Combined Fares';
       }
     }
 
-    function createInlineFareCard(flightIndex, key, label, baseFare, mu, svc, isChecked, suffix = '') {
+    function createInlineFareCard(flightIndex, key, label, baseFare, mu, svc, extras, isChecked, suffix = '') {
       const checkedAttr = isChecked ? 'checked' : '';
       const disabledAttr = isChecked ? '' : 'disabled';
       const cardClass = isChecked ? 'fare-card' : 'fare-card disabled';
       const uniqueId = `inline-fare-card-${key}-${flightIndex}${suffix}`;
+      const detailsId = `inline-details-${uniqueId}`;
+
+      // Extras values
+      const val = extras || {};
 
       return `
         <div class="${cardClass}" data-fare-key="${key}" id="${uniqueId}">
@@ -5400,8 +6687,69 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
               <input type="number" class="fare-field-input inline-svc-${uniqueId}" placeholder="Service Chg" min="0" value="${svc}" ${disabledAttr}>
             </div>
           </div>
+          
+          <div class="fare-extras-toggle" style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px;">
+            <button type="button" onclick="toggleInlineFareDetails('${detailsId}')" style="background: none; border: none; color: var(--primary); font-size: 0.75rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 0;">
+              <span>➕ Add Baggage & Extras</span>
+              <span id="inline-toggle-icon-${detailsId}" style="transition: transform 0.3s ease;">▼</span>
+            </button>
+          </div>
+          
+          <div id="${detailsId}" style="display: none; margin-top: 10px; padding: 8px; background: rgba(0,0,0,0.02); border-radius: 6px;">
+             <!-- Baggage -->
+             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                <div>
+                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Cabin</label>
+                   <input type="text" class="form-input inline-cabin-${uniqueId}" placeholder="7kg" value="${val.baggage_cabin || ''}" style="padding: 4px 6px; font-size: 0.75rem;" onblur="formatBaggageInput(this)">
+                </div>
+                <div>
+                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Check-in</label>
+                   <input type="text" class="form-input inline-checkin-${uniqueId}" placeholder="15kg" value="${val.baggage_checkin || ''}" style="padding: 4px 6px; font-size: 0.75rem;" onblur="formatBaggageInput(this)">
+                </div>
+                <div>
+                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Pieces</label>
+                   <input type="text" class="form-input inline-pcs-${uniqueId}" placeholder="2pcs" value="${val.baggage_pcs || ''}" style="padding: 4px 6px; font-size: 0.75rem;" onblur="formatPiecesInput(this)">
+                </div>
+             </div>
+             <!-- Meal / Seat -->
+             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                <div>
+                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Seat</label>
+                   <input type="text" class="form-input inline-seat-${uniqueId}" placeholder="A12" value="${val.seat || ''}" style="padding: 4px 6px; font-size: 0.75rem;">
+                </div>
+                <div>
+                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Meal</label>
+                   <input type="text" class="form-input inline-meal-${uniqueId}" placeholder="Veg" value="${val.meal || ''}" style="padding: 4px 6px; font-size: 0.75rem;">
+                </div>
+             </div>
+             <!-- Charges -->
+             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div>
+                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Cancel</label>
+                   <input type="text" class="form-input inline-cancel-${uniqueId}" placeholder="3000" value="${val.cancellation_charges || ''}" style="padding: 4px 6px; font-size: 0.75rem;">
+                </div>
+                <div>
+                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Change</label>
+                   <input type="text" class="form-input inline-penalty-${uniqueId}" placeholder="5000" value="${val.penalty_charges || ''}" style="padding: 4px 6px; font-size: 0.75rem;">
+                </div>
+             </div>
+          </div>
         </div>
       `;
+    }
+
+    function toggleInlineFareDetails(detailsId) {
+      const details = document.getElementById(detailsId);
+      const icon = document.getElementById(`inline-toggle-icon-${detailsId}`);
+      if (!details) return;
+
+      if (details.style.display === 'none') {
+        details.style.display = 'block';
+        if (icon) icon.style.transform = 'rotate(180deg)';
+      } else {
+        details.style.display = 'none';
+        if (icon) icon.style.transform = 'rotate(0deg)';
+      }
     }
 
     function removeFareFromInline(uniqueId) {
@@ -5467,7 +6815,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       // Add the new fare card
       const list = document.getElementById(`inline-fare-list-${flightIndex}${suffix}`);
       const div = document.createElement('div');
-      div.innerHTML = createInlineFareCard(flightIndex, key, label, '', '', '', true, suffix);
+      div.innerHTML = createInlineFareCard(flightIndex, key, label, '', '', '', {}, true, suffix);
       list.appendChild(div.firstElementChild);
 
       select.value = '';
@@ -5480,13 +6828,23 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const isRoundTrip = currentTripType === 'round_trip' && currentFlights[flightIndex + 1];
       const isSplit = isRoundTrip && document.getElementById(`inline-split-toggle-${flightIndex}`)?.checked;
 
+      // Update the split flag
+      if (isRoundTrip) {
+        flight.is_split = isSplit;
+      }
+
       // Helper to collect data from a specific list
       const collectData = (suffix) => {
         const fareCards = document.querySelectorAll(`#inline-fare-list-${flightIndex}${suffix} .fare-card`);
         const newFares = {};
         const newFareMU = {};
         const newFareSVC = {};
+        const newFareExtras = {};
         let hasError = false;
+
+        // Collect Date
+        const dateInput = document.querySelector(`.inline-date-${flightIndex}${suffix}`);
+        const newDate = dateInput ? dateInput.value.trim() : null;
 
         fareCards.forEach(card => {
           const checkbox = card.querySelector('.fare-card-header input[type="checkbox"]');
@@ -5508,8 +6866,29 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           newFares[fareKey] = Number(fareInput.value);
           newFareMU[fareKey] = (muInput && muInput.value) ? Number(muInput.value) : 0;
           newFareSVC[fareKey] = (svcInput && svcInput.value) ? Number(svcInput.value) : 0;
+
+          const cabinInp = card.querySelector(`.inline-cabin-${uniqueId}`);
+          const checkinInp = card.querySelector(`.inline-checkin-${uniqueId}`);
+          const pcsInp = card.querySelector(`.inline-pcs-${uniqueId}`);
+          const seatInp = card.querySelector(`.inline-seat-${uniqueId}`);
+          const mealInp = card.querySelector(`.inline-meal-${uniqueId}`);
+          const cancelInp = card.querySelector(`.inline-cancel-${uniqueId}`);
+          const penInp = card.querySelector(`.inline-penalty-${uniqueId}`);
+
+          if (cabinInp?.value || checkinInp?.value || pcsInp?.value || seatInp?.value || mealInp?.value || cancelInp?.value || penInp?.value) {
+            newFareExtras[fareKey] = {
+              baggage_cabin: cabinInp?.value?.trim(),
+              baggage_checkin: checkinInp?.value?.trim(),
+              baggage_pcs: pcsInp?.value?.trim(),
+              seat: seatInp?.value?.trim(),
+              meal: mealInp?.value?.trim(),
+              cancellation_charges: cancelInp?.value?.trim(),
+              penalty_charges: penInp?.value?.trim()
+            };
+          }
+
         });
-        return { newFares, newFareMU, newFareSVC, hasError };
+        return { newFares, newFareMU, newFareSVC, newFareExtras, newDate, hasError };
       };
 
       // Collect Main (Outbound/Shared)
@@ -5521,6 +6900,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       flight.fares = mainData.newFares;
       flight.fare_mu = mainData.newFareMU;
       flight.fare_svc = mainData.newFareSVC;
+      flight.fare_extra_details = mainData.newFareExtras;
+      if (mainData.newDate) flight.departure_date = mainData.newDate;
 
       if (isRoundTrip) {
         const returnFlight = currentFlights[flightIndex + 1];
@@ -5532,11 +6913,43 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           returnFlight.fares = retData.newFares;
           returnFlight.fare_mu = retData.newFareMU;
           returnFlight.fare_svc = retData.newFareSVC;
+          returnFlight.fare_extra_details = retData.newFareExtras;
+          if (retData.newDate) returnFlight.departure_date = retData.newDate;
         } else {
-          // Copy Main to Return
+          // Copy Main to Return, BUT KEEP RETURN DATE if it exists and wasn't edited in shared mode?
+          // If shared mode, we only displayed one date input (main).
+          // Assuming shared date input applies to OUTBOUND only?
+          // Or should we have displayed two date inputs even in combined mode?
+          // The generator uses generateSectionHTML(flight...) and generateSectionHTML(returnFlight...)
+          // In combined mode (`isSplit` false), `generateSectionHTML` is called for `flight` (Main) using `_out` suffix (lines 6361).
+          // And `returnFlight` section is HIDDEN if `isSplit` is false (line 6362).
+          // Wait, `isSplit` affects `display: none` of the return section.
+          // IF HIDDEN, the user CANNOT edit the return date.
+          // This is a logic gap. A user might want same fares but different dates (obviously).
+          // FIX: Even if fares are combined, dates should be editable separately? 
+          // Or does the Return Section contain the Return Date input?
+          // Yes, `generateSectionHTML` creates the date input.
+          // If `isSplit` is false, the Return Section is HIDDEN.
+          // This means the Return Date input is hidden.
+          // So if I save, I might overwrite Return Date with nothing or can't edit it.
+          // FIX: Always show the Return Date input? 
+          // Or separate the Date Input from the Fare Section?
+          // For now, I will ensure that if `isSplit` is false (Combined Fares), we DO NOT overwrite the Return Date with the Main Date (which makes no sense).
+          // But wait, if the section is hidden, `collectData('_ret')` will still find element if it's in DOM (just hidden).
+          // Correct. `display: none` elements are still found by querySelector.
+          // So if the user edits the main date, and the return section is hidden, the return date input (hidden) remains unchanged.
+          // `collectData('_ret')` will pick up the hidden return date.
+          // So we should capture it.
+
+          const retData = collectData('_ret'); // This captures the hidden return date input
+
           returnFlight.fares = JSON.parse(JSON.stringify(mainData.newFares));
           returnFlight.fare_mu = JSON.parse(JSON.stringify(mainData.newFareMU));
           returnFlight.fare_svc = JSON.parse(JSON.stringify(mainData.newFareSVC));
+          returnFlight.fare_extra_details = JSON.parse(JSON.stringify(mainData.newFareExtras));
+
+          // CRITICAL: Update Return Date from its own input (even if hidden) 
+          if (retData.newDate) returnFlight.departure_date = retData.newDate;
         }
       }
 
@@ -5658,10 +7071,32 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           svcText = ` (+ ₹${perFareSVC} SVC + ₹${perFareGST} GST)`;
         }
         output += `*${type.charAt(0).toUpperCase() + type.slice(1)} Fare:* ₹${finalFare.toLocaleString('en-IN')} per person${svcText}\n`;
-      });
 
-      if (isFieldValid(flight.baggage)) output += `*Baggage:* ${flight.baggage}\n`;
-      if (isFieldValid(flight.refundability)) output += `*${flight.refundability}*\n`;
+        // Add baggage/extra info on new lines
+        if (flight.fare_extra_details && flight.fare_extra_details[type]) {
+          const d = flight.fare_extra_details[type];
+
+          // 1. Baggage Row
+          const bagParts = [];
+          if (d.baggage_cabin) bagParts.push(`Cabin: ${d.baggage_cabin}`);
+          if (d.baggage_checkin) bagParts.push(`Check-in: ${d.baggage_checkin}`);
+          if (d.baggage_pcs) bagParts.push(`Pcs: ${d.baggage_pcs}`);
+          if (bagParts.length > 0) output += `*Baggage:* ${bagParts.join(' | ')}\n`;
+
+          // 2. Meal Row
+          if (d.meal) output += `*Meal:* ${d.meal}\n`;
+
+          // 3. Seat Row
+          if (d.seat) output += `*Seat:* ${d.seat}\n`;
+
+          // 4. Cancellation Charges
+          if (d.cancellation_charges) output += `*Cancellation Charges:* ${d.cancellation_charges} + GST per pax\n`;
+
+          // 5. Change Penalty
+          if (d.penalty_charges) output += `*Changes Penalty:* ${d.penalty_charges} + GST per pax\n`;
+        }
+        output += `\n`;
+      });
 
       return output;
     }
@@ -5702,10 +7137,6 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           out += `Non Stop\n`;
         }
       }
-
-      if (isFieldValid(flight.baggage)) out += `*Baggage:* ${flight.baggage}\n`;
-      if (isFieldValid(flight.refundability)) out += `*${flight.refundability}*`;
-
       return out;
     }
 
@@ -5724,7 +7155,33 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         if (perFareSVC > 0) {
           extraText = ` (+ ₹${perFareSVC} SVC + ₹${perFareGST} GST)`;
         }
-        fareLines += `*${type.charAt(0).toUpperCase() + type.slice(1)} Fare:* ₹ ${finalFare.toLocaleString('en-IN')}${extraText}\n`;
+
+        fareLines += `*${type.charAt(0).toUpperCase() + type.slice(1)} Fare:* ₹${finalFare.toLocaleString('en-IN')} per person${extraText}\n`;
+
+        // Add baggage/extra info on new lines
+        if (flight.fare_extra_details && flight.fare_extra_details[type]) {
+          const d = flight.fare_extra_details[type];
+
+          // 1. Baggage Row
+          const bagParts = [];
+          if (d.baggage_cabin) bagParts.push(`Cabin: ${d.baggage_cabin}`);
+          if (d.baggage_checkin) bagParts.push(`Check-in: ${d.baggage_checkin}`);
+          if (d.baggage_pcs) bagParts.push(`Pcs: ${d.baggage_pcs}`);
+          if (bagParts.length > 0) fareLines += `*Baggage:* ${bagParts.join(' | ')}\n`;
+
+          // 2. Meal Row
+          if (d.meal) fareLines += `*Meal:* ${d.meal}\n`;
+
+          // 3. Seat Row
+          if (d.seat) fareLines += `*Seat:* ${d.seat}\n`;
+
+          // 4. Cancellation Charges
+          if (d.cancellation_charges) fareLines += `*Cancellation Charges:* ${d.cancellation_charges} + GST per pax\n`;
+
+          // 5. Change Penalty
+          if (d.penalty_charges) fareLines += `*Changes Penalty:* ${d.penalty_charges} + GST per pax\n`;
+        }
+        fareLines += `\n`;
       });
       return fareLines;
     }
@@ -5776,9 +7233,9 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         let flightIdx = 0;
         Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
           if (flightIds.length === 2) {
-            const headerText = `ROUND TRIP OPTION ${unitId}`;
-            const separator = '='.repeat(headerText.length);
-            output += `\n${separator}\n${headerText}\n${separator}\n\n`;
+            const headerText = `*ROUND TRIP OPTION ${unitId}*`;
+            const separator = '_'.repeat(headerText.length + 5);
+            output += `\n${headerText}\n${separator}\n\n`;
 
             // Define flights locally
             const outboundFlight = currentFlights[flightIdx];
@@ -5794,7 +7251,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             };
 
             // Are fares different (Split Mode)?
-            const areFaresDifferent = !areFaresInitiallySame(outboundFlight.fares, returnFlight.fares);
+            const areFaresDifferent = (outboundFlight.is_split === true) || !areFaresInitiallySame(outboundFlight.fares, returnFlight.fares);
 
             if (areFaresDifferent) {
               // Split Logic for Output Text
@@ -5802,14 +7259,14 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
               // Outbound
               output += `*✈️ OUTBOUND FLIGHT*\n\n`;
               output += formatFlightOutputWithoutFares(outboundFlight, flightIdx + 1);
-              output += `\n*OUTBOUND FARES:*\n`;
+              output += `\n`; // Just separation
               output += formatFaresOutput(outboundFlight);
               output += `\n`;
 
               // Return
               output += `\n*✈️ RETURN FLIGHT*\n\n`;
               output += formatFlightOutputWithoutFares(returnFlight, flightIdx + 2);
-              output += `\n*RETURN FARES:*\n`;
+              output += `\n`; // Just separation
               output += formatFaresOutput(returnFlight);
 
             } else {
@@ -5824,7 +7281,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
               output += formatFlightOutputWithoutFares(returnFlight, flightIdx + 2);
 
               // Show fares ONCE for the entire option
-              output += `\n*FARES FOR THIS OPTION:*\n`;
+              output += `\n*ROUND TRIP FARE*\n`;
               output += formatFaresOutput(outboundFlight);
             }
 
@@ -6297,7 +7754,17 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         <a href="/passengers" class="sidebar-link">👤 Passengers</a>
         <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
         <a href="/itineraries-v2" class="sidebar-link">📋 Itineraries</a>
-        <div style="margin-top: 1.5rem; padding: 0 0.5rem;">
+        <div style="margin-top: 1rem; padding: 0 0.5rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+          <button class="sidebar-link" style="width: 100%; border: none; cursor: pointer; color: #ef4444;"
+            onclick="clearDraft()">
+            🗑️ Clear Draft
+          </button>
+          <button class="sidebar-link" style="width: 100%; border: none; cursor: pointer; color: var(--primary);"
+            onclick="saveDraft()">
+            💾 Save Draft
+          </button>
+        </div>
+        <div style="margin-top: 1rem; padding: 0 0.5rem;">
           <label class="input-label"
             style="display: block; margin-bottom: 0.75rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Appearance</label>
           <button class="sidebar-link" style="width: 100%; border: none; cursor: pointer;" id="sidebarThemeToggle">
@@ -6390,112 +7857,14 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       window.location.href = '/login';
     }
 
-    // Edit Itinerary Functionality
-    async function loadItineraryForEdit(itineraryId) {
-      if (!itineraryId) return;
-
-      showNotification('Loading itinerary for edit...', 'info');
-      try {
-        const response = await fetch(`/api/v2/itineraries/${itineraryId}`);
-        if (!response.ok) throw new Error('Failed to fetch itinerary');
-
-        const itinerary = await response.json();
-
-        // Restore Parsing State
-        currentFlights = itinerary.flights || [];
-        currentMarkup = itinerary.markup || 0;
-        currentFinalText = itinerary.parser_output_text || '';
-        document.getElementById('markup').value = currentMarkup;
-
-        // Infer trip type defaults
-        currentTripType = 'one_way';
-        document.querySelector(`input[name="tripType"][value="one_way"]`).checked = true;
-        handleTripType();
-
-        // Restore unitFlights (Mocking as one big unit to ensure visibility)
-        unitFlights = { '1': currentFlights.map((_, i) => i) };
-
-        // Render Cards
-        renderResults(currentFlights);
-
-        // Restore Billing & Customer
-        activeBillingType = itinerary.billing_type || 'passenger';
-        document.querySelectorAll('.billing-tab').forEach(tab => {
-          if (tab.dataset.type === activeBillingType) tab.classList.add('active');
-          else tab.classList.remove('active');
-        });
-        document.getElementById('passengerForm').style.display = activeBillingType === 'passenger' ? 'block' : 'none';
-        document.getElementById('corporateForm').style.display = activeBillingType === 'corporate' ? 'block' : 'none';
-
-        // Wait for customers to load
-        if (allCustomers.length === 0) await loadCustomers();
-
-        if (activeBillingType === 'passenger') {
-          // Pre-fill fields
-          document.getElementById('passengerName').value = itinerary.bill_to_name || '';
-          document.getElementById('passengerEmail').value = itinerary.bill_to_email || '';
-          document.getElementById('passengerPhone').value = itinerary.bill_to_phone || '';
-          document.getElementById('passengerAddress').value = itinerary.bill_to_address || '';
-
-          if (itinerary.passenger_id) {
-            const select = document.getElementById('passengerCustomerSelect');
-            if (select) select.value = itinerary.passenger_id;
-          }
-        } else {
-          document.getElementById('corporateName').value = itinerary.bill_to_name || '';
-          document.getElementById('corporateEmail').value = itinerary.bill_to_email || '';
-          document.getElementById('corporatePhone').value = itinerary.bill_to_phone || '';
-          document.getElementById('corporateAddress').value = itinerary.bill_to_address || '';
-          document.getElementById('corporateCompany').value = itinerary.bill_to_company || '';
-          document.getElementById('corporateGst').value = itinerary.bill_to_gst || '';
-
-          if (itinerary.corporate_id) {
-            const select = document.getElementById('corporateCustomerSelect');
-            if (select) select.value = itinerary.corporate_id;
-          }
-        }
-
-        showNotification('Itinerary loaded for editing', 'success');
-
-      } catch (e) {
-        console.error("Error loading itinerary:", e);
-        showNotification('Failed to load itinerary', 'error');
-      }
-    }
-
-    // Check for edit param on load
-    window.addEventListener('DOMContentLoaded', () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const editId = urlParams.get('edit');
-      if (editId) {
-        loadItineraryForEdit(editId);
-      }
-    });
-
-    // --- Save Modal Logic ---
-    const saveModal = document.getElementById('saveModal');
-
-    function openSaveModal() {
-      console.log("openSaveModal called");
-
-      if (!Array.isArray(currentFlights) || currentFlights.length === 0) {
-        showNotification('Please parse flights first', 'warning');
-        return;
-      }
-
-      // Populate passenger fields if empty
-      const pName = document.getElementById('passengerName');
-      if (pName && !pName.value) {
-        // Could try to auto-fill from somewhere if needed, 
-        // but for now we leave it empty or user fills it.
-      }
-
-      saveModal.classList.add('is-active');
+    // --- Utility Functions for Save Modal ---
+    function showLoginRequiredModal() {
+      document.getElementById('loginRequiredModal').classList.add('is-active');
       document.body.style.overflow = 'hidden';
     }
 
-    function closeSaveModal() {
-      saveModal.classList.remove('is-active');
+    function closeLoginRequiredModal() {
+      document.getElementById('loginRequiredModal').classList.remove('is-active');
       document.body.style.overflow = '';
     }
 
@@ -6508,8 +7877,336 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       document.getElementById('corporateForm').style.display = type === 'corporate' ? 'block' : 'none';
     }
 
-    // --- End Save Modal Logic ---
+    // --- Draft Management ---
+    function saveDraft() {
+      const draft = {
+        tripType: currentTripType,
+        markup: document.getElementById('markup').value,
+        serviceCharge: document.getElementById('serviceCharge').value,
+        units: [],
+        // Save parsed state
+        currentFlights: currentFlights,
+        currentFinalText: currentFinalText,
+        unitFlights: unitFlights
+      };
 
+      document.querySelectorAll('.flight-unit').forEach(unit => {
+        const flightBlocks = [];
+        unit.querySelectorAll('.flight-block').forEach(block => {
+          flightBlocks.push({
+            text: block.querySelector('textarea').value,
+            layover: block.querySelector('.layover-checkbox').checked,
+            multiple: block.querySelector('.multiple-flights-checkbox')?.checked || false
+          });
+        });
+        draft.units.push({
+          flights: flightBlocks,
+          unitId: unit.dataset.unitId
+        });
+      });
+
+      localStorage.setItem('flight_itinerary_draft', JSON.stringify(draft));
+      showNotification('Draft saved successfully', 'success');
+    }
+
+    async function loadDraft() {
+      const saved = localStorage.getItem('flight_itinerary_draft');
+      if (!saved) return;
+
+      try {
+        const draft = JSON.parse(saved);
+        if (!draft || !draft.units || draft.units.length === 0) return;
+
+        showNotification('Restoring your saved draft...', 'info');
+
+        // Restore trip type
+        const radio = document.querySelector(`input[name="tripType"][value="${draft.tripType}"]`);
+        if (radio) {
+          radio.checked = true;
+          handleTripType();
+        }
+
+        document.getElementById('markup').value = draft.markup || '';
+        document.getElementById('serviceCharge').value = draft.serviceCharge || '';
+        if (document.getElementById('serviceCharge').value) updateGSTDisplay();
+
+        // The first unit is already added by handleTripType()
+        for (let i = 0; i < draft.units.length; i++) {
+          const unitData = draft.units[i];
+          if (i > 0) addUnit();
+
+          const units = document.querySelectorAll('.flight-unit');
+          const unitEl = units[i];
+          const unitId = unitEl.dataset.unitId;
+
+          // For multi-city, add extra cities if needed
+          if (draft.tripType === 'multi_city') {
+            while (unitEl.querySelectorAll('.flight-block').length < unitData.flights.length) {
+              addCityToUnit(unitId);
+            }
+          }
+
+          // Fill in values
+          unitData.flights.forEach((f, fIdx) => {
+            const block = unitEl.querySelectorAll('.flight-block')[fIdx];
+            if (block) {
+              block.querySelector('textarea').value = f.text;
+              block.querySelector('.layover-checkbox').checked = f.layover;
+              const multiCheck = block.querySelector('.multiple-flights-checkbox');
+              if (multiCheck) multiCheck.checked = f.multiple;
+            }
+          });
+        }
+
+        // Restore parsed state
+        if (draft.currentFlights && draft.currentFlights.length > 0) {
+          currentFlights = draft.currentFlights;
+          currentFinalText = draft.currentFinalText || '';
+          unitFlights = draft.unitFlights || unitFlights;
+
+          renderResults(currentFlights);
+
+          const outputElement = document.getElementById("output");
+          if (outputElement && currentFinalText) {
+            outputElement.textContent = currentFinalText;
+          }
+        }
+
+        showNotification('Draft restored!', 'success');
+      } catch (e) {
+        console.error("Error loading draft:", e);
+      }
+    }
+
+    function clearDraft() {
+      localStorage.removeItem('flight_itinerary_draft');
+      showNotification('Draft cleared', 'success');
+      location.reload();
+    }
+
+    // --- Notification System (Ensure this exists) ---
+    function showNotification(message, type = 'info') {
+      let container = document.getElementById('notification-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'notification-container';
+        container.style.position = 'fixed';
+        container.style.top = '20px';
+        container.style.right = '20px';
+        container.style.zIndex = '9999';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.gap = '10px';
+        container.style.pointerEvents = 'none'; // Click through container
+        document.body.appendChild(container);
+      }
+
+      const notif = document.createElement('div');
+      notif.textContent = message;
+      notif.style.padding = '12px 20px';
+      notif.style.borderRadius = '8px';
+      notif.style.color = '#fff';
+      notif.style.fontWeight = '500';
+      notif.style.minWidth = '280px';
+      notif.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)';
+      notif.style.opacity = '0';
+      notif.style.transform = 'translateY(-20px)';
+      notif.style.transition = 'all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55)';
+      notif.style.pointerEvents = 'auto'; // Allow clicking/hovering notification itself
+      notif.style.fontSize = '0.95rem';
+      notif.style.display = 'flex';
+      notif.style.alignItems = 'center';
+
+      // Icon
+      let icon = '';
+      if (type === 'success') {
+        notif.style.background = 'linear-gradient(135deg, #059669, #10b981)';
+        icon = '✅ ';
+      } else if (type === 'error') {
+        notif.style.background = 'linear-gradient(135deg, #dc2626, #ef4444)';
+        icon = '❌ ';
+      } else if (type === 'warning') {
+        notif.style.background = 'linear-gradient(135deg, #d97706, #f59e0b)';
+        icon = '⚠️ ';
+      } else {
+        notif.style.background = 'linear-gradient(135deg, #2563eb, #3b82f6)';
+        icon = 'ℹ️ ';
+      }
+
+      notif.textContent = icon + message;
+
+      container.appendChild(notif);
+
+      // Animate in
+      requestAnimationFrame(() => {
+        notif.style.opacity = '1';
+        notif.style.transform = 'translateY(0)';
+      });
+
+      // Remove after 3s
+      setTimeout(() => {
+        notif.style.opacity = '0';
+        notif.style.transform = 'translateY(-20px)';
+        setTimeout(() => notif.remove(), 300);
+      }, 3000);
+    }
+
+    // Close search results when clicking outside
+    window.addEventListener('click', (e) => {
+      // Billing search
+      if (!e.target.closest('#billingSearchInput') && !e.target.closest('#billingSearchResults')) {
+        const br = document.getElementById('billingSearchResults');
+        if (br) br.style.display = 'none';
+      }
+      // Passenger search
+      if (!e.target.closest('#savePassengerSearch') && !e.target.closest('#savePassengerResults')) {
+        const pr = document.getElementById('savePassengerResults');
+        if (pr) pr.style.display = 'none';
+      }
+    });
+  </script>
+  <!-- Particles Background -->
+  <div id="tsparticles" style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:-10;"></div>
+
+  <!-- TSParticles Library -->
+  <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.11.1/tsparticles.bundle.min.js"></script>
+
+  <script>
+    // --- Immediate Theme Initialization (Prevent Glitch) ---
+    (function () {
+      const savedTheme = localStorage.getItem('theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', savedTheme);
+      if (savedTheme === 'dark') {
+        document.body.style.background = 'transparent';
+      }
+    })();
+
+    async function updateParticleVisibility(theme) {
+      const particles = document.getElementById('tsparticles');
+      if (theme === 'dark') {
+        if (particles) particles.style.display = 'block';
+        document.body.style.background = 'transparent';
+        await tsParticles.load("tsparticles", {
+          background: { color: { value: "#020617" } },
+          particles: {
+            color: { value: ["#38bdf8", "#818cf8", "#c084fc"] },
+            links: { color: "#64748b", distance: 150, enable: true, opacity: 0.2, width: 1 },
+            move: { enable: true, speed: 0.8 },
+            number: { value: 80 },
+            opacity: { value: 0.5 },
+            size: { value: { min: 1, max: 3 } }
+          }
+        });
+      } else if (theme === 'valentine') {
+        if (particles) particles.style.display = 'block';
+        document.body.style.background = 'transparent';
+        await tsParticles.load("tsparticles", {
+          background: { color: { value: "#fff0f3" } },
+          particles: {
+            color: { value: ["#ff4d6d", "#ff758f", "#ff8da1", "#ffb6c1"] },
+            shape: { type: "char", options: { char: { value: ["❤️", "💖", "🌸", "🌹", "💝"] } } },
+            opacity: { value: 0.8 },
+            size: { value: { min: 10, max: 20 } },
+            move: { enable: true, speed: 2, direction: "top", outModes: "out" },
+            number: { value: 40 }
+          }
+        });
+      } else {
+        if (particles) particles.style.display = 'none';
+        document.body.style.background = 'var(--bg-main)';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Particles are loaded inside updateParticleVisibility now for better switching
+
+      // --- Sidebar & Theme Logic ---
+      const menuToggle = document.getElementById('menuToggle');
+      const sidebar = document.getElementById('sidebar');
+      const sidebarClose = document.getElementById('sidebarClose');
+      const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+      if (menuToggle && sidebar && sidebarOverlay) {
+        menuToggle.addEventListener('click', () => {
+          sidebar.classList.add('active');
+          sidebarOverlay.classList.add('active');
+        });
+      }
+
+      const closeSidebar = () => {
+        if (sidebar) sidebar.classList.remove('active');
+        if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+      };
+
+      if (sidebarClose) sidebarClose.addEventListener('click', closeSidebar);
+      if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
+      // Final theme sync
+      const currentTheme = document.documentElement.getAttribute('data-theme');
+      updateParticleVisibility(currentTheme);
+
+      const themeToggle = document.getElementById('sidebarThemeToggle');
+      const valToggle = document.getElementById('valentineToggle');
+      const sidebarValToggle = document.getElementById('sidebarValentineToggle');
+
+      const applyTheme = async (next) => {
+        const curtain = document.getElementById('themeCurtain');
+        const curtainIcon = document.getElementById('curtainIcon');
+
+        // Only use curtains for Valentine Mode transitions
+        if (curtain && (next === 'valentine' || document.documentElement.getAttribute('data-theme') === 'valentine')) {
+          curtain.className = 'theme-curtain active';
+          if (next === 'valentine') {
+            curtain.classList.add('curtain-valentine');
+            curtainIcon.textContent = '💖';
+          } else if (next === 'dark') {
+            curtain.classList.add('curtain-dark');
+            curtainIcon.textContent = '✈️';
+          } else {
+            curtain.classList.add('curtain-light');
+            curtainIcon.textContent = '🏠';
+          }
+          await new Promise(r => setTimeout(r, 800));
+        }
+
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        await updateParticleVisibility(next);
+
+        // Sync UI toggles immediately
+        const activeIcon = document.querySelector('.theme-icon-container');
+        const activeText = document.getElementById('themeToggleText');
+        if (activeIcon && activeText) {
+          activeIcon.textContent = next === 'dark' ? '☀️' : '🌙';
+          activeText.textContent = next === 'dark' ? 'Light Mode' : 'Dark Mode';
+        }
+
+        if (curtain && curtain.classList.contains('active')) {
+          await new Promise(r => setTimeout(r, 100));
+          curtain.classList.remove('active');
+          setTimeout(() => {
+            curtain.classList.remove('curtain-valentine', 'curtain-dark', 'curtain-light');
+          }, 800);
+        }
+      };
+
+      if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+          const current = document.documentElement.getAttribute('data-theme');
+          const next = current === 'dark' ? 'light' : 'dark';
+          applyTheme(next);
+        });
+      }
+
+      const handleValentine = () => {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'valentine' ? 'light' : 'valentine';
+        applyTheme(next);
+      };
+
+      if (valToggle) valToggle.addEventListener('click', handleValentine);
+      if (sidebarValToggle) sidebarValToggle.addEventListener('click', handleValentine);
+    });
   </script>
 </body>
 

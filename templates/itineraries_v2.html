@@ -10,6 +10,274 @@
     href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="/static/dashboard.css">
+  <style>
+    /* Passenger Management Styles */
+    .passenger-manager-section {
+      margin-top: 2rem;
+      border-top: 1px solid var(--border-color);
+      padding-top: 1.5rem;
+    }
+
+    .passenger-list-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .passenger-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .passenger-mini-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      position: relative;
+    }
+
+    .passenger-mini-card .avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--primary-color);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+    }
+
+    .passenger-mini-card .info {
+      flex: 1;
+    }
+
+    .passenger-mini-card .name {
+      display: block;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    .passenger-mini-card .type {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    .btn-remove-p {
+      background: none;
+      border: none;
+      color: var(--danger-color);
+      cursor: pointer;
+      font-size: 1.2rem;
+      padding: 0.25rem;
+      opacity: 0.6;
+      transition: opacity 0.2s;
+    }
+
+    .btn-remove-p:hover {
+      opacity: 1;
+    }
+
+    .search-dropdown-container {
+      position: relative;
+      margin-bottom: 1.5rem;
+    }
+
+    .text-xs {
+      font-size: 0.75rem;
+    }
+
+    .text-muted {
+      color: var(--text-secondary);
+    }
+
+    .search-results {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      z-index: 100;
+      max-height: 200px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .search-results.active {
+      display: block;
+    }
+
+    .search-result-item {
+      padding: 0.75rem 1rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .search-result-item:last-child {
+      border-bottom: none;
+    }
+
+    .search-result-item:hover {
+      background: var(--hover-bg);
+    }
+
+    .num-passengers-input {
+      width: 80px;
+      padding: 0.5rem;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      text-align: center;
+    }
+
+    .add-new-p-form {
+      background: var(--hover-bg);
+      padding: 1rem;
+      border-radius: 12px;
+      margin-top: 1rem;
+    }
+
+    .passenger-mini-card .name-link {
+      color: var(--primary-color);
+      cursor: pointer;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .passenger-mini-card .name-link:hover {
+      color: var(--primary-dark);
+      text-decoration: underline;
+    }
+
+    .btn-quick-add {
+      background: var(--accent-success-light);
+      color: var(--accent-success);
+      border: 1px solid var(--accent-success);
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      padding: 0;
+      margin-left: auto;
+    }
+
+    .btn-quick-add:hover {
+      background: var(--accent-success);
+      color: white;
+      transform: scale(1.1);
+    }
+
+    .profile-info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .profile-section-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      margin-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.25rem;
+    }
+
+    .profile-item {
+      margin-bottom: 0.75rem;
+    }
+
+    .profile-label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    .profile-value {
+      display: block;
+      font-weight: 500;
+      font-size: 0.9rem;
+    }
+
+    .ff-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      background: var(--bg-tertiary);
+      border-radius: 8px;
+      margin-right: 0.5rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.85rem;
+    }
+
+    .pref-tag {
+      display: inline-block;
+      padding: 0.25rem 0.65rem;
+      background: var(--accent-info-light);
+      color: var(--accent-info);
+      border-radius: 4px;
+      margin-right: 0.4rem;
+      margin-bottom: 0.4rem;
+      font-size: 0.75rem;
+    }
+
+    /* Collapsible Section Styles */
+    .detail-section.collapsible {
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-top: 1.5rem;
+    }
+
+    .collapsible-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.5rem;
+      background: var(--bg-tertiary);
+      cursor: pointer;
+      margin: 0 !important;
+      transition: background 0.2s;
+    }
+
+    .collapsible-header:hover {
+      background: var(--hover-bg);
+    }
+
+    .collapsible-content {
+      padding: 1.5rem;
+      transition: all 0.3s ease;
+    }
+
+    .collapsible-content.collapsed {
+      display: none;
+    }
+
+    .collapse-icon {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      transition: transform 0.3s;
+    }
+  </style>
 </head>
 
 <body>
@@ -147,6 +415,117 @@
       </div>
       <div class="modal-body" id="itineraryDetailContent">
         <!-- Populated by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Passenger Management Modal -->
+  <div class="modal-overlay" id="passengerManagementModal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2>Manage Passengers</h2>
+        <button class="modal-close" onclick="closePassengerManagementModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-section">
+          <h3 class="form-section-title">Number of Passengers</h3>
+          <div class="form-group">
+            <label class="form-label">Total Passengers</label>
+            <input type="number" id="manageNumPassengers" class="form-input num-passengers-input" min="1" value="1">
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3 class="form-section-title">Add / Select Passengers</h3>
+
+          <div class="search-dropdown-container">
+            <input type="text" id="passengerSearchInput" class="form-input" placeholder="Search existing passengers..."
+              oninput="handlePassengerSearch()" onclick="handlePassengerSearch()" onfocus="handlePassengerSearch()">
+            <div id="passengerSearchResults" class="search-results">
+              <!-- Search results will appear here -->
+            </div>
+          </div>
+
+          <div class="or-divider"
+            style="text-align: center; margin: 1rem 0; color: var(--text-secondary); font-size: 0.8rem;">OR</div>
+
+          <button class="btn btn-secondary btn-sm" onclick="toggleNewPassengerForm()" style="width: 100%;">
+            <span>➕</span> Add New Temporary Passenger Info
+          </button>
+
+          <div id="newPassengerForm" class="add-new-p-form" style="display: none;">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">First Name</label>
+                <input type="text" id="newPFirstName" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Last Name</label>
+                <input type="text" id="newPLastName" class="form-input">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" id="newPEmail" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input type="tel" id="newPPhone" class="form-input">
+              </div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="addNewTempPassenger()" style="margin-top: 1rem;">
+              Add to List
+            </button>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3 class="form-section-title">Assigned Passengers</h3>
+          <div id="assignedPassengersList" class="passenger-grid">
+            <!-- Assigned passengers will appear here -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer"
+        style="padding: 1.5rem; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 1rem;">
+        <button class="btn btn-secondary" onclick="closePassengerManagementModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="savePassengerChanges()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Billing Management Modal -->
+  <div class="modal-overlay" id="billingManagementModal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2>Manage Billing</h2>
+        <button class="modal-close" onclick="closeBillingManagementModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-section">
+          <label class="form-label">Search Billing Account / Customer</label>
+          <div style="position:relative;">
+            <input type="text" id="manageBillingSearchInput" class="form-input" placeholder="Start typing to search..."
+              oninput="searchBillingInManager()" onclick="searchBillingInManager()" onfocus="searchBillingInManager()">
+            <div id="manageBillingSearchResults" class="search-results"
+              style="display:none; width:100%; top:100%; z-index:10000; position:absolute; background:var(--bg-card); border:1px solid var(--border); max-height:200px; overflow-y:auto;">
+            </div>
+          </div>
+          <input type="hidden" id="manageSelectedBillingId">
+        </div>
+
+        <div id="manageBillingSummary"
+          style="margin-top:20px; padding:15px; border:1px solid var(--border); border-radius:8px; display:none; background:var(--bg-main);">
+          <strong>Selected Billing:</strong> <span id="manageSelectedName"
+            style="color:var(--primary); font-weight:600;"></span>
+          <div id="manageSelectedDetails" style="font-size:0.9em; color:var(--text-secondary); margin-top:5px;"></div>
+        </div>
+      </div>
+      <div class="modal-footer"
+        style="padding: 1.5rem; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 1rem;">
+        <button class="btn btn-secondary" onclick="closeBillingManagementModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveBillingChanges()">Save Changes</button>
       </div>
     </div>
   </div>
@@ -463,7 +842,10 @@
       const it = currentItinerary;
       const content = document.getElementById('itineraryDetailContent');
 
-      document.getElementById('itineraryDetailTitle').textContent = it.title || 'Itinerary Details';
+      document.getElementById('itineraryDetailTitle').innerHTML = `
+        ${it.title || 'Itinerary Details'}
+        <span onclick="editItineraryTitle()" style="cursor:pointer; font-size:0.5em; margin-left:10px; opacity:0.6;" title="Edit Title">✏️</span>
+      `;
 
       const flights = it.flights || [];
 
@@ -471,11 +853,11 @@
         <div class="detail-header-row">
           <div class="status-badges">
             <span class="badge badge-lg badge-status badge-${it.status}">${formatStatus(it.status)}</span>
-            <span class="badge badge-lg badge-billing">${it.billing_type === 'corporate' ? '🏢 Corporate' : '👤 Individual'}</span>
+            <span class="badge badge-lg badge-billing">${(it.billing_account && it.billing_account.company_name) || it.bill_to_company ? '🏢 B2B' : '👤 B2C'}</span>
           </div>
           <div class="header-actions">
             <button class="btn btn-secondary" onclick="editItinerary('${it.id}'); closeItineraryDetailModal();">
-              <span>✏️</span> Edit
+              <span>✏️</span> Full Edit
             </button>
             ${it.status === 'pending_approval' && it.selected_flight_option !== null ? `
               <button class="btn btn-success" onclick="approveItinerary('${it.id}')">
@@ -488,41 +870,101 @@
         <div class="detail-sections">
           <!-- Passenger & Billing -->
           <div class="detail-section">
-            <h4>Passenger & Billing</h4>
+            <div class="passenger-list-header">
+               <h4>Passenger & Itinerary Details</h4>
+               <div style="display:flex; gap:10px;">
+                 <button class="btn btn-secondary btn-sm" onclick="openBillingManager()">
+                   <span>💳</span> Manage Billing
+                 </button>
+                 <button class="btn btn-secondary btn-sm" onclick="openPassengerManager()">
+                   <span>👥</span> Manage Passengers
+                 </button>
+               </div>
+            </div>
+            
             <div class="detail-grid detail-grid-3">
               <div class="detail-item">
-                <span class="detail-label">Passenger</span>
-                <span class="detail-value">${it.passenger?.full_name || it.passenger?.first_name || 'Not specified'}</span>
+                <span class="detail-label">Main Passenger</span>
+                <span class="detail-value">
+                  ${it.passenger ? `
+                    <a class="name-link" onclick="handlePassengerClick('${it.passenger.id}', ${JSON.stringify(it.passenger).replace(/'/g, "&apos;")})">
+                      ${it.passenger.full_name || `${it.passenger.first_name} ${it.passenger.last_name}`}
+                    </a>
+                  ` : (it.passengers_data && it.passengers_data.length > 0 ?
+          `<span class="name-text">${it.passengers_data[0].first_name} ${it.passengers_data[0].last_name}</span>`
+          : (it.bill_to_name || 'Not specified'))}
+                </span>
               </div>
-              ${it.billing_type === 'corporate' ? `
-                <div class="detail-item">
-                  <span class="detail-label">Corporate</span>
-                  <span class="detail-value">${it.corporate?.company_name || it.bill_to_company || 'Not specified'}</span>
-                </div>
-                <div class="detail-item">
-                  <span class="detail-label">GST Number</span>
-                  <span class="detail-value gst-value">${it.bill_to_gst || '-'}</span>
-                </div>
-              ` : `
-                <div class="detail-item">
-                  <span class="detail-label">Bill To</span>
-                  <span class="detail-value">${it.bill_to_name || '-'}</span>
-                </div>
-                <div class="detail-item">
-                  <span class="detail-label">Email</span>
-                  <span class="detail-value">${it.bill_to_email || '-'}</span>
-                </div>
-              `}
               <div class="detail-item">
-                <span class="detail-label">Phone</span>
-                <span class="detail-value">${it.bill_to_phone || '-'}</span>
+                <span class="detail-label">Total Passengers</span>
+                <span class="detail-value">${it.num_passengers || 1}</span>
               </div>
-              <div class="detail-item detail-item-wide">
-                <span class="detail-label">Address</span>
-                <span class="detail-value">${it.bill_to_address || '-'}</span>
-              </div>
+              
+                <div class="detail-item">
+                  <span class="detail-label">Billing To</span>
+                  <span class="detail-value">
+                    ${it.billing_account ?
+          `<strong>${it.billing_account.display_name}</strong><br>
+                         <span class="text-xs text-muted">
+                           ${it.billing_account.company_name ? it.billing_account.company_name + '<br>' : ''}
+                           ${it.billing_account.gst_number ? `GST: ${it.billing_account.gst_number}<br>` : ''}
+                           ${it.billing_account.email ? it.billing_account.email + '<br>' : ''}
+                           ${it.billing_account.phone ? it.billing_account.phone : ''}
+                         </span>`
+          :
+          (it.bill_to_name ?
+            `<strong>${it.bill_to_name}</strong><br>
+                             <span class="text-xs text-muted">
+                               ${it.bill_to_company ? it.bill_to_company + '<br>' : ''}
+                               ${it.bill_to_gst ? `GST: ${it.bill_to_gst}<br>` : ''}
+                               ${it.bill_to_email ? it.bill_to_email + '<br>' : ''}
+                               ${it.bill_to_phone ? it.bill_to_phone : ''}
+                             </span>`
+            : 'Not specified')
+        }
+                  </span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Billing Type</span>
+                  <span class="detail-value">
+                     ${(it.billing_account && it.billing_account.company_name) || it.bill_to_company ? 'B2B Customer' : 'B2C Customer'}
+                  </span>
+                </div>
             </div>
           </div>
+
+          <!-- Additional Passengers (Collapsible) -->
+          ${it.passengers_data && it.passengers_data.length > 0 ? `
+            <div class="detail-section collapsible">
+              <h4 class="collapsible-header" onclick="toggleSection(this)">
+                <span>👥 Additional Passengers Details (${it.passengers_data.length})</span>
+                <span class="collapse-icon">▶</span>
+              </h4>
+              <div class="collapsible-content collapsed">
+                <div class="passenger-grid">
+                  ${it.passengers_data.map(p => {
+          const isRegistered = !!(p.id || p.is_db);
+          const pId = p.id || '';
+          return `
+                    <div class="passenger-mini-card">
+                      <div class="avatar">${(p.first_name || 'P').charAt(0)}</div>
+                      <div class="info">
+                        <span class="name">
+                          <a class="name-link" onclick="handlePassengerClick('${pId}', ${JSON.stringify(p).replace(/'/g, "&apos;")})">
+                            ${p.first_name} ${p.last_name || ''}
+                          </a>
+                        </span>
+                        <span class="type">${isRegistered ? '✅ Registered' : '📝 Temporary'}</span>
+                      </div>
+                      ${!isRegistered ? `
+                        <button class="btn-quick-add" onclick="quickRegister('${p.first_name}', '${p.last_name || ''}', '${p.email || ''}', '${p.phone || ''}')" title="Add to Registered Passengers">+</button>
+                      ` : ''}
+                    </div>
+                  `}).join('')}
+                </div>
+              </div>
+            </div>
+          ` : ''}
           
           <!-- Financials -->
           <div class="detail-section">
@@ -610,9 +1052,9 @@
             <div class="detail-section collapsible">
               <h4 class="collapsible-header" onclick="toggleSection(this)">
                 <span>📝 Parser Output</span>
-                <span class="collapse-icon">▼</span>
+                <span class="collapse-icon">▶</span>
               </h4>
-              <div class="collapsible-content">
+              <div class="collapsible-content collapsed">
                 <pre class="parser-output">${escapeHtml(it.parser_output_text)}</pre>
               </div>
             </div>
@@ -682,6 +1124,106 @@
       const url = new URL(window.location);
       url.searchParams.delete('id');
       window.history.replaceState({}, '', url);
+    }
+
+    // --- Profile View Functions ---
+    async function handlePassengerClick(id, data) {
+      if (id) {
+        // Redirect to passenger dashboard with view_id parameter
+        window.location.href = `/passengers?view_id=${id}`;
+      } else {
+        showNotification('No details found for unregistered passenger', 'info');
+      }
+    }
+
+    async function viewPassengerProfile(passengerId) {
+      try {
+        const response = await fetch(`/api/v2/passengers/${passengerId}`);
+        if (!response.ok) throw new Error('Failed to load profile');
+
+        const p = await response.json();
+        const content = document.getElementById('profileModalContent');
+
+        document.getElementById('profileModalTitle').textContent = `${p.first_name} ${p.last_name}'s Profile`;
+
+        content.innerHTML = `
+          <div class="profile-info-grid">
+            <div>
+              <h4 class="profile-section-title">Personal Info</h4>
+              <div class="profile-item"><span class="profile-label">Full Name</span><span class="profile-value">${p.title || ''} ${p.first_name} ${p.middle_name || ''} ${p.last_name}</span></div>
+              <div class="profile-item"><span class="profile-label">Email</span><span class="profile-value">${p.email || '-'}</span></div>
+              <div class="profile-item"><span class="profile-label">Phone</span><span class="profile-value">${p.phone || '-'}</span></div>
+              <div class="profile-item"><span class="profile-label">Nationality</span><span class="profile-value">${p.nationality || '-'}</span></div>
+            </div>
+            <div>
+              <h4 class="profile-section-title">Preferences</h4>
+              ${p.preferences ? `
+                <div class="pref-list" style="margin-top:0.5rem;">
+                  ${p.preferences.meal_preference ? `<span class="pref-tag">🍴 ${p.preferences.meal_preference}</span>` : ''}
+                  ${p.preferences.seat_preference ? `<span class="pref-tag">💺 ${p.preferences.seat_preference}</span>` : ''}
+                  ${p.preferences.special_assistance ? `<span class="pref-tag">♿ ${p.preferences.special_assistance}</span>` : ''}
+                   ${p.preferences.home_airport ? `<span class="pref-tag">🏠 ${p.preferences.home_airport}</span>` : ''}
+                </div>
+                ${p.preferences.remarks ? `<p style="font-size:0.8rem; color:var(--text-secondary); margin-top:0.5rem;">Note: ${p.preferences.remarks}</p>` : ''}
+              ` : '<p style="font-size:0.85rem; color:var(--text-secondary);">No preferences set.</p>'}
+            </div>
+          </div>
+
+          <div>
+            <h4 class="profile-section-title">Frequent Flyer Accounts</h4>
+            <div style="display:flex; flex-wrap:wrap;">
+              ${p.frequent_flyer_accounts && p.frequent_flyer_accounts.length > 0 ?
+            p.frequent_flyer_accounts.map(ff => `
+                  <div class="ff-badge">
+                    <span style="font-weight:700;">${ff.airline_code || ff.airline}</span>
+                    <span style="color:var(--text-secondary);">${ff.ff_number}</span>
+                    ${ff.tier ? `<span class="badge badge-tier" style="margin-left:0.5rem; transform:scale(0.8);">${ff.tier}</span>` : ''}
+                  </div>
+                `).join('')
+            : '<p style="font-size:0.85rem; color:var(--text-secondary);">No accounts linked.</p>'}
+            </div>
+          </div>
+
+          <div style="margin-top:1.5rem;">
+            <h4 class="profile-section-title">Travel Documents</h4>
+            <div style="display:flex; flex-wrap:wrap;">
+               ${p.travel_documents && p.travel_documents.length > 0 ?
+            p.travel_documents.map(td => `
+                  <div class="ff-badge">
+                    <span style="font-weight:700;">${td.doc_type}</span>
+                    <span style="color:var(--text-secondary);">${td.doc_number}</span>
+                     ${td.expiry_date ? `<span style="font-size:0.7rem; color:var(--accent-danger); margin-left:0.5rem;">Exp: ${new Date(td.expiry_date).toLocaleDateString()}</span>` : ''}
+                  </div>
+                `).join('')
+            : '<p style="font-size:0.85rem; color:var(--text-secondary);">No documents added.</p>'}
+            </div>
+          </div>
+        `;
+
+        document.getElementById('passengerProfileModal').classList.add('active');
+      } catch (e) {
+        console.error(e);
+        showNotification('Failed to load passenger profile', 'error');
+      }
+    }
+
+    function closePassengerProfileModal() {
+      document.getElementById('passengerProfileModal').classList.remove('active');
+    }
+
+    async function quickRegister(first, last, email, phone) {
+      // Create URL with parameters for pre-filling the registration form
+      const params = new URLSearchParams({
+        quick: 'true',
+        first: first || '',
+        last: last || '',
+        email: email || '',
+        phone: phone || '',
+        itinerary_id: currentItinerary ? currentItinerary.id : ''
+      });
+
+      // Redirect to passenger page
+      window.location.href = `/passengers?${params.toString()}`;
     }
 
     // Edit Itinerary - Redirect to main page with state
@@ -760,6 +1302,516 @@
         confirmResolve = null;
       }
     }
+
+    // --- Passenger Management Logic ---
+    let allPassengersList = []; // For search
+    let tempPassengerData = []; // Local modifications before saving
+    let tempMainPassenger = null; // Main passenger for corporate billing
+
+    async function openPassengerManager() {
+      if (!currentItinerary) return;
+
+      const modal = document.getElementById('passengerManagementModal');
+      const numInput = document.getElementById('manageNumPassengers');
+
+      // Default to 1 if individual billing
+      if (currentItinerary.billing_type === 'passenger') {
+        numInput.value = 1;
+        numInput.disabled = true;
+      } else {
+        numInput.value = currentItinerary.num_passengers || 1;
+        numInput.disabled = false;
+      }
+
+      // Load current passengers into temp state
+      tempPassengerData = JSON.parse(JSON.stringify(currentItinerary.passengers_data || []));
+
+      // We also need to keep track of the main passenger in the modal
+      tempMainPassenger = currentItinerary.passenger ? {
+        id: currentItinerary.passenger.id,
+        first_name: currentItinerary.passenger.first_name,
+        last_name: currentItinerary.passenger.last_name,
+        email: currentItinerary.passenger.email,
+        phone: currentItinerary.passenger.phone,
+        is_db: true,
+        is_main: true
+      } : null;
+
+      renderAssignedPassengers();
+
+      // Load all passengers for search if not already loaded
+      if (allPassengersList.length === 0) {
+        try {
+          const response = await fetch('/api/v2/passengers');
+          if (response.ok) {
+            const data = await response.json();
+            allPassengersList = data.passengers;
+          }
+        } catch (e) {
+          console.error('Failed to load passengers for search', e);
+        }
+      }
+
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closePassengerManagementModal() {
+      document.getElementById('passengerManagementModal').classList.remove('active');
+      document.body.style.overflow = '';
+      // Reset form
+      document.getElementById('newPassengerForm').style.display = 'none';
+      document.getElementById('passengerSearchInput').value = '';
+      document.getElementById('passengerSearchResults').classList.remove('active');
+    }
+
+    function handlePassengerSearch() {
+      const query = document.getElementById('passengerSearchInput').value.toLowerCase();
+      const resultsContainer = document.getElementById('passengerSearchResults');
+      const num_passengers = parseInt(document.getElementById('manageNumPassengers').value) || 1;
+
+      // Proceed even if empty
+
+      // Check if we can add more passengers
+      const currentTotal = (tempMainPassenger ? 1 : 0) + tempPassengerData.length;
+      if (currentTotal >= num_passengers) {
+        resultsContainer.innerHTML = '<div class="search-result-item">Max passengers reached. Increase "Total Passengers" to add more.</div>';
+        resultsContainer.classList.add('active');
+        return;
+      }
+
+      const filtered = allPassengersList.filter(p =>
+        p.first_name.toLowerCase().includes(query) ||
+        p.last_name.toLowerCase().includes(query) ||
+        (p.email && p.email.toLowerCase().includes(query))
+      ).slice(0, 5);
+
+      if (filtered.length === 0) {
+        resultsContainer.innerHTML = '<div class="search-result-item">No passengers found</div>';
+      } else {
+        resultsContainer.innerHTML = filtered.map(p => `
+          <div class="search-result-item" onclick='addPassengerFromSearch(${JSON.stringify(p).replace(/'/g, "&apos;")})'>
+            <div class="avatar" style="width:30px; height:30px; font-size:0.8rem;">${p.first_name.charAt(0)}</div>
+            <div>
+              <div style="font-weight:600; font-size:0.85rem;">${p.first_name} ${p.last_name}</div>
+              <div style="font-size:0.75rem; color:var(--text-secondary);">${p.email || 'No email'}</div>
+            </div>
+          </div>
+        `).join('');
+      }
+      resultsContainer.classList.add('active');
+    }
+
+    function addPassengerFromSearch(p) {
+      // Check if already in list
+      if (tempPassengerData.find(tp => tp.id === p.id)) {
+        showNotification('Passenger already added', 'warning');
+        return;
+      }
+
+      tempPassengerData.push({
+        id: p.id,
+        first_name: p.first_name,
+        last_name: p.last_name,
+        email: p.email,
+        phone: p.phone,
+        is_db: true
+      });
+
+      renderAssignedPassengers();
+      document.getElementById('passengerSearchInput').value = '';
+      document.getElementById('passengerSearchResults').classList.remove('active');
+    }
+
+    function toggleNewPassengerForm() {
+      const num_passengers = parseInt(document.getElementById('manageNumPassengers').value) || 1;
+      const currentTotal = (tempMainPassenger ? 1 : 0) + tempPassengerData.length;
+
+      if (currentTotal >= num_passengers) {
+        showNotification('Max passengers reached. Increase "Total Passengers" to add more.', 'warning');
+        return;
+      }
+
+      const form = document.getElementById('newPassengerForm');
+      form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function addNewTempPassenger() {
+      const first_name = document.getElementById('newPFirstName').value;
+      const last_name = document.getElementById('newPLastName').value;
+      const email = document.getElementById('newPEmail').value;
+      const phone = document.getElementById('newPPhone').value;
+
+      if (!first_name) {
+        showNotification('First name is required', 'warning');
+        return;
+      }
+
+      tempPassengerData.push({
+        first_name,
+        last_name,
+        email,
+        phone,
+        is_db: false
+      });
+
+      renderAssignedPassengers();
+
+      // Clear form
+      document.getElementById('newPFirstName').value = '';
+      document.getElementById('newPLastName').value = '';
+      document.getElementById('newPEmail').value = '';
+      document.getElementById('newPPhone').value = '';
+      document.getElementById('newPassengerForm').style.display = 'none';
+    }
+
+    function removePassenger(index) {
+      tempPassengerData.splice(index, 1);
+      renderAssignedPassengers();
+    }
+
+    function promoteToMain(index) {
+      if (currentItinerary.billing_type === 'passenger') return;
+
+      const selected = tempPassengerData[index];
+      if (!selected.is_db) {
+        showNotification('Only registered passengers can be set as the Main Passenger.', 'warning');
+        return;
+      }
+
+      // Current main becomes a secondary passenger
+      if (tempMainPassenger) {
+        const oldMain = { ...tempMainPassenger };
+        delete oldMain.is_main;
+        tempPassengerData.push(oldMain);
+      }
+
+      // Selected becomes main
+      tempMainPassenger = { ...selected, is_main: true };
+      tempPassengerData.splice(index, 1);
+
+      renderAssignedPassengers();
+      showNotification(`${tempMainPassenger.first_name} set as main passenger`, 'info');
+    }
+
+    function renderAssignedPassengers() {
+      const container = document.getElementById('assignedPassengersList');
+      const html = [];
+
+      // Show main passenger first
+      if (tempMainPassenger) {
+        html.push(`
+          <div class="passenger-mini-card main-p" style="border: 2px solid var(--primary-color);">
+            <div class="avatar" style="background: var(--primary-color); color: white;">${tempMainPassenger.first_name.charAt(0)}</div>
+            <div class="info">
+              <span class="name">${tempMainPassenger.first_name} ${tempMainPassenger.last_name || ''}</span>
+              <span class="type" style="color: var(--primary-color); font-weight: 600;">👑 Main Traveler</span>
+            </div>
+            ${currentItinerary.billing_type === 'corporate' ? `
+              <div style="font-size: 0.7rem; color: var(--text-secondary); margin-left: auto;">Primary</div>
+            ` : ''}
+          </div>
+        `);
+      }
+
+      tempPassengerData.forEach((p, index) => {
+        html.push(`
+          <div class="passenger-mini-card">
+            <div class="avatar">${p.first_name.charAt(0)}</div>
+            <div class="info">
+              <span class="name">${p.first_name} ${p.last_name || ''}</span>
+              <span class="type">${p.is_db ? '✅ Registered' : '📝 Temporary'}</span>
+            </div>
+            <div class="actions" style="display: flex; gap: 0.5rem; margin-left: auto;">
+              ${p.is_db && currentItinerary.billing_type === 'corporate' ? `
+                <button class="btn btn-icon btn-sm" onclick="promoteToMain(${index})" title="Set as Main" style="font-size: 0.8rem;">⭐</button>
+              ` : ''}
+              <button class="btn-remove-p" onclick="removePassenger(${index})">✕</button>
+            </div>
+          </div>
+        `);
+      });
+
+      if (html.length === 0) {
+        container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: var(--text-secondary);">No passengers assigned.</div>';
+      } else {
+        container.innerHTML = html.join('');
+      }
+    }
+
+    async function savePassengerChanges() {
+      const num_passengers = parseInt(document.getElementById('manageNumPassengers').value) || 1;
+
+      // Validation: count must match num_passengers? 
+      // User said "number of passengers being added should not be more than total passengers"
+      const totalCount = (tempMainPassenger ? 1 : 0) + tempPassengerData.length;
+      if (totalCount > num_passengers) {
+        showNotification(`You have ${totalCount} passengers but "Total Passengers" is set to ${num_passengers}`, 'warning');
+        return;
+      }
+
+      try {
+        const payload = {
+          num_passengers: num_passengers,
+          passengers_data: tempPassengerData,
+          passenger_id: tempMainPassenger ? tempMainPassenger.id : null
+        };
+
+        const response = await fetch(`/api/v2/itineraries/${currentItinerary.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+          showNotification('Passengers updated successfully', 'success');
+          const result = await response.json();
+
+          // Update local state from response
+          currentItinerary = result.itinerary;
+
+          // Update global list
+          const idx = itineraries.findIndex(it => it.id === currentItinerary.id);
+          if (idx !== -1) itineraries[idx] = result.itinerary;
+
+          renderItineraryDetails();
+          closePassengerManagementModal();
+        } else {
+          showNotification('Failed to update passengers', 'error');
+        }
+      } catch (e) {
+        console.error('Save error', e);
+        showNotification('Error saving changes', 'error');
+      }
+    }
+    // --- Billing Management & Title Editing Logic ---
+    let allBillingAccounts = [];
+    let allCustomersList = [];
+    let currentManageBillingResults = [];
+
+    async function editItineraryTitle() {
+      const it = currentItinerary;
+      const newTitle = prompt("Enter new title for this itinerary:", it.title || "");
+      if (newTitle === null || newTitle.trim() === "") return;
+
+      try {
+        const response = await fetch(`/api/v2/itineraries/${it.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: newTitle.trim() })
+        });
+
+        if (response.ok) {
+          showNotification('Title updated', 'success');
+          const data = await response.json();
+          currentItinerary = data.itinerary;
+          renderItineraryDetails();
+          // Update global list
+          const idx = itineraries.findIndex(i => i.id === currentItinerary.id);
+          if (idx !== -1) itineraries[idx] = currentItinerary;
+        } else {
+          showNotification('Failed to update title', 'error');
+        }
+      } catch (e) {
+        showNotification('Error updating title', 'error');
+      }
+    }
+
+    async function openBillingManager() {
+      const modal = document.getElementById('billingManagementModal');
+      document.getElementById('manageBillingSearchInput').value = '';
+      document.getElementById('manageBillingSearchResults').style.display = 'none';
+      document.getElementById('manageBillingSummary').style.display = 'none';
+      document.getElementById('manageSelectedBillingId').value = '';
+
+      // Set initial state if it has billing info
+      if (currentItinerary.billing_account_id) {
+        document.getElementById('manageSelectedBillingId').value = currentItinerary.billing_account_id;
+        document.getElementById('manageSelectedName').textContent = currentItinerary.billing_account ? currentItinerary.billing_account.display_name : 'Saved Account';
+        document.getElementById('manageBillingSummary').style.display = 'block';
+      }
+
+      // Pre-load data
+      try {
+        const res = await fetch('/api/v2/billing-accounts');
+        if (res.ok) {
+          const data = await res.json();
+          allBillingAccounts = data.billing_accounts;
+        }
+      } catch (e) { }
+
+      if (allCustomersList.length === 0) {
+        // Combination of passengers and corporates
+        allCustomersList = [];
+        try {
+          const pRes = await fetch('/api/v2/passengers');
+          const cRes = await fetch('/api/v2/corporates');
+          if (pRes.ok) {
+            const pData = await pRes.json();
+            pData.passengers.forEach(p => allCustomersList.push({ ...p, customer_type: 'passenger' }));
+          }
+          if (cRes.ok) {
+            const cData = await cRes.json();
+            cData.corporates.forEach(c => allCustomersList.push({ ...c, customer_type: 'corporate' }));
+          }
+        } catch (e) { }
+      }
+
+      modal.classList.add('active');
+    }
+
+    function closeBillingManagementModal() {
+      document.getElementById('billingManagementModal').classList.remove('active');
+    }
+
+    function searchBillingInManager() {
+      const q = document.getElementById('manageBillingSearchInput').value.toLowerCase().trim();
+      const resultsDiv = document.getElementById('manageBillingSearchResults');
+
+      // Proceed even if empty
+
+      currentManageBillingResults = [];
+
+      allBillingAccounts.forEach(acc => {
+        const displayName = (acc.display_name || '').toLowerCase();
+        const companyName = (acc.company_name || '').toLowerCase();
+        if (!q || displayName.includes(q) || companyName.includes(q)) {
+          currentManageBillingResults.push({
+            type: 'billing',
+            id: acc.id,
+            display: acc.display_name || 'Unnamed Account',
+            sub: acc.company_name ? 'B2B Customer' : 'B2C Customer',
+            raw: acc
+          });
+        }
+      });
+
+      allCustomersList.forEach(c => {
+        const name = (c.first_name ? c.first_name + ' ' + (c.last_name || '') : (c.contact_person_name || '')).toLowerCase();
+        const company = (c.company_name || '').toLowerCase();
+        if (!q || name.includes(q) || company.includes(q)) {
+          currentManageBillingResults.push({
+            type: c.customer_type,
+            id: c.id,
+            display: c.customer_type === 'corporate' ? ((c.company_name || '') + (name ? ' (' + name + ')' : '')) : (c.first_name + ' ' + (c.last_name || '')),
+            sub: c.customer_type === 'corporate' ? (c.company_name ? 'B2B Customer' : 'B2C Customer') : 'B2C Customer',
+            raw: c
+          });
+        }
+      });
+
+      resultsDiv.innerHTML = currentManageBillingResults.slice(0, 15).map((r, i) => `
+          <div onclick="selectBillingInManagerByIndex(${i})" 
+               style="padding:12px 15px; cursor:pointer; border-bottom:1px solid var(--border-light); display:flex; align-items:center; gap:12px; transition: background 0.2s;">
+            <div class="avatar" style="width:36px; height:36px; border-radius:50%; background:#6366f1; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; flex-shrink:0; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
+              ${(r.display && r.display.trim().length > 0) ? r.display.trim()[0].toUpperCase() : '?'}
+            </div>
+            <div style="flex-grow:1; line-height:1.4;">
+              <div style="font-weight:600; color:var(--text-primary); font-size:0.9rem;">${r.display}</div>
+              <div style="font-size:0.75rem; color:var(--text-secondary); display:flex; align-items:center; gap:5px;">
+                <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:${r.sub.includes('B2B') ? '#4caf50' : '#2196f3'};"></span>
+                ${r.sub}
+              </div>
+            </div>
+          </div>
+        `).join('');
+      resultsDiv.style.display = 'block';
+    }
+
+    let tempManagerBillingSelection = null;
+
+    function selectBillingInManagerByIndex(i) {
+      const res = currentManageBillingResults[i];
+      if (!res) return;
+
+      tempManagerBillingSelection = res;
+      document.getElementById('manageBillingSearchResults').style.display = 'none';
+      document.getElementById('manageSelectedName').textContent = res.display;
+
+      const raw = res.raw;
+      const email = raw.email || raw.contact_email || '';
+      const phone = raw.phone || raw.contact_phone || '';
+      const gst = raw.gst_number || raw.gst || '';
+      const company = raw.company_name || '';
+
+      const detailsHtml = `
+        <div style="font-size:0.85em; color:var(--text-secondary); margin-top:5px;">
+          ${company ? `<div><strong>Company:</strong> ${company}</div>` : ''}
+          ${gst ? `<div><strong>GST:</strong> ${gst}</div>` : ''}
+          ${email ? `<div><strong>Email:</strong> ${email}</div>` : ''}
+          ${phone ? `<div><strong>Phone:</strong> ${phone}</div>` : ''}
+          <div style="margin-top:5px; padding-top:5px; border-top:1px dashed var(--border); font-style:italic;">${res.sub}</div>
+        </div>
+      `;
+      document.getElementById('manageSelectedDetails').innerHTML = detailsHtml;
+      document.getElementById('manageBillingSummary').style.display = 'block';
+    }
+
+    async function saveBillingChanges() {
+      if (!tempManagerBillingSelection && !document.getElementById('manageSelectedBillingId').value) {
+        showNotification('Please select a billing option', 'warning');
+        return;
+      }
+
+      const it = currentItinerary;
+      let payload = {};
+
+      if (tempManagerBillingSelection) {
+        if (tempManagerBillingSelection.type === 'billing') {
+          payload.billing_account_id = tempManagerBillingSelection.id;
+          payload.bill_to_name = null; // Clear ad-hoc
+        } else {
+          // It's a customer, we treat as ad-hoc update for now unless we create a billing account on the fly.
+          // To match index.html logic, let's just update the bill_to fields.
+          const c = allCustomersList.find(x => x.id === tempManagerBillingSelection.id && x.customer_type === tempManagerBillingSelection.type);
+          payload.billing_account_id = null;
+          payload.bill_to_name = tempManagerBillingSelection.display;
+          payload.bill_to_email = c.email || c.contact_email;
+          payload.bill_to_phone = c.phone || c.contact_phone;
+          payload.bill_to_company = c.company_name;
+          payload.bill_to_gst = c.gst_number;
+          payload.billing_type = c.customer_type;
+        }
+      }
+
+      try {
+        const response = await fetch(`/api/v2/itineraries/${it.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          currentItinerary = data.itinerary;
+          renderItineraryDetails();
+          showNotification('Billing details updated', 'success');
+          closeBillingManagementModal();
+          // Update global list
+          const idx = itineraries.findIndex(i => i.id === currentItinerary.id);
+          if (idx !== -1) itineraries[idx] = currentItinerary;
+        } else {
+          showNotification('Update failed', 'error');
+        }
+      } catch (e) {
+        showNotification('Error updating billing', 'error');
+      }
+    }
+
+    // --- End Billing Management Logic ---
+
+    // Close search results when clicking outside
+    window.addEventListener('click', (e) => {
+      // Passenger search
+      if (!e.target.closest('#passengerSearchInput') && !e.target.closest('#passengerSearchResults')) {
+        document.getElementById('passengerSearchResults').classList.remove('active');
+      }
+      // Billing search
+      if (!e.target.closest('#manageBillingSearchInput') && !e.target.closest('#manageBillingSearchResults')) {
+        const results = document.getElementById('manageBillingSearchResults');
+        if (results) results.style.display = 'none';
+      }
+    });
   </script>
 </body>
 

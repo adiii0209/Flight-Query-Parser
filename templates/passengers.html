@@ -5,7 +5,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Passenger Dashboard - Travel Agent Platform</title>
-  <meta name="description" content="Manage passenger profiles, frequent flyer accounts, preferences, and travel documents">
+  <meta name="description"
+    content="Manage passenger profiles, frequent flyer accounts, preferences, and travel documents">
   <link
     href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet">
@@ -15,7 +16,7 @@
 <body>
   <!-- Sidebar Overlay -->
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
-  
+
   <!-- Sidebar Drawer -->
   <div class="sidebar" id="sidebar">
     <button class="sidebar-close" id="sidebarClose">✕</button>
@@ -38,9 +39,11 @@
         <a href="/" class="sidebar-link">🏠 Home</a>
         <a href="/passengers" class="sidebar-link active">👤 Passengers</a>
         <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
-        <a href="/itineraries-v2" class="sidebar-link">📋 Itineraries</a>
+        <a href="/itineraries" class="sidebar-link">📋 Itineraries</a>
+        <a href="/billing" class="sidebar-link">💰 Billing</a>
         <div style="margin-top: 1.5rem; padding: 0 0.5rem;">
-          <label class="input-label" style="display: block; margin-bottom: 0.75rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Appearance</label>
+          <label class="input-label"
+            style="display: block; margin-bottom: 0.75rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Appearance</label>
           <button class="sidebar-link" style="width: 100%; border: none; cursor: pointer;" id="sidebarThemeToggle">
             <span class="theme-icon-container">🌙</span>
             <span id="themeToggleText">Dark Mode</span>
@@ -145,7 +148,7 @@
       <div class="modal-body">
         <form id="passengerForm" onsubmit="savePassenger(event)">
           <input type="hidden" id="passengerId">
-          
+
           <div class="form-section">
             <h3 class="form-section-title">Personal Information</h3>
             <div class="form-row">
@@ -283,7 +286,7 @@
         <form id="ffForm" onsubmit="saveFrequentFlyer(event)">
           <input type="hidden" id="ffPassengerId">
           <input type="hidden" id="ffId">
-          
+
           <div class="form-group">
             <label class="form-label required">Airline</label>
             <select id="ffAirline" class="form-select" required>
@@ -315,7 +318,7 @@
             <label class="form-label">Tier Expiry Date</label>
             <input type="date" id="ffExpiry" class="form-input">
           </div>
-          
+
           <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="closeFfModal()">Cancel</button>
             <button type="submit" class="btn btn-primary">Save</button>
@@ -336,7 +339,7 @@
         <form id="docForm" onsubmit="saveDocument(event)">
           <input type="hidden" id="docPassengerId">
           <input type="hidden" id="docId">
-          
+
           <div class="form-row">
             <div class="form-group">
               <label class="form-label required">Document Type</label>
@@ -377,7 +380,7 @@
               <span>Set as Primary Document</span>
             </label>
           </div>
-          
+
           <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="closeDocModal()">Cancel</button>
             <button type="submit" class="btn btn-primary">Save Document</button>
@@ -397,7 +400,7 @@
       <div class="modal-body">
         <form id="prefsForm" onsubmit="savePreferences(event)">
           <input type="hidden" id="prefsPassengerId">
-          
+
           <div class="form-section">
             <h3 class="form-section-title">Meal Preferences</h3>
             <div class="form-row">
@@ -481,7 +484,8 @@
               </div>
               <div class="form-group form-group-wide">
                 <label class="form-label">Assistance Notes</label>
-                <textarea id="prefsAssistanceNotes" class="form-textarea" rows="2" placeholder="Additional assistance requirements"></textarea>
+                <textarea id="prefsAssistanceNotes" class="form-textarea" rows="2"
+                  placeholder="Additional assistance requirements"></textarea>
               </div>
             </div>
           </div>
@@ -491,7 +495,8 @@
             <div class="form-row">
               <div class="form-group form-group-wide">
                 <label class="form-label">Preferred Airlines</label>
-                <input type="text" id="prefsPreferredAirlines" class="form-input" placeholder="e.g., AI, UK, 6E (comma-separated)">
+                <input type="text" id="prefsPreferredAirlines" class="form-input"
+                  placeholder="e.g., AI, UK, 6E (comma-separated)">
               </div>
               <div class="form-group form-group-wide">
                 <label class="form-label">Avoid Airlines</label>
@@ -499,7 +504,7 @@
               </div>
             </div>
           </div>
-          
+
           <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="closePrefsModal()">Cancel</button>
             <button type="submit" class="btn btn-primary">Save Preferences</button>
@@ -535,6 +540,7 @@
     let airlines = [];
     let currentPassenger = null;
     let confirmResolve = null;
+    let sourceItineraryId = null;
 
     // Initialize
     document.addEventListener('DOMContentLoaded', async () => {
@@ -542,6 +548,23 @@
       await checkAuthStatus();
       await loadAirlines();
       await loadPassengers();
+
+      // Check for deep links
+      const urlParams = new URLSearchParams(window.location.search);
+      const viewId = urlParams.get('view_id');
+      const quick = urlParams.get('quick');
+
+      if (viewId) {
+        viewPassengerDetails(viewId);
+      } else if (quick === 'true') {
+        sourceItineraryId = urlParams.get('itinerary_id');
+        openPassengerModal({
+          first_name: urlParams.get('first'),
+          last_name: urlParams.get('last'),
+          email: urlParams.get('email'),
+          phone: urlParams.get('phone')
+        }, true);
+      }
     });
 
     // Sidebar & Theme
@@ -599,7 +622,7 @@
           document.getElementById('sidebarUserName').textContent = user.username;
           document.getElementById('sidebarUserEmail').textContent = user.email || 'Member';
           document.getElementById('sidebarAvatar').textContent = user.username.charAt(0).toUpperCase();
-          
+
           const authBtn = document.getElementById('sidebarAuthBtn');
           authBtn.textContent = '🚪 Logout';
           authBtn.classList.add('logout');
@@ -683,17 +706,17 @@
 
     function updateStats() {
       document.getElementById('totalPassengers').textContent = passengers.length;
-      
+
       // Calculate totals from passenger data
       let ffCount = 0;
       let docCount = 0;
       let corpLinks = 0;
-      
+
       passengers.forEach(p => {
         // Note: These would need to be fetched per passenger for accuracy
         // For now, we show 0 and update when viewing details
       });
-      
+
       document.getElementById('totalFrequentFlyer').textContent = ffCount;
       document.getElementById('totalDocuments').textContent = docCount;
       document.getElementById('linkedCorporates').textContent = corpLinks;
@@ -701,7 +724,7 @@
 
     function renderPassengers() {
       const container = document.getElementById('passengersContainer');
-      
+
       if (passengers.length === 0) {
         container.innerHTML = `
           <div class="empty-state">
@@ -748,14 +771,14 @@
 
     function filterPassengers() {
       const search = document.getElementById('searchPassengers').value.toLowerCase();
-      const filtered = passengers.filter(p => 
+      const filtered = passengers.filter(p =>
         (p.full_name || '').toLowerCase().includes(search) ||
         (p.first_name || '').toLowerCase().includes(search) ||
         (p.last_name || '').toLowerCase().includes(search) ||
         (p.email || '').toLowerCase().includes(search) ||
         (p.phone || '').includes(search)
       );
-      
+
       const container = document.getElementById('passengersContainer');
       if (filtered.length === 0) {
         container.innerHTML = `
@@ -767,7 +790,7 @@
         `;
         return;
       }
-      
+
       const tempPassengers = passengers;
       passengers = filtered;
       renderPassengers();
@@ -779,7 +802,7 @@
       try {
         const response = await fetch(`/api/v2/passengers/${passengerId}`);
         if (!response.ok) throw new Error('Failed to load passenger');
-        
+
         currentPassenger = await response.json();
         renderPassengerDetails();
         document.getElementById('passengerDetailModal').classList.add('active');
@@ -791,9 +814,9 @@
     function renderPassengerDetails() {
       const p = currentPassenger;
       const content = document.getElementById('passengerDetailContent');
-      
+
       document.getElementById('passengerDetailTitle').textContent = p.full_name || `${p.first_name} ${p.last_name}`;
-      
+
       content.innerHTML = `
         <div class="detail-tabs">
           <button class="tab-btn active" onclick="showDetailTab('profile')">Profile</button>
@@ -946,7 +969,7 @@
           </div>
         </div>
       `;
-      
+
       // Load itineraries for this passenger
       loadPassengerItineraries(p.id);
     }
@@ -955,7 +978,7 @@
       if (!accounts || accounts.length === 0) {
         return '<p class="empty-text">No frequent flyer accounts added.</p>';
       }
-      
+
       return accounts.map(ff => `
         <div class="list-item">
           <div class="list-item-info">
@@ -974,7 +997,7 @@
       if (!documents || documents.length === 0) {
         return '<p class="empty-text">No travel documents added.</p>';
       }
-      
+
       return documents.map(doc => `
         <div class="list-item ${doc.is_primary ? 'list-item-primary' : ''}">
           <div class="list-item-info">
@@ -993,7 +1016,7 @@
       if (!prefs) {
         return '<p class="empty-text">No preferences set. Click Edit to add preferences.</p>';
       }
-      
+
       return `
         <div class="detail-grid">
           <div class="detail-item">
@@ -1034,12 +1057,12 @@
         if (response.ok) {
           const data = await response.json();
           const container = document.getElementById('passengerItineraries');
-          
+
           if (!data.itineraries || data.itineraries.length === 0) {
             container.innerHTML = '<p class="empty-text">No itineraries found for this passenger.</p>';
             return;
           }
-          
+
           container.innerHTML = data.itineraries.map(it => `
             <div class="list-item itinerary-item">
               <div class="list-item-info">
@@ -1061,7 +1084,7 @@
     function showDetailTab(tabName) {
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
       document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
-      
+
       event.target.classList.add('active');
       document.getElementById(`tab-${tabName}`).classList.add('active');
     }
@@ -1072,11 +1095,11 @@
     }
 
     // Passenger CRUD
-    function openPassengerModal(passenger = null) {
+    function openPassengerModal(passenger = null, isNew = false) {
       const form = document.getElementById('passengerForm');
       form.reset();
-      
-      if (passenger) {
+
+      if (passenger && !isNew) {
         document.getElementById('passengerModalTitle').textContent = 'Edit Passenger';
         document.getElementById('passengerId').value = passenger.id;
         document.getElementById('passengerTitle').value = passenger.title || '';
@@ -1098,11 +1121,18 @@
         document.getElementById('emergencyName').value = passenger.emergency_contact_name || '';
         document.getElementById('emergencyPhone').value = passenger.emergency_contact_phone || '';
         document.getElementById('emergencyRelationship').value = passenger.emergency_contact_relationship || '';
+      } else if (passenger && isNew) {
+        document.getElementById('passengerModalTitle').textContent = 'Add Passenger';
+        document.getElementById('passengerId').value = '';
+        document.getElementById('passengerFirstName').value = passenger.first_name || '';
+        document.getElementById('passengerLastName').value = passenger.last_name || '';
+        document.getElementById('passengerEmail').value = passenger.email || '';
+        document.getElementById('passengerPhone').value = passenger.phone || '';
       } else {
         document.getElementById('passengerModalTitle').textContent = 'Add Passenger';
         document.getElementById('passengerId').value = '';
       }
-      
+
       document.getElementById('passengerModal').classList.add('active');
     }
 
@@ -1112,10 +1142,10 @@
 
     async function savePassenger(event) {
       event.preventDefault();
-      
+
       const passengerId = document.getElementById('passengerId').value;
       const isEdit = !!passengerId;
-      
+
       const data = {
         title: document.getElementById('passengerTitle').value,
         first_name: document.getElementById('passengerFirstName').value,
@@ -1137,20 +1167,27 @@
         emergency_contact_phone: document.getElementById('emergencyPhone').value,
         emergency_contact_relationship: document.getElementById('emergencyRelationship').value
       };
-      
+
       try {
         const url = isEdit ? `/api/v2/passengers/${passengerId}` : '/api/v2/passengers';
         const method = isEdit ? 'PUT' : 'POST';
-        
+
         const response = await fetch(url, {
           method,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
-        
+
         if (response.ok) {
+          const result = await response.json();
           showNotification(`Passenger ${isEdit ? 'updated' : 'created'} successfully`, 'success');
           closePassengerModal();
+
+          // Link to itinerary if needed
+          if (!isEdit && sourceItineraryId) {
+            await linkPassengerToItinerary(sourceItineraryId, result.passenger || result);
+          }
+
           await loadPassengers();
         } else {
           const error = await response.json();
@@ -1176,7 +1213,7 @@
     async function deletePassenger(passengerId) {
       const confirmed = await showConfirm('Delete Passenger', 'Are you sure you want to delete this passenger? This action cannot be undone.');
       if (!confirmed) return;
-      
+
       try {
         const response = await fetch(`/api/v2/passengers/${passengerId}`, { method: 'DELETE' });
         if (response.ok) {
@@ -1204,7 +1241,7 @@
 
     async function saveFrequentFlyer(event) {
       event.preventDefault();
-      
+
       const passengerId = document.getElementById('ffPassengerId').value;
       const data = {
         airline_id: document.getElementById('ffAirline').value,
@@ -1213,14 +1250,14 @@
         miles_balance: document.getElementById('ffMiles').value ? parseInt(document.getElementById('ffMiles').value) : null,
         tier_expiry_date: document.getElementById('ffExpiry').value || null
       };
-      
+
       try {
         const response = await fetch(`/api/v2/passengers/${passengerId}/frequent-flyer`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
-        
+
         if (response.ok) {
           showNotification('Frequent flyer account added', 'success');
           closeFfModal();
@@ -1237,7 +1274,7 @@
     async function deleteFrequentFlyer(passengerId, ffId) {
       const confirmed = await showConfirm('Delete Account', 'Delete this frequent flyer account?');
       if (!confirmed) return;
-      
+
       try {
         const response = await fetch(`/api/v2/passengers/${passengerId}/frequent-flyer/${ffId}`, { method: 'DELETE' });
         if (response.ok) {
@@ -1263,7 +1300,7 @@
 
     async function saveDocument(event) {
       event.preventDefault();
-      
+
       const passengerId = document.getElementById('docPassengerId').value;
       const data = {
         document_type: document.getElementById('docType').value,
@@ -1274,14 +1311,14 @@
         expiry_date: document.getElementById('docExpiryDate').value || null,
         is_primary: document.getElementById('docPrimary').checked
       };
-      
+
       try {
         const response = await fetch(`/api/v2/passengers/${passengerId}/documents`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
-        
+
         if (response.ok) {
           showNotification('Document added', 'success');
           closeDocModal();
@@ -1298,7 +1335,7 @@
     async function deleteDocument(passengerId, docId) {
       const confirmed = await showConfirm('Delete Document', 'Delete this travel document?');
       if (!confirmed) return;
-      
+
       try {
         const response = await fetch(`/api/v2/passengers/${passengerId}/documents/${docId}`, { method: 'DELETE' });
         if (response.ok) {
@@ -1313,7 +1350,7 @@
     // Preferences
     function openPrefsModal(passengerId) {
       const prefs = currentPassenger?.preferences || {};
-      
+
       document.getElementById('prefsPassengerId').value = passengerId;
       document.getElementById('prefsMeal').value = prefs.meal_preference || '';
       document.getElementById('prefsMealRequest').value = prefs.meal_special_request || '';
@@ -1325,7 +1362,7 @@
       document.getElementById('prefsAssistanceNotes').value = prefs.special_assistance_notes || '';
       document.getElementById('prefsPreferredAirlines').value = prefs.preferred_airlines || '';
       document.getElementById('prefsAvoidAirlines').value = prefs.avoid_airlines || '';
-      
+
       document.getElementById('prefsModal').classList.add('active');
     }
 
@@ -1335,7 +1372,7 @@
 
     async function savePreferences(event) {
       event.preventDefault();
-      
+
       const passengerId = document.getElementById('prefsPassengerId').value;
       const data = {
         meal_preference: document.getElementById('prefsMeal').value,
@@ -1349,14 +1386,14 @@
         preferred_airlines: document.getElementById('prefsPreferredAirlines').value,
         avoid_airlines: document.getElementById('prefsAvoidAirlines').value
       };
-      
+
       try {
         const response = await fetch(`/api/v2/passengers/${passengerId}/preferences`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
-        
+
         if (response.ok) {
           showNotification('Preferences saved', 'success');
           closePrefsModal();
@@ -1374,7 +1411,7 @@
       const notification = document.getElementById('notification');
       notification.textContent = message;
       notification.className = `notification ${type} show`;
-      
+
       setTimeout(() => {
         notification.classList.remove('show');
       }, 3000);
@@ -1396,6 +1433,59 @@
         confirmResolve = null;
       }
     }
+
+    async function linkPassengerToItinerary(itineraryId, passenger) {
+      try {
+        // 1. Get current itinerary
+        const itResp = await fetch(`/api/v2/itineraries/${itineraryId}`);
+        if (!itResp.ok) return;
+        const it = await itResp.json();
+
+        // 2. Update passengers_data
+        let pData = it.passengers_data || [];
+
+        // Try to find the temporary entry that matches this new passenger
+        const matchIndex = pData.findIndex(p => {
+          if (p.id) return false;
+
+          const pFirst = (p.first_name || '').toLowerCase().trim();
+          const pLast = (p.last_name || '').toLowerCase().trim();
+          const targetFirst = (passenger.first_name || '').toLowerCase().trim();
+          const targetLast = (passenger.last_name || '').toLowerCase().trim();
+
+          return pFirst === targetFirst && (pLast === targetLast || !pLast || !targetLast);
+        });
+
+        if (matchIndex !== -1) {
+          // Replace with registered passenger data
+          pData[matchIndex] = {
+            ...passenger,
+            is_db: true
+          };
+        } else {
+          // If no match found, just push it (though unlikely in quickRegister flow)
+          pData.push({ ...passenger, is_db: true });
+        }
+
+        // 3. Save it back
+        await fetch(`/api/v2/itineraries/${itineraryId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ passengers_data: pData })
+        });
+
+        showNotification('Itinerary updated with registered passenger', 'success');
+
+        // Redirect back to itineraries after a short delay
+        setTimeout(() => {
+          window.location.href = `/itineraries-v2?id=${itineraryId}`;
+        }, 1500);
+
+      } catch (e) {
+        console.error('Link Error:', e);
+      }
+    }
   </script>
 </body>
+
 </html>

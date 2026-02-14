@@ -13,7 +13,7 @@ from models_v2 import (
     User, Corporate, Passenger, Airline, 
     CorporatePassenger, CorporateAirlinePromoCode,
     PassengerFrequentFlyer, PassengerPreferences, 
-    PassengerTravelDocument, Itinerary
+    PassengerTravelDocument, Itinerary, BillingAccount
 )
 
 # Create blueprint
@@ -42,6 +42,11 @@ def parse_date(date_str):
     except ValueError:
         return None
 
+
+def normalize_str(s):
+    """Normalize string for comparison (trim, lowercase, None check)."""
+    if not s: return None
+    return s.strip().lower()
 
 # ==================== AIRLINE ROUTES ====================
 
@@ -98,8 +103,24 @@ def create_corporate():
         if not data or not data.get('company_name'):
             return jsonify({"error": "Company name is required"}), 400
         
+        # Uniqueness Validation
+        existing_corp = db_session.query(Corporate).filter(
+            Corporate.user_id == session['user_id'],
+            Corporate.company_name.ilike(data['company_name'].strip()),
+            Corporate.is_active == True
+        ).first()
+
+        if existing_corp:
+            # Check for distinguishing fields if name matches
+            fields_differ = False
+            if normalize_str(data.get('gst_number')) != normalize_str(existing_corp.gst_number): fields_differ = True
+            if normalize_str(data.get('contact_email')) != normalize_str(existing_corp.contact_email): fields_differ = True
+            
+            if not fields_differ:
+                return jsonify({"error": f"A corporate with name '{data['company_name']}' already exists. Provide a different GST or Email to distinguish."}), 409
+
         corporate = Corporate(
-            company_name=data['company_name'],
+            company_name=data['company_name'].strip(),
             gst_number=data.get('gst_number'),
             pan_number=data.get('pan_number'),
             billing_address_line1=data.get('billing_address_line1'),
@@ -128,6 +149,9 @@ def create_corporate():
         
     except Exception as e:
         db_session.rollback()
+        # Handle Unique Constraint Integrity Error specifically if needed
+        if "uq_corporate_name_user" in str(e):
+             return jsonify({"error": "Duplicate corporate entry detected at database level."}), 409
         return jsonify({"error": f"Failed to create corporate: {str(e)}"}), 500
 
 
@@ -166,6 +190,28 @@ def update_corporate(corporate_id):
         
         data = request.get_json()
         
+        # Uniqueness Validation for Update
+        if 'company_name' in data:
+            new_name = data['company_name'].strip()
+            existing_corp = db_session.query(Corporate).filter(
+                Corporate.user_id == session['user_id'],
+                Corporate.company_name.ilike(new_name),
+                Corporate.id != corporate_id,  # Exclude self
+                Corporate.is_active == True
+            ).first()
+
+            if existing_corp:
+                # Check distinguishing fields
+                gst = data.get('gst_number', corporate.gst_number)
+                email = data.get('contact_email', corporate.contact_email)
+                
+                fields_differ = False
+                if normalize_str(gst) != normalize_str(existing_corp.gst_number): fields_differ = True
+                if normalize_str(email) != normalize_str(existing_corp.contact_email): fields_differ = True
+                
+                if not fields_differ:
+                    return jsonify({"error": f"Another corporate with name '{new_name}' already exists. Provide a different GST or Email."}), 409
+
         # Update fields
         for field in ['company_name', 'gst_number', 'pan_number', 
                       'billing_address_line1', 'billing_address_line2',
@@ -174,7 +220,10 @@ def update_corporate(corporate_id):
                       'contact_alternate_phone', 'internal_remarks', 'credit_limit',
                       'payment_terms_days', 'is_active']:
             if field in data:
-                setattr(corporate, field, data[field])
+                if field == 'company_name':
+                     setattr(corporate, field, data[field].strip())
+                else:
+                     setattr(corporate, field, data[field])
         
         db_session.commit()
         
@@ -329,11 +378,43 @@ def create_passenger():
         if not data.get('first_name') or not data.get('last_name'):
             return jsonify({"error": "First name and last name are required"}), 400
         
+        first_name = data['first_name'].strip()
+        last_name = data['last_name'].strip()
+        
+        # Uniqueness Validation
+        existing_pax = db_session.query(Passenger).filter(
+            Passenger.user_id == session['user_id'],
+            Passenger.first_name.ilike(first_name),
+            Passenger.last_name.ilike(last_name),
+            Passenger.is_active == True
+        ).first()
+
+        if existing_pax:
+            # Check for distinguishing fields
+            fields_differ = False
+            
+            # Normalize inputs
+            new_email = normalize_str(data.get('email'))
+            new_phone = normalize_str(data.get('phone'))
+            new_dob = parse_date(data.get('date_of_birth'))
+
+            # Compare (Note: handle existing_pax.date_of_birth which is date object)
+            if new_email and new_email != normalize_str(existing_pax.email): fields_differ = True
+            if new_phone and new_phone != normalize_str(existing_pax.phone): fields_differ = True
+            if new_dob and (not existing_pax.date_of_birth or new_dob != existing_pax.date_of_birth): fields_differ = True
+            
+            # If distinguishing fields are empty in incoming data, we can't distinguish, so assume duplicate unless existing fields were also empty
+            # But the requirement says "if at least one... is different AND explicitly provided"
+            
+            if not fields_differ:
+                # If no distinguishing field provided or they match, reject
+                return jsonify({"error": f"Passenger '{first_name} {last_name}' already exists. Provide Email, Phone, or DOB to distinguish."}), 409
+
         passenger = Passenger(
             title=data.get('title'),
-            first_name=data['first_name'],
+            first_name=first_name,
             middle_name=data.get('middle_name'),
-            last_name=data['last_name'],
+            last_name=last_name,
             date_of_birth=parse_date(data.get('date_of_birth')),
             gender=data.get('gender'),
             nationality=data.get('nationality', 'Indian'),
@@ -362,6 +443,8 @@ def create_passenger():
         
     except Exception as e:
         db_session.rollback()
+        if "uq_passenger_identity" in str(e):
+             return jsonify({"error": "Duplicate passenger entry detected (DB constraint)."}), 409
         return jsonify({"error": f"Failed to create passenger: {str(e)}"}), 500
 
 
@@ -395,6 +478,40 @@ def update_passenger(passenger_id):
         
         data = request.get_json()
         
+        # Uniqueness Validation for Update
+        check_uniqueness = False
+        new_first = passenger.first_name
+        new_last = passenger.last_name
+        
+        if 'first_name' in data and data['first_name'].strip() != passenger.first_name:
+            new_first = data['first_name'].strip()
+            check_uniqueness = True
+        if 'last_name' in data and data['last_name'].strip() != passenger.last_name:
+            new_last = data['last_name'].strip()
+            check_uniqueness = True
+            
+        if check_uniqueness:
+            existing_pax = db_session.query(Passenger).filter(
+                Passenger.user_id == session['user_id'],
+                Passenger.first_name.ilike(new_first),
+                Passenger.last_name.ilike(new_last),
+                Passenger.id != passenger_id,
+                Passenger.is_active == True
+            ).first()
+
+            if existing_pax:
+                new_email = normalize_str(data.get('email', passenger.email))
+                new_phone = normalize_str(data.get('phone', passenger.phone))
+                new_dob = parse_date(data.get('date_of_birth')) if 'date_of_birth' in data else passenger.date_of_birth
+
+                fields_differ = False
+                if new_email != normalize_str(existing_pax.email): fields_differ = True
+                if new_phone != normalize_str(existing_pax.phone): fields_differ = True
+                if (not existing_pax.date_of_birth) or (new_dob and new_dob != existing_pax.date_of_birth): fields_differ = True
+
+                if not fields_differ:
+                     return jsonify({"error": f"Another passenger '{new_first} {new_last}' already exists. Provide different details to distinguish."}), 409
+
         # Update fields
         for field in ['title', 'first_name', 'middle_name', 'last_name',
                       'gender', 'nationality', 'email', 'phone', 'alternate_phone',
@@ -402,7 +519,10 @@ def update_passenger(passenger_id):
                       'emergency_contact_name', 'emergency_contact_phone', 
                       'emergency_contact_relationship', 'is_active']:
             if field in data:
-                setattr(passenger, field, data[field])
+                 if field in ['first_name', 'last_name']:
+                     setattr(passenger, field, data[field].strip())
+                 else:
+                     setattr(passenger, field, data[field])
         
         if 'date_of_birth' in data:
             passenger.date_of_birth = parse_date(data['date_of_birth'])
@@ -913,7 +1033,7 @@ def get_itineraries():
     itineraries = query.order_by(Itinerary.created_at.desc()).all()
     
     return jsonify({
-        "itineraries": [it.to_dict() for it in itineraries]
+        "itineraries": [it.to_dict(include_flights=True) for it in itineraries]
     })
 
 
@@ -924,18 +1044,29 @@ def create_itinerary():
     try:
         data = request.get_json()
         
+        def safe_float(val):
+            if val is None or val == '':
+                return None
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return None
+
         itinerary = Itinerary(
             title=data.get('title'),
             description=data.get('description'),
+            reference_number=data.get('reference_number'),
+            trip_type=data.get('trip_type', 'one_way'),
             status=data.get('status', 'draft'),
             flights_data=json.dumps(data.get('flights', [])) if data.get('flights') else None,
             parser_output_text=data.get('parser_output_text') or data.get('final_text'),
+            raw_input_data=json.dumps(data.get('raw_input_data')) if data.get('raw_input_data') else None,
             selected_flight_option=data.get('selected_flight_option'),
-            total_amount=data.get('total_amount'),
-            markup=data.get('markup'),
-            service_charge=data.get('service_charge'),
-            gst_amount=data.get('gst_amount'),
-            discount_amount=data.get('discount_amount'),
+            total_amount=safe_float(data.get('total_amount')),
+            markup=safe_float(data.get('markup')),
+            service_charge=safe_float(data.get('service_charge')),
+            gst_amount=safe_float(data.get('gst_amount')),
+            discount_amount=safe_float(data.get('discount_amount')),
             promo_code_used=data.get('promo_code_used'),
             billing_type=data.get('billing_type'),
             bill_to_name=data.get('bill_to_name'),
@@ -945,9 +1076,12 @@ def create_itinerary():
             bill_to_company=data.get('bill_to_company'),
             bill_to_gst=data.get('bill_to_gst'),
             requires_approval=data.get('requires_approval', False),
+            num_passengers=int(safe_float(data.get('num_passengers')) or 1),
+            passengers_data=json.dumps(data.get('passengers_data', [])) if data.get('passengers_data') else None,
             user_id=session['user_id'],
             passenger_id=data.get('passenger_id'),
-            corporate_id=data.get('corporate_id')
+            corporate_id=data.get('corporate_id'),
+            billing_account_id=data.get('billing_account_id')
         )
         
         db_session.add(itinerary)
@@ -994,24 +1128,52 @@ def update_itinerary(itinerary_id):
         data = request.get_json()
         
         # Update fields
+        numeric_fields = ['total_amount', 'markup', 'service_charge', 'gst_amount', 'discount_amount', 'num_passengers']
+        
+        def safe_float(val):
+            if val is None or val == '':
+                return None
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return None
+
         for field in ['title', 'description', 'status', 'selected_flight_option',
                       'total_amount', 'markup', 'service_charge', 'gst_amount',
                       'discount_amount', 'promo_code_used', 'billing_type',
                       'bill_to_name', 'bill_to_email', 'bill_to_phone',
                       'bill_to_address', 'bill_to_company', 'bill_to_gst',
                       'requires_approval', 'approved_by', 'approval_remarks',
-                      'passenger_id', 'corporate_id', 'parser_output_text']:
+                      'passenger_id', 'corporate_id', 'parser_output_text',
+                      'num_passengers', 'billing_account_id',
+                      'reference_number', 'trip_type']:
             if field in data:
-                setattr(itinerary, field, data[field])
+                val = data[field]
+                if field in numeric_fields:
+                    val = safe_float(val)
+                setattr(itinerary, field, val)
+        
+        if 'passengers_data' in data:
+            itinerary.passengers_data = json.dumps(data['passengers_data'])
         
         if 'flights' in data:
             itinerary.flights_data = json.dumps(data['flights'])
         
+        if 'raw_input_data' in data:
+            itinerary.raw_input_data = json.dumps(data['raw_input_data']) if data['raw_input_data'] else None
+        
         if 'final_text' in data:
             itinerary.parser_output_text = data['final_text']
         
+        # Status workflow timestamps
         if data.get('status') == 'approved' and not itinerary.approved_at:
             itinerary.approved_at = datetime.utcnow()
+        if data.get('status') == 'on_hold' and not itinerary.held_at:
+            itinerary.held_at = datetime.utcnow()
+        if data.get('status') == 'confirmed' and not itinerary.confirmed_at:
+            itinerary.confirmed_at = datetime.utcnow()
+        if data.get('status') == 'reverted':
+            itinerary.reverted_at = datetime.utcnow()
         
         db_session.commit()
         
@@ -1076,7 +1238,7 @@ def approve_itinerary(itinerary_id):
         
         return jsonify({
             "message": "Itinerary approved successfully",
-            "itinerary": itinerary.to_dict()
+            "itinerary": itinerary.to_dict(include_flights=True)
         })
         
     except Exception as e:
@@ -1085,6 +1247,90 @@ def approve_itinerary(itinerary_id):
 
 
 # ==================== DASHBOARD STATS ====================
+
+@api_v2.route('/itineraries/<itinerary_id>/hold', methods=['POST'])
+@login_required
+def hold_itinerary(itinerary_id):
+    """Put an itinerary on hold."""
+    try:
+        itinerary = db_session.query(Itinerary).filter_by(
+            id=itinerary_id,
+            user_id=session['user_id']
+        ).first()
+        
+        if not itinerary:
+            return jsonify({"error": "Itinerary not found"}), 404
+        
+        itinerary.status = 'on_hold'
+        itinerary.held_at = datetime.utcnow()
+        
+        db_session.commit()
+        
+        return jsonify({
+            "message": "Itinerary put on hold",
+            "itinerary": itinerary.to_dict(include_flights=True)
+        })
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": f"Failed to hold itinerary: {str(e)}"}), 500
+
+
+@api_v2.route('/itineraries/<itinerary_id>/confirm', methods=['POST'])
+@login_required
+def confirm_itinerary(itinerary_id):
+    """Confirm an itinerary."""
+    try:
+        itinerary = db_session.query(Itinerary).filter_by(
+            id=itinerary_id,
+            user_id=session['user_id']
+        ).first()
+        
+        if not itinerary:
+            return jsonify({"error": "Itinerary not found"}), 404
+        
+        itinerary.status = 'confirmed'
+        itinerary.confirmed_at = datetime.utcnow()
+        
+        db_session.commit()
+        
+        return jsonify({
+            "message": "Itinerary confirmed",
+            "itinerary": itinerary.to_dict(include_flights=True)
+        })
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": f"Failed to confirm itinerary: {str(e)}"}), 500
+
+
+@api_v2.route('/itineraries/<itinerary_id>/revert', methods=['POST'])
+@login_required
+def revert_itinerary(itinerary_id):
+    """Revert itinerary back to approved for editing."""
+    try:
+        itinerary = db_session.query(Itinerary).filter_by(
+            id=itinerary_id,
+            user_id=session['user_id']
+        ).first()
+        
+        if not itinerary:
+            return jsonify({"error": "Itinerary not found"}), 404
+        
+        itinerary.status = 'approved'
+        itinerary.reverted_at = datetime.utcnow()
+        
+        db_session.commit()
+        
+        return jsonify({
+            "message": "Itinerary reverted to approved",
+            "itinerary": itinerary.to_dict(include_flights=True)
+        })
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": f"Failed to revert itinerary: {str(e)}"}), 500
+
 
 @api_v2.route('/dashboard/stats', methods=['GET'])
 @login_required
@@ -1104,8 +1350,20 @@ def get_dashboard_stats():
     # Itinerary stats
     total_itineraries = db_session.query(Itinerary).filter_by(user_id=user_id).count()
     draft_count = db_session.query(Itinerary).filter_by(user_id=user_id, status='draft').count()
-    pending_count = db_session.query(Itinerary).filter_by(user_id=user_id, status='pending_approval').count()
     approved_count = db_session.query(Itinerary).filter_by(user_id=user_id, status='approved').count()
+    on_hold_count = db_session.query(Itinerary).filter_by(user_id=user_id, status='on_hold').count()
+    confirmed_count = db_session.query(Itinerary).filter_by(user_id=user_id, status='confirmed').count()
+    
+    # Revenue stats
+    from sqlalchemy import func
+    total_revenue = db_session.query(func.sum(Itinerary.total_amount)).filter_by(
+        user_id=user_id, status='confirmed'
+    ).scalar() or 0
+    
+    pending_revenue = db_session.query(func.sum(Itinerary.total_amount)).filter(
+        Itinerary.user_id == user_id,
+        Itinerary.status.in_(['draft', 'approved', 'on_hold'])
+    ).scalar() or 0
     
     # Recent itineraries
     recent_itineraries = db_session.query(Itinerary).filter_by(
@@ -1117,7 +1375,138 @@ def get_dashboard_stats():
         "passengers_count": passengers_count,
         "total_itineraries": total_itineraries,
         "draft_count": draft_count,
-        "pending_count": pending_count,
         "approved_count": approved_count,
+        "on_hold_count": on_hold_count,
+        "confirmed_count": confirmed_count,
+        "total_revenue": total_revenue,
+        "pending_revenue": pending_revenue,
         "recent_itineraries": [it.to_dict() for it in recent_itineraries]
     })
+
+
+# ==================== BILLING ACCOUNT ROUTES ====================
+
+@api_v2.route('/billing-accounts', methods=['GET'])
+@login_required
+def get_billing_accounts():
+    """Get all billing accounts for the current user."""
+    accounts = db_session.query(BillingAccount).filter_by(
+        user_id=session['user_id'],
+        is_active=True
+    ).order_by(BillingAccount.display_name.asc()).all()
+    
+    return jsonify({
+        "billing_accounts": [acc.to_dict() for acc in accounts]
+    })
+
+
+@api_v2.route('/billing-accounts', methods=['POST'])
+@login_required
+def create_billing_account():
+    """Create a new billing account."""
+    try:
+        data = request.get_json()
+        print(f"DEBUG: Billing account POST data: {data}")
+        
+        required_fields = ['account_type', 'display_name']
+        if not all(field in data for field in required_fields):
+            return jsonify({"error": "Missing required fields"}), 400
+            
+        account = BillingAccount(
+            account_type=data['account_type'],
+            display_name=data['display_name'],
+            company_name=data.get('company_name'),
+            contact_name=data.get('contact_name'),
+            email=data.get('email'),
+            phone=data.get('phone'),
+            address=data.get('address'),
+            gst_number=data.get('gst_number'),
+            passenger_id=data.get('passenger_id'),
+            corporate_id=data.get('corporate_id'),
+            user_id=session['user_id']
+        )
+        
+        print(f"Creating billing account: {account.display_name} for user {account.user_id}")
+        db_session.add(account)
+        db_session.commit()
+        print(f"Billing account created with ID: {account.id}")
+        
+        return jsonify({
+            "message": "Billing account created successfully",
+            "billing_account": account.to_dict()
+        }), 201
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": f"Failed to create billing account: {str(e)}"}), 500
+
+
+@api_v2.route('/billing-accounts/<account_id>', methods=['GET'])
+@login_required
+def get_billing_account(account_id):
+    """Get a specific billing account."""
+    account = db_session.query(BillingAccount).filter_by(
+        id=account_id,
+        user_id=session['user_id']
+    ).first()
+    
+    if not account:
+        return jsonify({"error": "Billing account not found"}), 404
+    
+    return jsonify(account.to_dict())
+
+
+@api_v2.route('/billing-accounts/<account_id>', methods=['PUT'])
+@login_required
+def update_billing_account(account_id):
+    """Update a billing account."""
+    try:
+        account = db_session.query(BillingAccount).filter_by(
+            id=account_id,
+            user_id=session['user_id']
+        ).first()
+        
+        if not account:
+            return jsonify({"error": "Billing account not found"}), 404
+        
+        data = request.get_json()
+        
+        for field in ['account_type', 'display_name', 'company_name', 'contact_name',
+                      'email', 'phone', 'address', 'gst_number',
+                      'passenger_id', 'corporate_id']:
+            if field in data:
+                setattr(account, field, data[field])
+        
+        db_session.commit()
+        
+        return jsonify({
+            "message": "Billing account updated successfully",
+            "billing_account": account.to_dict()
+        })
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": f"Failed to update billing account: {str(e)}"}), 500
+
+
+@api_v2.route('/billing-accounts/<account_id>', methods=['DELETE'])
+@login_required
+def delete_billing_account(account_id):
+    """Delete (deactivate) a billing account."""
+    try:
+        account = db_session.query(BillingAccount).filter_by(
+            id=account_id,
+            user_id=session['user_id']
+        ).first()
+        
+        if not account:
+            return jsonify({"error": "Billing account not found"}), 404
+        
+        account.is_active = False
+        db_session.commit()
+        
+        return jsonify({"message": "Billing account deleted successfully"})
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": f"Failed to delete billing account: {str(e)}"}), 500
