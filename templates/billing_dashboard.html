@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Billing Dashboard - Flight Query Parser</title>
+    <link rel="icon" type="image/png" href="/static/ticket-flight.png">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/dashboard.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --secondary: #0ea5e9;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --bg-main: #f8fafc;
+            --bg-card: #ffffff;
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+            --border: #e2e8f0;
+            --shadow: rgba(15, 23, 42, 0.08);
+            --shadow-lg: rgba(15, 23, 42, 0.15);
+        }
+
+        [data-theme="dark"] {
+            --primary: #3b82f6;
+            --primary-dark: #2563eb;
+            --secondary: #38bdf8;
+            --success: #22c55e;
+            --danger: #f87171;
+            --warning: #fbbf24;
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --shadow: rgba(0, 0, 0, 0.3);
+            --shadow-lg: rgba(0, 0, 0, 0.5);
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-main);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        /* ===================== DRAWER SIDEBAR ===================== */
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            z-index: 998;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .sidebar-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .sidebar {
+            position: fixed;
+            top: 0;
+            right: -320px;
+            width: 320px;
+            max-width: 85%;
+            height: 100vh;
+            background: var(--bg-card);
+            z-index: 999;
+            transition: right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            box-shadow: -5px 0 30px rgba(0, 0, 0, 0.15);
+            border-left: 1px solid var(--border);
+        }
+
+        .sidebar.active {
+            right: 0;
+        }
+
+        .sidebar-close {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: none;
+            border: none;
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 0.25rem;
+            transition: color 0.2s;
+        }
+
+        .sidebar-close:hover {
+            color: var(--text-primary);
+        }
+
+        .sidebar-header-main {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .user-profile-section {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .user-avatar-main {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            color: white;
+            font-weight: 700;
+        }
+
+        .user-info .user-name {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .user-info .user-email {
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+        }
+
+        .sidebar-auth-btn {
+            width: 100%;
+            padding: 0.6rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .sidebar-auth-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+
+        .sidebar-auth-btn.logout {
+            background: linear-gradient(135deg, #ef4444, #f97316);
+        }
+
+        .sidebar-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.5rem 0;
+        }
+
+        .sidebar-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+        }
+
+        .sidebar-link {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1.5rem;
+            color: var(--text-primary);
+            text-decoration: none;
+            transition: all 0.2s;
+            font-weight: 500;
+            font-size: 0.93rem;
+            border-radius: 0;
+            background: none;
+        }
+
+        .sidebar-link:hover {
+            background: rgba(37, 99, 235, 0.06);
+            color: var(--primary);
+        }
+
+        .sidebar-link.active {
+            background: linear-gradient(90deg, rgba(37, 99, 235, 0.08), transparent);
+            color: var(--primary);
+            font-weight: 600;
+            border-left: 3px solid var(--primary);
+        }
+
+        .theme-icon-container {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            font-size: 1rem;
+        }
+
+        /* ===================== MAIN LAYOUT ===================== */
+        .main-content {
+            padding: 1.5rem 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* ===================== HEADER ===================== */
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .page-title {
+            font-size: 2rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .page-subtitle {
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        /* Menu Toggle */
+        .menu-toggle {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .menu-toggle:hover {
+            border-color: var(--primary);
+            box-shadow: 0 2px 8px var(--shadow);
+        }
+
+        .menu-bar {
+            width: 22px;
+            height: 2.5px;
+            background: var(--text-primary);
+            border-radius: 2px;
+            transition: all 0.3s;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.25rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid var(--border);
+            box-shadow: 0 1px 3px var(--shadow);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px var(--shadow-lg);
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+        }
+
+        .stat-card.blue::before {
+            background: linear-gradient(90deg, #2563eb, #3b82f6);
+        }
+
+        .stat-card.green::before {
+            background: linear-gradient(90deg, #059669, #10b981);
+        }
+
+        .stat-card.orange::before {
+            background: linear-gradient(90deg, #d97706, #f59e0b);
+        }
+
+        .stat-card.purple::before {
+            background: linear-gradient(90deg, #7c3aed, #8b5cf6);
+        }
+
+        .stat-card.cyan::before {
+            background: linear-gradient(90deg, #0891b2, #06b6d4);
+        }
+
+        .stat-card.red::before {
+            background: linear-gradient(90deg, #dc2626, #ef4444);
+        }
+
+        .stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+        }
+
+        .stat-card.blue .stat-icon {
+            background: rgba(37, 99, 235, 0.1);
+            color: #2563eb;
+        }
+
+        .stat-card.green .stat-icon {
+            background: rgba(16, 185, 129, 0.1);
+            color: #10b981;
+        }
+
+        .stat-card.orange .stat-icon {
+            background: rgba(245, 158, 11, 0.1);
+            color: #f59e0b;
+        }
+
+        .stat-card.purple .stat-icon {
+            background: rgba(139, 92, 246, 0.1);
+            color: #8b5cf6;
+        }
+
+        .stat-card.cyan .stat-icon {
+            background: rgba(6, 182, 212, 0.1);
+            color: #06b6d4;
+        }
+
+        .stat-card.red .stat-icon {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .section-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid var(--border);
+            box-shadow: 0 1px 3px var(--shadow);
+            margin-bottom: 1.5rem;
+        }
+
+        .section-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .section-card h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .recent-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .recent-table th {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+            border-bottom: 2px solid var(--border);
+            font-weight: 600;
+        }
+
+        .recent-table td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.9rem;
+        }
+
+        .recent-table tr:hover td {
+            background: rgba(37, 99, 235, 0.03);
+        }
+
+        .recent-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .status-badge.draft {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .status-badge.approved {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-badge.on_hold {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-badge.confirmed {
+            background: #cffafe;
+            color: #155e75;
+        }
+
+        .status-badge.reverted {
+            background: #fce7f3;
+            color: #9d174d;
+        }
+
+        [data-theme="dark"] .status-badge.draft {
+            background: rgba(37, 99, 235, 0.2);
+            color: #93c5fd;
+        }
+
+        [data-theme="dark"] .status-badge.approved {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+        }
+
+        [data-theme="dark"] .status-badge.on_hold {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fde68a;
+        }
+
+        [data-theme="dark"] .status-badge.confirmed {
+            background: rgba(6, 182, 212, 0.2);
+            color: #67e8f9;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-state .icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.3;
+        }
+
+        .empty-state p {
+            font-size: 1rem;
+        }
+
+        /* Billing Account Cards */
+        .billing-accounts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 1.25rem;
+        }
+
+        .billing-account-card {
+            background: var(--bg-card);
+            border-radius: 14px;
+            border: 1px solid var(--border);
+            box-shadow: 0 1px 3px var(--shadow);
+            padding: 1.25rem;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .billing-account-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px var(--shadow-lg);
+            border-color: var(--primary);
+        }
+
+        .billing-account-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #7c3aed, #8b5cf6);
+        }
+
+        .billing-account-card.individual::before {
+            background: linear-gradient(90deg, #2563eb, #3b82f6);
+        }
+
+        .billing-account-card.corporate::before {
+            background: linear-gradient(90deg, #059669, #10b981);
+        }
+
+        .ba-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.75rem;
+        }
+
+        .ba-card-header h4 {
+            font-size: 1.05rem;
+            font-weight: 600;
+        }
+
+        .ba-type-badge {
+            display: inline-flex;
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .ba-type-badge.individual {
+            background: rgba(37, 99, 235, 0.1);
+            color: #2563eb;
+        }
+
+        .ba-type-badge.corporate {
+            background: rgba(16, 185, 129, 0.1);
+            color: #10b981;
+        }
+
+        .ba-card-details {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.75rem;
+        }
+
+        .ba-card-details span {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .ba-card-actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+            border-top: 1px solid var(--border);
+            padding-top: 0.75rem;
+        }
+
+        .ba-card-actions button {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 0.4rem 0.8rem;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .ba-card-actions button:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .ba-card-actions button.danger:hover {
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            z-index: 999;
+        }
+
+        .modal-overlay.show {
+            display: block;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.75rem;
+            width: 90%;
+            max-width: 520px;
+            z-index: 1000;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal.show {
+            display: block;
+            animation: modalIn 0.3s ease;
+        }
+
+        @keyframes modalIn {
+            from {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(0.95);
+            }
+
+            to {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1);
+            }
+        }
+
+        .modal h3 {
+            font-size: 1.15rem;
+            font-weight: 600;
+            margin-bottom: 1.25rem;
+        }
+
+        .modal-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+            margin-top: 1.25rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
+
+        .form-group label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            padding: 0.6rem 0.8rem;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-main);
+            color: var(--text-primary);
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+
+        .btn-action {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.6rem 1.2rem;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            border: none;
+            text-decoration: none;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .btn-action.primary {
+            background: linear-gradient(135deg, #2563eb, #0ea5e9);
+            color: white;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-action.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+        }
+
+        .btn-action.secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 2px solid var(--border);
+        }
+
+        .btn-action.secondary:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            padding: 0.75rem 1.5rem;
+            border-radius: 10px;
+            color: white;
+            font-weight: 600;
+            font-size: 0.9rem;
+            z-index: 2000;
+            animation: toastIn 0.3s ease;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+        }
+
+        .toast.success {
+            background: var(--success);
+        }
+
+        .toast.error {
+            background: var(--danger);
+        }
+
+        .toast.info {
+            background: var(--primary);
+        }
+
+        @keyframes toastIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-in {
+            animation: fadeInUp 0.4s ease forwards;
+        }
+
+        @media (max-width:768px) {
+            .main-content {
+                padding: 1rem;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .billing-accounts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Sidebar Overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- Sidebar Drawer -->
+    <div class="sidebar" id="sidebar">
+        <button class="sidebar-close" id="sidebarClose">✕</button>
+        <div class="sidebar-header-main">
+            <div class="user-profile-section">
+                <div class="user-avatar-main" id="sidebarAvatar">👤</div>
+                <div class="user-info">
+                    <div class="user-name" id="sidebarUserName">Guest User</div>
+                    <div class="user-email" id="sidebarUserEmail">Welcome!</div>
+                </div>
+            </div>
+            <div class="auth-btn-container">
+                <button class="sidebar-auth-btn" id="sidebarAuthBtn" onclick="handleAuthClick()">
+                    🔐 Login / Register
+                </button>
+            </div>
+        </div>
+        <div class="sidebar-body">
+            <nav class="sidebar-nav">
+                <a href="/" class="sidebar-link">🏠 Home</a>
+                <a href="/passengers" class="sidebar-link">👤 Passengers</a>
+                <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
+                <a href="/itineraries" class="sidebar-link">📋 Itineraries</a>
+                <a href="/billing" class="sidebar-link active">💰 Billing</a>
+                <div style="margin-top: 1.5rem; padding: 0 0.5rem;">
+                    <label
+                        style="display: block; margin-bottom: 0.75rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Appearance</label>
+                    <button class="sidebar-link" style="width: 100%; border: none; cursor: pointer;"
+                        id="sidebarThemeToggle">
+                        <span class="theme-icon-container">🌙</span>
+                        <span id="themeToggleText">Dark Mode</span>
+                    </button>
+                </div>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <header class="page-header">
+            <div>
+                <h1 class="page-title"><span>💰</span> Billing Dashboard</h1>
+                <p class="page-subtitle">Financial overview, revenue tracking & billing account management</p>
+            </div>
+            <div class="header-right">
+                <button class="btn-action primary" onclick="showCreateBillingModal()">+ New Account</button>
+                <button class="menu-toggle" id="menuToggle" aria-label="Open Menu">
+                    <span class="menu-bar"></span>
+                    <span class="menu-bar"></span>
+                    <span class="menu-bar"></span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Stats Grid -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card green animate-in" style="animation-delay:0.05s">
+                <div class="stat-icon">💵</div>
+                <div class="stat-value" id="totalRevenue">₹0</div>
+                <div class="stat-label">Total Revenue (Confirmed)</div>
+            </div>
+            <div class="stat-card orange animate-in" style="animation-delay:0.1s">
+                <div class="stat-icon">⏳</div>
+                <div class="stat-value" id="pendingRevenue">₹0</div>
+                <div class="stat-label">Pending Revenue</div>
+            </div>
+            <div class="stat-card blue animate-in" style="animation-delay:0.15s">
+                <div class="stat-icon">📋</div>
+                <div class="stat-value" id="totalItineraries">0</div>
+                <div class="stat-label">Total Itineraries</div>
+            </div>
+            <div class="stat-card cyan animate-in" style="animation-delay:0.2s">
+                <div class="stat-icon">✅</div>
+                <div class="stat-value" id="confirmedCount">0</div>
+                <div class="stat-label">Confirmed</div>
+            </div>
+            <div class="stat-card purple animate-in" style="animation-delay:0.25s">
+                <div class="stat-icon">📝</div>
+                <div class="stat-value" id="draftCount">0</div>
+                <div class="stat-label">Drafts</div>
+            </div>
+            <div class="stat-card red animate-in" style="animation-delay:0.3s">
+                <div class="stat-icon">⏸️</div>
+                <div class="stat-value" id="onHoldCount">0</div>
+                <div class="stat-label">On Hold</div>
+            </div>
+        </div>
+
+        <!-- Billing Accounts Section -->
+        <div class="section-card animate-in" style="animation-delay:0.35s">
+            <div class="section-header-row">
+                <h2>📎 Billing Accounts</h2>
+                <button class="btn-action primary" style="padding:0.4rem 0.8rem;font-size:0.8rem;border-radius:8px;"
+                    onclick="showCreateBillingModal()">+ Add</button>
+            </div>
+            <div id="billingAccountsContainer">
+                <div class="empty-state">
+                    <div class="icon">📎</div>
+                    <p>Loading billing accounts...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Transactions -->
+        <div class="section-card animate-in" style="animation-delay:0.4s">
+            <h2>📊 Recent Itineraries</h2>
+            <div id="recentTable">
+                <div class="empty-state">
+                    <div class="icon">📊</div>
+                    <p>Loading data...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Overlay -->
+    <div class="modal-overlay" id="modalOverlay" onclick="closeModal()"></div>
+
+    <!-- Create / Edit Billing Account Modal -->
+    <div class="modal" id="billingModal">
+        <h3 id="billingModalTitle">New Billing Account</h3>
+        <input type="hidden" id="editingAccountId" value="">
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Account Type *</label>
+                <select id="accType">
+                    <option value="individual">Individual</option>
+                    <option value="corporate">Corporate</option>
+                </select>
+            </div>
+            <div class="form-group"><label>Display Name *</label><input id="accDisplayName"
+                    placeholder="e.g. John Doe Personal Account"></div>
+            <div class="form-group"><label>Company Name</label><input id="accCompanyName" placeholder="Company name">
+            </div>
+            <div class="form-group"><label>Contact Name</label><input id="accContactName"
+                    placeholder="Contact person name"></div>
+            <div class="form-row">
+                <div class="form-group"><label>Email</label><input id="accEmail" type="email" placeholder="Email"></div>
+                <div class="form-group"><label>Phone</label><input id="accPhone" placeholder="Phone"></div>
+            </div>
+            <div class="form-group"><label>Address</label><textarea id="accAddress" rows="2"
+                    placeholder="Full address"></textarea></div>
+            <div class="form-group"><label>GST Number</label><input id="accGST" placeholder="GST number"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-action secondary" onclick="closeModal()">Cancel</button>
+            <button class="btn-action primary" onclick="saveBillingAccount()">Save Account</button>
+        </div>
+    </div>
+
+    <script>
+        // ==================== SIDEBAR & THEME ====================
+        function initializeSidebar() {
+            const menuToggle = document.getElementById('menuToggle');
+            const sidebarClose = document.getElementById('sidebarClose');
+            const sidebarOverlay = document.getElementById('sidebarOverlay');
+            const sidebar = document.getElementById('sidebar');
+
+            menuToggle.addEventListener('click', () => {
+                sidebar.classList.add('active');
+                sidebarOverlay.classList.add('active');
+                document.body.style.overflow = 'hidden';
+            });
+
+            const closeSidebar = () => {
+                sidebar.classList.remove('active');
+                sidebarOverlay.classList.remove('active');
+                document.body.style.overflow = '';
+            };
+
+            sidebarClose.addEventListener('click', closeSidebar);
+            sidebarOverlay.addEventListener('click', closeSidebar);
+
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            updateTheme(savedTheme);
+            document.getElementById('sidebarThemeToggle').addEventListener('click', () => {
+                const current = document.documentElement.getAttribute('data-theme');
+                const next = current === 'dark' ? 'light' : 'dark';
+                localStorage.setItem('theme', next);
+                updateTheme(next);
+            });
+        }
+
+        function updateTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            const text = document.getElementById('themeToggleText');
+            const icon = document.querySelector('.theme-icon-container');
+            if (theme === 'dark') { icon.textContent = '☀️'; text.textContent = 'Light Mode'; }
+            else { icon.textContent = '🌙'; text.textContent = 'Dark Mode'; }
+        }
+
+        // ==================== AUTH ====================
+        async function checkAuth() {
+            try {
+                const r = await fetch('/api/user');
+                if (!r.ok) {
+                    const next = encodeURIComponent(window.location.pathname + window.location.search);
+                    window.location.href = '/login?next=' + next;
+                    return;
+                }
+                const u = await r.json();
+                document.getElementById('sidebarUserName').textContent = u.full_name || u.username;
+                document.getElementById('sidebarUserEmail').textContent = u.email || 'Member';
+                document.getElementById('sidebarAvatar').textContent = (u.full_name || u.username).charAt(0).toUpperCase();
+                const authBtn = document.getElementById('sidebarAuthBtn');
+                authBtn.textContent = '🚪 Logout';
+                authBtn.classList.add('logout');
+                authBtn.onclick = async () => { if (confirm('Logout?')) { await fetch('/api/logout', { method: 'POST' }); window.location.href = '/login'; } };
+            } catch (e) {
+                const next = encodeURIComponent(window.location.pathname + window.location.search);
+                window.location.href = '/login?next=' + next;
+            }
+        }
+
+        function handleAuthClick() {
+            const next = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = '/login?next=' + next;
+        }
+
+        // ==================== HELPERS ====================
+        function formatCurrency(n) { if (!n) return '₹0'; return '₹' + Number(n).toLocaleString('en-IN'); }
+        function formatDate(d) { if (!d) return '-'; return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
+        function showToast(msg, type = 'info') { const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3500); }
+
+        // ==================== DASHBOARD DATA ====================
+        async function loadDashboard() {
+            try {
+                const r = await fetch('/api/v2/dashboard/stats');
+                if (!r.ok) return;
+                const d = await r.json();
+                document.getElementById('totalRevenue').textContent = formatCurrency(d.total_revenue);
+                document.getElementById('pendingRevenue').textContent = formatCurrency(d.pending_revenue);
+                document.getElementById('totalItineraries').textContent = d.total_itineraries || 0;
+                document.getElementById('confirmedCount').textContent = d.confirmed_count || 0;
+                document.getElementById('draftCount').textContent = d.draft_count || 0;
+                document.getElementById('onHoldCount').textContent = d.on_hold_count || 0;
+
+                const items = d.recent_itineraries || [];
+                if (items.length === 0) {
+                    document.getElementById('recentTable').innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>No itineraries yet. Create one from the Flight Parser!</p></div>';
+                    return;
+                }
+                let html = '<table class="recent-table"><thead><tr><th>Reference</th><th>Title</th><th>Status</th><th>Amount</th><th>Created</th></tr></thead><tbody>';
+                items.forEach(it => {
+                    html += `<tr style="cursor:pointer" onclick="window.location.href='/itineraries#${it.id}'">
+                        <td><strong>${it.reference_number || it.id.substring(0, 8)}</strong></td>
+                        <td>${it.title || 'Untitled'}</td>
+                        <td><span class="status-badge ${it.status}">${it.status.replace('_', ' ')}</span></td>
+                        <td style="font-weight:600">${formatCurrency(it.total_amount)}</td>
+                        <td>${formatDate(it.created_at)}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                document.getElementById('recentTable').innerHTML = html;
+            } catch (e) { console.error('Dashboard error:', e); }
+        }
+
+        // ==================== BILLING ACCOUNTS ====================
+        let billingAccounts = [];
+
+        async function loadBillingAccounts() {
+            try {
+                const r = await fetch('/api/v2/billing-accounts');
+                if (!r.ok) return;
+                const d = await r.json();
+                billingAccounts = d.billing_accounts || [];
+                renderBillingAccounts();
+            } catch (e) { console.error('Billing accounts error:', e); }
+        }
+
+        function renderBillingAccounts() {
+            const container = document.getElementById('billingAccountsContainer');
+            if (billingAccounts.length === 0) {
+                container.innerHTML = `<div class="empty-state"><div class="icon">📎</div><p>No billing accounts yet</p><button class="btn-action primary" style="margin-top:1rem" onclick="showCreateBillingModal()">+ Create First Account</button></div>`;
+                return;
+            }
+
+            container.innerHTML = '<div class="billing-accounts-grid">' + billingAccounts.map(acc => `
+                <div class="billing-account-card ${acc.account_type}">
+                    <div class="ba-card-header">
+                        <h4>${acc.display_name}</h4>
+                        <span class="ba-type-badge ${acc.account_type}">${acc.account_type}</span>
+                    </div>
+                    <div class="ba-card-details">
+                        ${acc.account_type === 'corporate' && acc.company_name ? '<span>🏢 ' + acc.company_name + '</span>' : ''}
+                        ${acc.account_type === 'corporate' && acc.contact_name ? '<span>👤 ' + acc.contact_name + '</span>' : ''}
+                        ${acc.email ? '<span>📧 ' + acc.email + '</span>' : ''}
+                        ${acc.phone ? '<span>📱 ' + acc.phone + '</span>' : ''}
+                        ${acc.account_type === 'corporate' && acc.gst_number ? '<span>📋 GST: ' + acc.gst_number + '</span>' : ''}
+                        ${acc.address ? '<span>📍 ' + acc.address + '</span>' : ''}
+                    </div>
+                    <div class="ba-card-actions">
+                        <button onclick="editBillingAccount('${acc.id}')">✏️ Edit</button>
+                        <button class="danger" onclick="deleteBillingAccount('${acc.id}')">🗑️ Delete</button>
+                    </div>
+                </div>
+            `).join('') + '</div>';
+        }
+
+        // ==================== CREATE / EDIT BILLING ACCOUNT ====================
+        function showModal(id) { document.getElementById('modalOverlay').classList.add('show'); document.getElementById(id).classList.add('show'); }
+        function closeModal() { document.getElementById('modalOverlay').classList.remove('show'); document.querySelectorAll('.modal').forEach(m => m.classList.remove('show')); }
+
+        function showCreateBillingModal() {
+            document.getElementById('billingModalTitle').textContent = 'New Billing Account';
+            document.getElementById('editingAccountId').value = '';
+            document.getElementById('accType').value = 'individual';
+            document.getElementById('accDisplayName').value = '';
+            document.getElementById('accCompanyName').value = '';
+            document.getElementById('accContactName').value = '';
+            document.getElementById('accEmail').value = '';
+            document.getElementById('accPhone').value = '';
+            document.getElementById('accAddress').value = '';
+            document.getElementById('accGST').value = '';
+            showModal('billingModal');
+        }
+
+        function editBillingAccount(id) {
+            const acc = billingAccounts.find(a => a.id === id);
+            if (!acc) return;
+            document.getElementById('billingModalTitle').textContent = 'Edit Billing Account';
+            document.getElementById('editingAccountId').value = id;
+            document.getElementById('accType').value = acc.account_type || 'individual';
+            document.getElementById('accDisplayName').value = acc.display_name || '';
+            document.getElementById('accCompanyName').value = acc.company_name || '';
+            document.getElementById('accContactName').value = acc.contact_name || '';
+            document.getElementById('accEmail').value = acc.email || '';
+            document.getElementById('accPhone').value = acc.phone || '';
+            document.getElementById('accAddress').value = acc.address || '';
+            document.getElementById('accGST').value = acc.gst_number || '';
+            showModal('billingModal');
+        }
+
+        async function saveBillingAccount() {
+            const displayName = document.getElementById('accDisplayName').value.trim();
+            const accountType = document.getElementById('accType').value;
+            if (!displayName) { showToast('Display name is required', 'error'); return; }
+
+            const data = {
+                account_type: accountType,
+                display_name: displayName,
+                company_name: document.getElementById('accCompanyName').value.trim(),
+                contact_name: document.getElementById('accContactName').value.trim(),
+                email: document.getElementById('accEmail').value.trim(),
+                phone: document.getElementById('accPhone').value.trim(),
+                address: document.getElementById('accAddress').value.trim(),
+                gst_number: document.getElementById('accGST').value.trim()
+            };
+
+            const editId = document.getElementById('editingAccountId').value;
+            try {
+                let r;
+                if (editId) {
+                    r = await fetch('/api/v2/billing-accounts/' + editId, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+                } else {
+                    r = await fetch('/api/v2/billing-accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+                }
+                if (r.ok) {
+                    closeModal();
+                    showToast(editId ? 'Account updated!' : 'Account created!', 'success');
+                    loadBillingAccounts();
+                } else {
+                    const e = await r.json();
+                    showToast(e.error || 'Failed', 'error');
+                }
+            } catch (e) { showToast('Error saving account', 'error'); }
+        }
+
+        async function deleteBillingAccount(id) {
+            if (!confirm('Delete this billing account?')) return;
+            try {
+                const r = await fetch('/api/v2/billing-accounts/' + id, { method: 'DELETE' });
+                if (r.ok) { showToast('Account deleted', 'success'); loadBillingAccounts(); }
+                else showToast('Failed to delete', 'error');
+            } catch (e) { showToast('Error', 'error'); }
+        }
+
+        // ==================== INIT ====================
+        document.addEventListener('DOMContentLoaded', async () => {
+            initializeSidebar();
+            await checkAuth();
+            loadDashboard();
+            loadBillingAccounts();
+        });
+    </script>
+</body>
+
+</html>

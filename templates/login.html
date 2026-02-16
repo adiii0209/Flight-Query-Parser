@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login / Register - Flight Itinerary Builder</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --primary: #2563eb;
+      --secondary: #0ea5e9;
+      --bg-main: #f8fafc;
+      --bg-card: #ffffff;
+      --text-primary: #0f172a;
+      --text-secondary: #64748b;
+      --border: #e2e8f0;
+      --shadow-lg: rgba(15, 23, 42, 0.15);
+      --primary-dark-mode: #3b82f6;
+      --secondary-dark-mode: #38bdf8;
+      --bg-main-dark-mode: #0f172a;
+      --bg-card-dark-mode: #1e293b;
+      --text-primary-dark-mode: #f1f5f9;
+      --text-secondary-dark-mode: #94a3b8;
+      --border-dark-mode: #334155;
+      --shadow-lg-dark-mode: rgba(0, 0, 0, 0.5);
+    }
+
+    [data-theme="dark"] {
+      --primary: var(--primary-dark-mode);
+      --secondary: var(--secondary-dark-mode);
+      --bg-main: var(--bg-main-dark-mode);
+      --bg-card: var(--bg-card-dark-mode);
+      --text-primary: var(--text-primary-dark-mode);
+      --text-secondary: var(--text-secondary-dark-mode);
+      --border: var(--border-dark-mode);
+      --shadow-lg: var(--shadow-lg-dark-mode);
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: linear-gradient(135deg, #1e40af 0%, #2563eb 50%, #0ea5e9 100%);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 20px 60px var(--shadow-lg);
+    }
+
+    .card-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .card-header h1 {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .card-header p {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .tab {
+      flex: 1;
+      padding: 0.75rem;
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text-secondary);
+      transition: all 0.3s ease;
+      margin-bottom: -2px;
+    }
+
+    .tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--text-primary);
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-family: 'Outfit', sans-serif;
+      transition: all 0.3s ease;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 0.875rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: 'Outfit', sans-serif;
+      transition: all 0.3s ease;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: white;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .notification {
+      margin-bottom: 1rem;
+      padding: 1rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      display: none;
+    }
+
+    .notification.error {
+      background: #fee2e2;
+      color: #dc2626;
+      border-left: 4px solid #dc2626;
+      display: block;
+    }
+
+    .notification.success {
+      background: #dcfce7;
+      color: #16a34a;
+      border-left: 4px solid #16a34a;
+      display: block;
+    }
+
+    .form-hidden {
+      display: none;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-bottom: 1.5rem;
+      color: white;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    .back-link:hover {
+      text-decoration: underline;
+    }
+
+    .dark-mode-toggle {
+      padding: 0.5rem;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+    }
+
+    .dark-mode-toggle:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.5);
+      transform: translateY(-2px);
+    }
+
+    .dark-mode-icon {
+      transition: opacity 0.3s ease;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+    <a href="/" class="back-link">← Back to Home</a>
+
+    <div class="card">
+      <div class="card-header">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <h1>✈️ Welcome</h1>
+          <button class="dark-mode-toggle" id="darkModeToggle" aria-label="Toggle dark mode">
+            <span class="dark-mode-icon">🌙</span>
+            <span class="dark-mode-icon" style="display: none;">☀️</span>
+          </button>
+        </div>
+        <p>Login to manage your itineraries</p>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('login')">🔐 Login</button>
+        <button class="tab" onclick="switchTab('register')">📝 Register</button>
+      </div>
+
+      <div id="notification" class="notification"></div>
+
+      <!-- Login Form -->
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" id="loginUsername" class="form-input" placeholder="Enter your username" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <div style="position: relative; display: flex; align-items: center;">
+            <input type="password" id="loginPassword" class="form-input" placeholder="Enter your password" required
+              style="padding-right: 2.5rem;">
+            <span onclick="togglePasswordVisibility('loginPassword')"
+              style="position: absolute; right: 1rem; cursor: pointer; user-select: none; font-size: 1.2rem;"
+              title="Show/Hide Password">
+              👁️
+            </span>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="loginBtn">Login</button>
+        <button type="button" class="btn"
+          style="margin-top: 1rem; background: transparent; border: 2px solid var(--border); color: var(--text-primary);"
+          onclick="loginTestUser()">
+          🧪 Login as Test User
+        </button>
+      </form>
+
+      <!-- Register Form -->
+      <form id="registerForm" class="form-hidden" onsubmit="handleRegister(event)">
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" id="registerFullName" class="form-input" placeholder="Enter your full name" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input type="email" id="registerEmail" class="form-input" placeholder="Enter your email" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" id="registerUsername" class="form-input" placeholder="Create a username" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" id="registerPassword" class="form-input" placeholder="Create a password" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Confirm Password</label>
+          <input type="password" id="registerConfirmPassword" class="form-input" placeholder="Confirm your password"
+            required>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="registerBtn">Create Account</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Initialize dark mode on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      initializeDarkMode();
+    });
+
+    // Dark mode functionality
+    function initializeDarkMode() {
+      const savedTheme = localStorage.getItem('theme') || 'light';
+      const darkModeToggle = document.getElementById('darkModeToggle');
+
+      // Apply saved theme
+      document.documentElement.setAttribute('data-theme', savedTheme);
+      updateDarkModeToggle(savedTheme);
+
+      // Add click event listener
+      darkModeToggle.addEventListener('click', toggleDarkMode);
+    }
+
+    function toggleDarkMode() {
+      const currentTheme = document.documentElement.getAttribute('data-theme');
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+      document.documentElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      updateDarkModeToggle(newTheme);
+    }
+
+    function updateDarkModeToggle(theme) {
+      const darkModeToggle = document.getElementById('darkModeToggle');
+      const icons = darkModeToggle.querySelectorAll('.dark-mode-icon');
+
+      if (theme === 'dark') {
+        icons[0].style.display = 'none';  // Moon icon
+        icons[1].style.display = 'block'; // Sun icon
+      } else {
+        icons[0].style.display = 'block';  // Moon icon
+        icons[1].style.display = 'none';  // Sun icon
+      }
+    }
+
+    function switchTab(tab) {
+      const loginForm = document.getElementById('loginForm');
+      const registerForm = document.getElementById('registerForm');
+      const tabs = document.querySelectorAll('.tab');
+
+      if (tab === 'login') {
+        loginForm.classList.remove('form-hidden');
+        registerForm.classList.add('form-hidden');
+        tabs[0].classList.add('active');
+        tabs[1].classList.remove('active');
+      } else {
+        loginForm.classList.add('form-hidden');
+        registerForm.classList.remove('form-hidden');
+        tabs[0].classList.remove('active');
+        tabs[1].classList.add('active');
+      }
+      clearNotification();
+    }
+
+    function showNotification(message, type) {
+      const notification = document.getElementById('notification');
+      notification.textContent = message;
+      notification.className = `notification ${type}`;
+    }
+
+    function clearNotification() {
+      const notification = document.getElementById('notification');
+      notification.className = 'notification';
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      const username = document.getElementById('loginUsername').value;
+      const password = document.getElementById('loginPassword').value;
+      const btn = document.getElementById('loginBtn');
+      btn.disabled = true;
+
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+          showNotification('Login successful! Redirecting...', 'success');
+          // Check for 'next' parameter in URL
+          const urlParams = new URLSearchParams(window.location.search);
+          const nextUrl = urlParams.get('next') || '/';
+          setTimeout(() => window.location.href = nextUrl, 1000);
+        } else {
+          showNotification(data.error || 'Login failed', 'error');
+        }
+      } catch (error) {
+        showNotification('An error occurred', 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function handleRegister(event) {
+      event.preventDefault();
+      const fullName = document.getElementById('registerFullName').value;
+      const email = document.getElementById('registerEmail').value;
+      const username = document.getElementById('registerUsername').value;
+      const password = document.getElementById('registerPassword').value;
+      const confirmPassword = document.getElementById('registerConfirmPassword').value;
+      const btn = document.getElementById('registerBtn');
+
+      if (password !== confirmPassword) {
+        showNotification('Passwords do not match', 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      try {
+        const response = await fetch('/api/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ full_name: fullName, email, username, password })
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+          showNotification('Registration successful! Redirecting...', 'success');
+          setTimeout(() => window.location.href = '/', 1000);
+        } else {
+          showNotification(data.error || 'Registration failed', 'error');
+        }
+      } catch (error) {
+        showNotification('An error occurred', 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    function togglePasswordVisibility(id) {
+      const input = document.getElementById(id);
+      if (input.type === 'password') {
+        input.type = 'text';
+      } else {
+        input.type = 'password';
+      }
+    }
+
+    function loginTestUser() {
+      document.getElementById('loginUsername').value = 'adi.is.tired';
+      document.getElementById('loginPassword').value = 'password123';
+      document.getElementById('loginBtn').click();
+    }
+  </script>
+
+</body>
+
+</html>

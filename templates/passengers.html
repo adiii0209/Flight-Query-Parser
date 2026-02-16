@@ -1,0 +1,1531 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Passenger Dashboard - Travel Agent Platform</title>
+  <meta name="description"
+    content="Manage passenger profiles, frequent flyer accounts, preferences, and travel documents">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+
+<body>
+  <!-- Sidebar Overlay -->
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- Sidebar Drawer -->
+  <div class="sidebar" id="sidebar">
+    <button class="sidebar-close" id="sidebarClose">✕</button>
+    <div class="sidebar-header">
+      <div class="user-profile-section">
+        <div class="user-avatar" id="sidebarAvatar">👤</div>
+        <div class="user-info">
+          <div class="user-name" id="sidebarUserName">Guest User</div>
+          <div class="user-email" id="sidebarUserEmail">Welcome!</div>
+        </div>
+      </div>
+      <div class="auth-btn-container">
+        <button class="sidebar-auth-btn" id="sidebarAuthBtn" onclick="handleAuthClick()">
+          🔐 Login / Register
+        </button>
+      </div>
+    </div>
+    <div class="sidebar-body">
+      <nav class="sidebar-nav">
+        <a href="/" class="sidebar-link">🏠 Home</a>
+        <a href="/passengers" class="sidebar-link active">👤 Passengers</a>
+        <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
+        <a href="/itineraries" class="sidebar-link">📋 Itineraries</a>
+        <a href="/billing" class="sidebar-link">💰 Billing</a>
+        <div style="margin-top: 1.5rem; padding: 0 0.5rem;">
+          <label class="input-label"
+            style="display: block; margin-bottom: 0.75rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Appearance</label>
+          <button class="sidebar-link" style="width: 100%; border: none; cursor: pointer;" id="sidebarThemeToggle">
+            <span class="theme-icon-container">🌙</span>
+            <span id="themeToggleText">Dark Mode</span>
+          </button>
+        </div>
+      </nav>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="main-content">
+    <!-- Header -->
+    <header class="page-header">
+      <div class="header-left">
+        <h1 class="page-title">
+          <span class="title-icon">👤</span>
+          Passenger Dashboard
+        </h1>
+        <p class="page-subtitle">Manage passenger profiles, documents, and preferences</p>
+      </div>
+      <div class="header-right">
+        <button class="btn btn-primary" onclick="openPassengerModal()">
+          <span>➕</span> Add Passenger
+        </button>
+        <button class="menu-toggle" id="menuToggle" aria-label="Open Menu">
+          <span class="menu-bar"></span>
+          <span class="menu-bar"></span>
+          <span class="menu-bar"></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Stats Cards -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-icon">👥</div>
+        <div class="stat-info">
+          <div class="stat-value" id="totalPassengers">0</div>
+          <div class="stat-label">Total Passengers</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🎫</div>
+        <div class="stat-info">
+          <div class="stat-value" id="totalFrequentFlyer">0</div>
+          <div class="stat-label">Frequent Flyer Accounts</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">📄</div>
+        <div class="stat-info">
+          <div class="stat-value" id="totalDocuments">0</div>
+          <div class="stat-label">Travel Documents</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🏢</div>
+        <div class="stat-info">
+          <div class="stat-value" id="linkedCorporates">0</div>
+          <div class="stat-label">Corporate Links</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Passengers List -->
+    <div class="section-header">
+      <h2 class="section-title">All Passengers</h2>
+      <div class="search-box">
+        <input type="text" id="searchPassengers" placeholder="Search passengers..." onkeyup="filterPassengers()">
+        <span class="search-icon">🔍</span>
+      </div>
+    </div>
+
+    <div id="passengersContainer" class="cards-grid">
+      <div class="empty-state">
+        <div class="empty-icon">👤</div>
+        <h3>Loading passengers...</h3>
+      </div>
+    </div>
+  </div>
+
+  <!-- Passenger Detail Modal -->
+  <div class="modal-overlay" id="passengerDetailModal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2 id="passengerDetailTitle">Passenger Details</h2>
+        <button class="modal-close" onclick="closePassengerDetailModal()">✕</button>
+      </div>
+      <div class="modal-body" id="passengerDetailContent">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Passenger Modal -->
+  <div class="modal-overlay" id="passengerModal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2 id="passengerModalTitle">Add Passenger</h2>
+        <button class="modal-close" onclick="closePassengerModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="passengerForm" onsubmit="savePassenger(event)">
+          <input type="hidden" id="passengerId">
+
+          <div class="form-section">
+            <h3 class="form-section-title">Personal Information</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Title</label>
+                <select id="passengerTitle" class="form-select">
+                  <option value="">Select</option>
+                  <option value="Mr">Mr</option>
+                  <option value="Mrs">Mrs</option>
+                  <option value="Ms">Ms</option>
+                  <option value="Dr">Dr</option>
+                  <option value="Master">Master</option>
+                  <option value="Miss">Miss</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">First Name</label>
+                <input type="text" id="passengerFirstName" class="form-input" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Middle Name</label>
+                <input type="text" id="passengerMiddleName" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Last Name</label>
+                <input type="text" id="passengerLastName" class="form-input" required>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Date of Birth</label>
+                <input type="date" id="passengerDOB" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Gender</label>
+                <select id="passengerGender" class="form-select">
+                  <option value="">Select</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Nationality</label>
+                <input type="text" id="passengerNationality" class="form-input" value="Indian">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h3 class="form-section-title">Contact Information</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" id="passengerEmail" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input type="tel" id="passengerPhone" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Alternate Phone</label>
+                <input type="tel" id="passengerAltPhone" class="form-input">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h3 class="form-section-title">Address</h3>
+            <div class="form-row">
+              <div class="form-group form-group-wide">
+                <label class="form-label">Address Line 1</label>
+                <input type="text" id="passengerAddress1" class="form-input">
+              </div>
+              <div class="form-group form-group-wide">
+                <label class="form-label">Address Line 2</label>
+                <input type="text" id="passengerAddress2" class="form-input">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">City</label>
+                <input type="text" id="passengerCity" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">State</label>
+                <input type="text" id="passengerState" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Pincode</label>
+                <input type="text" id="passengerPincode" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Country</label>
+                <input type="text" id="passengerCountry" class="form-input" value="India">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h3 class="form-section-title">Emergency Contact</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Contact Name</label>
+                <input type="text" id="emergencyName" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Contact Phone</label>
+                <input type="tel" id="emergencyPhone" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Relationship</label>
+                <input type="text" id="emergencyRelationship" class="form-input" placeholder="e.g., Spouse, Parent">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closePassengerModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Passenger</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Frequent Flyer Modal -->
+  <div class="modal-overlay" id="ffModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Add Frequent Flyer Account</h2>
+        <button class="modal-close" onclick="closeFfModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="ffForm" onsubmit="saveFrequentFlyer(event)">
+          <input type="hidden" id="ffPassengerId">
+          <input type="hidden" id="ffId">
+
+          <div class="form-group">
+            <label class="form-label required">Airline</label>
+            <div class="searchable-dropdown">
+              <input type="text" id="ffAirlineSearch" class="form-input" placeholder="Search airline..."
+                autocomplete="off" required>
+              <div id="ffAirlineList" class="dropdown-list"></div>
+              <input type="hidden" id="ffAirline" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label required">Frequent Flyer Number</label>
+            <input type="text" id="ffNumber" class="form-input" required>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Tier Status</label>
+              <select id="ffTier" class="form-select">
+                <option value="">Select</option>
+                <option value="Base">Base</option>
+                <option value="Silver">Silver</option>
+                <option value="Gold">Gold</option>
+                <option value="Platinum">Platinum</option>
+                <option value="Diamond">Diamond</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Miles Balance</label>
+              <input type="number" id="ffMiles" class="form-input">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tier Expiry Date</label>
+            <input type="date" id="ffExpiry" class="form-input">
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeFfModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Travel Document Modal -->
+  <div class="modal-overlay" id="docModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Add Travel Document</h2>
+        <button class="modal-close" onclick="closeDocModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="docForm" onsubmit="saveDocument(event)">
+          <input type="hidden" id="docPassengerId">
+          <input type="hidden" id="docId">
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label required">Document Type</label>
+              <select id="docType" class="form-select" required>
+                <option value="">Select</option>
+                <option value="PASSPORT">Passport</option>
+                <option value="VISA">Visa</option>
+                <option value="KTN">Known Traveler Number</option>
+                <option value="REDRESS">Redress Number</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label required">Document Number</label>
+              <input type="text" id="docNumber" class="form-input" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Name on Document</label>
+            <input type="text" id="docName" class="form-input" placeholder="If different from profile">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Issuing Country</label>
+              <input type="text" id="docCountry" class="form-input" value="India">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Issue Date</label>
+              <input type="date" id="docIssueDate" class="form-input">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Expiry Date</label>
+              <input type="date" id="docExpiryDate" class="form-input">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="docPrimary">
+              <span>Set as Primary Document</span>
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeDocModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Document</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preferences Modal -->
+  <div class="modal-overlay" id="prefsModal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2>Passenger Preferences</h2>
+        <button class="modal-close" onclick="closePrefsModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="prefsForm" onsubmit="savePreferences(event)">
+          <input type="hidden" id="prefsPassengerId">
+
+          <div class="form-section">
+            <h3 class="form-section-title">Meal Preferences</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Meal Preference</label>
+                <select id="prefsMeal" class="form-select">
+                  <option value="">No Preference</option>
+                  <option value="Vegetarian">Vegetarian</option>
+                  <option value="Non-Vegetarian">Non-Vegetarian</option>
+                  <option value="Vegan">Vegan</option>
+                  <option value="Jain">Jain</option>
+                  <option value="Kosher">Kosher</option>
+                  <option value="Halal">Halal</option>
+                  <option value="Gluten-Free">Gluten-Free</option>
+                  <option value="Diabetic">Diabetic</option>
+                </select>
+              </div>
+              <div class="form-group form-group-wide">
+                <label class="form-label">Special Meal Request</label>
+                <input type="text" id="prefsMealRequest" class="form-input" placeholder="e.g., No nuts, low sodium">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h3 class="form-section-title">Seat & Cabin Preferences</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Seat Preference</label>
+                <select id="prefsSeat" class="form-select">
+                  <option value="">No Preference</option>
+                  <option value="Window">Window</option>
+                  <option value="Aisle">Aisle</option>
+                  <option value="Middle">Middle</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Seat Location</label>
+                <select id="prefsSeatLocation" class="form-select">
+                  <option value="">No Preference</option>
+                  <option value="Front">Front of Cabin</option>
+                  <option value="Middle">Middle of Cabin</option>
+                  <option value="Rear">Rear of Cabin</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Preferred Cabin</label>
+                <select id="prefsCabin" class="form-select">
+                  <option value="">No Preference</option>
+                  <option value="Economy">Economy</option>
+                  <option value="Premium Economy">Premium Economy</option>
+                  <option value="Business">Business</option>
+                  <option value="First">First Class</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h3 class="form-section-title">Special Assistance</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="prefsWheelchair">
+                  <span>Wheelchair Required</span>
+                </label>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Assistance Type</label>
+                <select id="prefsAssistance" class="form-select">
+                  <option value="">None</option>
+                  <option value="WCHR">WCHR - Wheelchair (Can walk short distance)</option>
+                  <option value="WCHS">WCHS - Wheelchair (Cannot walk, can climb stairs)</option>
+                  <option value="WCHC">WCHC - Wheelchair (Immobile)</option>
+                  <option value="BLND">BLND - Blind Passenger</option>
+                  <option value="DEAF">DEAF - Deaf Passenger</option>
+                  <option value="UMNR">UMNR - Unaccompanied Minor</option>
+                </select>
+              </div>
+              <div class="form-group form-group-wide">
+                <label class="form-label">Assistance Notes</label>
+                <textarea id="prefsAssistanceNotes" class="form-textarea" rows="2"
+                  placeholder="Additional assistance requirements"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h3 class="form-section-title">Airline Preferences</h3>
+            <div class="form-row">
+              <div class="form-group form-group-wide">
+                <label class="form-label">Preferred Airlines</label>
+                <input type="text" id="prefsPreferredAirlines" class="form-input"
+                  placeholder="e.g., AI, UK, 6E (comma-separated)">
+              </div>
+              <div class="form-group form-group-wide">
+                <label class="form-label">Avoid Airlines</label>
+                <input type="text" id="prefsAvoidAirlines" class="form-input" placeholder="e.g., SG (comma-separated)">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closePrefsModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Preferences</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div class="modal-overlay" id="confirmModal">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h2 id="confirmTitle">Confirm</h2>
+        <button class="modal-close" onclick="closeConfirmModal(false)">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="confirmMessage" class="confirm-message"></p>
+        <div class="form-actions">
+          <button class="btn btn-secondary" onclick="closeConfirmModal(false)">Cancel</button>
+          <button class="btn btn-danger" onclick="closeConfirmModal(true)">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification -->
+  <div id="notification" class="notification"></div>
+
+  <script>
+    // Global state
+    let passengers = [];
+    let airlines = [];
+    let currentPassenger = null;
+    let confirmResolve = null;
+    let sourceItineraryId = null;
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', async () => {
+      initializeSidebar();
+      await checkAuthStatus();
+      await loadAirlines();
+      await loadPassengers();
+
+      // Check for deep links
+      const urlParams = new URLSearchParams(window.location.search);
+      const viewId = urlParams.get('view_id');
+      const quick = urlParams.get('quick');
+
+      if (viewId) {
+        viewPassengerDetails(viewId);
+      } else if (quick === 'true') {
+        sourceItineraryId = urlParams.get('itinerary_id');
+        openPassengerModal({
+          first_name: urlParams.get('first'),
+          last_name: urlParams.get('last'),
+          email: urlParams.get('email'),
+          phone: urlParams.get('phone')
+        }, true);
+      }
+    });
+
+    // Sidebar & Theme
+    function initializeSidebar() {
+      const menuToggle = document.getElementById('menuToggle');
+      const sidebarClose = document.getElementById('sidebarClose');
+      const sidebarOverlay = document.getElementById('sidebarOverlay');
+      const sidebar = document.getElementById('sidebar');
+
+      menuToggle.addEventListener('click', () => {
+        sidebar.classList.add('active');
+        sidebarOverlay.classList.add('active');
+        document.body.style.overflow = 'hidden';
+      });
+
+      const closeSidebar = () => {
+        sidebar.classList.remove('active');
+        sidebarOverlay.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      sidebarClose.addEventListener('click', closeSidebar);
+      sidebarOverlay.addEventListener('click', closeSidebar);
+
+      // Theme toggle
+      const savedTheme = localStorage.getItem('theme') || 'light';
+      updateTheme(savedTheme);
+      document.getElementById('sidebarThemeToggle').addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        localStorage.setItem('theme', next);
+        updateTheme(next);
+      });
+    }
+
+    function updateTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      const text = document.getElementById('themeToggleText');
+      const icon = document.querySelector('.theme-icon-container');
+      if (theme === 'dark') {
+        icon.textContent = '☀️';
+        text.textContent = 'Light Mode';
+      } else {
+        icon.textContent = '🌙';
+        text.textContent = 'Dark Mode';
+      }
+    }
+
+    // Auth
+    async function checkAuthStatus() {
+      try {
+        const response = await fetch('/api/user');
+        if (response.ok) {
+          const user = await response.json();
+          document.getElementById('sidebarUserName').textContent = user.username;
+          document.getElementById('sidebarUserEmail').textContent = user.email || 'Member';
+          document.getElementById('sidebarAvatar').textContent = user.username.charAt(0).toUpperCase();
+
+          const authBtn = document.getElementById('sidebarAuthBtn');
+          authBtn.textContent = '🚪 Logout';
+          authBtn.classList.add('logout');
+          authBtn.onclick = async () => {
+            const confirmed = await showConfirm('Logout', 'Are you sure you want to logout?');
+            if (confirmed) {
+              await fetch('/api/logout', { method: 'POST' });
+              window.location.href = '/login';
+            }
+          };
+          return true;
+        } else {
+          showLoginPrompt();
+          return false;
+        }
+      } catch (e) {
+        showLoginPrompt();
+        return false;
+      }
+    }
+
+    function handleAuthClick() {
+      const next = encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.href = '/login?next=' + next;
+    }
+
+    function showLoginPrompt() {
+      const next = encodeURIComponent(window.location.pathname + window.location.search);
+      document.getElementById('passengersContainer').innerHTML = `
+        <div class="empty-state login-required">
+          <div class="empty-icon">🔐</div>
+          <h3>Login Required</h3>
+          <p>Please login to manage passengers.</p>
+          <a href="/login?next=${next}" class="btn btn-primary">Login / Register</a>
+        </div>
+      `;
+    }
+
+    // Load Data
+    async function loadAirlines() {
+      try {
+        const response = await fetch('/api/v2/airlines');
+        if (response.ok) {
+          const data = await response.json();
+          airlines = data.airlines;
+          populateAirlineDropdowns();
+        }
+      } catch (e) {
+        console.error('Failed to load airlines:', e);
+      }
+    }
+
+    function populateAirlineDropdowns() {
+      const searchInput = document.getElementById('ffAirlineSearch');
+      const list = document.getElementById('ffAirlineList');
+      const hiddenInput = document.getElementById('ffAirline');
+
+      if (!searchInput || !list) return;
+
+      const filterAirlines = () => {
+        const val = searchInput.value.toLowerCase();
+        list.innerHTML = '';
+
+        if (!val && document.activeElement !== searchInput) {
+          list.style.display = 'none';
+          return;
+        }
+
+        const matches = airlines.filter(a =>
+          a.name.toLowerCase().includes(val) ||
+          a.iata_code.toLowerCase().includes(val)
+        );
+
+        if (matches.length > 0) {
+          list.style.display = 'block';
+          matches.forEach(a => {
+            const div = document.createElement('div');
+            div.className = 'dropdown-item';
+            div.innerHTML = `<div>${a.name}</div><span class="sub-text">${a.iata_code}</span>`;
+            div.onclick = () => {
+              searchInput.value = `${a.name} (${a.iata_code})`;
+              hiddenInput.value = a.id;
+              list.style.display = 'none';
+            };
+            list.appendChild(div);
+          });
+        } else {
+          list.style.display = 'none';
+        }
+      };
+
+      searchInput.oninput = filterAirlines;
+      searchInput.onclick = filterAirlines;
+
+      document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !list.contains(e.target)) {
+          list.style.display = 'none';
+        }
+      });
+    }
+
+    async function loadPassengers() {
+      try {
+        const response = await fetch('/api/v2/passengers');
+        if (response.ok) {
+          const data = await response.json();
+          passengers = data.passengers;
+          renderPassengers();
+          updateStats();
+        }
+      } catch (e) {
+        console.error('Failed to load passengers:', e);
+        showNotification('Failed to load passengers', 'error');
+      }
+    }
+
+    function updateStats() {
+      document.getElementById('totalPassengers').textContent = passengers.length;
+
+      // Calculate totals from passenger data
+      let ffCount = 0;
+      let docCount = 0;
+      let corpLinks = 0;
+
+      passengers.forEach(p => {
+        // Note: These would need to be fetched per passenger for accuracy
+        // For now, we show 0 and update when viewing details
+      });
+
+      document.getElementById('totalFrequentFlyer').textContent = ffCount;
+      document.getElementById('totalDocuments').textContent = docCount;
+      document.getElementById('linkedCorporates').textContent = corpLinks;
+    }
+
+    function renderPassengers() {
+      const container = document.getElementById('passengersContainer');
+
+      if (passengers.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">👤</div>
+            <h3>No Passengers Yet</h3>
+            <p>Add your first passenger to get started.</p>
+            <button class="btn btn-primary" onclick="openPassengerModal()">➕ Add Passenger</button>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = passengers.map(p => `
+        <div class="card passenger-card" data-id="${p.id}">
+          <div class="card-header">
+            <div class="card-avatar">${(p.first_name || 'P').charAt(0).toUpperCase()}</div>
+            <div class="card-title-section">
+              <h3 class="card-title">${p.full_name || `${p.first_name} ${p.last_name}`}</h3>
+              <span class="card-subtitle">${p.email || p.phone || 'No contact info'}</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="card-info-row">
+              <span class="info-label">🎂 DOB</span>
+              <span class="info-value">${p.date_of_birth || 'Not specified'}</span>
+            </div>
+            <div class="card-info-row">
+              <span class="info-label">🌍 Nationality</span>
+              <span class="info-value">${p.nationality || 'Not specified'}</span>
+            </div>
+            <div class="card-info-row">
+              <span class="info-label">📍 City</span>
+              <span class="info-value">${p.city || 'Not specified'}</span>
+            </div>
+          </div>
+          <div class="card-actions">
+            <button class="btn btn-icon" onclick="viewPassengerDetails('${p.id}')" title="View Details">👁️</button>
+            <button class="btn btn-icon" onclick="editPassenger('${p.id}')" title="Edit">✏️</button>
+            <button class="btn btn-icon btn-danger-icon" onclick="deletePassenger('${p.id}')" title="Delete">🗑️</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function filterPassengers() {
+      const search = document.getElementById('searchPassengers').value.toLowerCase();
+      const filtered = passengers.filter(p =>
+        (p.full_name || '').toLowerCase().includes(search) ||
+        (p.first_name || '').toLowerCase().includes(search) ||
+        (p.last_name || '').toLowerCase().includes(search) ||
+        (p.email || '').toLowerCase().includes(search) ||
+        (p.phone || '').includes(search)
+      );
+
+      const container = document.getElementById('passengersContainer');
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">🔍</div>
+            <h3>No Results</h3>
+            <p>No passengers match your search.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const tempPassengers = passengers;
+      passengers = filtered;
+      renderPassengers();
+      passengers = tempPassengers;
+    }
+
+    // View Passenger Details
+    async function viewPassengerDetails(passengerId) {
+      try {
+        const response = await fetch(`/api/v2/passengers/${passengerId}`);
+        if (!response.ok) throw new Error('Failed to load passenger');
+
+        currentPassenger = await response.json();
+        renderPassengerDetails();
+        document.getElementById('passengerDetailModal').classList.add('active');
+      } catch (e) {
+        showNotification('Failed to load passenger details', 'error');
+      }
+    }
+
+    function renderPassengerDetails() {
+      const p = currentPassenger;
+      const content = document.getElementById('passengerDetailContent');
+
+      document.getElementById('passengerDetailTitle').textContent = p.full_name || `${p.first_name} ${p.last_name}`;
+
+      content.innerHTML = `
+        <div class="detail-tabs">
+          <button class="tab-btn active" onclick="showDetailTab('profile')">Profile</button>
+          <button class="tab-btn" onclick="showDetailTab('frequentFlyer')">Frequent Flyer</button>
+          <button class="tab-btn" onclick="showDetailTab('documents')">Documents</button>
+          <button class="tab-btn" onclick="showDetailTab('preferences')">Preferences</button>
+          <button class="tab-btn" onclick="showDetailTab('itineraries')">Itineraries</button>
+        </div>
+        
+        <div class="detail-content">
+          <div id="tab-profile" class="tab-panel active">
+            <div class="detail-section">
+              <h4>Personal Information</h4>
+              <div class="detail-grid">
+                <div class="detail-item">
+                  <span class="detail-label">Title</span>
+                  <span class="detail-value">${p.title || '-'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">First Name</span>
+                  <span class="detail-value">${p.first_name}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Middle Name</span>
+                  <span class="detail-value">${p.middle_name || '-'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Last Name</span>
+                  <span class="detail-value">${p.last_name}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Date of Birth</span>
+                  <span class="detail-value">${p.date_of_birth || '-'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Gender</span>
+                  <span class="detail-value">${p.gender || '-'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Nationality</span>
+                  <span class="detail-value">${p.nationality || '-'}</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="detail-section">
+              <h4>Contact Information</h4>
+              <div class="detail-grid">
+                <div class="detail-item">
+                  <span class="detail-label">Email</span>
+                  <span class="detail-value">${p.email || '-'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Phone</span>
+                  <span class="detail-value">${p.phone || '-'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Alternate Phone</span>
+                  <span class="detail-value">${p.alternate_phone || '-'}</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="detail-section">
+              <h4>Address</h4>
+              <div class="detail-grid">
+                <div class="detail-item detail-item-wide">
+                  <span class="detail-label">Address</span>
+                  <span class="detail-value">${[p.address_line1, p.address_line2].filter(Boolean).join(', ') || '-'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">City</span>
+                  <span class="detail-value">${p.city || '-'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">State</span>
+                  <span class="detail-value">${p.state || '-'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Pincode</span>
+                  <span class="detail-value">${p.pincode || '-'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Country</span>
+                  <span class="detail-value">${p.country || '-'}</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="detail-section">
+              <h4>Emergency Contact</h4>
+              <div class="detail-grid">
+                <div class="detail-item">
+                  <span class="detail-label">Name</span>
+                  <span class="detail-value">${p.emergency_contact_name || '-'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Phone</span>
+                  <span class="detail-value">${p.emergency_contact_phone || '-'}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Relationship</span>
+                  <span class="detail-value">${p.emergency_contact_relationship || '-'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div id="tab-frequentFlyer" class="tab-panel">
+            <div class="detail-section">
+              <div class="section-header-inline">
+                <h4>Frequent Flyer Accounts</h4>
+                <button class="btn btn-sm btn-primary" onclick="openFfModal('${p.id}')">➕ Add</button>
+              </div>
+              <div id="ffList" class="items-list">
+                ${renderFrequentFlyerList(p.frequent_flyer_accounts || [])}
+              </div>
+            </div>
+          </div>
+          
+          <div id="tab-documents" class="tab-panel">
+            <div class="detail-section">
+              <div class="section-header-inline">
+                <h4>Travel Documents</h4>
+                <button class="btn btn-sm btn-primary" onclick="openDocModal('${p.id}')">➕ Add</button>
+              </div>
+              <div id="docList" class="items-list">
+                ${renderDocumentsList(p.travel_documents || [])}
+              </div>
+            </div>
+          </div>
+          
+          <div id="tab-preferences" class="tab-panel">
+            <div class="detail-section">
+              <div class="section-header-inline">
+                <h4>Travel Preferences</h4>
+                <button class="btn btn-sm btn-primary" onclick="openPrefsModal('${p.id}')">✏️ Edit</button>
+              </div>
+              ${renderPreferences(p.preferences)}
+            </div>
+          </div>
+          
+          <div id="tab-itineraries" class="tab-panel">
+            <div class="detail-section">
+              <h4>Recent Itineraries</h4>
+              <div id="passengerItineraries" class="items-list">
+                <p class="empty-text">Loading itineraries...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Load itineraries for this passenger
+      loadPassengerItineraries(p.id);
+    }
+
+    function renderFrequentFlyerList(accounts) {
+      if (!accounts || accounts.length === 0) {
+        return '<p class="empty-text">No frequent flyer accounts added.</p>';
+      }
+
+      return accounts.map(ff => `
+        <div class="list-item">
+          <div class="list-item-info">
+            <span class="list-item-title">${ff.airline_code} - ${ff.airline_name || 'Unknown Airline'}</span>
+            <span class="list-item-subtitle">FF#: ${ff.frequent_flyer_number}</span>
+            ${ff.tier_status ? `<span class="badge badge-tier">${ff.tier_status}</span>` : ''}
+          </div>
+          <div class="list-item-actions">
+            <button class="btn btn-icon btn-danger-icon" onclick="deleteFrequentFlyer('${currentPassenger.id}', '${ff.id}')" title="Delete">🗑️</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderDocumentsList(documents) {
+      if (!documents || documents.length === 0) {
+        return '<p class="empty-text">No travel documents added.</p>';
+      }
+
+      return documents.map(doc => `
+        <div class="list-item ${doc.is_primary ? 'list-item-primary' : ''}">
+          <div class="list-item-info">
+            <span class="list-item-title">${doc.document_type} ${doc.is_primary ? '⭐' : ''}</span>
+            <span class="list-item-subtitle">${doc.document_number}</span>
+            ${doc.expiry_date ? `<span class="list-item-meta">Expires: ${doc.expiry_date}</span>` : ''}
+          </div>
+          <div class="list-item-actions">
+            <button class="btn btn-icon btn-danger-icon" onclick="deleteDocument('${currentPassenger.id}', '${doc.id}')" title="Delete">🗑️</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderPreferences(prefs) {
+      if (!prefs) {
+        return '<p class="empty-text">No preferences set. Click Edit to add preferences.</p>';
+      }
+
+      return `
+        <div class="detail-grid">
+          <div class="detail-item">
+            <span class="detail-label">Meal</span>
+            <span class="detail-value">${prefs.meal_preference || 'No preference'}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Seat</span>
+            <span class="detail-value">${prefs.seat_preference || 'No preference'}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Cabin</span>
+            <span class="detail-value">${prefs.preferred_cabin_class || 'No preference'}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Wheelchair</span>
+            <span class="detail-value">${prefs.wheelchair_required ? 'Yes' : 'No'}</span>
+          </div>
+          ${prefs.special_assistance_type ? `
+            <div class="detail-item">
+              <span class="detail-label">Assistance</span>
+              <span class="detail-value">${prefs.special_assistance_type}</span>
+            </div>
+          ` : ''}
+          ${prefs.preferred_airlines ? `
+            <div class="detail-item">
+              <span class="detail-label">Preferred Airlines</span>
+              <span class="detail-value">${prefs.preferred_airlines}</span>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    async function loadPassengerItineraries(passengerId) {
+      try {
+        const response = await fetch(`/api/v2/itineraries?passenger_id=${passengerId}`);
+        if (response.ok) {
+          const data = await response.json();
+          const container = document.getElementById('passengerItineraries');
+
+          if (!data.itineraries || data.itineraries.length === 0) {
+            container.innerHTML = '<p class="empty-text">No itineraries found for this passenger.</p>';
+            return;
+          }
+
+          container.innerHTML = data.itineraries.map(it => `
+            <div class="list-item itinerary-item">
+              <div class="list-item-info">
+                <span class="list-item-title">${it.title || 'Untitled Itinerary'}</span>
+                <span class="list-item-subtitle">${new Date(it.created_at).toLocaleDateString()}</span>
+                <span class="badge badge-status badge-${it.status}">${it.status}</span>
+              </div>
+              <div class="list-item-actions">
+                <button class="btn btn-icon" onclick="window.location.href='/itineraries-v2?id=${it.id}'" title="View">👁️</button>
+              </div>
+            </div>
+          `).join('');
+        }
+      } catch (e) {
+        console.error('Failed to load itineraries:', e);
+      }
+    }
+
+    function showDetailTab(tabName) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+
+      event.target.classList.add('active');
+      document.getElementById(`tab-${tabName}`).classList.add('active');
+    }
+
+    function closePassengerDetailModal() {
+      document.getElementById('passengerDetailModal').classList.remove('active');
+      currentPassenger = null;
+    }
+
+    // Passenger CRUD
+    function openPassengerModal(passenger = null, isNew = false) {
+      const form = document.getElementById('passengerForm');
+      form.reset();
+
+      if (passenger && !isNew) {
+        document.getElementById('passengerModalTitle').textContent = 'Edit Passenger';
+        document.getElementById('passengerId').value = passenger.id;
+        document.getElementById('passengerTitle').value = passenger.title || '';
+        document.getElementById('passengerFirstName').value = passenger.first_name || '';
+        document.getElementById('passengerMiddleName').value = passenger.middle_name || '';
+        document.getElementById('passengerLastName').value = passenger.last_name || '';
+        document.getElementById('passengerDOB').value = passenger.date_of_birth || '';
+        document.getElementById('passengerGender').value = passenger.gender || '';
+        document.getElementById('passengerNationality').value = passenger.nationality || 'Indian';
+        document.getElementById('passengerEmail').value = passenger.email || '';
+        document.getElementById('passengerPhone').value = passenger.phone || '';
+        document.getElementById('passengerAltPhone').value = passenger.alternate_phone || '';
+        document.getElementById('passengerAddress1').value = passenger.address_line1 || '';
+        document.getElementById('passengerAddress2').value = passenger.address_line2 || '';
+        document.getElementById('passengerCity').value = passenger.city || '';
+        document.getElementById('passengerState').value = passenger.state || '';
+        document.getElementById('passengerPincode').value = passenger.pincode || '';
+        document.getElementById('passengerCountry').value = passenger.country || 'India';
+        document.getElementById('emergencyName').value = passenger.emergency_contact_name || '';
+        document.getElementById('emergencyPhone').value = passenger.emergency_contact_phone || '';
+        document.getElementById('emergencyRelationship').value = passenger.emergency_contact_relationship || '';
+      } else if (passenger && isNew) {
+        document.getElementById('passengerModalTitle').textContent = 'Add Passenger';
+        document.getElementById('passengerId').value = '';
+        document.getElementById('passengerFirstName').value = passenger.first_name || '';
+        document.getElementById('passengerLastName').value = passenger.last_name || '';
+        document.getElementById('passengerEmail').value = passenger.email || '';
+        document.getElementById('passengerPhone').value = passenger.phone || '';
+      } else {
+        document.getElementById('passengerModalTitle').textContent = 'Add Passenger';
+        document.getElementById('passengerId').value = '';
+      }
+
+      document.getElementById('passengerModal').classList.add('active');
+    }
+
+    function closePassengerModal() {
+      document.getElementById('passengerModal').classList.remove('active');
+    }
+
+    async function savePassenger(event) {
+      event.preventDefault();
+
+      const passengerId = document.getElementById('passengerId').value;
+      const isEdit = !!passengerId;
+
+      const data = {
+        title: document.getElementById('passengerTitle').value,
+        first_name: document.getElementById('passengerFirstName').value,
+        middle_name: document.getElementById('passengerMiddleName').value,
+        last_name: document.getElementById('passengerLastName').value,
+        date_of_birth: document.getElementById('passengerDOB').value || null,
+        gender: document.getElementById('passengerGender').value,
+        nationality: document.getElementById('passengerNationality').value,
+        email: document.getElementById('passengerEmail').value,
+        phone: document.getElementById('passengerPhone').value,
+        alternate_phone: document.getElementById('passengerAltPhone').value,
+        address_line1: document.getElementById('passengerAddress1').value,
+        address_line2: document.getElementById('passengerAddress2').value,
+        city: document.getElementById('passengerCity').value,
+        state: document.getElementById('passengerState').value,
+        pincode: document.getElementById('passengerPincode').value,
+        country: document.getElementById('passengerCountry').value,
+        emergency_contact_name: document.getElementById('emergencyName').value,
+        emergency_contact_phone: document.getElementById('emergencyPhone').value,
+        emergency_contact_relationship: document.getElementById('emergencyRelationship').value
+      };
+
+      try {
+        const url = isEdit ? `/api/v2/passengers/${passengerId}` : '/api/v2/passengers';
+        const method = isEdit ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          showNotification(`Passenger ${isEdit ? 'updated' : 'created'} successfully`, 'success');
+          closePassengerModal();
+
+          // Link to itinerary if needed
+          if (!isEdit && sourceItineraryId) {
+            await linkPassengerToItinerary(sourceItineraryId, result.passenger || result);
+          }
+
+          await loadPassengers();
+        } else {
+          const error = await response.json();
+          showNotification(error.error || 'Failed to save passenger', 'error');
+        }
+      } catch (e) {
+        showNotification('Failed to save passenger', 'error');
+      }
+    }
+
+    async function editPassenger(passengerId) {
+      try {
+        const response = await fetch(`/api/v2/passengers/${passengerId}`);
+        if (response.ok) {
+          const passenger = await response.json();
+          openPassengerModal(passenger);
+        }
+      } catch (e) {
+        showNotification('Failed to load passenger', 'error');
+      }
+    }
+
+    async function deletePassenger(passengerId) {
+      const confirmed = await showConfirm('Delete Passenger', 'Are you sure you want to delete this passenger? This action cannot be undone.');
+      if (!confirmed) return;
+
+      try {
+        const response = await fetch(`/api/v2/passengers/${passengerId}`, { method: 'DELETE' });
+        if (response.ok) {
+          showNotification('Passenger deleted successfully', 'success');
+          await loadPassengers();
+        } else {
+          showNotification('Failed to delete passenger', 'error');
+        }
+      } catch (e) {
+        showNotification('Failed to delete passenger', 'error');
+      }
+    }
+
+    // Frequent Flyer CRUD
+    function openFfModal(passengerId) {
+      document.getElementById('ffForm').reset();
+      document.getElementById('ffAirlineSearch').value = '';
+      document.getElementById('ffAirline').value = '';
+      document.getElementById('ffPassengerId').value = passengerId;
+      document.getElementById('ffId').value = '';
+      document.getElementById('ffModal').classList.add('active');
+    }
+
+    function closeFfModal() {
+      document.getElementById('ffModal').classList.remove('active');
+    }
+
+    async function saveFrequentFlyer(event) {
+      event.preventDefault();
+
+      const passengerId = document.getElementById('ffPassengerId').value;
+      const data = {
+        airline_id: document.getElementById('ffAirline').value,
+        frequent_flyer_number: document.getElementById('ffNumber').value,
+        tier_status: document.getElementById('ffTier').value,
+        miles_balance: document.getElementById('ffMiles').value ? parseInt(document.getElementById('ffMiles').value) : null,
+        tier_expiry_date: document.getElementById('ffExpiry').value || null
+      };
+
+      try {
+        const response = await fetch(`/api/v2/passengers/${passengerId}/frequent-flyer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        if (response.ok) {
+          showNotification('Frequent flyer account added', 'success');
+          closeFfModal();
+          await viewPassengerDetails(passengerId);
+        } else {
+          const error = await response.json();
+          showNotification(error.error || 'Failed to add account', 'error');
+        }
+      } catch (e) {
+        showNotification('Failed to add account', 'error');
+      }
+    }
+
+    async function deleteFrequentFlyer(passengerId, ffId) {
+      const confirmed = await showConfirm('Delete Account', 'Delete this frequent flyer account?');
+      if (!confirmed) return;
+
+      try {
+        const response = await fetch(`/api/v2/passengers/${passengerId}/frequent-flyer/${ffId}`, { method: 'DELETE' });
+        if (response.ok) {
+          showNotification('Account deleted', 'success');
+          await viewPassengerDetails(passengerId);
+        }
+      } catch (e) {
+        showNotification('Failed to delete account', 'error');
+      }
+    }
+
+    // Documents CRUD
+    function openDocModal(passengerId) {
+      document.getElementById('docForm').reset();
+      document.getElementById('docPassengerId').value = passengerId;
+      document.getElementById('docId').value = '';
+      document.getElementById('docModal').classList.add('active');
+    }
+
+    function closeDocModal() {
+      document.getElementById('docModal').classList.remove('active');
+    }
+
+    async function saveDocument(event) {
+      event.preventDefault();
+
+      const passengerId = document.getElementById('docPassengerId').value;
+      const data = {
+        document_type: document.getElementById('docType').value,
+        document_number: document.getElementById('docNumber').value,
+        name_on_document: document.getElementById('docName').value,
+        issuing_country: document.getElementById('docCountry').value,
+        issue_date: document.getElementById('docIssueDate').value || null,
+        expiry_date: document.getElementById('docExpiryDate').value || null,
+        is_primary: document.getElementById('docPrimary').checked
+      };
+
+      try {
+        const response = await fetch(`/api/v2/passengers/${passengerId}/documents`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        if (response.ok) {
+          showNotification('Document added', 'success');
+          closeDocModal();
+          await viewPassengerDetails(passengerId);
+        } else {
+          const error = await response.json();
+          showNotification(error.error || 'Failed to add document', 'error');
+        }
+      } catch (e) {
+        showNotification('Failed to add document', 'error');
+      }
+    }
+
+    async function deleteDocument(passengerId, docId) {
+      const confirmed = await showConfirm('Delete Document', 'Delete this travel document?');
+      if (!confirmed) return;
+
+      try {
+        const response = await fetch(`/api/v2/passengers/${passengerId}/documents/${docId}`, { method: 'DELETE' });
+        if (response.ok) {
+          showNotification('Document deleted', 'success');
+          await viewPassengerDetails(passengerId);
+        }
+      } catch (e) {
+        showNotification('Failed to delete document', 'error');
+      }
+    }
+
+    // Preferences
+    function openPrefsModal(passengerId) {
+      const prefs = currentPassenger?.preferences || {};
+
+      document.getElementById('prefsPassengerId').value = passengerId;
+      document.getElementById('prefsMeal').value = prefs.meal_preference || '';
+      document.getElementById('prefsMealRequest').value = prefs.meal_special_request || '';
+      document.getElementById('prefsSeat').value = prefs.seat_preference || '';
+      document.getElementById('prefsSeatLocation').value = prefs.seat_location || '';
+      document.getElementById('prefsCabin').value = prefs.preferred_cabin_class || '';
+      document.getElementById('prefsWheelchair').checked = prefs.wheelchair_required || false;
+      document.getElementById('prefsAssistance').value = prefs.special_assistance_type || '';
+      document.getElementById('prefsAssistanceNotes').value = prefs.special_assistance_notes || '';
+      document.getElementById('prefsPreferredAirlines').value = prefs.preferred_airlines || '';
+      document.getElementById('prefsAvoidAirlines').value = prefs.avoid_airlines || '';
+
+      document.getElementById('prefsModal').classList.add('active');
+    }
+
+    function closePrefsModal() {
+      document.getElementById('prefsModal').classList.remove('active');
+    }
+
+    async function savePreferences(event) {
+      event.preventDefault();
+
+      const passengerId = document.getElementById('prefsPassengerId').value;
+      const data = {
+        meal_preference: document.getElementById('prefsMeal').value,
+        meal_special_request: document.getElementById('prefsMealRequest').value,
+        seat_preference: document.getElementById('prefsSeat').value,
+        seat_location: document.getElementById('prefsSeatLocation').value,
+        preferred_cabin_class: document.getElementById('prefsCabin').value,
+        wheelchair_required: document.getElementById('prefsWheelchair').checked,
+        special_assistance_type: document.getElementById('prefsAssistance').value,
+        special_assistance_notes: document.getElementById('prefsAssistanceNotes').value,
+        preferred_airlines: document.getElementById('prefsPreferredAirlines').value,
+        avoid_airlines: document.getElementById('prefsAvoidAirlines').value
+      };
+
+      try {
+        const response = await fetch(`/api/v2/passengers/${passengerId}/preferences`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        if (response.ok) {
+          showNotification('Preferences saved', 'success');
+          closePrefsModal();
+          await viewPassengerDetails(passengerId);
+        } else {
+          showNotification('Failed to save preferences', 'error');
+        }
+      } catch (e) {
+        showNotification('Failed to save preferences', 'error');
+      }
+    }
+
+    // Utility functions
+    function showNotification(message, type = 'success') {
+      const notification = document.getElementById('notification');
+      notification.textContent = message;
+      notification.className = `notification ${type} show`;
+
+      setTimeout(() => {
+        notification.classList.remove('show');
+      }, 3000);
+    }
+
+    function showConfirm(title, message) {
+      return new Promise(resolve => {
+        confirmResolve = resolve;
+        document.getElementById('confirmTitle').textContent = title;
+        document.getElementById('confirmMessage').textContent = message;
+        document.getElementById('confirmModal').classList.add('active');
+      });
+    }
+
+    function closeConfirmModal(result) {
+      document.getElementById('confirmModal').classList.remove('active');
+      if (confirmResolve) {
+        confirmResolve(result);
+        confirmResolve = null;
+      }
+    }
+
+    async function linkPassengerToItinerary(itineraryId, passenger) {
+      try {
+        // 1. Get current itinerary
+        const itResp = await fetch(`/api/v2/itineraries/${itineraryId}`);
+        if (!itResp.ok) return;
+        const it = await itResp.json();
+
+        // 2. Update passengers_data
+        let pData = it.passengers_data || [];
+
+        // Try to find the temporary entry that matches this new passenger
+        const matchIndex = pData.findIndex(p => {
+          if (p.id) return false;
+
+          const pFirst = (p.first_name || '').toLowerCase().trim();
+          const pLast = (p.last_name || '').toLowerCase().trim();
+          const targetFirst = (passenger.first_name || '').toLowerCase().trim();
+          const targetLast = (passenger.last_name || '').toLowerCase().trim();
+
+          return pFirst === targetFirst && (pLast === targetLast || !pLast || !targetLast);
+        });
+
+        if (matchIndex !== -1) {
+          // Replace with registered passenger data
+          pData[matchIndex] = {
+            ...passenger,
+            is_db: true
+          };
+        } else {
+          // If no match found, just push it (though unlikely in quickRegister flow)
+          pData.push({ ...passenger, is_db: true });
+        }
+
+        // 3. Save it back
+        await fetch(`/api/v2/itineraries/${itineraryId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ passengers_data: pData })
+        });
+
+        showNotification('Itinerary updated with registered passenger', 'success');
+
+        // Redirect back to itineraries after a short delay
+        setTimeout(() => {
+          window.location.href = `/itineraries-v2?id=${itineraryId}`;
+        }, 1500);
+
+      } catch (e) {
+        console.error('Link Error:', e);
+      }
+    }
+  </script>
+</body>
+
+</html>

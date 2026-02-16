@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Itineraries | Flight Manager</title>
+    <meta name="description"
+        content="Manage your flight itineraries - view, edit, approve, and track all your travel plans.">
+    <link rel="icon" type="image/png" href="/static/ticket-flight.png">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/itineraries.css">
+    <link rel="stylesheet" href="/static/dashboard.css">
+    <style>
+        /* Fix for dashboard.css overlapping the page */
+        .modal-overlay {
+            display: none !important;
+            pointer-events: none;
+        }
+
+        .modal-overlay.show,
+        .modal-overlay.active {
+            display: flex !important;
+            pointer-events: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Sidebar Overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- Drawer Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <button class="sidebar-close" id="sidebarClose">✕</button>
+        <div class="sidebar-header">
+            <div class="user-profile-section">
+                <div class="user-avatar" id="sidebarAvatar">?</div>
+                <div>
+                    <div class="user-name" id="sidebarUserName">User</div>
+                    <div class="user-email" id="sidebarUserEmail">member</div>
+                </div>
+            </div>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/" class="sidebar-link">✈️ Flight Parser</a>
+            <a href="/itineraries" class="sidebar-link active">📋 Itineraries</a>
+            <a href="/billing" class="sidebar-link">💰 Billing</a>
+            <div class="sidebar-divider"></div>
+            <a href="/passengers" class="sidebar-link">👥 Passengers</a>
+            <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
+        </nav>
+        <div class="sidebar-footer">
+            <button class="sidebar-theme-toggle" id="sidebarThemeToggle">
+                <span class="theme-icon-container">🌙</span>
+                <span id="themeToggleText">Dark Mode</span>
+            </button>
+            <button class="sidebar-auth-btn" id="sidebarAuthBtn" onclick="handleAuthClick()">🔑 Login</button>
+        </div>
+    </aside>
+
+    <!-- Top Header -->
+    <header class="top-header">
+        <button class="menu-toggle" id="menuToggle">☰</button>
+        <div class="header-content">
+            <h1>📋 Itineraries</h1>
+            <p>Manage your flight itineraries</p>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- ===== LIST VIEW ===== -->
+        <div id="listView">
+            <div class="list-header-controls">
+                <div class="search-wrapper">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="itinerarySearch" class="search-input" placeholder="Search itineraries..."
+                        oninput="renderItineraryCards()">
+                </div>
+                <div class="filter-bar">
+                    <button class="tab active" onclick="filterByStatus('all', this)">All</button>
+                    <button class="tab" onclick="filterByStatus('draft', this)">📝 Draft</button>
+                    <button class="tab" onclick="filterByStatus('approved', this)">✅ Approved</button>
+                    <button class="tab" onclick="filterByStatus('on_hold', this)">⏸️ On Hold</button>
+                    <button class="tab" onclick="filterByStatus('issued', this)">🎫 Issued</button>
+                </div>
+            </div>
+            <div id="itineraryCards" class="itin-grid">
+                <div class="empty-state" style="grid-column:1/-1">
+                    <div class="icon">✈️</div>
+                    <p>Loading itineraries...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== DETAIL VIEW ===== -->
+        <div id="detailView" style="display:none;">
+            <!-- Back Button -->
+            <button class="btn-action secondary" onclick="showListView()" style="margin-bottom:1rem;">← Back to All
+                Itineraries</button>
+
+            <!-- Detail Header -->
+            <div class="detail-header">
+                <div>
+                    <h1 id="detailTitle">Itinerary Details</h1>
+                    <div class="detail-subtitle" id="detailSubtitle"></div>
+                </div>
+                <div class="detail-actions" id="detailActions"></div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div id="progressBar"></div>
+
+            <!-- Info Cards -->
+            <div class="info-grid" id="infoCards"></div>
+
+            <!-- Flight Options -->
+            <div class="section-card" id="flightOptionsSection" style="display:none;">
+                <div class="section-header-row">
+                    <h2>✈️ Flight Options</h2>
+                    <span class="badge" id="flightOptionsBadge">0</span>
+                </div>
+                <div id="flightOptionsContainer"></div>
+            </div>
+
+            <!-- Passengers -->
+            <div class="section-card">
+                <div class="section-header-row">
+                    <h2>👥 Passengers</h2>
+                    <div style="display:flex;gap:0.5rem;">
+                        <button class="btn-action small primary" id="addPassengerBtn"
+                            onclick="showAddPassengerModal()">+ Add</button>
+                        <button class="btn-action small secondary" id="linkPassengerBtn"
+                            onclick="showLinkPassengerModal()">📎 From DB</button>
+                    </div>
+                </div>
+                <div id="passengersContainer"></div>
+            </div>
+
+            <!-- Billing -->
+            <div class="section-card">
+                <div class="section-header-row">
+                    <h2>💳 Billing Details</h2>
+                    <div style="display:flex;gap:0.5rem;">
+                        <button class="btn-action small primary" id="editBillingBtn" onclick="showEditBillingModal()">✏️
+                            Edit</button>
+                        <button class="btn-action small secondary" id="linkBillingBtn"
+                            onclick="showLinkBillingModal()">📎 From DB</button>
+                    </div>
+                </div>
+                <div id="billingContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Overlay -->
+    <div class="modal-overlay" id="modalOverlay" onclick="closeModal()">
+        <!-- Add Passenger Modal -->
+        <div class="modal" id="passengerModal" onclick="event.stopPropagation()">
+            <h3>👤 Add Passenger</h3>
+            <div class="modal-field"><label>Full Name *</label><input type="text" id="paxName"
+                    placeholder="e.g. John Doe"></div>
+            <div class="modal-field"><label>Email</label><input type="email" id="paxEmail"
+                    placeholder="john@example.com"></div>
+            <div class="modal-field"><label>Phone</label><input type="tel" id="paxPhone" placeholder="+91 98765 43210">
+            </div>
+            <div class="modal-field"><label>Age</label><input type="text" id="paxAge" placeholder="e.g. 30"></div>
+            <div class="modal-field"><label>Gender</label>
+                <select id="paxGender">
+                    <option value="">Select</option>
+                    <option value="M">Male</option>
+                    <option value="F">Female</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div class="modal-field" style="flex-direction: row; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                <input type="checkbox" id="paxSaveToDB" style="width: auto;">
+                <label for="paxSaveToDB" style="margin-bottom: 0;">Add/Update in Database</label>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-action secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn-action primary" id="paxSubmitBtn" onclick="addPassenger()">Add Passenger</button>
+            </div>
+        </div>
+
+        <!-- Link Passenger from DB Modal -->
+        <div class="modal" id="linkPassengerModal" onclick="event.stopPropagation()">
+            <h3>📎 Link Passenger from Database</h3>
+            <div class="modal-field">
+                <label>Search Passenger</label>
+                <div class="searchable-dropdown">
+                    <input type="text" id="dbPassengerSearch" class="dropdown-input" placeholder="Type name or email..."
+                        autocomplete="off">
+                    <div id="dbPassengerList" class="dropdown-list"></div>
+                    <input type="hidden" id="selectedPassengerId">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-action secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn-action primary" onclick="linkPassengerFromDB()">Link Passenger</button>
+            </div>
+        </div>
+
+        <!-- Edit Billing Modal -->
+        <div class="modal" id="billingModal" onclick="event.stopPropagation()">
+            <h3>✏️ Edit Billing Details</h3>
+            <div class="modal-field"><label>Display Name</label><input type="text" id="billName"
+                    placeholder="Name or Company Name">
+            </div>
+            <div class="modal-field"><label>Company</label><input type="text" id="billCompany"
+                    placeholder="Company name"></div>
+            <div class="modal-field"><label>Email</label><input type="email" id="billEmail"
+                    placeholder="billing@company.com"></div>
+            <div class="modal-field"><label>Phone</label><input type="tel" id="billPhone" placeholder="+91 98765 43210">
+            </div>
+            <div class="modal-field"><label>Address</label><textarea id="billAddress" rows="2"
+                    placeholder="Billing address"></textarea></div>
+            <div class="modal-field"><label>GST Number</label><input type="text" id="billGST" placeholder="GST Number">
+            </div>
+            <div class="modal-field" style="flex-direction: row; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                <input type="checkbox" id="billSaveToDB" style="width: auto;">
+                <label for="billSaveToDB" style="margin-bottom: 0;">Add/Update in Database</label>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-action secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn-action primary" id="billSubmitBtn" onclick="saveBilling()">Save Billing</button>
+            </div>
+        </div>
+
+        <!-- Link Billing Account from DB Modal -->
+        <div class="modal" id="linkBillingModal" onclick="event.stopPropagation()">
+            <h3>📎 Link Billing Account from Database</h3>
+            <div class="modal-field">
+                <label>Search Billing Account</label>
+                <div class="searchable-dropdown">
+                    <input type="text" id="dbBillingSearch" class="dropdown-input"
+                        placeholder="Type name, company or GST..." autocomplete="off">
+                    <div id="dbBillingList" class="dropdown-list"></div>
+                    <input type="hidden" id="selectedBillingId">
+                </div>
+            </div>
+            <div id="billingAccountPreview" style="display:none;"></div>
+            <div class="modal-actions">
+                <button class="btn-action secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn-action primary" onclick="linkBillingFromDB()">Link Billing Account</button>
+            </div>
+        </div>
+
+        <!-- Hold Itinerary Modal -->
+        <div class="modal" id="holdItineraryModal" onclick="event.stopPropagation()">
+            <h3>⏸️ Hold Itinerary</h3>
+            <div class="modal-field">
+                <label>Hold Until (Date & Time)</label>
+                <input type="datetime-local" id="holdDeadline">
+            </div>
+            <div class="modal-actions">
+                <button class="btn-action secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn-action primary" onclick="submitHoldItinerary()">Set Hold</button>
+            </div>
+        </div>
+
+        <!-- Passenger Detail Modal (Full Management) -->
+        <div class="modal modal-content modal-large" id="paxDetailModal" onclick="event.stopPropagation()"
+            style="padding:0;">
+            <div class="modal-header">
+                <h2 id="paxDetailTitle">Manage Passenger</h2>
+                <button class="modal-close" onclick="closePaxDetailModal()">✕</button>
+            </div>
+            <div class="modal-body" style="padding: 1.5rem;">
+                <div class="detail-tabs">
+                    <button class="tab-btn active" id="btn-tab-profile" onclick="showPaxTab('profile')">Profile</button>
+                    <button class="tab-btn" id="btn-tab-docs" onclick="showPaxTab('docs')">Documents</button>
+                    <button class="tab-btn" id="btn-tab-ff" onclick="showPaxTab('ff')">Frequent Flyer</button>
+                    <button class="tab-btn" id="btn-tab-prefs" onclick="showPaxTab('prefs')">Preferences</button>
+                </div>
+
+                <!-- Profile Tab -->
+                <div class="pax-tab-panel active" id="pax-tab-profile">
+                    <form id="editPaxForm" onsubmit="savePaxProfile(event)">
+                        <input type="hidden" id="editPaxId">
+                        <div class="form-section">
+                            <h3 class="form-section-title">Personal Information</h3>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Title</label>
+                                    <select id="editPaxTitle" class="form-select">
+                                        <option value="">Select</option>
+                                        <option value="Mr">Mr</option>
+                                        <option value="Mrs">Mrs</option>
+                                        <option value="Ms">Ms</option>
+                                        <option value="Dr">Dr</option>
+                                        <option value="Master">Master</option>
+                                        <option value="Miss">Miss</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label required">First Name</label>
+                                    <input type="text" id="editPaxFirstName" class="form-input" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Middle Name</label>
+                                    <input type="text" id="editPaxMiddleName" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label required">Last Name</label>
+                                    <input type="text" id="editPaxLastName" class="form-input" required>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Date of Birth</label>
+                                    <input type="date" id="editPaxDOB" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Gender</label>
+                                    <select id="editPaxGender" class="form-select">
+                                        <option value="">Select</option>
+                                        <option value="Male">Male</option>
+                                        <option value="Female">Female</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Nationality</label>
+                                    <input type="text" id="editPaxNationality" class="form-input">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-section">
+                            <h3 class="form-section-title">Contact Information</h3>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Email</label>
+                                    <input type="email" id="editPaxEmail" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Phone</label>
+                                    <input type="tel" id="editPaxPhone" class="form-input">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary"
+                                onclick="closePaxDetailModal()">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save Profile</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Documents Tab -->
+                <div class="pax-tab-panel" id="pax-tab-docs">
+                    <div class="items-list" id="paxDocList" style="margin-bottom: 2rem;">
+                        <!-- Documents rendered here -->
+                    </div>
+                    <div class="form-section">
+                        <h3 class="form-section-title">➕ Add New Document</h3>
+                        <form id="paxDocForm" onsubmit="savePaxDoc(event)">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label required">Document Type</label>
+                                    <select id="docType" class="form-select" required>
+                                        <option value="Passport">Passport</option>
+                                        <option value="Visa">Visa</option>
+                                        <option value="National ID">National ID</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label required">Document Number</label>
+                                    <input type="text" id="docNumber" class="form-input" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label required">Expiry Date</label>
+                                    <input type="date" id="docExpiry" class="form-input" required>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary" style="margin-top:1rem;">Add Document</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Frequent Flyer Tab -->
+                <div class="pax-tab-panel" id="pax-tab-ff">
+                    <div class="items-list" id="paxFfList" style="margin-bottom: 2rem;">
+                        <!-- FF accounts rendered here -->
+                    </div>
+                    <div class="form-section">
+                        <h3 class="form-section-title">➕ Add FF Account</h3>
+                        <form id="paxFfForm" onsubmit="savePaxFf(event)">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label required">Airline</label>
+                                    <div class="searchable-dropdown">
+                                        <input type="text" id="ffAirlineSearch" class="form-input"
+                                            placeholder="Search airline..." autocomplete="off" required>
+                                        <div id="ffAirlineList" class="dropdown-list"></div>
+                                        <input type="hidden" id="ffAirline" required>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label required">FF Number</label>
+                                    <input type="text" id="ffNumber" class="form-input" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Tier/Status</label>
+                                    <input type="text" id="ffTier" class="form-input" placeholder="e.g. Gold">
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary" style="margin-top:1rem;">Add Account</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Preferences Tab -->
+                <div class="pax-tab-panel" id="pax-tab-prefs">
+                    <form id="editPrefsForm" onsubmit="savePaxPrefs(event)">
+                        <div class="form-section">
+                            <h3 class="form-section-title">Travel Preferences</h3>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Meal Preference</label>
+                                    <select id="editPrefsMeal" class="form-select">
+                                        <option value="">No Preference</option>
+                                        <option value="Vegetarian">Vegetarian</option>
+                                        <option value="Non-Vegetarian">Non-Vegetarian</option>
+                                        <option value="Vegan">Vegan</option>
+                                        <option value="Jain">Jain</option>
+                                        <option value="Halal">Halal</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Special Meal Request</label>
+                                    <input type="text" id="editPrefsMealReq" class="form-input"
+                                        placeholder="e.g. No nuts">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Seat Preference</label>
+                                    <select id="editPrefsSeat" class="form-select">
+                                        <option value="">No Preference</option>
+                                        <option value="Window">Window</option>
+                                        <option value="Aisle">Aisle</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Assistance Type</label>
+                                    <select id="editPrefsAssistance" class="form-select">
+                                        <option value="">None</option>
+                                        <option value="WCHR">WCHR - Wheelchair</option>
+                                        <option value="WCHS">WCHS - No stairs</option>
+                                        <option value="WCHC">WCHC - Immobile</option>
+                                    </select>
+                                </div>
+                                <div class="form-group"
+                                    style="display:flex; align-items:center; gap:0.5rem; padding-top:1.5rem;">
+                                    <input type="checkbox" id="editPrefsWheelchair" style="width:20px; height:20px;">
+                                    <label for="editPrefsWheelchair" class="form-label"
+                                        style="margin-bottom:0;">Wheelchair Required</label>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Preferred Airlines</label>
+                                    <input type="text" id="editPrefsPrefAir" class="form-input"
+                                        placeholder="e.g. AI, UK">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Avoid Airlines</label>
+                                    <input type="text" id="editPrefsAvoidAir" class="form-input" placeholder="e.g. SG">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary"
+                                onclick="closePaxDetailModal()">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save Preferences</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/itineraries.js"></script>
+</body>
+
+</html>
