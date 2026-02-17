@@ -10,11 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==================== CONFIG ====================
-<<<<<<< HEAD
-OPENROUTER_API_KEY = "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"
-=======
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
->>>>>>> f5a3387 (Initial commit)
 OPENROUTER_URL = os.getenv("OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions")
 MODEL = os.getenv("MODEL", "mistralai/mistral-small-creative")
 MAX_TOKENS = 400
