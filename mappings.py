@@ -739,3 +739,74 @@ if __name__ == "__main__":
         print(f"   {airport['code']}: {airport['name']}")
     
     print("\n" + "="*60)
+COUNTRY_CODES = {
+    # ===== ASIA =====
+    "AFG": "Afghanistan", "ARM": "Armenia", "AZE": "Azerbaijan", "BHR": "Bahrain",
+    "BGD": "Bangladesh", "BTN": "Bhutan", "BRN": "Brunei", "KHM": "Cambodia",
+    "CHN": "China", "HKG": "Hong Kong", "MAC": "Macau", "TWN": "Taiwan",
+    "GEO": "Georgia", "IND": "India", "IDN": "Indonesia", "IRN": "Iran",
+    "IRQ": "Iraq", "ISR": "Israel", "JPN": "Japan", "JOR": "Jordan",
+    "KAZ": "Kazakhstan", "KWT": "Kuwait", "KGZ": "Kyrgyzstan", "LAO": "Laos",
+    "LBN": "Lebanon", "MYS": "Malaysia", "MDV": "Maldives", "MNG": "Mongolia",
+    "MMR": "Myanmar", "NPL": "Nepal", "PRK": "North Korea", "OMN": "Oman",
+    "PAK": "Pakistan", "PSE": "Palestine", "PHL": "Philippines", "QAT": "Qatar",
+    "SAU": "Saudi Arabia", "SGP": "Singapore", "KOR": "South Korea", "LKA": "Sri Lanka",
+    "SYR": "Syria", "TJK": "Tajikistan", "THA": "Thailand", "TLS": "Timor-Leste",
+    "TUR": "Turkey", "TKM": "Turkmenistan", "ARE": "United Arab Emirates",
+    "UZB": "Uzbekistan", "VNM": "Vietnam", "YEM": "Yemen",
+
+    # ===== EUROPE =====
+    "ALB": "Albania", "AND": "Andorra", "AUT": "Austria", "BLR": "Belarus",
+    "BEL": "Belgium", "BIH": "Bosnia and Herzegovina", "BGR": "Bulgaria",
+    "HRV": "Croatia", "CYP": "Cyprus", "CZE": "Czech Republic", "DNK": "Denmark",
+    "EST": "Estonia", "FIN": "Finland", "FRA": "France", "DEU": "Germany",
+    "GRC": "Greece", "HUN": "Hungary", "ISL": "Iceland", "IRL": "Ireland",
+    "ITA": "Italy", "LVA": "Latvia", "LIE": "Liechtenstein", "LTU": "Lithuania",
+    "LUX": "Luxembourg", "MLT": "Malta", "MDA": "Moldova", "MCO": "Monaco",
+    "MNE": "Montenegro", "NLD": "Netherlands", "MKD": "North Macedonia",
+    "NOR": "Norway", "POL": "Poland", "PRT": "Portugal", "ROU": "Romania",
+    "RUS": "Russia", "SMR": "San Marino", "SRB": "Serbia", "SVK": "Slovakia",
+    "SVN": "Slovenia", "ESP": "Spain", "SWE": "Sweden", "CHE": "Switzerland",
+    "UKR": "Ukraine", "GBR": "United Kingdom", "VAT": "Vatican City",
+    
+    # ===== AMERICAS =====
+    "ATG": "Antigua and Barbuda", "ARG": "Argentina", "BHS": "Bahamas", "BRB": "Barbados",
+    "BLZ": "Belize", "BOL": "Bolivia", "BRA": "Brazil", "CAN": "Canada",
+    "CHL": "Chile", "COL": "Colombia", "CRI": "Costa Rica", "CUB": "Cuba",
+    "DMA": "Dominica", "DOM": "Dominican Republic", "ECU": "Ecuador", "SLV": "El Salvador",
+    "GRD": "Grenada", "GTM": "Guatemala", "GUY": "Guyana", "HTI": "Haiti",
+    "HND": "Honduras", "JAM": "Jamaica", "MEX": "Mexico", "NIC": "Nicaragua",
+    "PAN": "Panama", "PRY": "Paraguay", "PER": "Peru", "KNA": "Saint Kitts and Nevis",
+    "LCA": "Saint Lucia", "VCT": "Saint Vincent and the Grenadines", "SUR": "Suriname",
+    "TTO": "Trinidad and Tobago", "USA": "United States", "URY": "Uruguay", "VEN": "Venezuela",
+
+    # ===== AFRICA =====
+    "DZA": "Algeria", "AGO": "Angola", "BEN": "Benin", "BWA": "Botswana",
+    "BFA": "Burkina Faso", "BDI": "Burundi", "CMR": "Cameroon", "CPV": "Cape Verde",
+    "CAF": "Central African Republic", "TCD": "Chad", "COM": "Comoros",
+    "COD": "Congo (DRC)", "COG": "Congo (Republic)", "CIV": "Ivory Coast",
+    "DJI": "Djibouti", "EGY": "Egypt", "GNQ": "Equatorial Guinea", "ERI": "Eritrea",
+    "ETH": "Ethiopia", "GAB": "Gabon", "GMB": "Gambia", "GHA": "Ghana",
+    "GIN": "Guinea", "GNB": "Guinea-Bissau", "KEN": "Kenya", "LSO": "Lesotho",
+    "LBR": "Liberia", "LBY": "Libya", "MDG": "Madagascar", "MWI": "Malawi",
+    "MLI": "Mali", "MRT": "Mauritania", "MUS": "Mauritius", "MAR": "Morocco",
+    "MOZ": "Mozambique", "NAM": "Namibia", "NER": "Niger", "NGA": "Nigeria",
+    "RWA": "Rwanda", "STP": "Sao Tome and Principe", "SEN": "Senegal",
+    "SYC": "Seychelles", "SLE": "Sierra Leone", "SOM": "Somalia", "ZAF": "South Africa",
+    "SSD": "South Sudan", "SDN": "Sudan", "SWZ": "Eswatini", "TZA": "Tanzania",
+    "TGO": "Togo", "TUN": "Tunisia", "UGA": "Uganda", "ZMB": "Zambia", "ZWE": "Zimbabwe",
+
+    # ===== OCEANIA =====
+    "AUS": "Australia", "FJI": "Fiji", "KIR": "Kiribati", "MHL": "Marshall Islands",
+    "FSM": "Micronesia", "NRU": "Nauru", "NZL": "New Zealand", "PLW": "Palau",
+    "PNG": "Papua New Guinea", "WSM": "Samoa", "SLB": "Solomon Islands",
+    "TON": "Tonga", "TUV": "Tuvalu", "VUT": "Vanuatu",
+
+    # ===== ICAO Variations (Passports often use these) =====
+    "D": "Germany",
+    "GB": "United Kingdom", 
+    "US": "United States",
+    "IN": "India",
+    "UNO": "United Nations",
+    "UNA": "United Nations Agency"
+}

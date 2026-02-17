@@ -12,11 +12,17 @@ from query_parser import extract_flight, extract_multiple_flights
 from models import User, Customer, Itinerary
 from extensions import db
 
+import pytesseract
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+
 load_dotenv()
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 db.init_app(app)
 
@@ -24,7 +30,9 @@ db.init_app(app)
 # Register API v2 Blueprint
 from routes_v2 import api_v2
 from extensions_v2 import db_session
+from ocr import ocr_bp
 app.register_blueprint(api_v2)
+app.register_blueprint(ocr_bp)
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):
@@ -572,6 +580,8 @@ def delete_itinerary(itinerary_id):
         db.session.rollback()
         print(f"Itinerary deletion error: {str(e)}")
         return jsonify({"error": "Failed to delete itinerary"}), 500
+
+
 
 # ==================== DATABASE INITIALIZATION ====================
 

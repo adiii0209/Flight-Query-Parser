@@ -126,8 +126,8 @@
   </div>
 
   <!-- Passenger Detail Modal -->
-  <div class="modal-overlay" id="passengerDetailModal">
-    <div class="modal-content modal-large">
+  <div class="modal-overlay" id="passengerDetailModal" onclick="closePassengerDetailModal()">
+    <div class="modal-content modal-large" onclick="event.stopPropagation()">
       <div class="modal-header">
         <h2 id="passengerDetailTitle">Passenger Details</h2>
         <button class="modal-close" onclick="closePassengerDetailModal()">✕</button>
@@ -139,8 +139,8 @@
   </div>
 
   <!-- Add/Edit Passenger Modal -->
-  <div class="modal-overlay" id="passengerModal">
-    <div class="modal-content modal-large">
+  <div class="modal-overlay" id="passengerModal" onclick="closePassengerModal()">
+    <div class="modal-content modal-large" onclick="event.stopPropagation()">
       <div class="modal-header">
         <h2 id="passengerModalTitle">Add Passenger</h2>
         <button class="modal-close" onclick="closePassengerModal()">✕</button>
@@ -148,6 +148,27 @@
       <div class="modal-body">
         <form id="passengerForm" onsubmit="savePassenger(event)">
           <input type="hidden" id="passengerId">
+
+          <div class="form-section">
+            <h3 class="form-section-title">Scan Document</h3>
+            <div class="form-row" style="align-items: center; gap: 1rem;">
+              <div class="form-group" style="flex: 1;">
+                <label class="form-label">Upload Passport (Image/PDF)</label>
+                <input type="file" id="passportUpload" accept="image/*,application/pdf" class="form-input"
+                  onchange="scanPassport()">
+              </div>
+              <div id="passportPreviewContainer" class="passport-preview-container">
+                <div class="passport-thumbnail-wrapper"
+                  onclick="togglePassportSideView(document.getElementById('passportPreviewThumbnail').src)">
+                  <img id="passportPreviewThumbnail" src="" class="passport-thumbnail">
+                  <div class="passport-expand-overlay">
+                    <span class="passport-expand-icon">🔍</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="scanStatus" style="font-size: 0.85rem; margin-top: 0.5rem; min-height: 1.2em;"></div>
+          </div>
 
           <div class="form-section">
             <h3 class="form-section-title">Personal Information</h3>
@@ -194,6 +215,20 @@
               <div class="form-group">
                 <label class="form-label">Nationality</label>
                 <input type="text" id="passengerNationality" class="form-input" value="Indian">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Passport Number</label>
+                <input type="text" id="passengerPassportNumber" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Date of Issue</label>
+                <input type="date" id="passengerIssueDate" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Date of Expiry</label>
+                <input type="date" id="passengerExpiryDate" class="form-input">
               </div>
             </div>
           </div>
@@ -276,8 +311,8 @@
   </div>
 
   <!-- Add Frequent Flyer Modal -->
-  <div class="modal-overlay" id="ffModal">
-    <div class="modal-content">
+  <div class="modal-overlay" id="ffModal" onclick="closeFfModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
       <div class="modal-header">
         <h2>Add Frequent Flyer Account</h2>
         <button class="modal-close" onclick="closeFfModal()">✕</button>
@@ -332,8 +367,8 @@
   </div>
 
   <!-- Add Travel Document Modal -->
-  <div class="modal-overlay" id="docModal">
-    <div class="modal-content">
+  <div class="modal-overlay" id="docModal" onclick="closeDocModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
       <div class="modal-header">
         <h2>Add Travel Document</h2>
         <button class="modal-close" onclick="closeDocModal()">✕</button>
@@ -394,8 +429,8 @@
   </div>
 
   <!-- Preferences Modal -->
-  <div class="modal-overlay" id="prefsModal">
-    <div class="modal-content modal-large">
+  <div class="modal-overlay" id="prefsModal" onclick="closePrefsModal()">
+    <div class="modal-content modal-large" onclick="event.stopPropagation()">
       <div class="modal-header">
         <h2>Passenger Preferences</h2>
         <button class="modal-close" onclick="closePrefsModal()">✕</button>
@@ -540,6 +575,104 @@
   <script>
     // Global state
     let passengers = [];
+
+    // OCR Function
+    async function scanPassport() {
+      const input = document.getElementById('passportUpload');
+      const status = document.getElementById('scanStatus');
+
+      if (!input.files || input.files.length === 0) {
+        if (status) status.innerHTML = '<span style="color:var(--danger)">Please select a file first</span>';
+        return;
+      }
+
+      // Preview logic
+      const file = input.files[0];
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const t = document.getElementById('passportPreviewThumbnail');
+        const c = document.getElementById('passportPreviewContainer');
+        if (t && c) { t.src = e.target.result; c.style.display = 'flex'; }
+      };
+      reader.readAsDataURL(file);
+
+      if (status) status.innerHTML = '<span style="color:var(--primary)">Scanning... Please wait ⏳</span>';
+
+      const formData = new FormData();
+      formData.append('passport', file);
+
+      try {
+        const response = await fetch('/extract-passport?debug=1', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+        console.log('OCR Response:', data);
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Scan failed');
+        }
+
+        // Fill fields
+        if (data.surname) {
+          document.getElementById('passengerLastName').value = data.surname;
+        }
+
+        // Names
+        if (data.first_name) {
+          document.getElementById('passengerFirstName').value = data.first_name;
+          if (data.middle_name) {
+            document.getElementById('passengerMiddleName').value = data.middle_name;
+          }
+        } else if (data.given_names) {
+          const parts = data.given_names.split(' ');
+          document.getElementById('passengerFirstName').value = parts[0];
+          if (parts.length > 1) {
+            document.getElementById('passengerMiddleName').value = parts.slice(1).join(' ');
+          }
+        }
+
+        if (data.date_of_birth) document.getElementById('passengerDOB').value = data.date_of_birth;
+
+        if (data.sex) {
+          const genderSelect = document.getElementById('passengerGender');
+          const titleSelect = document.getElementById('passengerTitle');
+
+          if (data.sex === 'M' || data.sex === 'm') {
+            genderSelect.value = 'Male';
+            if (titleSelect) titleSelect.value = 'Mr';
+          } else if (data.sex === 'F' || data.sex === 'f') {
+            genderSelect.value = 'Female';
+            if (titleSelect) titleSelect.value = 'Mrs';
+          } else {
+            genderSelect.value = 'Other';
+          }
+        }
+
+        if (data.nationality) {
+          const natMap = { 'IND': 'Indian', 'USA': 'USA', 'GBR': 'UK' };
+          document.getElementById('passengerNationality').value = natMap[data.nationality] || data.nationality;
+        }
+
+        if (data.passport_number) {
+          document.getElementById('passengerPassportNumber').value = data.passport_number;
+        }
+
+        if (data.expiration_date) {
+          document.getElementById('passengerExpiryDate').value = data.expiration_date;
+        }
+
+        if (data.date_of_issue) {
+          document.getElementById('passengerIssueDate').value = data.date_of_issue;
+        }
+
+        if (status) status.innerHTML = '<span style="color:var(--success)">✅ Scanned successfully! Please review details.</span>';
+
+      } catch (e) {
+        if (status) status.innerHTML = `<span style="color:var(--danger)">❌ Error: ${e.message}</span>`;
+      }
+    }
     let airlines = [];
     let currentPassenger = null;
     let confirmResolve = null;
@@ -1128,6 +1261,12 @@
     }
 
     function closePassengerDetailModal() {
+      // Close side viewer
+      const viewer = document.getElementById('passportSideViewer');
+      const modal = document.getElementById('passengerDetailModal');
+      if (viewer) viewer.classList.remove('active');
+      if (modal) modal.classList.remove('modal-shifted');
+
       document.getElementById('passengerDetailModal').classList.remove('active');
       currentPassenger = null;
     }
@@ -1136,6 +1275,25 @@
     function openPassengerModal(passenger = null, isNew = false) {
       const form = document.getElementById('passengerForm');
       form.reset();
+
+      // Clear OCR state
+      const previewCont = document.getElementById('passportPreviewContainer');
+      const previewThumb = document.getElementById('passportPreviewThumbnail');
+      const scanStatus = document.getElementById('scanStatus');
+      const uploadInput = document.getElementById('passportUpload');
+
+      if (previewCont) previewCont.style.display = 'none';
+      if (previewThumb) previewThumb.src = '';
+      if (scanStatus) scanStatus.innerHTML = '';
+      if (uploadInput) uploadInput.value = '';
+
+      // Ensure side viewer is closed
+      const viewer = document.getElementById('passportSideViewer');
+      const m1 = document.getElementById('passengerModal');
+      const m2 = document.getElementById('passengerDetailModal');
+      if (viewer) viewer.classList.remove('active');
+      if (m1) m1.classList.remove('modal-shifted');
+      if (m2) m2.classList.remove('modal-shifted');
 
       if (passenger && !isNew) {
         document.getElementById('passengerModalTitle').textContent = 'Edit Passenger';
@@ -1175,6 +1333,12 @@
     }
 
     function closePassengerModal() {
+      // Close side viewer
+      const viewer = document.getElementById('passportSideViewer');
+      const modal = document.getElementById('passengerModal');
+      if (viewer) viewer.classList.remove('active');
+      if (modal) modal.classList.remove('modal-shifted');
+
       document.getElementById('passengerModal').classList.remove('active');
     }
 
@@ -1523,6 +1687,59 @@
 
       } catch (e) {
         console.error('Link Error:', e);
+      }
+    }
+  </script>
+  <div id="passportSideViewer" class="passport-side-viewer">
+    <div class="passport-view-header">
+      <h3>Passport View</h3>
+      <button onclick="togglePassportSideView()" class="passport-view-close">&times;</button>
+    </div>
+    <div class="passport-view-body" style="height: calc(100vh - 70px); overflow: hidden;">
+      <img id="passportSideImage" src="" class="passport-view-image">
+      <iframe id="passportSidePdf" src="" class="passport-view-image"
+        style="display:none; width:100%; height:100%; border:none; background:white;"></iframe>
+    </div>
+  </div>
+  <script>
+    function togglePassportSideView(src) {
+      if (!src && document.getElementById('passportPreviewThumbnail')) {
+        src = document.getElementById('passportPreviewThumbnail').src;
+      }
+      const viewer = document.getElementById('passportSideViewer');
+      const img = document.getElementById('passportSideImage');
+      const pdf = document.getElementById('passportSidePdf');
+
+      if (!viewer) return;
+
+      if (!viewer.classList.contains('active')) {
+        if (src) {
+          const isPdf = src.startsWith('data:application/pdf') || src.toLowerCase().endsWith('.pdf');
+
+          if (isPdf) {
+            if (img) img.style.display = 'none';
+            if (pdf) {
+              pdf.src = src;
+              pdf.style.display = 'block';
+            }
+          } else {
+            if (pdf) {
+              pdf.style.display = 'none';
+              pdf.src = '';
+            }
+            if (img) {
+              img.src = src;
+              img.style.display = 'block';
+            }
+          }
+
+          viewer.classList.add('active');
+        }
+      } else {
+        viewer.classList.remove('active');
+        // Clear sources on close
+        if (img) img.src = '';
+        if (pdf) pdf.src = '';
       }
     }
   </script>

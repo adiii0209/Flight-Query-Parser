@@ -6,6 +6,7 @@ Provides session management and database utilities.
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
 from models_v2 import Base
+import models_enterprise
 
 import os
 from dotenv import load_dotenv
@@ -33,8 +34,9 @@ db_session = scoped_session(SessionLocal)
 def init_db():
     """Initialize the database by creating all tables."""
     Base.metadata.create_all(bind=engine)
+    models_enterprise.Base.metadata.create_all(bind=engine)
     seed_airlines()
-    print("Travel Agent database initialized successfully!")
+    print("Travel Agent database initialized successfully! (V2 + Enterprise)")
 
 
 def get_db():

@@ -261,13 +261,12 @@
         </div>
 
         <!-- Passenger Detail Modal (Full Management) -->
-        <div class="modal modal-content modal-large" id="paxDetailModal" onclick="event.stopPropagation()"
-            style="padding:0;">
+        <div class="modal-content modal-large" id="paxDetailModal" onclick="event.stopPropagation()" style="padding:0;">
             <div class="modal-header">
                 <h2 id="paxDetailTitle">Manage Passenger</h2>
                 <button class="modal-close" onclick="closePaxDetailModal()">✕</button>
             </div>
-            <div class="modal-body" style="padding: 1.5rem;">
+            <div class="modal-body" style="padding: 1.5rem; overflow-y: auto; flex: 1;">
                 <div class="detail-tabs">
                     <button class="tab-btn active" id="btn-tab-profile" onclick="showPaxTab('profile')">Profile</button>
                     <button class="tab-btn" id="btn-tab-docs" onclick="showPaxTab('docs')">Documents</button>
@@ -279,6 +278,28 @@
                 <div class="pax-tab-panel active" id="pax-tab-profile">
                     <form id="editPaxForm" onsubmit="savePaxProfile(event)">
                         <input type="hidden" id="editPaxId">
+                        <div class="form-section">
+                            <h3 class="form-section-title">Scan Document</h3>
+                            <div class="form-row" style="align-items: center; gap: 1rem;">
+                                <div class="form-group" style="flex: 1;">
+                                    <label class="form-label">Upload Passport (Image/PDF)</label>
+                                    <input type="file" id="paxDetailPassportUpload" accept="image/*,application/pdf"
+                                        class="form-input" onchange="scanPaxDetailPassport()">
+                                </div>
+                                <div id="paxDetailPassportPreviewContainer" class="passport-preview-container">
+                                    <div class="passport-thumbnail-wrapper"
+                                        onclick="togglePassportSideView(document.getElementById('paxDetailPassportPreviewThumbnail').src)">
+                                        <img id="paxDetailPassportPreviewThumbnail" src="" class="passport-thumbnail">
+                                        <div class="passport-expand-overlay">
+                                            <span class="passport-expand-icon">🔍</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="paxDetailScanStatus"
+                                style="font-size: 0.85rem; margin-top: 0.5rem; min-height: 1.2em;"></div>
+                        </div>
+
                         <div class="form-section">
                             <h3 class="form-section-title">Personal Information</h3>
                             <div class="form-row">
@@ -324,6 +345,20 @@
                                 <div class="form-group">
                                     <label class="form-label">Nationality</label>
                                     <input type="text" id="editPaxNationality" class="form-input">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Passport Number</label>
+                                    <input type="text" id="editPaxPassportNumber" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Date of Issue</label>
+                                    <input type="date" id="editPaxIssueDate" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Date of Expiry</label>
+                                    <input type="date" id="editPaxExpiryDate" class="form-input">
                                 </div>
                             </div>
                         </div>
@@ -486,6 +521,17 @@
     </div>
 
     <script src="/static/itineraries.js"></script>
+    <div id="passportSideViewer" class="passport-side-viewer">
+        <div class="passport-view-header">
+            <h3>Passport View</h3>
+            <button onclick="togglePassportSideView()" class="passport-view-close">&times;</button>
+        </div>
+        <div class="passport-view-body" style="height: calc(100vh - 70px); overflow: hidden;">
+            <img id="passportSideImage" src="" class="passport-view-image">
+            <iframe id="passportSidePdf" src="" class="passport-view-image"
+                style="display:none; width:100%; height:100%; border:none; background:white;"></iframe>
+        </div>
+    </div>
 </body>
 
 </html>

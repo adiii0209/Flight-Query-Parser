@@ -1262,6 +1262,13 @@ function openPaxDetailModal() {
   const p = currentPassenger;
   if (!p) return;
 
+  // Reset forms to clear any unsaved scan data or manual edits
+  const forms = ['editPaxForm', 'paxDocForm', 'paxFfForm', 'editPrefsForm'];
+  forms.forEach(id => {
+    const f = document.getElementById(id);
+    if (f) f.reset();
+  });
+
   document.getElementById('paxDetailTitle').textContent = `Manage: ${p.first_name} ${p.last_name}`;
 
   // Populate Profile Tab
@@ -1276,19 +1283,52 @@ function openPaxDetailModal() {
   document.getElementById('editPaxEmail').value = p.email || '';
   document.getElementById('editPaxPhone').value = p.phone || '';
 
+  // Explicitly clear Passport/Document fields if they exist in state (or clear them)
+  const passNum = document.getElementById('editPaxPassportNumber');
+  const passIssue = document.getElementById('editPaxIssueDate');
+  const passExpiry = document.getElementById('editPaxExpiryDate');
+  if (passNum) passNum.value = p.passport_number || '';
+  if (passIssue) passIssue.value = p.passport_issue_date || '';
+  if (passExpiry) passExpiry.value = p.passport_expiry_date || '';
+
   // Populate Prefs Tab
   const prefs = p.preferences || {};
-  document.getElementById('editPrefsMeal').value = prefs.meal_preference || '';
-  document.getElementById('editPrefsMealReq').value = prefs.meal_special_request || '';
-  document.getElementById('editPrefsSeat').value = prefs.seat_preference || '';
-  document.getElementById('editPrefsAssistance').value = prefs.special_assistance_type || '';
-  document.getElementById('editPrefsWheelchair').checked = prefs.wheelchair_required || false;
-  document.getElementById('editPrefsPrefAir').value = prefs.preferred_airlines || '';
-  document.getElementById('editPrefsAvoidAir').value = prefs.avoid_airlines || '';
+  const meal = document.getElementById('editPrefsMeal');
+  const mealReq = document.getElementById('editPrefsMealReq');
+  const seat = document.getElementById('editPrefsSeat');
+  const assist = document.getElementById('editPrefsAssistance');
+  const wheel = document.getElementById('editPrefsWheelchair');
+  const airPref = document.getElementById('editPrefsPrefAir');
+  const airAvoid = document.getElementById('editPrefsAvoidAir');
+
+  if (meal) meal.value = prefs.meal_preference || '';
+  if (mealReq) mealReq.value = prefs.meal_special_request || '';
+  if (seat) seat.value = prefs.seat_preference || '';
+  if (assist) assist.value = prefs.special_assistance_type || '';
+  if (wheel) wheel.checked = prefs.wheelchair_required || false;
+  if (airPref) airPref.value = prefs.preferred_airlines || '';
+  if (airAvoid) airAvoid.value = prefs.avoid_airlines || '';
 
   // Render Lists
   renderPaxDocs();
   renderPaxFF();
+
+  // Clear OCR State
+  const previewCont = document.getElementById('paxDetailPassportPreviewContainer');
+  const previewThumb = document.getElementById('paxDetailPassportPreviewThumbnail');
+  const scanStatus = document.getElementById('paxDetailScanStatus');
+  const uploadInput = document.getElementById('paxDetailPassportUpload');
+
+  if (previewCont) previewCont.style.display = 'none';
+  if (previewThumb) previewThumb.src = '';
+  if (scanStatus) scanStatus.innerHTML = '';
+  if (uploadInput) uploadInput.value = '';
+
+  // Ensure side viewer is closed when opening a new passenger
+  const viewer = document.getElementById('passportSideViewer');
+  const modal = document.getElementById('paxDetailModal');
+  if (viewer) viewer.classList.remove('active');
+  if (modal) modal.classList.remove('modal-shifted');
 
   // Reset Airline Search
   const airSearch = document.getElementById('ffAirlineSearch');
@@ -1301,6 +1341,10 @@ function openPaxDetailModal() {
 }
 
 function closePaxDetailModal() {
+  const viewer = document.getElementById('passportSideViewer');
+  const modal = document.getElementById('paxDetailModal');
+  if (viewer) viewer.classList.remove('active');
+  if (modal) modal.classList.remove('modal-shifted');
   closeModal();
 }
 
@@ -1381,7 +1425,8 @@ async function savePaxProfile(event) {
       closePaxDetailModal();
       if (currentItinerary) openItinerary(currentItinerary.id, true);
     } else {
-      showToast('Failed to update profile', 'error');
+      const errorData = await response.json();
+      showToast(errorData.error || 'Failed to update profile', 'error');
     }
   } catch (e) {
     showToast('Update failed', 'error');
@@ -1673,7 +1718,15 @@ function showModal(id) {
 function closeModal() {
   const overlay = document.getElementById('modalOverlay');
   if (overlay) { overlay.classList.remove('show', 'active'); }
-  document.querySelectorAll('.modal').forEach(m => m.classList.remove('show', 'active'));
+
+  // Close all modal types on this page
+  document.querySelectorAll('.modal, .modal-content').forEach(m => {
+    m.classList.remove('show', 'active', 'modal-shifted');
+  });
+
+  // Close passport viewer as well
+  const viewer = document.getElementById('passportSideViewer');
+  if (viewer) viewer.classList.remove('active');
 }
 
 // ---- Add Passenger Manual ----
@@ -2079,4 +2132,142 @@ function loadHtml2Canvas() {
     script.onerror = reject;
     document.head.appendChild(script);
   });
+}
+
+// ==================== PASSPORT OCR ====================
+async function scanPaxDetailPassport() {
+  const input = document.getElementById('paxDetailPassportUpload');
+  const status = document.getElementById('paxDetailScanStatus');
+  // btn removed
+
+  if (!input.files || input.files.length === 0) {
+    if (status) status.innerHTML = '<span style="color:var(--danger)">Please select a file first</span>';
+    return;
+  }
+
+  // Preview Logic
+  const file = input.files[0];
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const t = document.getElementById('paxDetailPassportPreviewThumbnail');
+    const c = document.getElementById('paxDetailPassportPreviewContainer');
+    if (t && c) { t.src = e.target.result; c.style.display = 'flex'; }
+  };
+  reader.readAsDataURL(file);
+
+  if (status) status.innerHTML = '<span style="color:var(--primary)">Scanning... Please wait ⏳</span>';
+
+  const formData = new FormData();
+  formData.append('passport', file);
+
+  try {
+    const response = await fetch('/extract-passport?debug=1', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+    console.log('OCR Response:', data);
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Scan failed');
+    }
+
+    // Fill fields
+    if (data.surname) {
+      document.getElementById('editPaxLastName').value = data.surname;
+    }
+
+    if (data.first_name) {
+      document.getElementById('editPaxFirstName').value = data.first_name;
+      if (data.middle_name) {
+        document.getElementById('editPaxMiddleName').value = data.middle_name;
+      }
+    } else if (data.given_names) {
+      const parts = data.given_names.split(' ');
+      document.getElementById('editPaxFirstName').value = parts[0];
+      if (parts.length > 1) {
+        document.getElementById('editPaxMiddleName').value = parts.slice(1).join(' ');
+      }
+    }
+
+    if (data.date_of_birth) document.getElementById('editPaxDOB').value = data.date_of_birth;
+
+    if (data.sex) {
+      const genderSelect = document.getElementById('editPaxGender');
+      const titleSelect = document.getElementById('editPaxTitle');
+
+      if (data.sex === 'M' || data.sex === 'm') {
+        genderSelect.value = 'Male';
+        if (titleSelect) titleSelect.value = 'Mr';
+      } else if (data.sex === 'F' || data.sex === 'f') {
+        genderSelect.value = 'Female';
+        if (titleSelect) titleSelect.value = 'Mrs';
+      } else {
+        genderSelect.value = 'Other';
+      }
+    }
+
+    if (data.nationality) {
+      document.getElementById('editPaxNationality').value = data.nationality;
+    }
+
+    if (data.passport_number) {
+      document.getElementById('editPaxPassportNumber').value = data.passport_number;
+    }
+
+    if (data.expiration_date) {
+      document.getElementById('editPaxExpiryDate').value = data.expiration_date;
+    }
+
+    if (data.date_of_issue) {
+      document.getElementById('editPaxIssueDate').value = data.date_of_issue;
+    }
+
+    if (status) status.innerHTML = '<span style="color:var(--success)">✅ Scanned successfully! Please review details.</span>';
+
+  } catch (e) {
+    if (status) status.innerHTML = `<span style="color:var(--danger)">❌ Error: ${e.message}</span>`;
+  }
+}
+
+function togglePassportSideView(src) {
+  if (!src && document.getElementById('paxDetailPassportPreviewThumbnail')) {
+    src = document.getElementById('paxDetailPassportPreviewThumbnail').src;
+  }
+  const viewer = document.getElementById('passportSideViewer');
+  const img = document.getElementById('passportSideImage');
+  const pdf = document.getElementById('passportSidePdf');
+
+  if (!viewer) return;
+
+  if (!viewer.classList.contains('active')) {
+    if (src) {
+      const isPdf = src.startsWith('data:application/pdf') || src.toLowerCase().endsWith('.pdf');
+
+      if (isPdf) {
+        if (img) img.style.display = 'none';
+        if (pdf) {
+          pdf.src = src;
+          pdf.style.display = 'block';
+        }
+      } else {
+        if (pdf) {
+          pdf.style.display = 'none';
+          pdf.src = '';
+        }
+        if (img) {
+          img.src = src;
+          img.style.display = 'block';
+        }
+      }
+
+      viewer.classList.add('active');
+    }
+  } else {
+    viewer.classList.remove('active');
+    // Clear sources on close
+    if (img) img.src = '';
+    if (pdf) pdf.src = '';
+  }
 }

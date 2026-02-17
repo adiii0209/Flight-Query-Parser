@@ -479,38 +479,43 @@ def update_passenger(passenger_id):
         data = request.get_json()
         
         # Uniqueness Validation for Update
-        check_uniqueness = False
-        new_first = passenger.first_name
-        new_last = passenger.last_name
-        
-        if 'first_name' in data and data['first_name'].strip() != passenger.first_name:
-            new_first = data['first_name'].strip()
-            check_uniqueness = True
-        if 'last_name' in data and data['last_name'].strip() != passenger.last_name:
-            new_last = data['last_name'].strip()
-            check_uniqueness = True
-            
-        if check_uniqueness:
+        # Determine the effective new values
+        new_first = data.get('first_name', passenger.first_name).strip()
+        new_last = data.get('last_name', passenger.last_name).strip()
+        new_dob = parse_date(data.get('date_of_birth')) if 'date_of_birth' in data else passenger.date_of_birth
+        new_email = normalize_str(data.get('email', passenger.email))
+        new_phone = normalize_str(data.get('phone', passenger.phone))
+
+        # Check if any identity field is being updated
+        # (If we only update 'is_active' or address, strictly speaking we might not need to check, 
+        #  but checking is safer to ensure we don't accidentally converge on a duplicate)
+        identity_fields = ['first_name', 'last_name', 'date_of_birth', 'email', 'phone']
+        should_check_dupes = any(f in data for f in identity_fields)
+
+        if should_check_dupes:
             existing_pax = db_session.query(Passenger).filter(
                 Passenger.user_id == session['user_id'],
                 Passenger.first_name.ilike(new_first),
                 Passenger.last_name.ilike(new_last),
-                Passenger.id != passenger_id,
+                Passenger.id != passenger_id,  # Exclude self
                 Passenger.is_active == True
             ).first()
 
             if existing_pax:
-                new_email = normalize_str(data.get('email', passenger.email))
-                new_phone = normalize_str(data.get('phone', passenger.phone))
-                new_dob = parse_date(data.get('date_of_birth')) if 'date_of_birth' in data else passenger.date_of_birth
-
+                # Compare strict differentiating fields
                 fields_differ = False
-                if new_email != normalize_str(existing_pax.email): fields_differ = True
-                if new_phone != normalize_str(existing_pax.phone): fields_differ = True
-                if (not existing_pax.date_of_birth) or (new_dob and new_dob != existing_pax.date_of_birth): fields_differ = True
-
+                
+                # Check against the EXISTING passenger's details
+                if new_email and new_email != normalize_str(existing_pax.email): fields_differ = True
+                if new_phone and new_phone != normalize_str(existing_pax.phone): fields_differ = True
+                if new_dob and (not existing_pax.date_of_birth or new_dob != existing_pax.date_of_birth): fields_differ = True
+                
+                # If the other passenger has empty distinguishing fields, we can't be sure, 
+                # but standard logic is: if provided info matches or doesn't verify difference, it's a dupe.
+                # However, usually we check if the NEW provided info conflicts.
+                
                 if not fields_differ:
-                     return jsonify({"error": f"Another passenger '{new_first} {new_last}' already exists. Provide different details to distinguish."}), 409
+                     return jsonify({"error": f"Another passenger '{new_first} {new_last}' already exists. Provide different Email, Phone, or DOB to distinguish."}), 409
 
         # Update fields
         for field in ['title', 'first_name', 'middle_name', 'last_name',
