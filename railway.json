@@ -1,0 +1,14 @@
+{
+    "build": {
+        "nixpacksPlan": {
+            "phases": {
+                "setup": {
+                    "nixPkgs": [
+                        "tesseract",
+                        "poppler"
+                    ]
+                }
+            }
+        }
+    }
+}

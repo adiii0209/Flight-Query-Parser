@@ -13,7 +13,10 @@ from models import User, Customer, Itinerary
 from extensions import db
 
 import pytesseract
+<<<<<<< HEAD
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+=======
+>>>>>>> f5a3387 (Initial commit)
 
 
 load_dotenv()
