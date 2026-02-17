@@ -3,12 +3,10 @@ python-dotenv
 Flask-SQLAlchemy
 requests
 pytz
-<<<<<<< HEAD
-=======
 passporteye
 pytesseract
 opencv-python-headless
 Pillow
 PyMuPDF
 gunicorn
->>>>>>> f5a3387 (Initial commit)
+
