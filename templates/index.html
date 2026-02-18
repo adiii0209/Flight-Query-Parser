@@ -6259,6 +6259,18 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         return;
       }
 
+      // Collect all parse errors for a global notification
+      const allErrorsSet = new Set();
+      flights.forEach(f => {
+        if (f.parse_errors) {
+          f.parse_errors.forEach(err => allErrorsSet.add(err));
+        }
+      });
+      if (allErrorsSet.size > 0) {
+        const consolidatedErrors = Array.from(allErrorsSet).join(' • ');
+        showNotification(`Input Issue Detected: ${consolidatedErrors}`, 'warning');
+      }
+
       // Show sections
       document.getElementById("cardsSection").style.display = 'block';
       document.getElementById("outputSection").style.display = 'block';
@@ -6722,24 +6734,6 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const summaryHTML = generateFlightSummaryHTML(flight, index, uniqueId);
       const timelineHTML = generateFlightTimelineHTML(flight, index, uniqueId);
 
-      // Parse errors warning
-      let parseErrorsHTML = '';
-      if (flight.parse_errors && flight.parse_errors.length > 0) {
-        parseErrorsHTML = `
-          <div class="parse-errors-banner" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 1px solid #f59e0b; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.75rem;">
-            <div style="display: flex; align-items: flex-start; gap: 0.5rem;">
-              <span style="font-size: 1.2rem;">⚠️</span>
-              <div>
-                <div style="font-weight: 600; color: #92400e; margin-bottom: 0.25rem;">Input Issue Detected</div>
-                <div style="font-size: 0.85rem; color: #78350f;">
-                  ${flight.parse_errors.map(e => `<div>• ${e}</div>`).join('')}
-                </div>
-              </div>
-            </div>
-          </div>
-        `;
-      }
-
       const faresHTML = generateFaresFooterHTML(flight);
 
       // Inline editor placeholder
@@ -6748,7 +6742,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         inlineEditorPlaceholder = `<div id="inline-editor-${index}" class="inline-fare-editor" style="display: none;"></div>`;
       }
 
-      card.innerHTML = (flight.parse_errors && flight.parse_errors.length > 0 ? parseErrorsHTML : '') + optionLabelHTML + dateHeaderHTML + summaryHTML + timelineHTML + faresHTML + inlineEditorPlaceholder;
+      card.innerHTML = optionLabelHTML + dateHeaderHTML + summaryHTML + timelineHTML + faresHTML + inlineEditorPlaceholder;
       return card;
     }
 
