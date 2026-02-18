@@ -388,6 +388,27 @@ def parse():
         traceback.print_exc()
         return jsonify({"error": "Failed to parse flights: " + str(e)}), 500
 
+@app.route("/api/recalculate", methods=["POST"])
+def recalculate():
+    """Recalculate flight duration and offsets based on a new date"""
+    try:
+        data = request.get_json()
+        if not data or 'flight' not in data or 'new_date' not in data:
+            return jsonify({"error": "Missing flight data or new date"}), 400
+        
+        flight = data['flight']
+        new_date = data['new_date']
+        
+        from query_parser import recalculate_with_date
+        updated_flight = recalculate_with_date(flight, new_date)
+        
+        return jsonify({"flight": updated_flight})
+    except Exception as e:
+        print(f"Recalculate error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/itineraries", methods=["POST"])
 @login_required
 def save_itinerary():
