@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==================== CONFIG ====================
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+OPENROUTER_API_KEY = "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"
 OPENROUTER_URL = os.getenv("OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions")
 MODEL = os.getenv("MODEL", "mistralai/mistral-small-creative")
 MAX_TOKENS = 400
@@ -60,16 +60,6 @@ class FlightDate:
         "%d %B", "%B %d"
     ]
 
-    # Regex to detect a valid human-readable date in text
-    # Matches: "30 Jan", "30 Jan 26", "Jan 30", "January 30 2026", etc.
-    _DATE_PATTERN = re.compile(
-        r'\b(\d{1,2})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*'
-        r'(?:\s*[,]?\s*(20\d{2}|\d{2}))?\b'
-        r'|\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2})'
-        r'(?:\s*[,]?\s*(20\d{2}|\d{2}))?\b',
-        re.IGNORECASE
-    )
-
     @staticmethod
     def clean_date_string(date_str: str) -> str:
         if not date_str or date_str in ['N/A', 'None', '']:
@@ -108,99 +98,35 @@ class FlightDate:
 
     @staticmethod
     def is_in_text(date_str: str, text: str) -> bool:
-        """
-        Strictly verify a date string actually appears in the original text.
-        Uses multiple matching strategies including reversed month-day order.
-        """
         if not date_str or date_str == 'N/A':
             return False
         clean_date = FlightDate.clean_date_string(date_str).lower()
         clean_text = text.lower()
-
-        # Strategy 1: direct substring
-        if clean_date in clean_text:
-            return True
-
-        # Strategy 2: flexible whitespace
-        flex_pattern = re.sub(r'\s+', r'\\s*', re.escape(clean_date))
-        if re.search(flex_pattern, clean_text):
-            return True
-
-        # Strategy 3: check day+month match in DD Mon order (ignore year mismatch)
-        day_month = re.match(r'(\d{1,2})\s*([a-z]+)', clean_date)
-        if day_month:
-            day, mon = day_month.group(1), day_month.group(2)[:3]
-            # Forward order: "6 Jun"
-            pattern_fwd = rf'\b{day}\s*{mon}[a-z]*'
-            if re.search(pattern_fwd, clean_text, re.IGNORECASE):
+        patterns = [
+            clean_date,
+            re.sub(r'\s+', r'\\s*', clean_date),
+            re.sub(r'\s+', '', clean_date)
+        ]
+        for pattern in patterns:
+            if re.search(pattern, clean_text):
                 return True
-            # Reversed order: text has "Jun 6" but date_str is "6 Jun"
-            pattern_rev = rf'\b{mon}[a-z]*\s+{day}\b'
-            if re.search(pattern_rev, clean_text, re.IGNORECASE):
-                return True
-
         return False
-
-    @staticmethod
-    def extract_all_from_text(text: str) -> List[str]:
-        """
-        Extract ALL plausible date strings from raw text using regex.
-        Returns a list of normalized date strings like ['30 Jan 26', '5 Feb'].
-        """
-        found = []
-        for m in FlightDate._DATE_PATTERN.finditer(text):
-            if m.group(1) and m.group(2):
-                day = m.group(1)
-                mon = m.group(2)[:3].capitalize()
-                yr  = m.group(3)
-            elif m.group(4) and m.group(5):
-                day = m.group(5)
-                mon = m.group(4)[:3].capitalize()
-                yr  = m.group(6)
-            else:
-                continue
-
-            day_int = int(day)
-            if not (1 <= day_int <= 31):
-                continue
-
-            if yr:
-                yr_norm = yr if len(yr) == 4 else f"20{yr}"
-                found.append(f"{day} {mon} {yr_norm[2:]}")   # "30 Jan 26"
-            else:
-                found.append(f"{day} {mon}")                  # "30 Jan"
-
-        # Deduplicate preserving order
-        seen = set()
-        result = []
-        for d in found:
-            if d not in seen:
-                seen.add(d)
-                result.append(d)
-        return result
-
 
 # ==================== TIMEZONE HANDLER ====================
 class TimezoneHandler:
-    """Centralized timezone management with DST support — uses AIRPORT_TZ_MAP from mappings.py"""
+    """Centralized timezone management with DST support"""
 
     @staticmethod
     def get_offset_hours(airport_code: str, date_obj: Optional[datetime] = None) -> float:
-        """
-        Returns UTC offset in hours for the given airport on the given date.
-        Always sources from AIRPORT_TZ_MAP in mappings.py.
-        Falls back to 0.0 (UTC) if airport not mapped.
-        """
         if not airport_code:
             return 0.0
         tz_name = AIRPORT_TZ_MAP.get(airport_code.upper())
         if not tz_name:
-            Logger.debug(f"Missing timezone for '{airport_code}' in AIRPORT_TZ_MAP. Using UTC (0.0).")
+            Logger.debug(f"Missing timezone for '{airport_code}'. Using UTC (0.0).")
             return 0.0
         try:
             tz = pytz.timezone(tz_name)
             dt = date_obj or datetime.now()
-            # Use midday to avoid DST boundary edge cases
             if dt.hour == 0 and dt.minute == 0:
                 dt = dt.replace(hour=12)
             offset_seconds = tz.utcoffset(dt).total_seconds()
@@ -208,7 +134,6 @@ class TimezoneHandler:
         except Exception as e:
             Logger.error(f"Error getting timezone for {airport_code}: {e}")
             return 0.0
-
 
 # ==================== DURATION CALCULATOR ====================
 class DurationCalculator:
@@ -310,7 +235,6 @@ class DurationCalculator:
                 return f"{hours}h {minutes}m"
         return None
 
-
 # ==================== DAY OFFSET CALCULATOR ====================
 class DayOffsetCalculator:
     """Calculate how many days between departure and arrival"""
@@ -353,7 +277,6 @@ class DayOffsetCalculator:
             Logger.error(f"Day offset calculation failed: {e}")
             return 0
 
-
 # ==================== TEXT PREPROCESSOR ====================
 class TextPreprocessor:
     """Clean and normalize input text"""
@@ -390,10 +313,8 @@ class TextPreprocessor:
         text = re.sub(r'\+(\d)([A-Za-z])', r'+\1 \2', text)
         text = re.sub(r'(\d{2}:\d{2})\+(\d)', r'\1 +\2 ', text)
         text = re.sub(r'(layover)([A-Z])', r'\1 \2', text, flags=re.IGNORECASE)
-        # Strip CO2e values - MUST NOT use [\d\s,]+ as it greedily eats adjacent
-        # date digits on the previous line (e.g. "Jun 6\n691 kg CO2e" → "Jun\n")
-        text = re.sub(r'emissions\s*estimate:?\s*\d[\d\s,]*kg\s*co2e', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'\b\d[\d,]*\s*kg\s*co2e', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'emissions\s*estimate:?[\d\s,]+kg\s*co2e', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'[\d\s,]+kg\s*co2e', '', text, flags=re.IGNORECASE)
         text = re.sub(r'\b(\d{1,2})([A-Z]{3})\b', r'\1 \2', text, flags=re.IGNORECASE)
         text = TextPreprocessor._split_gds_airports(text)
         text = TextPreprocessor._format_gds_times(text)
@@ -432,7 +353,6 @@ class TextPreprocessor:
                 pass
             return match.group(0)
         return re.sub(r'\s(\d{4})\s+(\d{4})(?=\s|$)', replacer, text)
-
 
 # ==================== REGEX HINT EXTRACTOR ====================
 class HintExtractor:
@@ -505,14 +425,19 @@ class HintExtractor:
             hints['departure_time'] = times_24h[0]
             hints['arrival_time'] = times_24h[-1]
 
-        # ── Date extraction: use FlightDate.extract_all_from_text (robust regex) ──
-        found_dates = FlightDate.extract_all_from_text(text)
+        date_patterns = [
+            r'\b\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b(?:[,\s]+(?:20)?\d{2})?(?!\d)',
+            r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?\b(?:[,\s]+(?:20)?\d{2})?(?!\d)'
+        ]
+        found_dates = []
+        for pattern in date_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            found_dates.extend(matches)
 
-        # Filter out metadata-context dates
         valid_dates = []
         for d in found_dates:
             is_metadata = False
-            start_idx = text.lower().find(d.lower())
+            start_idx = text.find(d)
             if start_idx > -1:
                 prefix = text[max(0, start_idx-25):start_idx].lower()
                 if any(ind in prefix for ind in HintExtractor.METADATA_INDICATORS):
@@ -521,6 +446,7 @@ class HintExtractor:
                 valid_dates.append(d)
 
         if valid_dates:
+            valid_dates = list(dict.fromkeys(valid_dates))
             hints['all_dates'] = valid_dates
             hints['departure_date'] = valid_dates[0]
 
@@ -555,107 +481,6 @@ class HintExtractor:
 
         return hints
 
-
-# ==================== DATE VALIDATOR ====================
-class DateValidator:
-    """
-    Strong regex-based date validation.
-    Ensures a date string is:
-      1. A proper calendar date (day 1-31, valid month)
-      2. Actually present verbatim (or near-verbatim) in the source text
-      3. Not a hallucinated / inferred value
-    """
-
-    MONTH_NAMES = {
-        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
-        'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
-    }
-
-    # Max days per month (ignore leap year for validation — close enough)
-    MONTH_DAYS = {
-        1: 31, 2: 29, 3: 31, 4: 30, 5: 31, 6: 30,
-        7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31
-    }
-
-    # Pattern: dd Mon [yy|yyyy]
-    _NORM_PAT = re.compile(
-        r'^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
-        r'(?:\s+(\d{2}|\d{4}))?$',
-        re.IGNORECASE
-    )
-
-    @staticmethod
-    def is_valid_calendar_date(date_str: str) -> bool:
-        """Check if the date_str is a plausible calendar date."""
-        if not date_str or date_str in ('N/A', 'None', ''):
-            return False
-        # Reject if it's just a number
-        if re.match(r'^\d{1,2}(st|nd|rd|th)?$', date_str.strip(), re.IGNORECASE):
-            return False
-        clean = FlightDate.clean_date_string(date_str).strip()
-        m = DateValidator._NORM_PAT.match(clean)
-        if not m:
-            return False
-        day = int(m.group(1))
-        mon_abbr = m.group(2).lower()[:3]
-        mon_num = DateValidator.MONTH_NAMES.get(mon_abbr, 0)
-        if mon_num == 0:
-            return False
-        max_day = DateValidator.MONTH_DAYS.get(mon_num, 31)
-        return 1 <= day <= max_day
-
-    @staticmethod
-    def validate_against_text(date_str: str, original_text: str) -> Tuple[bool, str]:
-        """
-        Full validation:
-          - Checks calendar validity
-          - Checks presence in source text
-        Returns (is_valid, reason)
-        """
-        if not date_str or date_str in ('N/A', 'None', ''):
-            return False, "empty"
-
-        if not DateValidator.is_valid_calendar_date(date_str):
-            return False, f"invalid_calendar: '{date_str}'"
-
-        if not FlightDate.is_in_text(date_str, original_text):
-            return False, f"not_in_text: '{date_str}'"
-
-        return True, "ok"
-
-    @staticmethod
-    def pick_best_date(
-        llm_date: Optional[str],
-        regex_dates: List[str],
-        original_text: str
-    ) -> str:
-        """
-        Authoritative date selection:
-          1. If regex found dates in text → always trust the FIRST one
-          2. If LLM date is valid AND present in text AND no regex conflict → accept it
-          3. Otherwise → "N/A"
-        Never returns today's date or a hallucinated value.
-        """
-        # Step 1: regex dates are highest priority
-        if regex_dates:
-            # Return the first regex-found date; it's guaranteed to be in text
-            Logger.debug(f"DateValidator: using regex date '{regex_dates[0]}'")
-            return regex_dates[0]
-
-        # Step 2: no regex date found — evaluate LLM date strictly
-        if llm_date and llm_date not in ('N/A', 'None', ''):
-            ok, reason = DateValidator.validate_against_text(llm_date, original_text)
-            if ok:
-                Logger.debug(f"DateValidator: LLM date validated '{llm_date}'")
-                return llm_date
-            else:
-                Logger.warning(f"DateValidator: rejecting LLM date — {reason}")
-
-        # Step 3: no reliable date found
-        Logger.debug("DateValidator: no reliable date found → N/A")
-        return "N/A"
-
-
 # ==================== FLIGHT VALIDATOR ====================
 class FlightValidator:
     """Validate extracted flight data"""
@@ -687,7 +512,6 @@ class FlightValidator:
         is_valid = len(errors) == 0
         return is_valid, errors
 
-
 # ==================== FLIGHT POST-PROCESSOR ====================
 class FlightPostProcessor:
     """Post-process and enhance extracted flight data"""
@@ -698,40 +522,44 @@ class FlightPostProcessor:
         Clean, validate, and enhance flight data.
         Priority: Regex hints > LLM output (with strict validation)
         """
-        # ═══ 1. DATE RESOLUTION — single authoritative path ═══
-        regex_dates   = hints.get('all_dates', [])
-        llm_date_raw  = flight.get('departure_date')
-
-        best_date = DateValidator.pick_best_date(
-            llm_date_raw, regex_dates, original_text
-        )
-        flight['departure_date'] = best_date
-
-        trip_start_date = datetime.now()
-        if best_date != 'N/A':
-            parsed_date = FlightDate.parse(best_date, datetime.now().year)
-            if parsed_date:
-                # Normalize to standard format
-                flight['departure_date'] = FlightDate.format(parsed_date)
-                trip_start_date = parsed_date
+        # ═══ 1. DATE HANDLING (REGEX PRIORITY + STRICT VALIDATION) ═══
+        regex_date = hints.get('departure_date')
+        llm_date = flight.get('departure_date')
+        
+        if regex_date:
+            # Regex found a date - ALWAYS use it (regex is more reliable)
+            flight['departure_date'] = regex_date
+            Logger.debug(f"✓ Using regex date: {regex_date}")
+        elif llm_date and llm_date not in ['N/A', 'None', '']:
+            # LLM returned a date but regex didn't find one - STRICT validation required
+            # Reject if just a number
+            if re.match(r'^\d{1,2}(st|nd|rd|th)?$', llm_date.strip(), re.IGNORECASE):
+                Logger.warning(f"✗ Rejecting LLM date (number only): '{llm_date}'")
+                flight['departure_date'] = "N/A"
+            # Reject if not found in original text
+            elif not FlightDate.is_in_text(llm_date, original_text):
+                Logger.warning(f"✗ Rejecting LLM date (not in text): '{llm_date}'")
+                flight['departure_date'] = "N/A"
             else:
-                flight['departure_date'] = 'N/A'
-
-        # ═══ 2. AIRPORT CODE FIXING (REGEX AUTHORITY from mappings.py) ═══
+                # Date is actually in text - keep it
+                Logger.debug(f"✓ LLM date validated: {llm_date}")
+        
+        # ═══ 2. AIRPORT CODE FIXING (REGEX AUTHORITY) ═══
         found_codes = hints.get('all_airports', [])
         if found_codes:
-            dep_code = flight.get('departure_airport', '')
-            arr_code = flight.get('arrival_airport', '')
+            dep_code = flight.get('departure_airport')
+            arr_code = flight.get('arrival_airport')
             if hints.get('departure_airport'):
-                if not dep_code or dep_code not in found_codes:
-                    Logger.debug(f"Fixing departure airport: {dep_code} -> {hints['departure_airport']}")
-                    flight['departure_airport'] = hints['departure_airport']
+                if not dep_code or (dep_code not in found_codes and dep_code not in ['N/A', '']):
+                    if dep_code != hints['departure_airport']:
+                        Logger.debug(f"Fixing departure airport: {dep_code} -> {hints['departure_airport']}")
+                        flight['departure_airport'] = hints['departure_airport']
             if hints.get('arrival_airport'):
-                if not arr_code or arr_code not in found_codes:
-                    Logger.debug(f"Fixing arrival airport: {arr_code} -> {hints['arrival_airport']}")
-                    flight['arrival_airport'] = hints['arrival_airport']
+                if not arr_code or (arr_code not in found_codes and arr_code not in ['N/A', '']):
+                    if arr_code != hints['arrival_airport']:
+                        Logger.debug(f"Fixing arrival airport: {arr_code} -> {hints['arrival_airport']}")
+                        flight['arrival_airport'] = hints['arrival_airport']
 
-        # ═══ 3. FILL MISSING FIELDS FROM HINTS ═══
         hint_fields = [
             'airline', 'flight_number', 'departure_airport', 'departure_city',
             'arrival_airport', 'arrival_city', 'departure_time', 'arrival_time',
@@ -741,7 +569,28 @@ class FlightPostProcessor:
             if flight.get(key) in [None, '', 'N/A', 'null', 'undefined'] and key in hints:
                 flight[key] = hints[key]
 
-        # ═══ 4. AIRPORT → CITY NAME (always from mappings.py AIRPORT_CODES) ═══
+        dep_date_str = flight.get('departure_date')
+        trip_start_date = datetime.now()
+
+        if dep_date_str and dep_date_str not in ['N/A', 'None', '']:
+            # Reject single-number dates (just "13", "30th", etc.) — obvious hallucination
+            if re.match(r'^\d{1,2}(st|nd|rd|th)?$', dep_date_str.strip(), re.IGNORECASE):
+                Logger.warning(f"Rejecting date hallucination (number only): '{dep_date_str}'")
+                flight['departure_date'] = "N/A"
+            # CRITICAL: Verify the date string actually appears in the original text
+            elif not FlightDate.is_in_text(dep_date_str, original_text):
+                Logger.warning(f"Rejecting date hallucination (not in text): '{dep_date_str}'")
+                flight['departure_date'] = "N/A"
+            else:
+                # Date is present in text — parse and normalize it
+                parsed_date = FlightDate.parse(dep_date_str, datetime.now().year)
+                if parsed_date:
+                    flight['departure_date'] = FlightDate.format(parsed_date)
+                    trip_start_date = parsed_date
+                else:
+                    Logger.warning(f"Could not parse date: '{dep_date_str}'")
+                    flight['departure_date'] = "N/A"
+
         for key in ['departure_airport', 'arrival_airport']:
             if flight.get(key) and flight[key] != 'N/A':
                 flight[key] = flight[key].upper().strip()
@@ -751,7 +600,6 @@ class FlightPostProcessor:
         if flight.get('arrival_airport') in AIRPORT_CODES:
             flight['arrival_city'] = AIRPORT_CODES[flight['arrival_airport']]
 
-        # ═══ 5. SEGMENT PROCESSING ═══
         if 'segments' not in flight:
             flight['segments'] = []
 
@@ -846,14 +694,16 @@ class FlightPostProcessor:
             current_cumulative_days += seg['days_offset']
             seg['accumulated_arr_days'] = current_cumulative_days
 
-            # City names ALWAYS from mappings.py AIRPORT_CODES
+            # CRITICAL: Enforce city name mapping from AIRPORT_CODES for all segments
+            # This overrides whatever the LLM returned to ensure consistency
             if seg_dep_ap in AIRPORT_CODES:
                 seg['departure_city'] = AIRPORT_CODES[seg_dep_ap]
             if seg_arr_ap in AIRPORT_CODES:
                 seg['arrival_city'] = AIRPORT_CODES[seg_arr_ap]
-
+            
+            # CRITICAL: Also map layover_city if this segment has a layover
             if i > 0 and seg.get('layover_duration') and seg.get('layover_duration') != "N/A":
-                layover_ap = seg_dep_ap
+                layover_ap = seg_dep_ap  # Layover happens at current segment's departure airport
                 seg['layover_city'] = AIRPORT_CODES.get(layover_ap, layover_ap)
 
         if segments:
@@ -875,7 +725,7 @@ class FlightPostProcessor:
                 for airport_code in layover_cities:
                     if airport_code not in unique_layovers:
                         unique_layovers.append(airport_code)
-                # City names from mappings.py
+                # CRITICAL: Convert airport codes to city names for better readability
                 via_cities = [AIRPORT_CODES.get(code, code) for code in unique_layovers]
                 vias_str = ', '.join(via_cities)
                 flight['stops'] = f"{n_stops} Stop{'s' if n_stops > 1 else ''} via {vias_str}"
@@ -904,51 +754,65 @@ class FlightPostProcessor:
         flight['is_valid'] = is_valid
 
         return flight
-
+    
     @staticmethod
     def recalculate_with_date(flight: Dict, new_date_str: str) -> Dict:
         """
         Recalculate all durations and offsets after user provides/updates the departure date.
+        This is called when the initial parse had date='N/A' and user selects a date.
+        
+        Args:
+            flight: Parsed flight dictionary
+            new_date_str: New date string (e.g., "30 Jan 26")
+        
+        Returns:
+            Updated flight dictionary with recalculated durations
         """
+        # Parse the new date
         new_date = FlightDate.parse(new_date_str, datetime.now().year)
         if not new_date:
             Logger.warning(f"Could not parse new date: {new_date_str}")
             return flight
-
+        
         flight['departure_date'] = FlightDate.format(new_date)
         trip_start_date = new_date
-
+        
         Logger.info(f"Recalculating flight with new date: {FlightDate.format(new_date)}")
-
+        
+        # Recalculate all segments
         segments = flight.get('segments', [])
         current_cumulative_days = 0
-
+        
         for i, seg in enumerate(segments):
+            # Update segment date
             seg_date_obj = trip_start_date + timedelta(days=current_cumulative_days)
             seg['departure_date'] = FlightDate.format(seg_date_obj)
-
+            
             seg_dep_ap = seg.get('departure_airport', '')
             seg_arr_ap = seg.get('arrival_airport', '')
             seg_dep_time = seg.get('departure_time')
             seg_arr_time = seg.get('arrival_time')
-
+            
+            # Recalculate segment duration with proper date
             seg['duration'] = DurationCalculator.calculate(
                 seg_dep_time, seg_arr_time,
                 seg_dep_ap, seg_arr_ap,
-                days_offset=0,
+                days_offset=0,  # Will be recalculated
                 flight_date=seg_date_obj,
                 check_ultra_long=True
             )
-
+            
+            # Recalculate days offset
             seg['days_offset'] = DayOffsetCalculator.calculate(
                 seg_dep_time, seg_arr_time, seg['duration'],
                 seg_dep_ap, seg_arr_ap, seg_date_obj
             )
-
+            
+            # Recalculate layover if not first segment
             if i > 0:
                 prev_seg = segments[i-1]
                 prev_arr_time = prev_seg.get('arrival_time')
-
+                
                 days_between = 0
                 try:
                     prev_arr_dt = DurationCalculator.parse_time(prev_arr_time)
@@ -957,26 +821,28 @@ class FlightPostProcessor:
                         days_between = 1
                 except:
                     pass
-
+                
                 seg['layover_duration'] = DurationCalculator.calculate_layover(
                     prev_arr_time, seg_dep_time, seg_dep_ap,
                     days_between, seg_date_obj
                 )
-
+                
                 if days_between > 0:
                     current_cumulative_days += days_between
-
+            
+            # Update cumulative counters
             seg['accumulated_dep_days'] = current_cumulative_days
             current_cumulative_days += seg['days_offset']
             seg['accumulated_arr_days'] = current_cumulative_days
-
+        
+        # Recalculate main flight duration
         if segments:
             first_seg = segments[0]
             last_seg = segments[-1]
-
+            
             flight['days_offset'] = last_seg.get('accumulated_arr_days', 0)
             flight['arrival_next_day'] = flight['days_offset'] > 0
-
+            
             flight['duration'] = DurationCalculator.calculate(
                 first_seg.get('departure_time'),
                 last_seg.get('arrival_time'),
@@ -987,166 +853,115 @@ class FlightPostProcessor:
                 check_ultra_long=False
             )
             flight['total_journey_duration'] = flight['duration']
-
+        
         Logger.info(f"✓ Recalculation complete. New duration: {flight.get('duration')}")
         return flight
 
-
 # ==================== LLM PROMPTS ====================
 class LLMPrompts:
-    """
-    Centralized LLM prompts.
+    """Centralized LLM prompts — GDS handling is now done by GDSParser (regex)."""
 
-    Key philosophy:
-    ─────────────────────────────────────────────────────────
-    • Dates   : LLM must COPY verbatim. ANY inference = forbidden.
-    • Airports: Use 3-letter IATA codes exactly as they appear.
-    • Times   : Always 24-hour HH:MM.
-    • Missing : Use "N/A" — never guess, never use today's date.
-    ─────────────────────────────────────────────────────────
-    """
+    # NOTE: All GDS-specific instructions have been removed.
+    # The LLM only handles human-readable / web-format itineraries.
+    SYSTEM_PROMPT = """You are an expert flight data extraction system. Extract structured flight information with MAXIMUM ACCURACY.
 
-    SYSTEM_PROMPT = """You are a flight itinerary data extractor. Your ONLY job is to copy structured data from the input text into JSON.
+CRITICAL RULES:
+1. Output ONLY valid JSON (no markdown, no explanation, no extra text)
+2. CRITICAL: Convert AM/PM to 24-hour format (HH:MM).
+   - "3:50 PM" -> "15:50"
+   - "7:35 PM" -> "19:35"
+   - "9:50 PM" -> "21:50"
+   - "9:50 AM" -> "09:50"
+3. NO HALLUCINATION: Only extract data present in the text.
+   - If flight number is "LX 39", use "LX 39". NEVER use "LX 1234".
+   - Placeholders like "1234", "5678", "9012" are FORBIDDEN.
+4. DATE HALLUCINATION: NEVER assume or hallucinate a date. If a date is not present, use "N/A".
+5. NO TODAY'S DATE: NEVER use today's date if no date is found.
+6. MISSING DATA: If a field is not present in the text, use "N/A". NEVER use "Not Specified".
+7. YEAR: Only use the year 2026 if a day and month are found but the year is missing.
+8. DAY OFFSETS: If input has "+1", "+2", or "next day":
+   - Set "arrival_next_day": true
+   - Set "days_offset": 1 or 2 as indicated.
+9. Dates: If input says "Aug 5" and today is Feb 2026, the year is 2026.
+10. Multi-segment flights:
+    - Extract EVERY segment in the "segments" list.
+    - "stops" should reflect the total count and via cities (e.g., "2 Stops via ZRH, BOM").
+    - "total_journey_duration" is the very first departure to the very last arrival.
+11. IGNORE PREVIOUS RESULTS: If the input text contains a JSON block, IGNORE IT. Only extract from the raw itinerary text.
+12. Dates: Treat "30th June", "1st Feb" as "30 Jun", "1 Feb". Preserve the exact day number.
+13. DATE ACCURACY: Extract day numbers exactly as written. NEVER perform math or truncation.
+14. Day Name Format: If the text contains "Mon, Jul 6", the date is "6 Jul". Ignore the day name.
+15. OFFSET LOGIC: Offsets (+1, +2) refer to ARRIVAL times only. NEVER change the Departure Date.
 
-══════════════════════════════════════════════════════════════════
-CRITICAL — READ EVERY RULE BEFORE PRODUCING OUTPUT
-══════════════════════════════════════════════════════════════════
+AIRLINE CODE MAPPING:
+6E=IndiGo, AI=Air India, QP=Akasa Air, SG=SpiceJet, UK=Vistara, G8=GoAir, I5=AirAsia India,
+IX=Air India Express, QR=Qatar Airways, EK=Emirates, SQ=Singapore Airlines, TG=Thai Airways,
+BA=British Airways, LH=Lufthansa, EY=Etihad, TK=Turkish Airlines, LX=Swiss International Air Lines
 
-## ABSOLUTE RULES (violation = wrong output)
+CITY ABBREVIATIONS:
+kol/cal=Kolkata(CCU), del=Delhi(DEL), bom/mum=Mumbai(BOM), blr/ban=Bengaluru(BLR),
+mad/che=Chennai(MAA), hyd=Hyderabad(HYD), sin=Singapore(SIN), dxb=Dubai(DXB)
 
-### DATES — Most Important Rule
-- ONLY extract a date if it is EXPLICITLY written in the text (e.g. "30 Jan", "5 Feb 26", "March 15 2026").
-- If NO date is present in the text → set departure_date = "N/A". NO exceptions.
-- NEVER use today's date. NEVER infer a date. NEVER calculate a date.
-- DO NOT use a date from a previous JSON block if the input contains one — ignore embedded JSON.
-- Format: "DD Mon YY" → "30 Jan 26", "05 Feb 26". Two-digit year.
-- Day number accuracy: if text says "30th", write "30". If it says "5th", write "05". Never alter the day number.
+DURATION HANDLING:
+- Parse duration from text like "2h 30m", "2:30", "2 hrs 30 min", "150 mins"
+- If duration not explicit, estimate from route (domestic ~2h, international 5-15h)
 
-### TIMES
-- Convert ALL times to 24-hour format HH:MM.
-  - "3:50 PM" → "15:50", "7:35 PM" → "19:35", "12:00 AM" → "00:00", "12:00 PM" → "12:00"
-- If time is not present → "N/A".
-
-### FLIGHT NUMBERS
-- Copy flight number EXACTLY as it appears (e.g. "LX 39", "6E 2341", "AI 302").
-- NEVER invent or guess a flight number. No "1234", "5678", "XXXX" placeholders.
-
-### AIRPORT CODES
-- Use the 3-letter IATA code that appears in the text (e.g. CCU, DEL, LHR, ZRH).
-- If city name given (e.g. "Kolkata") → use its IATA code (CCU).
-- If unknown → "N/A". Never guess.
-
-### MISSING FIELDS
-- Any field not present in the text → "N/A" (string) or null (for saver_fare).
-- NEVER use "Not Specified", "Unknown", or any other placeholder.
-
-### DAY OFFSETS (next-day arrival)
-- If text has "+1", "+2", or "next day" → set arrival_next_day: true, days_offset: N.
-- If arrival crosses midnight based on times → arrival_next_day: true, days_offset: 1.
-- Otherwise → arrival_next_day: false, days_offset: 0.
-
-### MULTI-SEGMENT FLIGHTS
-- Each flight leg (segment) gets its own entry in the "segments" array.
-- segments[0] = first leg, segments[-1] = last leg.
-- Main object: departure = first segment departure, arrival = last segment arrival.
-- stops = number_of_connections (e.g. "1 Stop via ZRH" or "Non Stop").
-- total_journey_duration = first departure to last arrival.
-
-══════════════════════════════════════════════════════════════════
-CITY → IATA CODE QUICK REFERENCE
-══════════════════════════════════════════════════════════════════
-Kolkata=CCU, Delhi=DEL, Mumbai=BOM, Bengaluru=BLR, Chennai=MAA,
-Hyderabad=HYD, Goa=GOI, Ahmedabad=AMD, Pune=PNQ, Kochi=COK,
-Singapore=SIN, Dubai=DXB, Abu Dhabi=AUH, Doha=DOH,
-London Heathrow=LHR, London Gatwick=LGW, Paris=CDG,
-Frankfurt=FRA, Zurich=ZRH, Amsterdam=AMS, Istanbul=IST,
-New York JFK=JFK, New York Newark=EWR, Los Angeles=LAX,
-Tokyo Narita=NRT, Tokyo Haneda=HND, Hong Kong=HKG,
-Bangkok=BKK, Kuala Lumpur=KUL, Jakarta=CGK, Manila=MNL
-
-══════════════════════════════════════════════════════════════════
-AIRLINE CODE → NAME QUICK REFERENCE
-══════════════════════════════════════════════════════════════════
-6E=IndiGo, AI=Air India, QP=Akasa Air, SG=SpiceJet, UK=Vistara,
-IX=Air India Express, I5=AirAsia India, G8=GoAir,
-EK=Emirates, QR=Qatar Airways, EY=Etihad Airways,
-SQ=Singapore Airlines, TG=Thai Airways, MH=Malaysia Airlines,
-BA=British Airways, LH=Lufthansa, LX=SWISS, AF=Air France,
-KL=KLM, AA=American Airlines, DL=Delta, UA=United Airlines,
-TK=Turkish Airlines, MS=EgyptAir, ET=Ethiopian Airlines
-
-══════════════════════════════════════════════════════════════════
-OUTPUT FORMAT — return ONLY this JSON, no markdown, no explanation
-══════════════════════════════════════════════════════════════════
+OUTPUT JSON FORMAT:
 {
-  "airline": "Full Airline Name or N/A",
-  "flight_number": "XX 1234 or N/A",
-  "departure_city": "City Name or N/A",
-  "departure_airport": "XXX or N/A",
-  "departure_date": "DD Mon YY or N/A",
-  "departure_time": "HH:MM or N/A",
-  "arrival_city": "City Name or N/A",
-  "arrival_airport": "XXX or N/A",
-  "arrival_time": "HH:MM or N/A",
-  "arrival_next_day": false,
+  "airline": "Full Airline Name",
+  "flight_number": "XX 1234",
+  "departure_city": "Full City Name",
+  "departure_airport": "XXX",
+  "departure_date": "dd MMM yy",
+  "departure_time": "HH:MM",
+  "arrival_city": "Full City Name",
+  "arrival_airport": "XXX",
+  "arrival_time": "HH:MM",
+  "arrival_next_day": true/false,
   "days_offset": 0,
-  "duration": "Xh Ym or N/A",
-  "total_journey_duration": "Xh Ym or N/A",
-  "stops": "Non Stop | 1 Stop via XXX | N Stops via XXX, YYY",
-  "baggage": "XXkg or N/A",
-  "refundability": "Refundable | Non-Refundable | N/A",
-  "saver_fare": 12345 or null,
+  "duration": "Xh Ym",
+  "total_journey_duration": "Xh Ym",
+  "stops": "Non Stop / 1 Stop via XXX",
+  "baggage": "XXkg / Xpc",
+  "refundability": "Refundable / Non-Refundable",
+  "saver_fare": 12345,
   "segments": [
     {
-      "airline": "Airline Name or N/A",
-      "flight_number": "XX 1234 or N/A",
-      "departure_city": "City Name or N/A",
-      "departure_airport": "XXX or N/A",
-      "departure_time": "HH:MM or N/A",
-      "arrival_city": "City Name or N/A",
-      "arrival_airport": "XXX or N/A",
-      "arrival_time": "HH:MM or N/A",
-      "duration": "Xh Ym or N/A",
-      "layover_city": "City Name or N/A",
-      "layover_duration": "Xh Ym or N/A",
+      "airline": "Airline Name",
+      "flight_number": "XX 1234",
+      "departure_city": "City Name",
+      "departure_airport": "XXX",
+      "departure_time": "HH:MM",
+      "arrival_city": "City Name",
+      "arrival_airport": "XXX",
+      "arrival_time": "HH:MM",
+      "duration": "Xh Ym",
+      "layover_city": "City where plane lands for layover",
+      "layover_duration": "Xh Ym",
       "days_offset": 0
     }
   ]
 }
-
-FINAL REMINDER: departure_date MUST be "N/A" if no date appears in the input text. Do not fabricate dates.
 """
 
     MULTI_SEGMENT_ADDON = """
 MODE: MULTI-SEGMENT CONNECTING FLIGHT
-Extract EACH flight leg as a separate segment object.
+This is a connecting flight with multiple legs. Extract EACH segment separately.
 
-RULES:
-1. segments array: one object per flight leg, in order.
-2. Main departure = first segment departure. Main arrival = last segment arrival.
-3. stops = (number of segments - 1). List via airports.
-4. Layover = time between previous leg's arrival and this leg's departure (at the connecting airport).
-5. departure_date for each segment = departure date of that leg (may differ for overnight connections).
+SEGMENT EXTRACTION RULES:
+1. Create a 'segments' array with one object per flight leg
+2. Each segment MUST have: airline, flight_number, departure_airport, departure_time, arrival_airport, arrival_time, departure_city, arrival_city
+3. The main flight departure = first segment's departure
+4. The main flight arrival = last segment's arrival
+5. Count stops = number of segments - 1
+6. List 'via' cities in stops field (e.g., "2 Stops via SIN, FRA")
 
-EXAMPLE for CCU→ZRH→LHR:
-  segments[0]: departure_airport=CCU, arrival_airport=ZRH
-  segments[1]: departure_airport=ZRH, arrival_airport=LHR, layover_city=Zurich
-  stops = "1 Stop via ZRH"
+EXAMPLE for CCU->SIN->FRA->LHR:
+- segments[0]: CCU departure, SIN arrival
+- segments[1]: SIN departure, FRA arrival
+- segments[2]: FRA departure, LHR arrival
+- stops: "2 Stops via SIN, FRA"
 """
-
-    DATE_INJECTION_TEMPLATE = """
-══════════════════════════════════════════════════════════════════
-DATE CONTEXT (for year resolution only)
-══════════════════════════════════════════════════════════════════
-Today: {today}
-
-DATES FOUND IN INPUT TEXT BY REGEX: {regex_dates}
-
-If the regex found dates above, those are the CORRECT dates from the text.
-Your departure_date must match one of those dates exactly (same day number, same month).
-If no regex dates are shown → departure_date = "N/A".
-"""
-
 
 # ==================== MAIN PARSER ====================
 class FlightParser:
@@ -1156,27 +971,21 @@ class FlightParser:
     Pipeline:
       1. TextPreprocessor   — normalize raw text
       2. GDSParser          — regex-only parse if GDS format detected (NO LLM)
-      3. HintExtractor      — extract regex hints (airports, times, dates, fares)
-      4. DateValidator      — pre-validate dates before sending to LLM
-      5. LLM call           — extraction with strong anti-hallucination prompting
-      6. FlightPostProcessor— enrich, validate, compute durations from mappings.py
+      3. HintExtractor      — extract regex hints for LLM correction
+      4. LLM call           — only for non-GDS / human-readable itineraries
+      5. FlightPostProcessor — enrich, validate, compute durations
     """
 
-    def __init__(self):
-        self.preprocessor = TextPreprocessor()
-        self.hint_extractor = HintExtractor()
-        self.post_processor = FlightPostProcessor()
 
-        try:
-            from gds_parser import GDSParser as _GDSParser
-            self._gds_parser = _GDSParser()
-        except ImportError:
-            self._gds_parser = None
-            Logger.warning("gds_parser.py not found — GDS regex parsing disabled")
 
     # ── GDS detection + parsing ───────────────────────────────────────────────
 
     def _try_gds(self, raw_text: str) -> Optional[List[Dict]]:
+        """
+        Attempt GDS regex parse. Returns list of flights or None.
+        This is always attempted BEFORE the LLM so GDS inputs never reach
+        the model (faster, cheaper, more accurate for terminal output).
+        """
         if self._gds_parser is None:
             return None
         if not self._gds_parser.is_gds(raw_text):
@@ -1246,30 +1055,6 @@ class FlightParser:
             "parse_errors": []
         }
 
-    def _build_prompt(
-        self,
-        has_layover: bool,
-        regex_dates: List[str],
-        today_str: str
-    ) -> str:
-        """
-        Build the full system prompt, injecting regex-found dates so the LLM
-        cannot fabricate a different date.
-        """
-        prompt = LLMPrompts.SYSTEM_PROMPT
-
-        if has_layover:
-            prompt += "\n" + LLMPrompts.MULTI_SEGMENT_ADDON
-
-        # Inject date context — this is the key anti-hallucination measure
-        dates_str = ", ".join(regex_dates) if regex_dates else "NONE FOUND"
-        prompt += LLMPrompts.DATE_INJECTION_TEMPLATE.format(
-            today=today_str,
-            regex_dates=dates_str
-        )
-
-        return prompt
-
     # ── Public API ────────────────────────────────────────────────────────────
 
     def extract_flight(self, raw_text: str, has_layover: bool = False) -> Dict:
@@ -1282,6 +1067,7 @@ class FlightParser:
         # ── Step 1: Try GDS regex parser first ──────────────────────────────
         gds_flights = self._try_gds(raw_text)
         if gds_flights:
+            # Return the first flight (caller uses extract_multiple_flights for RT/MC)
             return gds_flights[0]
 
         # ── Step 2: Preprocess + hints ──────────────────────────────────────
@@ -1289,14 +1075,14 @@ class FlightParser:
         hints = self.hint_extractor.extract(processed_text)
         Logger.debug(f"Extracted hints: {json.dumps(hints, indent=2)}")
 
-        # ── Step 3: Pre-extract dates with regex (for prompt injection) ──────
-        regex_dates = hints.get('all_dates', [])
-        today_str = datetime.now().strftime("%d %b %Y (%A)")
+        # ── Step 3: Build LLM prompt ─────────────────────────────────────────
+        prompt = LLMPrompts.SYSTEM_PROMPT
+        if has_layover:
+            prompt += "\n" + LLMPrompts.MULTI_SEGMENT_ADDON
+        today = datetime.now().strftime("%d %b %Y (%A)")
+        prompt += f"\n\nTODAY'S DATE: {today}\n"
 
-        # ── Step 4: Build LLM prompt with date injection ─────────────────────
-        prompt = self._build_prompt(has_layover, regex_dates, today_str)
-
-        # ── Step 5: Call LLM ─────────────────────────────────────────────────
+        # ── Step 4: Call LLM ─────────────────────────────────────────────────
         token_limit = MAX_TOKENS * 2 if has_layover else MAX_TOKENS
         data = self._call_llm(prompt, processed_text, token_limit)
 
@@ -1319,7 +1105,7 @@ class FlightParser:
         if "segments" not in data:
             data["segments"] = []
 
-        # ── Step 6: Post-process (includes DateValidator) ────────────────────
+        # ── Step 5: Post-process ─────────────────────────────────────────────
         data = self.post_processor.process(data, hints, processed_text)
         Logger.debug(f"Final departure_date: {data.get('departure_date')}")
         return data
@@ -1327,60 +1113,58 @@ class FlightParser:
     def extract_multiple_flights(self, raw_text: str) -> List[Dict]:
         """
         Extract multiple flights from a single text block.
+
+        GDS input  → GDSParser (returns 1 flight per itinerary direction)
+        Other input → LLM multi-flight extraction + PostProcessor
         """
+        # ── Step 1: Try GDS regex parser first ──────────────────────────────
         gds_flights = self._try_gds(raw_text)
         if gds_flights:
             Logger.info(f"GDS parser returned {len(gds_flights)} itinerary(ies)")
             return gds_flights
 
+        # ── Step 2: Preprocess + hints ──────────────────────────────────────
         processed_text = self.preprocessor.process(raw_text)
         hints = self.hint_extractor.extract(processed_text)
 
-        regex_dates = hints.get('all_dates', [])
-        today_str = datetime.now().strftime("%d %b %Y (%A)")
-        dates_str = ", ".join(regex_dates) if regex_dates else "NONE FOUND"
+        MULTI_FLIGHT_PROMPT = """You are an expert flight data extraction system. Extract ALL distinct flights from the input text.
 
-        MULTI_FLIGHT_PROMPT = f"""You are a flight itinerary data extractor. Extract ALL distinct flights from the input text.
+CRITICAL TASK:
+- Identify EVERY separate flight option in the input
+- Each flight has its own airline, flight number, route, times, and fare
+- Return a JSON ARRAY containing each flight as a separate object
 
-══════════════════════════════════════════════════════════════════
-CRITICAL DATE RULE — READ FIRST
-══════════════════════════════════════════════════════════════════
-Today: {today_str}
-Dates found in text by regex: {dates_str}
-
-- ONLY use dates that appear EXPLICITLY in the text.
-- If regex found dates above, use ONLY those dates (exact day + month).
-- If no dates are found → set departure_date = "N/A" for ALL flights.
-- NEVER use today's date. NEVER infer or calculate a date.
-
-══════════════════════════════════════════════════════════════════
-EXTRACTION RULES
-══════════════════════════════════════════════════════════════════
-- Output ONLY valid JSON array (no markdown, no explanation).
-- Times: always 24-hour HH:MM. ("3:50 PM" → "15:50")
-- Date format: "DD Mon YY" (e.g. "30 Jan 26"). Two-digit year only.
-- Airport codes: 3-letter IATA uppercase (CCU, SIN, DEL).
-- Duration format: "Xh Ym" (e.g. "2h 30m").
-- Fare: extract as NUMBER only (₹6,314 → 6314). null if not present.
-- Missing fields: "N/A". NEVER "Not Specified".
+RULES:
+- Output ONLY valid JSON array (no markdown, no explanation, no extra text)
+- Each flight object must have the same structure
+- Use 24-hour time format (HH:MM)
+- Date format: "dd MMM yy" (e.g. "30 Jan 26"). If year missing, use 2026
+- Airport codes: 3-letter uppercase (CCU, SIN, DEL)
+- Duration format: "Xh Ym" (e.g. "2h 30m")
+- Extract fare as NUMBER only (₹6,314 → 6314)
+- If a field cannot be determined, use "N/A". NEVER hallucinate dates or times.
+- If departure date is not explicitly mentioned, use "N/A".
+- NEVER use today's date as a fallback.
 
 AIRLINE CODES:
 6E=IndiGo, AI=Air India, QP=Akasa Air, SG=SpiceJet, UK=Vistara, G8=GoAir, I5=AirAsia India,
 IX=Air India Express, QR=Qatar Airways, EK=Emirates, SQ=Singapore Airlines, TG=Thai Airways,
-BA=British Airways, LH=Lufthansa, EY=Etihad, TK=Turkish Airlines, LX=SWISS
+BA=British Airways, LH=Lufthansa, EY=Etihad, TK=Turkish Airlines, LX=Swiss International Air Lines
 
 CONNECTING FLIGHTS:
-- Sequential legs sharing a connection → ONE flight object with "segments" array.
-- Distinct origin-destination pairs → separate objects.
+- If sequential segments form a connection (A->B, B->C), combine them into ONE flight object.
+- Populate the "segments" list with each leg.
+- Set "stops" correctly (e.g. "1 Stop").
+- Output distinct trips as separate objects.
 
 OUTPUT FORMAT (JSON ARRAY):
 [
-  {{
+  {
     "airline": "Full Airline Name",
     "flight_number": "XX 1234",
     "departure_city": "City Name",
     "departure_airport": "XXX",
-    "departure_date": "DD Mon YY or N/A",
+    "departure_date": "dd MMM yy",
     "departure_time": "HH:MM",
     "arrival_city": "City Name",
     "arrival_airport": "XXX",
@@ -1389,16 +1173,15 @@ OUTPUT FORMAT (JSON ARRAY):
     "duration": "Xh Ym",
     "stops": "Non Stop",
     "baggage": "XXkg",
-    "refundability": "Refundable or N/A",
-    "saver_fare": 12345 or null,
+    "refundability": "Refundable",
+    "saver_fare": 12345,
     "segments": []
-  }}
+  }
 ]
 
-Return an ARRAY even for a single flight.
-FINAL REMINDER: departure_date = "N/A" if no date is in the text.
+IMPORTANT: Return an ARRAY even if there's only one flight.
 """
-
+        # ── Step 3: Call LLM ─────────────────────────────────────────────────
         data = self._call_llm(MULTI_FLIGHT_PROMPT, processed_text, max_tokens=2000)
 
         if not data:
@@ -1408,6 +1191,7 @@ FINAL REMINDER: departure_date = "N/A" if no date is in the text.
         if not isinstance(data, list):
             data = [data]
 
+        # ── Step 4: Post-process each flight ─────────────────────────────────
         flights = []
         for item in data:
             flight = {
@@ -1455,19 +1239,27 @@ def calculate_duration(dep: str, arr: str) -> str:
 def recalculate_with_date(flight: Dict, new_date_str: str) -> Dict:
     """
     Recalculate all durations after user updates the departure date.
-
+    
     Usage:
         flight = extract_flight(text)
         if flight['departure_date'] == 'N/A':
+            # User selects date from UI
             flight = recalculate_with_date(flight, "30 Jan 26")
+    
+    Args:
+        flight: Parsed flight dictionary
+        new_date_str: New date string (e.g., "30 Jan 26")
+    
+    Returns:
+        Updated flight dictionary with recalculated durations
     """
     return FlightPostProcessor.recalculate_with_date(flight, new_date_str)
 
 
 # ==================== MAIN ====================
 if __name__ == "__main__":
-    # Test 1: Date present — should extract correctly
-    test_with_date = """
+    # Test 1: Normal human-readable itinerary (goes through LLM)
+    test_human = """
     Flight: LX 39
     Kolkata (CCU) to Zurich (ZRH)
     Departs: 30 Jan 26 at 2:35 AM
@@ -1478,27 +1270,7 @@ if __name__ == "__main__":
     Fare: ₹45,000
     """
 
-    # Test 2: No date — should return N/A, not today
-    test_no_date = """
-    IndiGo 6E-2341
-    Kolkata (CCU) → Delhi (DEL)
-    Departs: 06:00
-    Arrives: 08:30
-    Non Stop | 2h 30m
-    ₹3,500
-    """
-
-    # Test 3: Connecting flight with date
-    test_layover = """
-    Air India AI 302 | 05 Jan 26
-    Delhi (DEL) → Singapore (SIN)
-    11:15 PM → 06:15 AM +1
-    1 Stop via Kolkata (CCU) | Layover: 1h 30m
-    Baggage: 25kg
-    ₹18,500
-    """
-
-    # Test 4: GDS Amadeus format (regex, no LLM)
+    # Test 2: GDS Amadeus format (goes through regex parser, NO LLM)
     test_gds = """
 EY 156 E 18APR 6*PRGAUH DK1 1120 1905 18APR E 0 789 M SEE RTSVC
 EY 232 E 18APR 6*AUHBLR DK1 2135 0315 19APR E 0 789 M SEE RTSVC
@@ -1506,29 +1278,10 @@ EY 232 E 18APR 6*AUHBLR DK1 2135 0315 19APR E 0 789 M SEE RTSVC
 
     parser = FlightParser()
 
-    print("=== Test 1: Human-readable with date ===")
-    r = parser.extract_flight(test_with_date)
-    print(f"  departure_date : {r.get('departure_date')}")
-    print(f"  departure_time : {r.get('departure_time')}")
-    print(f"  airline        : {r.get('airline')}")
-    print(f"  flight_number  : {r.get('flight_number')}")
-    print(f"  duration       : {r.get('duration')}")
+    print("=== Human-readable itinerary ===")
+    result = parser.extract_flight(test_human)
+    print(json.dumps(result, indent=2))
 
-    print("\n=== Test 2: No date in text (should be N/A) ===")
-    r = parser.extract_flight(test_no_date)
-    print(f"  departure_date : {r.get('departure_date')}  ← must be N/A")
-    print(f"  departure_time : {r.get('departure_time')}")
-    print(f"  stops          : {r.get('stops')}")
-
-    print("\n=== Test 3: Connecting flight with date ===")
-    r = parser.extract_flight(test_layover, has_layover=True)
-    print(f"  departure_date : {r.get('departure_date')}")
-    print(f"  stops          : {r.get('stops')}")
-    print(f"  duration       : {r.get('duration')}")
-    print(f"  segments       : {len(r.get('segments', []))} segment(s)")
-
-    print("\n=== Test 4: GDS Amadeus (regex, no LLM) ===")
-    r = parser.extract_flight(test_gds)
-    print(f"  departure_date : {r.get('departure_date')}")
-    print(f"  departure_time : {r.get('departure_time')}")
-    print(f"  airline        : {r.get('airline')}")
+    print("\n=== GDS Amadeus itinerary (regex, no LLM) ===")
+    result = parser.extract_flight(test_gds)
+    print(json.dumps(result, indent=2))

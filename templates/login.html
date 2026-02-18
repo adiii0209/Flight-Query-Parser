@@ -4,471 +4,897 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login / Register - Flight Itinerary Builder</title>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <title>Login — Time Travels</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap"
+    rel="stylesheet">
   <style>
-    * {
+    *,
+    *::before,
+    *::after {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
 
-    :root {
-      --primary: #2563eb;
-      --secondary: #0ea5e9;
-      --bg-main: #f8fafc;
-      --bg-card: #ffffff;
-      --text-primary: #0f172a;
-      --text-secondary: #64748b;
-      --border: #e2e8f0;
-      --shadow-lg: rgba(15, 23, 42, 0.15);
-      --primary-dark-mode: #3b82f6;
-      --secondary-dark-mode: #38bdf8;
-      --bg-main-dark-mode: #0f172a;
-      --bg-card-dark-mode: #1e293b;
-      --text-primary-dark-mode: #f1f5f9;
-      --text-secondary-dark-mode: #94a3b8;
-      --border-dark-mode: #334155;
-      --shadow-lg-dark-mode: rgba(0, 0, 0, 0.5);
-    }
-
-    [data-theme="dark"] {
-      --primary: var(--primary-dark-mode);
-      --secondary: var(--secondary-dark-mode);
-      --bg-main: var(--bg-main-dark-mode);
-      --bg-card: var(--bg-card-dark-mode);
-      --text-primary: var(--text-primary-dark-mode);
-      --text-secondary: var(--text-secondary-dark-mode);
-      --border: var(--border-dark-mode);
-      --shadow-lg: var(--shadow-lg-dark-mode);
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow-x: hidden;
     }
 
     body {
-      font-family: 'Outfit', sans-serif;
-      background: linear-gradient(135deg, #1e40af 0%, #2563eb 50%, #0ea5e9 100%);
-      color: var(--text-primary);
+      font-family: 'DM Sans', sans-serif;
+      background: #04060e;
+      color: #ffffff;
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 1rem;
+      padding: 2rem 1rem;
     }
 
-    .container {
+    @media (max-width: 600px) {
+      body {
+        zoom: 0.8;
+      }
+    }
+
+    /* ── BACKGROUND ──────────────────────────────────────────── */
+    .bg-scene {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .bg-gradient {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 90% 70% at 20% 10%, #0f2a6e 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 80% 80%, #072236 0%, transparent 55%),
+        radial-gradient(ellipse 70% 60% at 60% 30%, #091a3e 0%, transparent 50%),
+        #04060e;
+    }
+
+    /* Star field */
+    .stars {
+      position: absolute;
+      inset: 0;
+      background-image:
+        radial-gradient(1.5px 1.5px at 15% 25%, rgba(255, 255, 255, 0.5) 0%, transparent 100%),
+        radial-gradient(1px 1px at 73% 12%, rgba(255, 255, 255, 0.35) 0%, transparent 100%),
+        radial-gradient(1px 1px at 42% 68%, rgba(255, 255, 255, 0.4) 0%, transparent 100%),
+        radial-gradient(1.5px 1.5px at 88% 45%, rgba(255, 255, 255, 0.3) 0%, transparent 100%),
+        radial-gradient(1px 1px at 5% 80%, rgba(255, 255, 255, 0.35) 0%, transparent 100%),
+        radial-gradient(1px 1px at 60% 90%, rgba(255, 255, 255, 0.25) 0%, transparent 100%),
+        radial-gradient(1px 1px at 30% 50%, rgba(255, 255, 255, 0.4) 0%, transparent 100%),
+        radial-gradient(1.5px 1.5px at 92% 75%, rgba(255, 255, 255, 0.35) 0%, transparent 100%),
+        radial-gradient(1px 1px at 55% 35%, rgba(255, 255, 255, 0.3) 0%, transparent 100%),
+        radial-gradient(1px 1px at 22% 60%, rgba(255, 255, 255, 0.25) 0%, transparent 100%);
+    }
+
+    /* Glow orbs */
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(70px);
+      animation: drift 14s ease-in-out infinite;
+    }
+
+    .orb-1 {
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, #2563eb 0%, #1d4ed8 35%, transparent 70%);
+      top: -200px;
+      left: -150px;
+      opacity: 0.72;
+      animation-duration: 16s;
+    }
+
+    .orb-2 {
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, #0ea5e9 0%, #0284c7 35%, transparent 70%);
+      bottom: -150px;
+      right: -120px;
+      opacity: 0.65;
+      animation-duration: 20s;
+      animation-delay: -6s;
+    }
+
+    .orb-3 {
+      width: 350px;
+      height: 350px;
+      background: radial-gradient(circle, #00d4b8 0%, #0891b2 35%, transparent 70%);
+      top: 40%;
+      right: 10%;
+      opacity: 0.35;
+      animation-duration: 18s;
+      animation-delay: -10s;
+    }
+
+    @keyframes drift {
+
+      0%,
+      100% {
+        transform: translate(0, 0) scale(1);
+      }
+
+      33% {
+        transform: translate(30px, -20px) scale(1.05);
+      }
+
+      66% {
+        transform: translate(-20px, 15px) scale(0.97);
+      }
+    }
+
+    /* ── PLANE ANIMATION ─────────────────────────────────────── */
+    /*
+      Strategy: fixed positioned wrapper that holds the whole
+      [trail ——— ✈] assembly. We slide it via translateX so
+      rotation stays clean and independent.
+    */
+    .plane-wrap {
+      position: fixed;
+      /* vertically centred at 35% of viewport */
+      top: 35%;
+      /* start fully off-screen left */
+      left: 0;
+      width: 200px;
+      /* trail(140) + gap(10) + plane(36) + slack */
+      display: flex;
+      align-items: center;
+      gap: 0;
+      pointer-events: none;
+      /* tilt the whole assembly slightly nose-up */
+      transform: translateX(-220px) rotate(-8deg);
+      animation: planefly 11s linear infinite;
+    }
+
+    @keyframes planefly {
+      0% {
+        transform: translateX(-220px) rotate(-8deg);
+        opacity: 0;
+      }
+
+      5% {
+        opacity: 1;
+      }
+
+      95% {
+        opacity: 1;
+      }
+
+      /* move to 100vw + width of assembly */
+      100% {
+        transform: translateX(calc(100vw + 220px)) rotate(-8deg);
+        opacity: 0;
+      }
+    }
+
+    .plane-trail {
+      width: 140px;
+      height: 2px;
+      /* fade from transparent on left to bright on right, right up to the nose */
+      background: linear-gradient(to right,
+          transparent 0%,
+          rgba(96, 165, 250, 0.15) 30%,
+          rgba(96, 165, 250, 0.55) 100%);
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    /* ✈ emoji naturally faces upper-right — rotate it to face flat right */
+    .plane-emoji {
+      font-size: 28px;
+      line-height: 1;
+      /* ✈ default heading is ~45° NE — rotate -45° to point due East (right) */
+      display: inline-block;
+      transform: rotate(0deg);
+      filter: drop-shadow(0 0 8px rgba(96, 165, 250, 0.9)) drop-shadow(0 0 16px rgba(96, 165, 250, 0.5));
+      flex-shrink: 0;
+    }
+
+    /* ── PAGE ────────────────────────────────────────────────── */
+    .page {
+      position: relative;
+      z-index: 1;
       width: 100%;
-      max-width: 400px;
+      max-width: 440px;
+      animation: pageIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
     }
 
-    .card {
-      background: var(--bg-card);
-      border-radius: 16px;
-      padding: 2rem;
-      box-shadow: 0 20px 60px var(--shadow-lg);
+    @keyframes pageIn {
+      from {
+        opacity: 0;
+        transform: translateY(32px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
-    .card-header {
+    /* ── TOP BAR ─────────────────────────────────────────────── */
+    .top-bar {
+      margin-bottom: 1.5rem;
+    }
+
+    .back-link {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.85);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.5rem 1rem;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      transition: all 0.2s ease;
+    }
+
+    .back-link:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.35);
+      color: #fff;
+      transform: translateX(-2px);
+    }
+
+    /* ── BRAND ───────────────────────────────────────────────── */
+    .brand {
       text-align: center;
       margin-bottom: 2rem;
     }
 
-    .card-header h1 {
-      font-size: 2rem;
-      margin-bottom: 0.5rem;
-      background: linear-gradient(135deg, var(--primary), var(--secondary));
+    .logo-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 58px;
+      height: 58px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #1d4ed8, #0ea5e9);
+      font-size: 1.7rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 8px 32px rgba(29, 78, 216, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.12);
+      animation: logoIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.15s both;
+    }
+
+    @keyframes logoIn {
+      from {
+        opacity: 0;
+        transform: scale(0.5) rotate(-20deg);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1) rotate(0);
+      }
+    }
+
+    .brand-name {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.8rem;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: #ffffff;
+      text-shadow: 0 0 40px rgba(147, 197, 253, 0.4), 0 2px 8px rgba(0, 0, 0, 0.4);
+      line-height: 1.1;
+      animation: fadeSlide 0.5s ease 0.25s both;
+    }
+
+    .brand-name span {
+      background: linear-gradient(90deg, #60a5fa 0%, #38bdf8 50%, #67e8f9 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
     }
 
-    .card-header p {
-      color: var(--text-secondary);
-      font-size: 0.95rem;
+    .brand-sub {
+      font-size: 0.78rem;
+      color: rgba(255, 255, 255, 0.4);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-top: 0.4rem;
+      animation: fadeSlide 0.5s ease 0.35s both;
     }
 
+    @keyframes fadeSlide {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* ── CARD ────────────────────────────────────────────────── */
+    .card {
+      background: rgba(255, 255, 255, 0.07);
+      backdrop-filter: blur(40px) saturate(180%);
+      -webkit-backdrop-filter: blur(40px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-top-color: rgba(255, 255, 255, 0.26);
+      border-left-color: rgba(255, 255, 255, 0.18);
+      border-radius: 24px;
+      padding: 2rem;
+      box-shadow:
+        0 40px 100px rgba(0, 0, 0, 0.6),
+        0 0 0 0.5px rgba(255, 255, 255, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+      position: relative;
+      animation: cardIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
+    }
+
+    /* diagonal inner light — the key glass cue */
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 24px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.09) 0%, transparent 45%);
+      pointer-events: none;
+    }
+
+    @keyframes cardIn {
+      from {
+        opacity: 0;
+        transform: translateY(22px) scale(0.97);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    /* ── TABS ────────────────────────────────────────────────── */
     .tabs {
       display: flex;
-      gap: 1rem;
-      margin-bottom: 2rem;
-      border-bottom: 2px solid var(--border);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 4px;
+      margin-bottom: 1.75rem;
+      gap: 4px;
     }
 
     .tab {
       flex: 1;
-      padding: 0.75rem;
-      background: none;
+      padding: 0.6rem 1rem;
+      background: transparent;
       border: none;
-      border-bottom: 3px solid transparent;
+      border-radius: 9px;
       cursor: pointer;
+      font-family: 'Syne', sans-serif;
+      font-size: 0.85rem;
       font-weight: 600;
-      color: var(--text-secondary);
-      transition: all 0.3s ease;
-      margin-bottom: -2px;
+      color: rgba(255, 255, 255, 0.4);
+      letter-spacing: 0.02em;
+      transition: all 0.25s ease;
     }
 
     .tab.active {
-      color: var(--primary);
-      border-bottom-color: var(--primary);
+      background: linear-gradient(135deg, rgba(29, 78, 216, 0.75), rgba(14, 165, 233, 0.65));
+      color: #fff;
+      box-shadow: 0 2px 12px rgba(29, 78, 216, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    }
+
+    .tab:not(.active):hover {
+      color: rgba(255, 255, 255, 0.75);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    /* ── NOTIFICATION ────────────────────────────────────────── */
+    .notification {
+      overflow: hidden;
+      max-height: 0;
+      opacity: 0;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: max-height 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease, margin 0.3s ease, padding 0.3s ease;
+    }
+
+    .notification.show {
+      max-height: 80px;
+      opacity: 1;
+      margin-bottom: 1.25rem;
+      padding: 0.75rem 1rem;
+    }
+
+    .notification.error {
+      background: rgba(248, 113, 113, 0.13);
+      border: 1px solid rgba(248, 113, 113, 0.3);
+      color: #fca5a5;
+    }
+
+    .notification.success {
+      background: rgba(34, 197, 94, 0.11);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #86efac;
+    }
+
+    /* ── FORM ────────────────────────────────────────────────── */
+    .form-panel {
+      animation: panelIn 0.35s ease both;
+    }
+
+    .form-panel.hidden {
+      display: none;
+    }
+
+    @keyframes panelIn {
+      from {
+        opacity: 0;
+        transform: translateX(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
     }
 
     .form-group {
-      margin-bottom: 1.5rem;
+      margin-bottom: 1.1rem;
+      animation: fieldIn 0.4s ease both;
+    }
+
+    .form-group:nth-child(1) {
+      animation-delay: 0.05s;
+    }
+
+    .form-group:nth-child(2) {
+      animation-delay: 0.1s;
+    }
+
+    .form-group:nth-child(3) {
+      animation-delay: 0.15s;
+    }
+
+    .form-group:nth-child(4) {
+      animation-delay: 0.2s;
+    }
+
+    .form-group:nth-child(5) {
+      animation-delay: 0.25s;
+    }
+
+    @keyframes fieldIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     .form-label {
       display: block;
-      font-size: 0.875rem;
+      font-size: 0.72rem;
       font-weight: 600;
-      margin-bottom: 0.5rem;
-      color: var(--text-primary);
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.42);
+      margin-bottom: 0.45rem;
+    }
+
+    .input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-icon {
+      position: absolute;
+      left: 0.9rem;
+      font-size: 1rem;
+      pointer-events: none;
+      opacity: 0.4;
+      transition: opacity 0.2s;
+    }
+
+    .input-wrap:focus-within .input-icon {
+      opacity: 0.85;
     }
 
     .form-input {
       width: 100%;
-      padding: 0.75rem 1rem;
-      border: 2px solid var(--border);
-      border-radius: 8px;
-      font-size: 0.95rem;
-      font-family: 'Outfit', sans-serif;
-      transition: all 0.3s ease;
+      padding: 0.75rem 1rem 0.75rem 2.6rem;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.11);
+      border-radius: 10px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9rem;
+      color: #fff;
+      outline: none;
+      transition: all 0.25s ease;
+    }
+
+    .form-input::placeholder {
+      color: rgba(255, 255, 255, 0.24);
     }
 
     .form-input:focus {
-      outline: none;
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      background: rgba(255, 255, 255, 0.11);
+      border-color: rgba(79, 142, 247, 0.6);
+      box-shadow: 0 0 0 3px rgba(79, 142, 247, 0.12);
     }
 
-    .btn {
-      width: 100%;
-      padding: 0.875rem;
+    .eye-btn {
+      position: absolute;
+      right: 0.9rem;
+      background: none;
       border: none;
-      border-radius: 8px;
-      font-size: 1rem;
-      font-weight: 600;
       cursor: pointer;
-      font-family: 'Outfit', sans-serif;
-      transition: all 0.3s ease;
+      font-size: 1rem;
+      opacity: 0.4;
+      transition: opacity 0.2s;
+      color: white;
     }
 
+    .eye-btn:hover {
+      opacity: 0.85;
+    }
+
+    /* ── PRIMARY BUTTON ──────────────────────────────────────── */
     .btn-primary {
-      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      width: 100%;
+      padding: 0.88rem;
+      border: none;
+      border-radius: 10px;
+      font-family: 'Syne', sans-serif;
+      font-size: 0.92rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.25s ease;
+      margin-top: 0.5rem;
+      background: linear-gradient(135deg, #1d4ed8 0%, #0ea5e9 100%);
       color: white;
-      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+      box-shadow: 0 4px 20px rgba(29, 78, 216, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-primary::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, transparent 60%);
+      opacity: 0;
+      transition: opacity 0.25s;
+    }
+
+    .btn-primary:hover::before {
+      opacity: 1;
     }
 
     .btn-primary:hover:not(:disabled) {
       transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+      box-shadow: 0 8px 28px rgba(29, 78, 216, 0.5);
+    }
+
+    .btn-primary:active:not(:disabled) {
+      transform: translateY(0);
     }
 
     .btn-primary:disabled {
-      opacity: 0.6;
+      opacity: 0.5;
       cursor: not-allowed;
     }
 
-    .notification {
-      margin-bottom: 1rem;
-      padding: 1rem;
-      border-radius: 8px;
-      font-size: 0.9rem;
-      display: none;
+    /* shimmer sweep */
+    .btn-primary::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 60%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+      transform: skewX(-20deg);
     }
 
-    .notification.error {
-      background: #fee2e2;
-      color: #dc2626;
-      border-left: 4px solid #dc2626;
-      display: block;
+    .btn-primary:not(:disabled):hover::after {
+      animation: shimmer 0.55s ease forwards;
     }
 
-    .notification.success {
-      background: #dcfce7;
-      color: #16a34a;
-      border-left: 4px solid #16a34a;
-      display: block;
+    @keyframes shimmer {
+      to {
+        left: 150%;
+      }
     }
 
-    .form-hidden {
-      display: none;
-    }
-
-    .back-link {
-      display: inline-block;
-      margin-bottom: 1.5rem;
-      color: white;
-      text-decoration: none;
-      font-weight: 600;
-      font-size: 0.9rem;
-    }
-
-    .back-link:hover {
-      text-decoration: underline;
-    }
-
-    .dark-mode-toggle {
-      padding: 0.5rem;
-      border: 2px solid rgba(255, 255, 255, 0.3);
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
-      border-radius: 8px;
+    /* ── GHOST BUTTON ────────────────────────────────────────── */
+    .btn-ghost {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 500;
       cursor: pointer;
-      transition: all 0.3s ease;
+      background: rgba(255, 255, 255, 0.04);
+      color: rgba(255, 255, 255, 0.55);
+      transition: all 0.2s ease;
+      margin-top: 0.65rem;
+    }
+
+    .btn-ghost:hover {
+      background: rgba(255, 255, 255, 0.09);
+      color: rgba(255, 255, 255, 0.9);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    /* ── DIVIDER ─────────────────────────────────────────────── */
+    .divider {
       display: flex;
       align-items: center;
-      justify-content: center;
-      font-size: 1rem;
+      gap: 0.75rem;
+      margin: 1.1rem 0;
+      color: rgba(255, 255, 255, 0.2);
+      font-size: 0.75rem;
     }
 
-    .dark-mode-toggle:hover {
-      background: rgba(255, 255, 255, 0.2);
-      border-color: rgba(255, 255, 255, 0.5);
-      transform: translateY(-2px);
+    .divider::before,
+    .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.1);
     }
 
-    .dark-mode-icon {
-      transition: opacity 0.3s ease;
+    /* ── SPINNER ─────────────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.4rem;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
     }
   </style>
 </head>
 
 <body>
 
-  <div class="container">
-    <a href="/" class="back-link">← Back to Home</a>
+  <!-- BACKGROUND -->
+  <div class="bg-scene">
+    <div class="bg-gradient"></div>
+    <div class="stars"></div>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
 
-    <div class="card">
-      <div class="card-header">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-          <h1>✈️ Welcome</h1>
-          <button class="dark-mode-toggle" id="darkModeToggle" aria-label="Toggle dark mode">
-            <span class="dark-mode-icon">🌙</span>
-            <span class="dark-mode-icon" style="display: none;">☀️</span>
-          </button>
-        </div>
-        <p>Login to manage your itineraries</p>
-      </div>
-
-      <div class="tabs">
-        <button class="tab active" onclick="switchTab('login')">🔐 Login</button>
-        <button class="tab" onclick="switchTab('register')">📝 Register</button>
-      </div>
-
-      <div id="notification" class="notification"></div>
-
-      <!-- Login Form -->
-      <form id="loginForm" onsubmit="handleLogin(event)">
-        <div class="form-group">
-          <label class="form-label">Username</label>
-          <input type="text" id="loginUsername" class="form-input" placeholder="Enter your username" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <div style="position: relative; display: flex; align-items: center;">
-            <input type="password" id="loginPassword" class="form-input" placeholder="Enter your password" required
-              style="padding-right: 2.5rem;">
-            <span onclick="togglePasswordVisibility('loginPassword')"
-              style="position: absolute; right: 1rem; cursor: pointer; user-select: none; font-size: 1.2rem;"
-              title="Show/Hide Password">
-              👁️
-            </span>
-          </div>
-        </div>
-
-        <button type="submit" class="btn btn-primary" id="loginBtn">Login</button>
-        <button type="button" class="btn"
-          style="margin-top: 1rem; background: transparent; border: 2px solid var(--border); color: var(--text-primary);"
-          onclick="loginTestUser()">
-          🧪 Login as Test User
-        </button>
-      </form>
-
-      <!-- Register Form -->
-      <form id="registerForm" class="form-hidden" onsubmit="handleRegister(event)">
-        <div class="form-group">
-          <label class="form-label">Full Name</label>
-          <input type="text" id="registerFullName" class="form-input" placeholder="Enter your full name" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Email</label>
-          <input type="email" id="registerEmail" class="form-input" placeholder="Enter your email" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Username</label>
-          <input type="text" id="registerUsername" class="form-input" placeholder="Create a username" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <input type="password" id="registerPassword" class="form-input" placeholder="Create a password" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Confirm Password</label>
-          <input type="password" id="registerConfirmPassword" class="form-input" placeholder="Confirm your password"
-            required>
-        </div>
-
-        <button type="submit" class="btn btn-primary" id="registerBtn">Create Account</button>
-      </form>
+    <!--
+    PLANE: trail (fades in from left) + ✈ emoji rotated to face right.
+    ✈ unicode naturally points upper-right (~45°), so rotate(-45deg) makes it
+    face due right. The outer .plane-wrap then adds the gentle nose-up tilt.
+  -->
+    <div class="plane-wrap">
+      <div class="plane-trail"></div>
+      <span class="plane-emoji">✈</span>
     </div>
   </div>
 
+  <!-- PAGE -->
+  <div class="page">
+
+    <div class="top-bar">
+      <a href="/" class="back-link">← Back</a>
+    </div>
+
+    <div class="brand">
+      <div class="logo-mark">✈️</div>
+      <div class="brand-name">Time <span>Travels</span></div>
+      <div class="brand-sub">Travel with ease</div>
+    </div>
+
+    <div class="card">
+      <div class="tabs">
+        <button class="tab active" id="tab-login" onclick="switchTab('login')">Login</button>
+        <button class="tab" id="tab-register" onclick="switchTab('register')">Register</button>
+      </div>
+
+      <div class="notification" id="notification" role="alert"></div>
+
+      <!-- LOGIN -->
+      <div class="form-panel" id="panel-login">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <div class="input-wrap">
+            <span class="input-icon">👤</span>
+            <input class="form-input" type="text" id="loginUsername" placeholder="your_username"
+              autocomplete="username">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <div class="input-wrap">
+            <span class="input-icon">🔒</span>
+            <input class="form-input" type="password" id="loginPassword" placeholder="••••••••"
+              autocomplete="current-password" style="padding-right:2.8rem">
+            <button class="eye-btn" type="button" onclick="toggleVis('loginPassword',this)">👁️</button>
+          </div>
+        </div>
+        <button class="btn-primary" id="loginBtn" onclick="handleLogin()">Sign In</button>
+        <div class="divider">or</div>
+        <button class="btn-ghost" onclick="loginTestUser()">🧪 Continue as Test User</button>
+      </div>
+
+      <!-- REGISTER -->
+      <div class="form-panel hidden" id="panel-register">
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <div class="input-wrap">
+            <span class="input-icon">✨</span>
+            <input class="form-input" type="text" id="regFullName" placeholder="Jane Smith">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <div class="input-wrap">
+            <span class="input-icon">📧</span>
+            <input class="form-input" type="email" id="regEmail" placeholder="you@example.com" autocomplete="email">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <div class="input-wrap">
+            <span class="input-icon">👤</span>
+            <input class="form-input" type="text" id="regUsername" placeholder="cool_handle" autocomplete="username">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <div class="input-wrap">
+            <span class="input-icon">🔒</span>
+            <input class="form-input" type="password" id="regPassword" placeholder="••••••••"
+              autocomplete="new-password" style="padding-right:2.8rem">
+            <button class="eye-btn" type="button" onclick="toggleVis('regPassword',this)">👁️</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm Password</label>
+          <div class="input-wrap">
+            <span class="input-icon">🔐</span>
+            <input class="form-input" type="password" id="regConfirm" placeholder="••••••••" autocomplete="new-password"
+              style="padding-right:2.8rem">
+            <button class="eye-btn" type="button" onclick="toggleVis('regConfirm',this)">👁️</button>
+          </div>
+        </div>
+        <button class="btn-primary" id="registerBtn" onclick="handleRegister()">Create Account</button>
+      </div>
+    </div>
+
+  </div>
+
   <script>
-    // Initialize dark mode on page load
-    window.addEventListener('DOMContentLoaded', () => {
-      initializeDarkMode();
-    });
-
-    // Dark mode functionality
-    function initializeDarkMode() {
-      const savedTheme = localStorage.getItem('theme') || 'light';
-      const darkModeToggle = document.getElementById('darkModeToggle');
-
-      // Apply saved theme
-      document.documentElement.setAttribute('data-theme', savedTheme);
-      updateDarkModeToggle(savedTheme);
-
-      // Add click event listener
-      darkModeToggle.addEventListener('click', toggleDarkMode);
+    /* ── TABS ───────────────────────────────────────────── */
+    function switchTab(name) {
+      ['login', 'register'].forEach(n => {
+        document.getElementById(`tab-${n}`).classList.toggle('active', n === name);
+        const p = document.getElementById(`panel-${n}`);
+        p.classList.toggle('hidden', n !== name);
+        if (n === name) { p.style.animation = 'none'; p.offsetHeight; p.style.animation = ''; }
+      });
+      clearNotif();
     }
 
-    function toggleDarkMode() {
-      const currentTheme = document.documentElement.getAttribute('data-theme');
-      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-
-      document.documentElement.setAttribute('data-theme', newTheme);
-      localStorage.setItem('theme', newTheme);
-      updateDarkModeToggle(newTheme);
+    /* ── NOTIFICATIONS ──────────────────────────────────── */
+    function showNotif(msg, type) {
+      const el = document.getElementById('notification');
+      el.textContent = (type === 'error' ? '⚠ ' : '✓ ') + msg;
+      el.className = `notification ${type} show`;
+    }
+    function clearNotif() {
+      const el = document.getElementById('notification');
+      el.className = 'notification';
+      el.textContent = '';
     }
 
-    function updateDarkModeToggle(theme) {
-      const darkModeToggle = document.getElementById('darkModeToggle');
-      const icons = darkModeToggle.querySelectorAll('.dark-mode-icon');
-
-      if (theme === 'dark') {
-        icons[0].style.display = 'none';  // Moon icon
-        icons[1].style.display = 'block'; // Sun icon
-      } else {
-        icons[0].style.display = 'block';  // Moon icon
-        icons[1].style.display = 'none';  // Sun icon
-      }
+    /* ── PASSWORD TOGGLE ────────────────────────────────── */
+    function toggleVis(id, btn) {
+      const inp = document.getElementById(id);
+      inp.type = inp.type === 'password' ? 'text' : 'password';
+      btn.textContent = inp.type === 'password' ? '👁️' : '🙈';
     }
 
-    function switchTab(tab) {
-      const loginForm = document.getElementById('loginForm');
-      const registerForm = document.getElementById('registerForm');
-      const tabs = document.querySelectorAll('.tab');
-
-      if (tab === 'login') {
-        loginForm.classList.remove('form-hidden');
-        registerForm.classList.add('form-hidden');
-        tabs[0].classList.add('active');
-        tabs[1].classList.remove('active');
-      } else {
-        loginForm.classList.add('form-hidden');
-        registerForm.classList.remove('form-hidden');
-        tabs[0].classList.remove('active');
-        tabs[1].classList.add('active');
-      }
-      clearNotification();
+    /* ── LOADING STATE ──────────────────────────────────── */
+    function setLoading(btnId, loading, label) {
+      const btn = document.getElementById(btnId);
+      btn.disabled = loading;
+      btn.innerHTML = loading ? `<span class="spinner"></span>${label}` : label;
     }
 
-    function showNotification(message, type) {
-      const notification = document.getElementById('notification');
-      notification.textContent = message;
-      notification.className = `notification ${type}`;
-    }
-
-    function clearNotification() {
-      const notification = document.getElementById('notification');
-      notification.className = 'notification';
-    }
-
-    async function handleLogin(event) {
-      event.preventDefault();
-      const username = document.getElementById('loginUsername').value;
+    /* ── LOGIN ──────────────────────────────────────────── */
+    async function handleLogin() {
+      const username = document.getElementById('loginUsername').value.trim();
       const password = document.getElementById('loginPassword').value;
-      const btn = document.getElementById('loginBtn');
-      btn.disabled = true;
-
+      if (!username || !password) { showNotif('Please fill in all fields', 'error'); return; }
+      setLoading('loginBtn', true, 'Signing in…');
+      clearNotif();
       try {
-        const response = await fetch('/api/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
-        });
-
-        const data = await response.json();
-        if (response.ok) {
-          showNotification('Login successful! Redirecting...', 'success');
-          // Check for 'next' parameter in URL
-          const urlParams = new URLSearchParams(window.location.search);
-          const nextUrl = urlParams.get('next') || '/';
-          setTimeout(() => window.location.href = nextUrl, 1000);
+        const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+        const data = await res.json();
+        if (res.ok) {
+          showNotif('Welcome back! Redirecting…', 'success');
+          const next = new URLSearchParams(window.location.search).get('next') || '/';
+          setTimeout(() => window.location.href = next, 900);
         } else {
-          showNotification(data.error || 'Login failed', 'error');
+          showNotif(data.error || 'Invalid credentials', 'error');
+          setLoading('loginBtn', false, 'Sign In');
         }
-      } catch (error) {
-        showNotification('An error occurred', 'error');
-      } finally {
-        btn.disabled = false;
-      }
+      } catch { showNotif('Network error — try again', 'error'); setLoading('loginBtn', false, 'Sign In'); }
     }
 
-    async function handleRegister(event) {
-      event.preventDefault();
-      const fullName = document.getElementById('registerFullName').value;
-      const email = document.getElementById('registerEmail').value;
-      const username = document.getElementById('registerUsername').value;
-      const password = document.getElementById('registerPassword').value;
-      const confirmPassword = document.getElementById('registerConfirmPassword').value;
-      const btn = document.getElementById('registerBtn');
-
-      if (password !== confirmPassword) {
-        showNotification('Passwords do not match', 'error');
-        return;
-      }
-
-      btn.disabled = true;
+    /* ── REGISTER ───────────────────────────────────────── */
+    async function handleRegister() {
+      const fullName = document.getElementById('regFullName').value.trim();
+      const email = document.getElementById('regEmail').value.trim();
+      const username = document.getElementById('regUsername').value.trim();
+      const password = document.getElementById('regPassword').value;
+      const confirm = document.getElementById('regConfirm').value;
+      if (!fullName || !email || !username || !password) { showNotif('Please fill in all fields', 'error'); return; }
+      if (password !== confirm) { showNotif('Passwords do not match', 'error'); return; }
+      setLoading('registerBtn', true, 'Creating account…');
+      clearNotif();
       try {
-        const response = await fetch('/api/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ full_name: fullName, email, username, password })
-        });
-
-        const data = await response.json();
-        if (response.ok) {
-          showNotification('Registration successful! Redirecting...', 'success');
-          setTimeout(() => window.location.href = '/', 1000);
+        const res = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ full_name: fullName, email, username, password }) });
+        const data = await res.json();
+        if (res.ok) {
+          showNotif('Account created! Redirecting…', 'success');
+          setTimeout(() => window.location.href = '/', 900);
         } else {
-          showNotification(data.error || 'Registration failed', 'error');
+          showNotif(data.error || 'Registration failed', 'error');
+          setLoading('registerBtn', false, 'Create Account');
         }
-      } catch (error) {
-        showNotification('An error occurred', 'error');
-      } finally {
-        btn.disabled = false;
-      }
-    }
-    function togglePasswordVisibility(id) {
-      const input = document.getElementById(id);
-      if (input.type === 'password') {
-        input.type = 'text';
-      } else {
-        input.type = 'password';
-      }
+      } catch { showNotif('Network error — try again', 'error'); setLoading('registerBtn', false, 'Create Account'); }
     }
 
+    /* ── TEST USER ──────────────────────────────────────── */
     function loginTestUser() {
       document.getElementById('loginUsername').value = 'adi.is.tired';
-      document.getElementById('loginPassword').value = 'password123';
-      document.getElementById('loginBtn').click();
+      document.getElementById('loginPassword').value = 'jdxj66pyic@12';
+      handleLogin();
     }
-  </script>
 
+    /* ── ENTER KEY ──────────────────────────────────────── */
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      document.getElementById('panel-login').classList.contains('hidden') ? handleRegister() : handleLogin();
+    });
+  </script>
 </body>
 
 </html>

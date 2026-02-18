@@ -14,7 +14,6 @@ from extensions import db
 
 import pytesseract
 
-
 load_dotenv()
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"

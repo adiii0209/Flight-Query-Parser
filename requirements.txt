@@ -9,4 +9,3 @@ opencv-python-headless
 Pillow
 PyMuPDF
 gunicorn
-
