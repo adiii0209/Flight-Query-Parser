@@ -3576,6 +3576,7 @@
         <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
         <a href="/itineraries" class="sidebar-link">📋 Itineraries</a>
         <a href="/billing" class="sidebar-link">💰 Billing</a>
+        <a href="/tickets" class="sidebar-link">🎫 Tickets</a>
         <div style="margin-top: 1.5rem; padding: 0 0.5rem;">
           <label class="input-label"
             style="display: block; margin-bottom: 0.75rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Appearance</label>
@@ -3897,6 +3898,20 @@
             <div style="margin-top:10px;">
               <label class="form-label">Address</label>
               <textarea id="newSupAddress" class="form-input" rows="2"></textarea>
+            </div>
+
+            <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="saveSupplierToDb" checked>
+              <label for="saveSupplierToDb" style="cursor:pointer; font-weight:500;">Save this supplier account for
+                future
+                use</label>
+            </div>
+
+            <div style="margin-top:15px; text-align:right;">
+              <button type="button" class="btn btn-secondary btn-sm"
+                onclick="document.getElementById('newSupplierForm').style.display='none'">Cancel</button>
+              <button type="button" class="btn btn-primary btn-sm" onclick="useNewSupplierAccount()">Use This
+                Account</button>
             </div>
           </div>
 
@@ -4812,113 +4827,6 @@
 
     let currentBillingResults = [];
 
-    function searchBillingUnified() {
-      const q = document.getElementById('billingSearchInput').value.toLowerCase().trim();
-      const resultsDiv = document.getElementById('billingSearchResults');
-
-      // If input value doesn't match currently selected ID's name, clear the ID
-      // This ensures that if user types something new, it's treated as unsaved billing
-      const currentId = document.getElementById('billingAccountSelect').value;
-      if (currentId) {
-        const acc = billingAccounts.find(a => a.id == currentId);
-        // Check if name matches (case-insensitive to be safe, but input value mimics display name usually)
-        if (acc && acc.display_name.toLowerCase() !== q && q.length > 0) { // q.length check to allow clearing field
-          // Mismatch: clear ID so it's treated as new/temp
-          document.getElementById('billingAccountSelect').value = '';
-          document.getElementById('selectedBillingName').textContent = '';
-          document.getElementById('selectedBillingDetails').innerHTML = '';
-          document.getElementById('billingSummary').style.display = 'none';
-          tempBillingDetails = null;
-        }
-      }
-
-      // Also clear tempBillingDetails if typing something new
-      if (!currentId && tempBillingDetails && q.length > 0) {
-        tempBillingDetails = null;
-        document.getElementById('selectedBillingName').textContent = '';
-        document.getElementById('selectedBillingDetails').innerHTML = '';
-        document.getElementById('billingSummary').style.display = 'none';
-      }
-
-      // Show everything if empty
-
-      currentBillingResults = [];
-
-      // 1. Search existing BillingAccounts
-      billingAccounts.forEach(acc => {
-        const displayName = (acc.display_name || '').toLowerCase();
-        const companyName = (acc.company_name || '').toLowerCase();
-        const emailRaw = acc.email || '';
-        const phoneRaw = acc.phone || '';
-        const email = emailRaw.toLowerCase();
-        const phone = phoneRaw.toLowerCase();
-        if (!q || displayName.includes(q) || companyName.includes(q) || email.includes(q) || phone.includes(q)) {
-          const contactParts = [];
-          if (emailRaw) contactParts.push(emailRaw);
-          if (phoneRaw) contactParts.push(phoneRaw);
-          const contact = contactParts.join(' • ');
-          currentBillingResults.push({
-            type: 'billing',
-            id: acc.id,
-            display: acc.display_name || 'Unnamed Account',
-            sub: acc.company_name ? 'B2B Customer' : 'B2C Customer',
-            contact: contact,
-            raw: acc
-          });
-        }
-      });
-
-      // 2. Search Customers (Passengers/Corporates)
-      allCustomers.forEach(c => {
-        const name = (c.name || '').toLowerCase();
-        const company = (c.company_name || '').toLowerCase();
-        const emailRaw = c.email || c.contact_email || '';
-        const phoneRaw = c.phone || c.contact_phone || '';
-        const email = emailRaw.toLowerCase();
-        const phone = phoneRaw.toLowerCase();
-        if (!q || name.includes(q) || company.includes(q) || email.includes(q) || phone.includes(q)) {
-          const contactParts = [];
-          if (emailRaw) contactParts.push(emailRaw);
-          if (phoneRaw) contactParts.push(phoneRaw);
-          const contact = contactParts.join(' • ');
-          currentBillingResults.push({
-            type: c.customer_type,
-            id: c.id,
-            display: c.customer_type === 'corporate' ? ((c.company_name || '') + (c.name ? ' (' + c.name + ')' : '')) : (c.name || 'Unnamed Passenger'),
-            sub: c.customer_type === 'corporate' ? (c.company_name ? 'B2B Customer' : 'B2C Customer') : 'B2C Customer',
-            contact: contact,
-            raw: c
-          });
-        }
-      });
-
-      if (currentBillingResults.length === 0) {
-        resultsDiv.innerHTML = '<div style="padding:15px; text-align:center; color:var(--text-secondary);"><i class="fas fa-search" style="display:block; font-size:1.5rem; margin-bottom:10px; opacity:0.3;"></i>No matches found. Use "+ New" to create.</div>';
-      } else {
-        resultsDiv.innerHTML = currentBillingResults.slice(0, 10).map((r, idx) => `
-            <div class="search-item" onclick="selectBillingRecordByIndex(${idx})" 
-                 style="padding:12px 15px; cursor:pointer; border-bottom:1px solid var(--border-color); display:flex; align-items:center; gap:12px; transition: background 0.2s;">
-                <div class="avatar" style="width:36px; height:36px; border-radius:50%; background:#2563eb; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; flex-shrink:0; font-size:14px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
-                  ${(r.display && r.display.trim().length > 0) ? r.display.trim()[0].toUpperCase() : '?'}
-                </div>
-                <div style="flex-grow:1; line-height:1.4;">
-                  <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-                    <div style="font-weight:600; color:var(--text-primary); font-size:0.95rem;">
-                      ${r.display}
-                    </div>
-                    <div style="font-size:0.8rem; color:var(--text-secondary); display:flex; align-items:center; gap:5px;">
-                      <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${r.sub.includes('B2B') ? '#4caf50' : '#2196f3'};"></span>
-                      ${r.sub}
-                    </div>
-                  </div>
-                  ${r.contact ? `<div style="font-size:0.75rem; color:var(--text-secondary); margin-top:2px;">${r.contact}</div>` : ''}
-                </div>
-            </div>
-        `).join('');
-      }
-      resultsDiv.style.display = 'block';
-    }
-
     function selectBillingRecordByIndex(idx) {
       const res = currentBillingResults[idx];
       if (!res) return;
@@ -5056,12 +4964,21 @@
       billingAccounts.forEach(acc => {
         const displayName = (acc.display_name || '').toLowerCase();
         const companyName = (acc.company_name || '').toLowerCase();
-        if (!q || displayName.includes(q) || companyName.includes(q)) {
+        const emailRaw = acc.email || '';
+        const phoneRaw = acc.phone || '';
+        const email = emailRaw.toLowerCase();
+        const phone = phoneRaw.toLowerCase();
+        if (!q || displayName.includes(q) || companyName.includes(q) || email.includes(q) || phone.includes(q)) {
+          const contactParts = [];
+          if (emailRaw) contactParts.push(emailRaw);
+          if (phoneRaw) contactParts.push(phoneRaw);
+          const contact = contactParts.join(' • ');
           currentBillingResults.push({
             type: 'billing',
             id: acc.id,
             display: acc.display_name || 'Unnamed Account',
             sub: acc.company_name ? 'B2B Customer' : 'B2C Customer',
+            contact: contact,
             raw: acc
           });
         }
@@ -5070,12 +4987,21 @@
       allCustomers.forEach(c => {
         const name = (c.name || '').toLowerCase();
         const company = (c.company_name || '').toLowerCase();
-        if (!q || name.includes(q) || company.includes(q)) {
+        const emailRaw = c.email || c.contact_email || '';
+        const phoneRaw = c.phone || c.contact_phone || '';
+        const email = emailRaw.toLowerCase();
+        const phone = phoneRaw.toLowerCase();
+        if (!q || name.includes(q) || company.includes(q) || email.includes(q) || phone.includes(q)) {
+          const contactParts = [];
+          if (emailRaw) contactParts.push(emailRaw);
+          if (phoneRaw) contactParts.push(phoneRaw);
+          const contact = contactParts.join(' • ');
           currentBillingResults.push({
             type: c.customer_type,
             id: c.id,
             display: c.customer_type === 'corporate' ? ((c.company_name || '') + (c.name ? ' (' + c.name + ')' : '')) : (c.name || 'Unnamed Passenger'),
             sub: c.customer_type === 'corporate' ? (c.company_name ? 'B2B Customer' : 'B2C Customer') : 'B2C Customer',
+            contact: contact,
             raw: c
           });
         }
@@ -5088,11 +5014,16 @@
                   ${(r.display && r.display.trim().length > 0) ? r.display.trim()[0].toUpperCase() : '?'}
                 </div>
                 <div style="flex-grow:1; line-height:1.4;">
-                  <div style="font-weight:600; color:var(--text-primary); font-size:0.95rem;">${r.display}</div>
-                  <div style="font-size:0.8rem; color:var(--text-secondary); display:flex; align-items:center; gap:5px;">
-                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${r.sub.includes('B2B') ? '#4caf50' : '#2196f3'};"></span>
-                    ${r.sub}
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                    <div style="font-weight:600; color:var(--text-primary); font-size:0.95rem;">
+                      ${r.display}
+                    </div>
+                    <div style="font-size:0.8rem; color:var(--text-secondary); display:flex; align-items:center; gap:5px;">
+                      <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${r.sub.includes('B2B') ? '#4caf50' : '#2196f3'};"></span>
+                      ${r.sub}
+                    </div>
                   </div>
+                  ${r.contact ? `<div style="font-size:0.75rem; color:var(--text-secondary); margin-top:2px;">${r.contact}</div>` : ''}
                 </div>
             </div>
         `).join('');
@@ -5107,8 +5038,11 @@
                   <div style="font-size:0.8rem; opacity:0.8;">Open form to add billing details</div>
                 </div>
             </div>`;
-      } else if (currentBillingResults.length === 0) {
-        html = '<div style="padding:15px; text-align:center; color:var(--text-secondary);">Start typing to search...</div>';
+      }
+      if (currentBillingResults.length === 0 && q.length > 0) {
+        html = '<div style="padding:15px; text-align:center; color:var(--text-secondary);">No matches found for "' + originalVal + '"</div>';
+      } else if (currentBillingResults.length === 0 && q.length === 0) {
+        html = '<div style="padding:15px; text-align:center; color:var(--text-secondary);">No accounts found. Create new above.</div>';
       }
 
       resultsDiv.innerHTML = html;
@@ -5224,18 +5158,19 @@
         }
       }
 
-      if (q.length === 0) {
-        resultsDiv.style.display = 'none';
-        document.getElementById('newSupplierForm').style.display = 'none';
-        return;
-      }
+      /* Removed early return to show results on click/focus */
+      // if (q.length === 0) {
+      //   resultsDiv.style.display = 'none';
+      //   document.getElementById('newSupplierForm').style.display = 'none';
+      //   return;
+      // }
 
       currentSupplierResults = [];
       supplierAccounts.forEach(acc => {
         const displayName = (acc.display_name || '').toLowerCase();
         const companyName = (acc.company_name || '').toLowerCase();
         const gst = (acc.gst_number || '').toLowerCase();
-        if (displayName.includes(q) || companyName.includes(q) || gst.includes(q)) {
+        if (!q || displayName.includes(q) || companyName.includes(q) || gst.includes(q)) {
           currentSupplierResults.push({
             id: acc.id,
             display: acc.display_name,
@@ -5254,12 +5189,16 @@
         `;
       }).join('');
 
-      html += `
+      if (q.length > 0) {
+        html += `
         <div class="dropdown-item" style="padding:10px; cursor:pointer; background:var(--primary-light); color:var(--primary); font-weight:bold;"
              onclick="showNewSupplierForm('${q}')">
           + Create New Supplier Account: "${q}"
         </div>
       `;
+      } else if (currentSupplierResults.length === 0) {
+        html = '<div style="padding:15px; text-align:center; color:var(--text-secondary);">No supplier accounts found. Create new above.</div>';
+      }
 
       resultsDiv.innerHTML = html;
       resultsDiv.style.display = 'block';
@@ -5322,6 +5261,66 @@
       document.getElementById('selectedSupplierDetails').innerHTML = '';
       document.getElementById('supplierSummary').style.display = 'none';
       tempSupplierDetails = null;
+    }
+
+    async function useNewSupplierAccount() {
+      const type = document.getElementById('newSupType').value;
+      const display = document.getElementById('newSupDisplay').value.trim();
+      const saveToDb = document.getElementById('saveSupplierToDb').checked;
+
+      if (!display) {
+        showNotification('Display Name is required', 'error');
+        return;
+      }
+
+      const payload = {
+        account_type: type,
+        display_name: display,
+        company_name: document.getElementById('newSupCompany').value.trim(),
+        contact_name: document.getElementById('newSupContact').value.trim(),
+        email: document.getElementById('newSupEmail').value.trim(),
+        phone: document.getElementById('newSupPhone').value.trim(),
+        gst_number: document.getElementById('newSupGst').value.trim(),
+        address: document.getElementById('newSupAddress').value.trim()
+      };
+
+      if (saveToDb) {
+        try {
+          const response = await fetch('/api/v2/supplier-accounts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            await loadSupplierAccounts();
+
+            document.getElementById('supplierAccountSelect').value = result.supplier_account.id;
+            document.getElementById('supplierSearchInput').value = result.supplier_account.display_name;
+            document.getElementById('selectedSupplierName').textContent = result.supplier_account.display_name;
+            document.getElementById('selectedSupplierDetails').textContent = (type === 'corporate' ? 'Corporate' : 'Individual') + (payload.company_name ? ' • ' + payload.company_name : '');
+            document.getElementById('supplierSummary').style.display = 'flex';
+            document.getElementById('newSupplierForm').style.display = 'none';
+            showNotification('Supplier Account saved & selected', 'success');
+            tempSupplierDetails = null;
+          } else {
+            const err = await response.json();
+            showNotification(err.error || 'Failed to create supplier', 'error');
+          }
+        } catch (e) {
+          console.error(e);
+          showNotification('Error creating supplier', 'error');
+        }
+      } else {
+        tempSupplierDetails = payload;
+        document.getElementById('supplierAccountSelect').value = '';
+        document.getElementById('selectedSupplierName').textContent = display + " (Unsaved)";
+        document.getElementById('selectedSupplierDetails').textContent = (type === 'corporate' ? 'Corporate' : 'Individual');
+        document.getElementById('supplierSummary').style.display = 'flex';
+        document.getElementById('newSupplierForm').style.display = 'none';
+        showNotification('Using temporary supplier details', 'info');
+      }
     }
 
     function buildTempSupplier() {
@@ -5450,8 +5449,10 @@
                 </div>
             </div>`;
 
-      } else if (filtered.length === 0) {
-        html = '<div style="padding:15px; text-align:center; color:var(--text-secondary);">Start typing to search...</div>';
+      } else if (filtered.length === 0 && query.length > 0) {
+        html = '<div style="padding:15px; text-align:center; color:var(--text-secondary);">No passengers found for "' + originalVal + '"</div>';
+      } else if (filtered.length === 0 && query.length === 0) {
+        html = '<div style="padding:15px; text-align:center; color:var(--text-secondary);">No passengers found. Use the form to create new.</div>';
       }
 
       if (html) {
@@ -8624,6 +8625,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     }
 
     function copyOutput() {
+      if (document.activeElement) document.activeElement.blur();
       // Use currentFinalText which is the properly formatted output
       const output = currentFinalText || document.getElementById("output").textContent;
 
@@ -8697,24 +8699,60 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         htmlEl.setAttribute('data-theme', 'light');
       }
 
+      // Temporarily shrink-wrap container to prevent extra right-side whitespace
+      // and force desktop-widths on mobile so the flight details don't squash.
+      const oldWidth = cardsContainer.style.width;
+      const oldMinWidth = cardsContainer.style.minWidth;
+      const oldMargin = cardsContainer.style.margin;
+      const oldDisplay = cardsContainer.style.display;
+      const oldGridTemplate = cardsContainer.style.gridTemplateColumns;
+
+      const cardCount = cardsContainer.children.length;
+      const isMobileSize = window.innerWidth <= 768;
+
+      if (isMobileSize) {
+        if (currentTripType === 'one_way') {
+          cardsContainer.style.width = cardCount === 1 ? '450px' : '1000px';
+          cardsContainer.style.minWidth = cardCount === 1 ? '450px' : '1000px';
+        } else {
+          cardsContainer.style.width = '1000px';
+          cardsContainer.style.minWidth = '1000px';
+        }
+      } else {
+        cardsContainer.style.width = 'max-content';
+      }
+
+      cardsContainer.style.margin = '0 auto';
+
+      // If there's only one card, the CSS grid `repeat(2, 1fr)` gives it 50% max width with 50% empty space.
+      // Changing it to inline-block perfectly shrink wraps a single card.
+      if (cardCount === 1) {
+        cardsContainer.style.display = 'inline-block';
+        cardsContainer.style.gridTemplateColumns = '1fr';
+      } else {
+        cardsContainer.style.display = 'inline-grid';
+      }
+
       // 2. Add capturing class to remove shadows/blurs
       cardsContainer.classList.add('capturing');
 
       try {
-        // 3. Get Light Mode Background Color
-        const lightBg = getComputedStyle(document.body).backgroundColor;
-
         const canvas = await html2canvas(cardsContainer, {
-          backgroundColor: lightBg, // Use proper light background
+          backgroundColor: '#ffffff', // Use solid white for background
           scale: 2,
           logging: false,
           useCORS: true,
-          allowTaint: true
+          windowWidth: Math.max(window.innerWidth, 1000) // Make internal iframe think it's desktop
         });
 
         // 4. Restore State
         if (isDark) htmlEl.setAttribute('data-theme', 'dark');
         cardsContainer.classList.remove('capturing');
+        cardsContainer.style.width = oldWidth;
+        cardsContainer.style.minWidth = oldMinWidth;
+        cardsContainer.style.margin = oldMargin;
+        cardsContainer.style.display = oldDisplay;
+        cardsContainer.style.gridTemplateColumns = oldGridTemplate;
 
         return new Promise(resolve => {
           canvas.toBlob(blob => resolve(blob), 'image/png');
@@ -8722,12 +8760,19 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       } catch (e) {
         if (isDark) htmlEl.setAttribute('data-theme', 'dark');
         cardsContainer.classList.remove('capturing');
+        cardsContainer.style.width = oldWidth;
+        cardsContainer.style.minWidth = oldMinWidth;
+        cardsContainer.style.margin = oldMargin;
+        cardsContainer.style.display = oldDisplay;
+        cardsContainer.style.gridTemplateColumns = oldGridTemplate;
         throw e;
       }
     }
 
 
     async function shareCombined(type) {
+      if (document.activeElement) document.activeElement.blur();
+
       if (!currentFinalText) {
         showNotification('No itinerary generated yet', 'warning');
         return;
@@ -8837,32 +8882,45 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     function getFlightImageFilename() {
       if (!currentFlights || currentFlights.length === 0) return 'Flight_Itinerary.png';
 
-      const firstFlight = currentFlights[0];
+      // Use only flights from the first unit for the filename
+      const firstUnitId = Object.keys(unitFlights)[0];
+      const flightsInFirstUnit = unitFlights[firstUnitId] ? unitFlights[firstUnitId].length : 1;
+      const optionFlights = currentFlights.slice(0, flightsInFirstUnit);
+
+      const firstFlight = optionFlights[0];
       const dep = firstFlight.departure_airport || 'DEP';
 
       let typeStr = 'ONE WAY';
-      let routeStr = `${dep} → ${firstFlight.arrival_airport || 'ARR'}`;
+      let routeStr = `${dep} - ${firstFlight.arrival_airport || 'ARR'}`;
 
       if (currentTripType === 'round_trip') {
         typeStr = 'ROUND TRIP';
-        routeStr = `${dep} ↔ ${firstFlight.arrival_airport || 'ARR'}`;
+        routeStr = `${dep} - ${firstFlight.arrival_airport || 'ARR'}`;
       } else if (currentTripType === 'multi_city') {
         typeStr = 'MULTI CITY';
         const dests = [dep];
-        currentFlights.forEach(f => {
+        optionFlights.forEach(f => {
           if (f.arrival_airport && f.arrival_airport !== dests[dests.length - 1]) {
             dests.push(f.arrival_airport);
           }
         });
-        routeStr = dests.join(' → ');
+        routeStr = dests.join(' - ');
       }
 
+      // Ensure filename doesn't contain invalid characters
       const dateStr = (firstFlight.departure_date || '').replace(/[\/\\]/g, '-').trim() || 'DATE';
+      let filename = `${routeStr} (${typeStr}) ${dateStr}.png`.replace(/[<>:"/\\|?*]/g, '_');
 
-      return `${routeStr} (${typeStr}) ${dateStr}.png`.replace('.PNG', '.png');
+      // Limit length to avoid OS issues
+      if (filename.length > 150) {
+        filename = `${dep} (${typeStr}) ${dateStr}.png`;
+      }
+
+      return filename;
     }
 
     function downloadImage(blob) {
+      if (!blob) return;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -8870,7 +8928,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
     }
 
     /* =====================================================
@@ -8881,6 +8939,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     }
 
     async function downloadCardsImage() {
+      if (document.activeElement) document.activeElement.blur();
       showNotification('Generating image…', 'info');
       try {
         const blob = await generateImageBlob();

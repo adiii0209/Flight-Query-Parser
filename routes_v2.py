@@ -13,7 +13,7 @@ from models_v2 import (
     User, Corporate, Passenger, Airline, 
     CorporatePassenger, CorporateAirlinePromoCode,
     PassengerFrequentFlyer, PassengerPreferences, 
-    PassengerTravelDocument, Itinerary, BillingAccount
+    PassengerTravelDocument, Itinerary, BillingAccount, SupplierAccount
 )
 
 # Create blueprint
@@ -1115,7 +1115,14 @@ def create_itinerary():
             user_id=session['user_id'],
             passenger_id=data.get('passenger_id'),
             corporate_id=data.get('corporate_id'),
-            billing_account_id=data.get('billing_account_id')
+            billing_account_id=data.get('billing_account_id'),
+            supplier_account_id=data.get('supplier_account_id'),
+            supplier_name=data.get('supplier_name'),
+            supplier_email=data.get('supplier_email'),
+            supplier_phone=data.get('supplier_phone'),
+            supplier_address=data.get('supplier_address'),
+            supplier_company=data.get('supplier_company'),
+            supplier_gst=data.get('supplier_gst')
         )
         
         db_session.add(itinerary)
@@ -1177,6 +1184,8 @@ def update_itinerary(itinerary_id):
                       'discount_amount', 'promo_code_used',
                       'bill_to_name', 'bill_to_email', 'bill_to_phone',
                       'bill_to_address', 'bill_to_company', 'bill_to_gst',
+                      'supplier_account_id', 'supplier_name', 'supplier_email',
+                      'supplier_phone', 'supplier_address', 'supplier_company', 'supplier_gst',
                       'requires_approval', 'approved_by', 'approval_remarks',
                       'passenger_id', 'corporate_id', 'parser_output_text',
                       'num_passengers', 'billing_account_id',
@@ -1581,3 +1590,126 @@ def delete_billing_account(account_id):
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": f"Failed to delete billing account: {str(e)}"}), 500
+
+
+# ==================== SUPPLIER ACCOUNT ROUTES ====================
+
+@api_v2.route('/suppliere-accounts', methods=['GET'])
+@api_v2.route('/supplier-accounts', methods=['GET'])
+@login_required
+def get_supplier_accounts():
+    """Get all supplier accounts for the current user."""
+    accounts = db_session.query(SupplierAccount).filter_by(
+        user_id=session['user_id'],
+        is_active=True
+    ).order_by(SupplierAccount.display_name.asc()).all()
+    
+    return jsonify({
+        "supplier_accounts": [acc.to_dict() for acc in accounts]
+    })
+
+
+@api_v2.route('/supplier-accounts', methods=['POST'])
+@login_required
+def create_supplier_account():
+    """Create a new supplier account."""
+    try:
+        data = request.get_json()
+        
+        required_fields = ['account_type', 'display_name']
+        if not all(field in data for field in required_fields):
+            return jsonify({"error": "Missing required fields"}), 400
+            
+        account = SupplierAccount(
+            account_type=data['account_type'],
+            display_name=data['display_name'],
+            company_name=data.get('company_name'),
+            contact_name=data.get('contact_name') or data['display_name'],
+            email=data.get('email'),
+            phone=data.get('phone'),
+            address=data.get('address'),
+            gst_number=data.get('gst_number'),
+            user_id=session['user_id']
+        )
+        
+        db_session.add(account)
+        db_session.commit()
+        
+        return jsonify({
+            "message": "Supplier account created successfully",
+            "supplier_account": account.to_dict()
+        }), 201
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": f"Failed to create supplier account: {str(e)}"}), 500
+
+
+@api_v2.route('/supplier-accounts/<account_id>', methods=['GET'])
+@login_required
+def get_supplier_account(account_id):
+    """Get a specific supplier account."""
+    account = db_session.query(SupplierAccount).filter_by(
+        id=account_id,
+        user_id=session['user_id']
+    ).first()
+    
+    if not account:
+        return jsonify({"error": "Supplier account not found"}), 404
+    
+    return jsonify(account.to_dict())
+
+
+@api_v2.route('/supplier-accounts/<account_id>', methods=['PUT'])
+@login_required
+def update_supplier_account(account_id):
+    """Update a supplier account."""
+    try:
+        account = db_session.query(SupplierAccount).filter_by(
+            id=account_id,
+            user_id=session['user_id']
+        ).first()
+        
+        if not account:
+            return jsonify({"error": "Supplier account not found"}), 404
+        
+        data = request.get_json()
+        
+        for field in ['account_type', 'display_name', 'company_name', 'contact_name',
+                      'email', 'phone', 'address', 'gst_number']:
+            if field in data:
+                setattr(account, field, data[field])
+        
+        db_session.commit()
+        
+        return jsonify({
+            "message": "Supplier account updated successfully",
+            "supplier_account": account.to_dict()
+        })
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": f"Failed to update supplier account: {str(e)}"}), 500
+
+
+@api_v2.route('/supplier-accounts/<account_id>', methods=['DELETE'])
+@login_required
+def delete_supplier_account(account_id):
+    """Delete (deactivate) a supplier account."""
+    try:
+        account = db_session.query(SupplierAccount).filter_by(
+            id=account_id,
+            user_id=session['user_id']
+        ).first()
+        
+        if not account:
+            return jsonify({"error": "Supplier account not found"}), 404
+        
+        account.is_active = False
+        db_session.commit()
+        
+        return jsonify({"message": "Supplier account deleted successfully"})
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": f"Failed to delete supplier account: {str(e)}"}), 500

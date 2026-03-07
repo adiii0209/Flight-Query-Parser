@@ -53,3 +53,31 @@ class Itinerary(db.Model):
     bill_to_address = db.Column(db.Text)
     bill_to_company = db.Column(db.String(120))
     bill_to_gst = db.Column(db.String(50))
+    hold_deadline = db.Column(db.DateTime, nullable=True)
+
+class Ticket(db.Model):
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Booking info
+    pnr = db.Column(db.String(20))
+    booking_date = db.Column(db.String(50))
+    phone = db.Column(db.String(100))
+    currency = db.Column(db.String(10), default='INR')
+    grand_total = db.Column(db.Float, default=0)
+    class_of_travel = db.Column(db.String(30), default='Economy')
+    # Journey info
+    trip_type = db.Column(db.String(20), default='one_way')  # one_way, round_trip, multi_city
+    # Full JSON data
+    passengers_data = db.Column(db.Text)  # JSON array of passengers
+    segments_data = db.Column(db.Text)    # JSON array of segments
+    journey_data = db.Column(db.Text)     # JSON journey summary
+    raw_data = db.Column(db.Text)         # Full raw JSON from parser
+    # Status & matching
+    status = db.Column(db.String(20), default='unmatched')  # unmatched, matched, edited
+    matched_itinerary_id = db.Column(db.String, db.ForeignKey('itinerary.id'), nullable=True)
+    matched_itinerary = db.relationship('Itinerary', backref='tickets', lazy=True)
+    # Owner
+    user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
+    # Parser metadata
+    parser_version = db.Column(db.String(30))

@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==================== CONFIG ====================
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+OPENROUTER_API_KEY = "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"
 
 if not OPENROUTER_API_KEY:
     raise ValueError("OPENROUTER_API_KEY is not set")
@@ -96,13 +96,14 @@ class FlightDate:
         # GDS glued: 30JAN26 / 30JAN2026
         rf'\b(?P<day>{_DAY})(?P<month>{_MONTH_ABBR})(?P<year>{_YEAR})\b',
         # DD Mon [YY|YYYY] — with optional ordinal
-        rf'\b(?P<day>{_DAY_ORD}){_SEP}(?P<month>{_MONTH})(?:{_SEP}(?P<year>{_YEAR}))?\b',
+        # Negative lookahead (?!\s*%) ensures we don't pick up "-17% emissions" as the year.
+        rf'\b(?P<day>{_DAY_ORD}){_SEP}(?P<month>{_MONTH})(?:{_SEP}(?P<year>{_YEAR})(?!\s*%))?\b',
         # Mon DD, [YYYY|YY] — "January 30, 2026" / "Jan 30 26"
-        rf'\b(?P<month>{_MONTH}){_SEP}(?P<day>{_DAY_ORD})(?:[,.]?{_SEP}(?P<year>{_YEAR}))?\b',
+        rf'\b(?P<month>{_MONTH}){_SEP}(?P<day>{_DAY_ORD})(?:[,.]?{_SEP}(?P<year>{_YEAR})(?!\s*%))?\b',
         # ISO 8601: YYYY-MM-DD
         rf'\b(?P<year>{_YEAR_4})-(?P<month_num>0[1-9]|1[0-2])-(?P<day>0[1-9]|[12]\d|3[01])\b',
         # Numeric DD/MM/YYYY or DD.MM.YYYY (day first, most common in India)
-        rf'\b(?P<day>{_DAY})[/.](?P<month_num>0[1-9]|1[0-2])[/.](?P<year>{_YEAR})\b',
+        rf'\b(?P<day>{_DAY})[/.](?P<month_num>0[1-9]|1[0-2])[/.](?P<year>{_YEAR})(?!\d)\b',
     ]
 
     _MONTH_MAP = {
@@ -135,18 +136,38 @@ class FlightDate:
         date_str = FlightDate.clean_date_string(date_str)
         if not date_str:
             return None
+
+        # Logic for current year with 365-day rollover
+        # (Flights are never more than 361-365 days in the future,
+        # so if the date is > some margin in the past, it must be next year).
+        today = datetime.now()
+
+        def _resolve_year(dt: datetime) -> datetime:
+            if default_year:
+                return dt.replace(year=default_year)
+            # If date is more than 3 days in the past, it's likely for next year
+            # (tolerance for timezones and "yesterday's" search).
+            if dt.replace(year=today.year) < (today - timedelta(days=3)):
+                return dt.replace(year=today.year + 1)
+            return dt.replace(year=today.year)
+
         for fmt in FlightDate.FORMATS_WITH_YEAR:
             try:
-                return datetime.strptime(date_str, fmt)
+                dt = datetime.strptime(date_str, fmt)
+                # If parsed year is very small (like 00 or 01 from missing year), it was fmt mismatch
+                if dt.year < 1900:
+                    continue
+                return dt
             except ValueError:
                 continue
+
         for fmt in FlightDate.FORMATS_WITHOUT_YEAR:
             try:
                 dt = datetime.strptime(date_str, fmt)
-                year = default_year or datetime.now().year
-                return dt.replace(year=year)
+                return _resolve_year(dt)
             except ValueError:
                 continue
+
         Logger.warning(f"Could not parse date: '{date_str}'")
         return None
 
@@ -835,20 +856,17 @@ class HintExtractor:
                 hints['airline'] = AIRLINE_CODES[airline_code]
 
         # ── Airport codes (validated against mappings.py) ───────────────────
-        # Pass 1: explicit 3-letter IATA tokens (e.g. "(CCU)", "AMS", "DEL")
-        airport_matches = re.findall(r'\b([A-Z]{3})\b', text.upper())
-        iata_positions: List[Tuple[int, str]] = []
-        for code in airport_matches:
+        # Pass 1: explicit 3-letter IATA tokens
+        # Capture character spans (start, end) to avoid matching inside names
+        iata_positions: List[Tuple[int, int, str]] = []
+        for m in re.finditer(r'\b([A-Z]{3})\b', text.upper()):
+            code = m.group(1)
             if code in AIRPORT_CODES and code not in HintExtractor.FALSE_POSITIVE_AIRPORTS:
-                idx = text.upper().find(code)
-                while idx != -1:
-                    iata_positions.append((idx, code))
-                    idx = text.upper().find(code, idx + 1)
+                iata_positions.append((m.start(), m.end(), code))
 
-        # Pass 2: full city/airport names → IATA (handles "New Delhi", "Kolkata",
-        #         "Ghaziabad", "Amsterdam Airport Schiphol", etc.)
+        # Pass 2: full city/airport names → IATA
         text_lower = text.lower()
-        city_positions: List[Tuple[int, str]] = []
+        city_positions: List[Tuple[int, int, str]] = []
         for city_name, iata in sorted(HintExtractor.CITY_TO_IATA.items(),
                                        key=lambda x: -len(x[0])):
             start = 0
@@ -860,17 +878,31 @@ class HintExtractor:
                 end_idx = idx + len(city_name)
                 after_ok = (end_idx >= len(text_lower) or not text_lower[end_idx].isalpha())
                 if before_ok and after_ok:
-                    city_positions.append((idx, iata))
+                    city_positions.append((idx, end_idx, iata))
                 start = idx + 1
 
-        # Merge both passes, sort by char position
-        combined = iata_positions + city_positions
-        combined.sort(key=lambda x: x[0])
+        # Merge both passes
+        all_matches = iata_positions + city_positions
+        # Sort by start position (asc), then by length (desc)
+        all_matches.sort(key=lambda x: (x[0], -(x[1]-x[0])))
+
+        # Resolve overlaps: If a match is contained within another longer match, skip it.
+        # This prevents "San Francisco" (13 chars) from also matching "SAN" (3 chars).
+        resolved: List[Tuple[int, str]] = []
+        last_end = -1
+        for start, end, iata in all_matches:
+            # If this match starts before the previous one ended, it's an overlap.
+            # Since we sorted by start-asc and length-desc, the first match covering a
+            # span is always the best (longer or earlier).
+            if start < last_end:
+                continue
+            resolved.append((start, iata))
+            last_end = end
 
         # Deduplicate: keep first occurrence of each IATA code in document order
         seen_iata: set = set()
         ordered_airports: List[str] = []
-        for _, iata in combined:
+        for _, iata in sorted(resolved, key=lambda x: x[0]):
             if iata not in seen_iata and iata in AIRPORT_CODES:
                 seen_iata.add(iata)
                 ordered_airports.append(iata)
@@ -1248,8 +1280,29 @@ class FlightPostProcessor:
             flight['arrival_city'] = AIRPORT_CODES[flight['arrival_airport']]
 
         # ═══ 6. SEGMENT PROCESSING ═══════════════════════════════════════════
-        if 'segments' not in flight:
-            flight['segments'] = []
+        if not flight.get('segments'):
+            # Fallback: if we have top-level airports/times but no segments (LLM off/failed),
+            # create a single virtual segment so Step 6 & 7 can process and calculate duration.
+            dep_ap = flight.get('departure_airport', 'N/A')
+            arr_ap = flight.get('arrival_airport', 'N/A')
+            dep_tm = flight.get('departure_time', 'N/A')
+            arr_tm = flight.get('arrival_time', 'N/A')
+            
+            if dep_ap != 'N/A' and arr_ap != 'N/A' and dep_tm != 'N/A' and arr_tm != 'N/A':
+                flight['segments'] = [{
+                    "airline":         flight.get('airline', 'N/A'),
+                    "flight_number":   flight.get('flight_number', 'N/A'),
+                    "departure_airport": dep_ap,
+                    "departure_city":    flight.get('departure_city', 'N/A'),
+                    "departure_time":    dep_tm,
+                    "arrival_airport":   arr_ap,
+                    "arrival_city":      flight.get('arrival_city', 'N/A'),
+                    "arrival_time":      arr_tm,
+                    "duration":        "N/A",
+                    "days_offset":     0
+                }]
+            else:
+                flight['segments'] = []
 
         segments = flight.get('segments', [])
         reg_flight_nums = hints.get('all_flight_numbers', [])

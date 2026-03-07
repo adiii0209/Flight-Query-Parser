@@ -46,6 +46,7 @@ class User(Base):
     passengers: Mapped[List["Passenger"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     itineraries: Mapped[List["Itinerary"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     billing_accounts: Mapped[List["BillingAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    supplier_accounts: Mapped[List["SupplierAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -586,6 +587,14 @@ class Itinerary(Base):
     bill_to_company: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     bill_to_gst: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     
+    # Direct supplier fields (denormalized for convenience)
+    supplier_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    supplier_email: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    supplier_phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    supplier_address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    supplier_company: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    supplier_gst: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    
     # Approval workflow
     requires_approval: Mapped[bool] = mapped_column(Boolean, default=False)
     approved_by: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
@@ -607,12 +616,14 @@ class Itinerary(Base):
     passenger_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("passengers.id"), nullable=True)
     corporate_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("corporates.id"), nullable=True)
     billing_account_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("billing_accounts.id"), nullable=True)
+    supplier_account_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("supplier_accounts.id"), nullable=True)
     
     # Relationships
     user: Mapped["User"] = relationship(back_populates="itineraries")
     passenger: Mapped[Optional["Passenger"]] = relationship(back_populates="itineraries")
     corporate: Mapped[Optional["Corporate"]] = relationship(back_populates="itineraries")
     billing_account: Mapped[Optional["BillingAccount"]] = relationship(back_populates="itineraries")
+    supplier_account: Mapped[Optional["SupplierAccount"]] = relationship(back_populates="itineraries")
     
     # Indexes
     __table_args__ = (
@@ -621,6 +632,7 @@ class Itinerary(Base):
         Index("idx_itinerary_passenger", "passenger_id"),
         Index("idx_itinerary_corporate", "corporate_id"),
         Index("idx_itinerary_billing_account", "billing_account_id"),
+        Index("idx_itinerary_supplier_account", "supplier_account_id"),
     )
     
     def to_dict(self, include_flights: bool = False) -> dict:
@@ -650,6 +662,13 @@ class Itinerary(Base):
             "bill_to_address": self.bill_to_address,
             "bill_to_company": self.bill_to_company,
             "bill_to_gst": self.bill_to_gst,
+            "supplier_account_id": self.supplier_account_id,
+            "supplier_name": self.supplier_name,
+            "supplier_email": self.supplier_email,
+            "supplier_phone": self.supplier_phone,
+            "supplier_address": self.supplier_address,
+            "supplier_company": self.supplier_company,
+            "supplier_gst": self.supplier_gst,
             "requires_approval": self.requires_approval,
             "approved_by": self.approved_by,
             "approved_at": self.approved_at.isoformat() if self.approved_at else None,
@@ -665,7 +684,8 @@ class Itinerary(Base):
             "corporate_id": self.corporate_id,
             "passenger": self.passenger.to_dict() if self.passenger else None,
             "corporate": self.corporate.to_dict() if self.corporate else None,
-            "billing_account": self.billing_account.to_dict() if self.billing_account else None
+            "billing_account": self.billing_account.to_dict() if self.billing_account else None,
+            "supplier_account": self.supplier_account.to_dict() if self.supplier_account else None
         }
         
         if include_flights:
@@ -731,6 +751,59 @@ class BillingAccount(Base):
             "gst_number": self.gst_number,
             "passenger_id": self.passenger_id,
             "corporate_id": self.corporate_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "is_active": self.is_active
+        }
+
+# ==================== SUPPLIER ACCOUNT MODEL ====================
+
+class SupplierAccount(Base):
+    """Unified supplier profile."""
+    __tablename__ = "supplier_accounts"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    
+    # Type: individual, corporate
+    account_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    
+    # Display Name / Label
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    
+    # Supplier fields
+    company_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    contact_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    gst_number: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    
+    # User ownership
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("user.id"), nullable=False)
+    
+    # Timestamps & Active
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="supplier_accounts")
+    itineraries: Mapped[List["Itinerary"]] = relationship(back_populates="supplier_account")
+    
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint("display_name", "user_id", name="uq_supplier_account_name_user"),
+    )
+    
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "account_type": self.account_type,
+            "display_name": self.display_name,
+            "company_name": self.company_name,
+            "contact_name": self.contact_name,
+            "email": self.email,
+            "phone": self.phone,
+            "address": self.address,
+            "gst_number": self.gst_number,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "is_active": self.is_active
         }

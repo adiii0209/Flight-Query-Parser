@@ -32,6 +32,12 @@
         .modal-content.active {
             display: flex !important;
         }
+
+        #modalOverlay {
+            align-items: flex-start;
+            padding-top: 5vh;
+            padding-bottom: 5vh;
+        }
     </style>
 </head>
 
@@ -55,6 +61,7 @@
             <a href="/" class="sidebar-link">✈️ Flight Parser</a>
             <a href="/itineraries" class="sidebar-link active">📋 Itineraries</a>
             <a href="/billing" class="sidebar-link">💰 Billing</a>
+            <a href="/tickets" class="sidebar-link">🎫 Tickets</a>
             <div class="sidebar-divider"></div>
             <a href="/passengers" class="sidebar-link">👥 Passengers</a>
             <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
@@ -63,6 +70,10 @@
             <button class="sidebar-theme-toggle" id="sidebarThemeToggle">
                 <span class="theme-icon-container">🌙</span>
                 <span id="themeToggleText">Dark Mode</span>
+            </button>
+            <button class="sidebar-theme-toggle" id="sidebarValentineToggle" style="margin-top: 0.5rem;">
+                <span class="theme-icon-container">🎀</span>
+                <span id="sidebarValToggleText">Pookie Mode</span>
             </button>
             <button class="sidebar-auth-btn" id="sidebarAuthBtn" onclick="handleAuthClick()">🔑 Login</button>
         </div>
@@ -139,9 +150,7 @@
                     <h2>👥 Passengers</h2>
                     <div style="display:flex;gap:0.5rem;">
                         <button class="btn-action small primary" id="addPassengerBtn"
-                            onclick="showAddPassengerModal()">+ Add</button>
-                        <button class="btn-action small secondary" id="linkPassengerBtn"
-                            onclick="showLinkPassengerModal()">📎 From DB</button>
+                            onclick="openUnifiedPassengerModal()">👤 Manage Passengers</button>
                     </div>
                 </div>
                 <div id="passengersContainer"></div>
@@ -152,107 +161,198 @@
                 <div class="section-header-row">
                     <h2>💳 Billing Details</h2>
                     <div style="display:flex;gap:0.5rem;">
-                        <button class="btn-action small primary" id="editBillingBtn" onclick="showEditBillingModal()">✏️
-                            Edit</button>
-                        <button class="btn-action small secondary" id="linkBillingBtn"
-                            onclick="showLinkBillingModal()">📎 From DB</button>
+                        <button class="btn-action small primary" id="editBillingBtn"
+                            onclick="openUnifiedBillingModal()">💳 Manage Billing</button>
                     </div>
                 </div>
                 <div id="billingContainer"></div>
+            </div>
+
+            <!-- Supplier -->
+            <div class="section-card" style="margin-top: 1.5rem;">
+                <div class="section-header-row">
+                    <h2>🏢 Supplier Details</h2>
+                    <div style="display:flex;gap:0.5rem;">
+                        <button class="btn-action small primary" id="editSupplierBtn"
+                            onclick="openUnifiedSupplierModal()">🏢 Manage Supplier</button>
+                    </div>
+                </div>
+                <div id="supplierContainer"></div>
             </div>
         </div>
     </div>
 
     <!-- Modal Overlay -->
     <div class="modal-overlay" id="modalOverlay" onclick="closeModal()">
-        <!-- Add Passenger Modal -->
-        <div class="modal" id="passengerModal" onclick="event.stopPropagation()">
-            <h3>👤 Add Passenger</h3>
-            <div class="modal-field"><label>Full Name *</label><input type="text" id="paxName"
-                    placeholder="e.g. John Doe"></div>
-            <div class="modal-field"><label>Email</label><input type="email" id="paxEmail"
-                    placeholder="john@example.com"></div>
-            <div class="modal-field"><label>Phone</label><input type="tel" id="paxPhone" placeholder="+91 98765 43210">
-            </div>
-            <div class="modal-field"><label>Age</label><input type="text" id="paxAge" placeholder="e.g. 30"></div>
-            <div class="modal-field"><label>Gender</label>
-                <select id="paxGender">
-                    <option value="">Select</option>
-                    <option value="M">Male</option>
-                    <option value="F">Female</option>
-                    <option value="Other">Other</option>
-                </select>
-            </div>
-            <div class="modal-field" style="flex-direction: row; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
-                <input type="checkbox" id="paxSaveToDB" style="width: auto;">
-                <label for="paxSaveToDB" style="margin-bottom: 0;">Add/Update in Database</label>
-            </div>
-            <div class="modal-actions">
-                <button class="btn-action secondary" onclick="closeModal()">Cancel</button>
-                <button class="btn-action primary" id="paxSubmitBtn" onclick="addPassenger()">Add Passenger</button>
-            </div>
-        </div>
-
-        <!-- Link Passenger from DB Modal -->
-        <div class="modal" id="linkPassengerModal" onclick="event.stopPropagation()">
-            <h3>📎 Link Passenger from Database</h3>
+        <!-- Unified Passenger Modal -->
+        <div class="modal" id="unifiedPassengerModal" onclick="event.stopPropagation()"
+            style="max-width:650px; height:70vh; overflow-y:auto;">
+            <h3>👤 Manage Passengers</h3>
             <div class="modal-field">
                 <label>Search Passenger</label>
-                <div class="searchable-dropdown">
-                    <input type="text" id="dbPassengerSearch" class="dropdown-input" placeholder="Type name or email..."
-                        autocomplete="off">
-                    <div id="dbPassengerList" class="dropdown-list"></div>
-                    <input type="hidden" id="selectedPassengerId">
+                <div style="position:relative;">
+                    <input type="text" id="itinPassengerSearch" class="dropdown-input"
+                        placeholder="Type name, email or phone to search..." autocomplete="off"
+                        onkeyup="searchPassengerUnifiedItin()">
+                    <div id="itinPassengerResults" class="dropdown-list"
+                        style="display:none; position:absolute; width:100%; z-index:1000; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; max-height:350px; overflow-y:auto; box-shadow:0 10px 25px rgba(0,0,0,0.1);">
+                    </div>
                 </div>
             </div>
-            <div class="modal-actions">
-                <button class="btn-action secondary" onclick="closeModal()">Cancel</button>
-                <button class="btn-action primary" onclick="linkPassengerFromDB()">Link Passenger</button>
+
+            <!-- Inline New Passenger Form -->
+            <div id="itinNewPassengerForm"
+                style="display:none; margin-top:1.5rem; padding:1.25rem; border:1px solid var(--border); border-radius:12px; background:var(--bg-main);">
+                <h4 style="margin-top:0; margin-bottom:1rem; font-size:1rem;">✨ Create New Passenger</h4>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                    <div class="modal-field" style="margin:0;"><label>First Name *</label><input type="text"
+                            id="itinPaxFirst" class="dropdown-input"></div>
+                    <div class="modal-field" style="margin:0;"><label>Last Name *</label><input type="text"
+                            id="itinPaxLast" class="dropdown-input"></div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                    <div class="modal-field" style="margin:0;"><label>Email</label><input type="email" id="itinPaxEmail"
+                            class="dropdown-input"></div>
+                    <div class="modal-field" style="margin:0;"><label>Phone</label><input type="tel" id="itinPaxPhone"
+                            class="dropdown-input"></div>
+                </div>
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1.5rem;">
+                    <input type="checkbox" id="itinPaxSaveDB" checked style="width:18px; height:18px;">
+                    <label for="itinPaxSaveDB" style="margin:0; font-size:0.9rem; font-weight:500;">Save to
+                        Database</label>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:0.75rem;">
+                    <button class="btn-action secondary small" onclick="toggleItinNewPaxForm(false)">Cancel</button>
+                    <button class="btn-action primary small" onclick="addNewPassengerItin()">Add to Itinerary</button>
+                </div>
+            </div>
+
+            <div class="modal-actions" style="margin-top:2rem; border-top:1px solid var(--border); padding-top:1rem;">
+                <button class="btn-action secondary" onclick="closeModal()">Close</button>
             </div>
         </div>
 
-        <!-- Edit Billing Modal -->
-        <div class="modal" id="billingModal" onclick="event.stopPropagation()">
-            <h3>✏️ Edit Billing Details</h3>
-            <div class="modal-field"><label>Display Name</label><input type="text" id="billName"
-                    placeholder="Name or Company Name">
-            </div>
-            <div class="modal-field"><label>Company</label><input type="text" id="billCompany"
-                    placeholder="Company name"></div>
-            <div class="modal-field"><label>Email</label><input type="email" id="billEmail"
-                    placeholder="billing@company.com"></div>
-            <div class="modal-field"><label>Phone</label><input type="tel" id="billPhone" placeholder="+91 98765 43210">
-            </div>
-            <div class="modal-field"><label>Address</label><textarea id="billAddress" rows="2"
-                    placeholder="Billing address"></textarea></div>
-            <div class="modal-field"><label>GST Number</label><input type="text" id="billGST" placeholder="GST Number">
-            </div>
-            <div class="modal-field" style="flex-direction: row; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
-                <input type="checkbox" id="billSaveToDB" style="width: auto;">
-                <label for="billSaveToDB" style="margin-bottom: 0;">Add/Update in Database</label>
-            </div>
-            <div class="modal-actions">
-                <button class="btn-action secondary" onclick="closeModal()">Cancel</button>
-                <button class="btn-action primary" id="billSubmitBtn" onclick="saveBilling()">Save Billing</button>
-            </div>
-        </div>
-
-        <!-- Link Billing Account from DB Modal -->
-        <div class="modal" id="linkBillingModal" onclick="event.stopPropagation()">
-            <h3>📎 Link Billing Account from Database</h3>
+        <!-- Unified Billing Modal -->
+        <div class="modal" id="unifiedBillingModal" onclick="event.stopPropagation()"
+            style="max-width:650px; height:70vh; overflow-y:auto;">
+            <h3>💳 Manage Billing</h3>
             <div class="modal-field">
                 <label>Search Billing Account</label>
-                <div class="searchable-dropdown">
-                    <input type="text" id="dbBillingSearch" class="dropdown-input"
-                        placeholder="Type name, company or GST..." autocomplete="off">
-                    <div id="dbBillingList" class="dropdown-list"></div>
-                    <input type="hidden" id="selectedBillingId">
+                <div style="position:relative;">
+                    <input type="text" id="itinBillingSearch" class="dropdown-input"
+                        placeholder="Search by name, company or GST..." autocomplete="off"
+                        onkeyup="searchBillingUnifiedItin()">
+                    <div id="itinBillingResults" class="dropdown-list"
+                        style="display:none; position:absolute; width:100%; z-index:1000; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; max-height:350px; overflow-y:auto; box-shadow:0 10px 25px rgba(0,0,0,0.1);">
+                    </div>
                 </div>
             </div>
-            <div id="billingAccountPreview" style="display:none;"></div>
-            <div class="modal-actions">
-                <button class="btn-action secondary" onclick="closeModal()">Cancel</button>
-                <button class="btn-action primary" onclick="linkBillingFromDB()">Link Billing Account</button>
+
+            <!-- Inline New Billing Form -->
+            <div id="itinNewBillingForm"
+                style="display:none; margin-top:1.5rem; padding:1.25rem; border:1px solid var(--border); border-radius:12px; background:var(--bg-main);">
+                <h4 style="margin-top:0; margin-bottom:1rem; font-size:1rem;">✨ Create New Billing Account</h4>
+                <div class="modal-field"><label>Account Type</label>
+                    <select id="itinBillType" class="dropdown-input" onchange="handleItinBillTypeChange()">
+                        <option value="individual">Individual</option>
+                        <option value="corporate">Corporate</option>
+                    </select>
+                </div>
+                <div class="modal-field"><label>Display Name *</label>
+                    <input type="text" id="itinBillDisplay" class="dropdown-input"
+                        placeholder="e.g. John Doe or Acme Corp">
+                </div>
+                <div id="itinCorpFields" style="display:none;">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                        <div class="modal-field" style="margin:0;"><label>Company Name</label><input type="text"
+                                id="itinBillCompany" class="dropdown-input"></div>
+                        <div class="modal-field" style="margin:0;"><label>GST Number</label><input type="text"
+                                id="itinBillGst" class="dropdown-input"></div>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                    <div class="modal-field" style="margin:0;"><label>Email</label><input type="email"
+                            id="itinBillEmail" class="dropdown-input"></div>
+                    <div class="modal-field" style="margin:0;"><label>Phone</label><input type="tel" id="itinBillPhone"
+                            class="dropdown-input"></div>
+                </div>
+                <div class="modal-field"><label>Address</label><textarea id="itinBillAddress" rows="2"
+                        class="dropdown-input"></textarea></div>
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1.5rem;">
+                    <input type="checkbox" id="itinBillSaveDB" checked style="width:18px; height:18px;">
+                    <label for="itinBillSaveDB" style="margin:0; font-size:0.9rem; font-weight:500;">Save for future
+                        use</label>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:0.75rem;">
+                    <button class="btn-action secondary small" onclick="toggleItinNewBillForm(false)">Cancel</button>
+                    <button class="btn-action primary small" onclick="addNewBillingItin()">Apply Billing</button>
+                </div>
+            </div>
+
+            <div class="modal-actions" style="margin-top:2rem; border-top:1px solid var(--border); padding-top:1rem;">
+                <button class="btn-action secondary" onclick="closeModal()">Close</button>
+            </div>
+        </div>
+
+        <!-- Unified Supplier Modal -->
+        <div class="modal" id="unifiedSupplierModal" onclick="event.stopPropagation()"
+            style="max-width:650px; height:70vh; overflow-y:auto;">
+            <h3>🏢 Manage Supplier</h3>
+            <div class="modal-field">
+                <label>Search Supplier Account</label>
+                <div style="position:relative;">
+                    <input type="text" id="itinSupplierSearch" class="dropdown-input"
+                        placeholder="Search by name, company or GST..." autocomplete="off"
+                        onkeyup="searchSupplierUnifiedItin()">
+                    <div id="itinSupplierResults" class="dropdown-list"
+                        style="display:none; position:absolute; width:100%; z-index:1000; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; max-height:350px; overflow-y:auto; box-shadow:0 10px 25px rgba(0,0,0,0.1);">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Inline New Supplier Form -->
+            <div id="itinNewSupplierForm"
+                style="display:none; margin-top:1.5rem; padding:1.25rem; border:1px solid var(--border); border-radius:12px; background:var(--bg-main);">
+                <h4 style="margin-top:0; margin-bottom:1rem; font-size:1rem;">✨ Create New Supplier Account</h4>
+                <div class="modal-field"><label>Account Type</label>
+                    <select id="itinSupType" class="dropdown-input" onchange="handleItinSupTypeChange()">
+                        <option value="corporate" selected>Corporate</option>
+                        <option value="individual">Individual</option>
+                    </select>
+                </div>
+                <div class="modal-field"><label>Display Name *</label>
+                    <input type="text" id="itinSupDisplay" class="dropdown-input"
+                        placeholder="e.g. Cleartrip or MakeMyTrip">
+                </div>
+                <div id="itinSupCorpFields">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                        <div class="modal-field" style="margin:0;"><label>Company Name</label><input type="text"
+                                id="itinSupCompany" class="dropdown-input"></div>
+                        <div class="modal-field" style="margin:0;"><label>GST Number</label><input type="text"
+                                id="itinSupGst" class="dropdown-input"></div>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                    <div class="modal-field" style="margin:0;"><label>Email</label><input type="email" id="itinSupEmail"
+                            class="dropdown-input"></div>
+                    <div class="modal-field" style="margin:0;"><label>Phone</label><input type="tel" id="itinSupPhone"
+                            class="dropdown-input"></div>
+                </div>
+                <div class="modal-field"><label>Address</label><textarea id="itinSupAddress" rows="2"
+                        class="dropdown-input"></textarea></div>
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1.5rem;">
+                    <input type="checkbox" id="itinSupSaveDB" checked style="width:18px; height:18px;">
+                    <label for="itinSupSaveDB" style="margin:0; font-size:0.9rem; font-weight:500;">Save for future
+                        use</label>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:0.75rem;">
+                    <button class="btn-action secondary small" onclick="toggleItinNewSupForm(false)">Cancel</button>
+                    <button class="btn-action primary small" onclick="addNewSupplierItin()">Apply Supplier</button>
+                </div>
+            </div>
+
+            <div class="modal-actions" style="margin-top:2rem; border-top:1px solid var(--border); padding-top:1rem;">
+                <button class="btn-action secondary" onclick="closeModal()">Close</button>
             </div>
         </div>
 

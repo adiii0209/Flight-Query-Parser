@@ -6,8 +6,12 @@ let holdInterval = null;
 let countdownInterval = null;
 let dbPassengers = [];
 let dbBillingAccounts = [];
+let dbSupplierAccounts = [];
+let unifiedSupplierResults = [];
+let dbCorporates = [];
 let airlines = [];
 let currentPassenger = null;
+let unifiedBillingResults = [];
 
 // ==================== SIDEBAR & THEME ====================
 function initializeSidebar() {
@@ -40,6 +44,16 @@ function initializeSidebar() {
     themeBtn.addEventListener('click', () => {
       const current = document.documentElement.getAttribute('data-theme');
       const next = current === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      updateTheme(next);
+    });
+  }
+
+  const valBtn = document.getElementById('sidebarValentineToggle');
+  if (valBtn) {
+    valBtn.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme');
+      const next = current === 'valentine' ? 'light' : 'valentine';
       localStorage.setItem('theme', next);
       updateTheme(next);
     });
@@ -100,6 +114,20 @@ function handleAuthClick() {
 // ==================== HELPERS ====================
 function formatCurrency(n) { if (!n && n !== 0) return '₹0'; return '₹' + Number(n).toLocaleString('en-IN'); }
 function formatDate(d) { if (!d) return '-'; return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
+function formatDateTime(d) {
+  if (!d) return '-';
+  let ds = d;
+  if (typeof d === 'string' && !d.endsWith('Z') && !d.includes('+')) ds += 'Z';
+  const date = new Date(ds);
+  return date.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+}
 function showToast(msg, type = 'info') {
   const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg;
   document.body.appendChild(t); setTimeout(() => t.remove(), 3500);
@@ -180,11 +208,26 @@ async function loadDBPassengers() {
   } catch (e) { console.error('Load passengers error:', e); }
 }
 
+
+async function loadDBSuppliers() {
+  try {
+    const r = await fetch('/api/v2/supplier-accounts');
+    if (r.ok) { const d = await r.json(); dbSupplierAccounts = d.supplier_accounts || []; }
+  } catch (e) { }
+}
+
 async function loadDBBillingAccounts() {
   try {
     const r = await fetch('/api/v2/billing-accounts'); if (!r.ok) return;
     const d = await r.json(); dbBillingAccounts = d.billing_accounts || [];
   } catch (e) { console.error('Load billing accounts error:', e); }
+}
+
+async function loadDBCorporates() {
+  try {
+    const r = await fetch('/api/v2/corporates'); if (!r.ok) return;
+    const d = await r.json(); dbCorporates = d.corporates || [];
+  } catch (e) { console.error('Load corporates error:', e); }
 }
 
 // ==================== FILTER & CARDS ====================
@@ -314,7 +357,10 @@ function renderItineraryCards() {
           <h3>${it.title || it.reference_number || 'Untitled Itinerary'}</h3>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.3rem;">
             <span class="status-badge ${it.status}">${(it.status === 'confirmed' || it.status === 'issued') ? 'Issued' : (it.status || '').replace('_', ' ')}</span>
-            ${(it.status === 'on_hold' && it.hold_deadline) ? `<span class="hold-timer-badge" data-deadline="${it.hold_deadline}" style="font-size:0.75rem;color:var(--warning);font-weight:700;display:flex;align-items:center;gap:0.3rem;">⏱ <span class="timer-text">--:--:--</span></span>` : ''}
+            ${(it.status === 'on_hold' && it.hold_deadline) ? `<span class="hold-timer-badge" data-deadline="${it.hold_deadline}" style="font-size:0.75rem;color:var(--warning);font-weight:700;display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
+              <div style="display:flex;align-items:center;gap:0.3rem;">⏱ <span class="timer-text">--:--:--</span></div>
+              <div class="deadline-text" style="font-size:0.65rem;font-weight:500;opacity:0.9;"></div>
+            </span>` : ''}
           </div>
         </div>
         <div class="itin-card-meta">
@@ -371,6 +417,7 @@ function renderDetailView() {
   renderFlightSection();
   renderPassengers();
   renderBilling();
+  renderSupplier();
   updateHoldTimers();
 }
 
@@ -437,7 +484,13 @@ function renderInfoCards() {
     ${shouldShowFinancials(it) ? `<div class="info-mini-card"><div class="label">Total Amount</div><div class="value" style="color:var(--primary)">${formatCurrency(getEffectiveTotal(it))}</div></div>` : ''}
     <div class="info-mini-card"><div class="label">Created</div><div class="value">${formatDate(it.created_at)}</div></div>
     ${it.reference_number ? '<div class="info-mini-card"><div class="label">Reference</div><div class="value">' + it.reference_number + '</div></div>' : ''}
-    ${(it.status === 'on_hold' && it.hold_deadline) ? `<div class="info-mini-card"><div class="label">Time Limit</div><div class="value hold-timer-badge" data-deadline="${it.hold_deadline}" style="color:var(--warning);font-weight:700;font-size:1.1rem;display:flex;align-items:center;gap:0.5rem;">⏱ <span class="timer-text">--:--:--</span></div></div>` : ''}
+    ${(it.status === 'on_hold' && it.hold_deadline) ? `<div class="info-mini-card">
+      <div class="label">Time Limit</div>
+      <div class="value hold-timer-badge" data-deadline="${it.hold_deadline}" style="color:var(--warning);font-weight:700;display:flex;flex-direction:column;gap:4px;">
+        <div style="display:flex;align-items:center;gap:0.5rem;font-size:1.1rem;">⏱ <span class="timer-text">--:--:--</span></div>
+        <div class="deadline-text" style="font-size:0.85rem;font-weight:500;opacity:0.9;"></div>
+      </div>
+    </div>` : ''}
     ${billedToHtml}
   `;
 }
@@ -453,10 +506,16 @@ function updateHoldTimers() {
 
     // Find the text span inside, or use the element itself if text span missing
     const textEl = el.querySelector('.timer-text') || el;
+    const deadlineEl = el.querySelector('.deadline-text');
+
+    if (deadlineEl && !deadlineEl.textContent) {
+      deadlineEl.textContent = 'Until ' + formatDateTime(deadlineStr);
+    }
 
     if (diff <= 0) {
       textEl.textContent = 'Expired';
       el.style.color = 'var(--danger)';
+      if (deadlineEl) deadlineEl.style.opacity = '0.7';
     } else {
       const totalSeconds = Math.floor(diff / 1000);
       const h = Math.floor(totalSeconds / 3600);
@@ -1122,8 +1181,9 @@ function renderPassengers() {
   const it = currentItinerary; const pax = it.passengers_data || [];
   const isFinal = it.status === 'confirmed' || it.status === 'on_hold';
 
-  document.getElementById('addPassengerBtn').style.display = isFinal ? 'none' : '';
-  document.getElementById('linkPassengerBtn').style.display = isFinal ? 'none' : '';
+  if (document.getElementById('addPassengerBtn')) {
+    document.getElementById('addPassengerBtn').style.display = isFinal ? 'none' : '';
+  }
 
   const container = document.getElementById('passengersContainer');
   if (pax.length === 0) {
@@ -1552,8 +1612,9 @@ async function deletePaxFF(ffId) {
 function renderBilling() {
   const it = currentItinerary;
   const isFinal = it.status === 'confirmed';
-  document.getElementById('editBillingBtn').style.display = isFinal ? 'none' : '';
-  document.getElementById('linkBillingBtn').style.display = isFinal ? 'none' : '';
+  if (document.getElementById('editBillingBtn')) {
+    document.getElementById('editBillingBtn').style.display = isFinal ? 'none' : '';
+  }
 
   let accountInfo = '';
   if (it.billing_account) {
@@ -1729,68 +1790,160 @@ function closeModal() {
   if (viewer) viewer.classList.remove('active');
 }
 
-// ---- Add Passenger Manual ----
-function showAddPassengerModal(event) {
-  if (event) event.stopPropagation();
-  showModal('passengerModal');
-  document.getElementById('paxName').value = '';
-  document.getElementById('paxEmail').value = '';
-  document.getElementById('paxPhone').value = '';
-  document.getElementById('paxAge').value = '';
-  document.getElementById('paxGender').value = '';
-  const cb = document.getElementById('paxSaveToDB');
-  if (cb) cb.checked = false;
-  document.getElementById('paxSubmitBtn').textContent = 'Add Passenger';
+// ---- Unified Passenger Search & Add ----
+function openUnifiedPassengerModal() {
+  const searchInput = document.getElementById('itinPassengerSearch');
+  searchInput.value = '';
+  document.getElementById('itinPassengerResults').style.display = 'none';
+  toggleItinNewPaxForm(false);
+  showModal('unifiedPassengerModal');
+
+  // Add click/focus listener to show results if not already there
+  if (!searchInput.dataset.listenerAdded) {
+    ['click', 'focus'].forEach(evt => {
+      searchInput.addEventListener(evt, searchPassengerUnifiedItin);
+    });
+    searchInput.dataset.listenerAdded = 'true';
+  }
 }
 
-async function addPassenger() {
-  const name = document.getElementById('paxName').value.trim();
-  if (!name) { showToast('Name is required', 'error'); return; }
+function toggleItinNewPaxForm(show) {
+  const form = document.getElementById('itinNewPassengerForm');
+  form.style.display = show ? 'block' : 'none';
+  if (show) {
+    document.getElementById('itinPassengerResults').style.display = 'none';
+  }
+}
+
+function searchPassengerUnifiedItin() {
+  const q = document.getElementById('itinPassengerSearch').value.toLowerCase().trim();
+  const resultsDiv = document.getElementById('itinPassengerResults');
+
+  // No early return for empty q, we want to show all accounts at first
+  /* 
+  if (q.length === 0) {
+    resultsDiv.style.display = 'none';
+    return;
+  }
+  */
+
+  const matches = dbPassengers.filter(p => {
+    const name = (p.full_name || (p.first_name + ' ' + p.last_name)).toLowerCase();
+    const email = (p.email || '').toLowerCase();
+    const phone = (p.phone || '').toLowerCase();
+    return name.includes(q) || email.includes(q) || phone.includes(q);
+  });
+
+  let html = matches.slice(0, 5).map(p => `
+    <div class="dropdown-item" onclick="selectPassengerFromSearch('${p.id}')">
+      <div style="font-weight:600;">${p.full_name || (p.first_name + ' ' + p.last_name)}</div>
+      <div style="font-size:0.75rem; color:var(--text-secondary);">${p.email || 'No email'} ${p.phone ? '• ' + p.phone : ''}</div>
+    </div>
+  `).join('');
+
+  // Add "Create New" option
+  html += `
+    <div class="dropdown-item" style="background:rgba(37,99,235,0.05); color:var(--primary); font-weight:600;" onclick="prepareNewPassengerItin('${q}')">
+      + Create New: "${q}"
+    </div>
+  `;
+
+  resultsDiv.innerHTML = html;
+  resultsDiv.style.display = 'block';
+}
+
+async function selectPassengerFromSearch(pId) {
+  const passenger = dbPassengers.find(p => p.id === pId);
+  if (!passenger) return;
+
+  const pax = currentItinerary.passengers_data || [];
+  if (pax.find(p => (p.passenger_id || p.id) === pId)) {
+    showToast('Passenger already added', 'warning');
+    return;
+  }
 
   const newPax = {
-    name,
-    first_name: name.split(' ')[0],
-    last_name: name.split(' ').slice(1).join(' '),
-    email: document.getElementById('paxEmail').value.trim(),
-    phone: document.getElementById('paxPhone').value.trim(),
-    age: document.getElementById('paxAge').value.trim(),
-    gender: document.getElementById('paxGender').value
+    passenger_id: pId,
+    name: passenger.full_name || ((passenger.first_name || '') + ' ' + (passenger.last_name || '')).trim(),
+    first_name: passenger.first_name,
+    last_name: passenger.last_name,
+    email: passenger.email,
+    phone: passenger.phone,
+    gender: passenger.gender,
+    date_of_birth: passenger.date_of_birth,
+    is_db: true
   };
 
-  const shouldSave = document.getElementById('paxSaveToDB')?.checked;
+  pax.push(newPax);
+  await updateItineraryPassengers(pax);
+  closeModal();
+}
+
+function prepareNewPassengerItin(input) {
+  toggleItinNewPaxForm(true);
+  const parts = input.trim().split(' ');
+  document.getElementById('itinPaxFirst').value = parts[0] || '';
+  document.getElementById('itinPaxLast').value = parts.slice(1).join(' ') || '';
+  document.getElementById('itinPaxEmail').value = input.includes('@') ? input : '';
+  document.getElementById('itinPaxPhone').value = /^\d+$/.test(input) ? input : '';
+}
+
+async function addNewPassengerItin() {
+  const first = document.getElementById('itinPaxFirst').value.trim();
+  const last = document.getElementById('itinPaxLast').value.trim();
+  if (!first) { showToast('First name is required', 'error'); return; }
+
+  const newPax = {
+    name: `${first} ${last}`.trim(),
+    first_name: first,
+    last_name: last,
+    email: document.getElementById('itinPaxEmail').value.trim(),
+    phone: document.getElementById('itinPaxPhone').value.trim(),
+    is_db: false
+  };
+
+  const shouldSave = document.getElementById('itinPaxSaveDB').checked;
   if (shouldSave) {
     try {
-      // If we're updating current passengers, find if this one has an ID already
-      // This is simplified as the modal doesn't currently track 'which' passenger we're editing if it was manual
       const resp = await fetch('/api/v2/passengers', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPax)
       });
       if (resp.ok) {
         const d = await resp.json();
-        if (d.passenger && d.passenger.id) {
-          newPax.passenger_id = d.passenger.id;
-          newPax.is_db = true;
-          showToast('Passenger saved to Database', 'success');
-        }
-      } else if (resp.status === 409) {
-        const err = await resp.json();
-        showToast(err.error || 'Duplicate passenger found.', 'warning');
-        return;
-      } else {
-        showToast('Failed to save to DB, adding manually', 'warning');
+        newPax.id = d.passenger.id;
+        newPax.is_db = true;
+        await loadDBPassengers(); // Refresh cache
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error('Error saving pax to DB:', e); }
+  } else {
+    newPax.id = 'temp_' + Date.now();
   }
 
   const pax = currentItinerary.passengers_data || [];
   pax.push(newPax);
+  await updateItineraryPassengers(pax);
+  closeModal();
+}
 
+async function updateItineraryPassengers(pax) {
   try {
-    const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passengers_data: pax, num_passengers: pax.length }) });
-    if (r.ok) { const d = await r.json(); currentItinerary = d.itinerary; renderPassengers(); renderInfoCards(); closeModal(); showToast('Passenger added', 'success'); }
-    else showToast('Failed', 'error');
-  } catch (e) { showToast('Error', 'error'); }
+    const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passengers_data: pax, num_passengers: pax.length })
+    });
+    if (r.ok) {
+      const d = await r.json();
+      currentItinerary = d.itinerary;
+      renderPassengers();
+      renderInfoCards();
+      showToast('Passengers updated', 'success');
+    } else {
+      showToast('Failed to update itinerary', 'error');
+    }
+  } catch (e) {
+    showToast('Error', 'error');
+  }
 }
 
 async function removePassenger(idx) {
@@ -1803,250 +1956,461 @@ async function removePassenger(idx) {
   } catch (e) { showToast('Error', 'error'); }
 }
 
-// ---- Link Passenger from DB ----
-function showLinkPassengerModal(event) {
-  if (event) event.stopPropagation();
-  const searchInput = document.getElementById('dbPassengerSearch');
-  const list = document.getElementById('dbPassengerList');
-  const hiddenInput = document.getElementById('selectedPassengerId');
-
+// ---- Unified Billing Search & Add ----
+function openUnifiedBillingModal() {
+  const searchInput = document.getElementById('itinBillingSearch');
   searchInput.value = '';
-  hiddenInput.value = '';
-  list.innerHTML = '';
-  list.style.display = 'none';
+  document.getElementById('itinBillingResults').style.display = 'none';
+  toggleItinNewBillForm(false);
+  showModal('unifiedBillingModal');
 
-  const filterList = () => {
-    const val = searchInput.value.toLowerCase();
-    list.innerHTML = '';
-    const matches = dbPassengers.filter(p => {
-      const name = (p.full_name || (p.first_name + ' ' + p.last_name)).toLowerCase();
-      const email = (p.email || '').toLowerCase();
-      return name.includes(val) || email.includes(val);
+  if (!searchInput.dataset.listenerAdded) {
+    ['click', 'focus'].forEach(evt => {
+      searchInput.addEventListener(evt, searchBillingUnifiedItin);
     });
+    searchInput.dataset.listenerAdded = 'true';
+  }
+}
 
-    if (matches.length > 0) {
-      list.style.display = 'block';
-      matches.forEach(p => {
-        const div = document.createElement('div');
-        div.className = 'dropdown-item';
-        div.innerHTML = `<div>${p.full_name || (p.first_name + ' ' + p.last_name)}</div><span class="sub-text">${p.email || ''}</span>`;
-        div.onclick = () => {
-          searchInput.value = p.full_name || (p.first_name + ' ' + p.last_name);
-          hiddenInput.value = p.id;
-          list.style.display = 'none';
-        };
-        list.appendChild(div);
+function toggleItinNewBillForm(show) {
+  const form = document.getElementById('itinNewBillingForm');
+  form.style.display = show ? 'block' : 'none';
+  if (show) {
+    document.getElementById('itinBillingResults').style.display = 'none';
+    // Clear form
+    document.getElementById('itinBillDisplay').value = '';
+    document.getElementById('itinBillCompany').value = '';
+    document.getElementById('itinBillGst').value = '';
+    document.getElementById('itinBillEmail').value = '';
+    document.getElementById('itinBillPhone').value = '';
+    document.getElementById('itinBillAddress').value = '';
+  }
+}
+
+function handleItinBillTypeChange() {
+  const type = document.getElementById('itinBillType').value;
+  document.getElementById('itinCorpFields').style.display = type === 'corporate' ? 'block' : 'none';
+}
+
+function searchBillingUnifiedItin() {
+  const q = document.getElementById('itinBillingSearch').value.toLowerCase().trim();
+  const resultsDiv = document.getElementById('itinBillingResults');
+
+  if (q.length === 0) {
+    // Show top 10 recent/all accounts if empty
+    // but the user specifically mentioned supplier. Let's keep billing consistent.
+  }
+
+  unifiedBillingResults = [];
+
+  dbBillingAccounts.forEach(acc => {
+    const displayName = (acc.display_name || '').toLowerCase();
+    const companyName = (acc.company_name || '').toLowerCase();
+    const gst = (acc.gst_number || '').toLowerCase();
+    const emailRaw = acc.email || '';
+    const phoneRaw = acc.phone || '';
+    const email = emailRaw.toLowerCase();
+    const phone = phoneRaw.toLowerCase();
+    if (!q || displayName.includes(q) || companyName.includes(q) || gst.includes(q) || email.includes(q) || phone.includes(q)) {
+      const contactParts = [];
+      if (emailRaw) contactParts.push(emailRaw);
+      if (phoneRaw) contactParts.push(phoneRaw);
+      const contact = contactParts.join(' • ');
+      unifiedBillingResults.push({
+        type: 'billing',
+        id: acc.id,
+        display: acc.display_name || 'Unnamed Account',
+        sub: acc.company_name ? 'B2B Customer' : 'B2C Customer',
+        contact: contact,
+        raw: acc
       });
-    } else {
-      list.style.display = 'none';
     }
-  };
-
-  searchInput.oninput = filterList;
-  searchInput.onclick = filterList; // Show list on click even if input focused
-
-  showModal('linkPassengerModal');
-}
-
-async function linkPassengerFromDB() {
-  const pId = document.getElementById('selectedPassengerId').value;
-  if (!pId) { showToast('Please select a passenger', 'error'); return; }
-  const passenger = dbPassengers.find(p => p.id === pId);
-  if (!passenger) return;
-  const pax = currentItinerary.passengers_data || [];
-  if (pax.find(p => p.passenger_id === pId)) { showToast('Passenger already linked', 'error'); return; }
-  pax.push({
-    passenger_id: pId,
-    name: passenger.full_name || ((passenger.first_name || '') + ' ' + (passenger.last_name || '')).trim(),
-    first_name: passenger.first_name, last_name: passenger.last_name,
-    email: passenger.email, phone: passenger.phone, gender: passenger.gender, date_of_birth: passenger.date_of_birth,
-    is_db: true
   });
-  try {
-    const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passengers_data: pax, num_passengers: pax.length, passenger_id: pId }) });
-    if (r.ok) { const d = await r.json(); currentItinerary = d.itinerary; renderPassengers(); renderInfoCards(); closeModal(); showToast('Passenger linked from database', 'success'); }
-    else showToast('Failed', 'error');
-  } catch (e) { showToast('Error', 'error'); }
+
+  const allCustomersList = [
+    ...dbPassengers.map(p => ({ ...p, customer_type: 'passenger' })),
+    ...dbCorporates.map(c => ({ ...c, customer_type: 'corporate' }))
+  ];
+
+  allCustomersList.forEach(c => {
+    const name = (c.first_name ? c.first_name + ' ' + (c.last_name || '') : (c.contact_person_name || '')).toLowerCase();
+    const company = (c.company_name || '').toLowerCase();
+    const emailRaw = c.email || c.contact_email || '';
+    const phoneRaw = c.phone || c.contact_phone || '';
+    const email = emailRaw.toLowerCase();
+    const phone = phoneRaw.toLowerCase();
+    if (!q || name.includes(q) || company.includes(q) || email.includes(q) || phone.includes(q)) {
+      const contactParts = [];
+      if (emailRaw) contactParts.push(emailRaw);
+      if (phoneRaw) contactParts.push(phoneRaw);
+      const contact = contactParts.join(' • ');
+      unifiedBillingResults.push({
+        type: c.customer_type,
+        id: c.id,
+        display: c.customer_type === 'corporate'
+          ? ((c.company_name || '') + (name ? ' (' + (c.first_name ? c.first_name + ' ' + (c.last_name || '') : c.contact_person_name || '') + ')' : ''))
+          : (c.first_name + ' ' + (c.last_name || '')),
+        sub: c.customer_type === 'corporate' ? (c.company_name ? 'B2B Customer' : 'B2C Customer') : 'B2C Customer',
+        contact: contact,
+        raw: c
+      });
+    }
+  });
+
+  let html = unifiedBillingResults.slice(0, 10).map((r, idx) => {
+    const isB2B = r.sub.includes('B2B');
+    const dotColor = isB2B ? '#4caf50' : '#2196f3';
+    return `
+    <div class="dropdown-item" onclick="selectUnifiedBillingByIndex(${idx})">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+        <div style="font-weight:600;">${r.display}</div>
+        <div style="font-size:0.75rem; color:var(--text-secondary); display:flex; align-items:center; gap:5px;">
+          <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${dotColor};"></span>
+          ${r.sub}
+        </div>
+      </div>
+      ${r.contact ? `<div style="font-size:0.75rem; color:var(--text-secondary); margin-top:2px;">${r.contact}</div>` : ''}
+    </div>
+  `;
+  }).join('');
+
+  html += `
+    <div class="dropdown-item" style="background:rgba(37,99,235,0.05); color:var(--primary); font-weight:600;" onclick="prepareNewBillingItin('${q}')">
+      + Create New Account: "${q}"
+    </div>
+  `;
+
+  resultsDiv.innerHTML = html;
+  resultsDiv.style.display = 'block';
 }
 
-// ---- Billing ----
-function showEditBillingModal(event) {
-  if (event) event.stopPropagation();
-  const it = currentItinerary;
-  showModal('billingModal');
-  document.getElementById('billName').value = it.bill_to_name || '';
-  document.getElementById('billCompany').value = it.bill_to_company || '';
-  document.getElementById('billEmail').value = it.bill_to_email || '';
-  document.getElementById('billPhone').value = it.bill_to_phone || '';
-  document.getElementById('billAddress').value = it.bill_to_address || '';
-  document.getElementById('billGST').value = it.bill_to_gst || '';
-  const cb = document.getElementById('billSaveToDB');
-  if (cb) cb.checked = it.billing_account_id ? true : false;
+async function selectUnifiedBillingByIndex(idx) {
+  const res = unifiedBillingResults[idx];
+  if (!res) return;
 
-  const submitBtn = document.getElementById('billSubmitBtn');
-  if (it.billing_account_id) {
-    submitBtn.textContent = 'Update to DB';
-  } else {
-    submitBtn.textContent = 'Save Billing';
+  if (res.type === 'billing') {
+    await selectBillingAccountFromSearch(res.id);
+    return;
   }
 
-  // Setup live sync for names if not already set
-  const nameInput = document.getElementById('billName');
-  const companyInput = document.getElementById('billCompany');
+  const raw = res.raw;
+  const email = raw.email || raw.contact_email || '';
+  const phone = raw.phone || raw.contact_phone || '';
+  const gst = raw.gst_number || raw.gst || '';
+  const company = raw.company_name || '';
 
-  if (!nameInput.dataset.listener) {
-    nameInput.addEventListener('input', () => {
-      // Sync logic or labels can go here if needed
-    });
-    nameInput.dataset.listener = 'true';
-  }
-}
-
-async function saveBilling() {
-  const data = {
-    bill_to_name: document.getElementById('billName').value.trim(),
-    bill_to_company: document.getElementById('billCompany').value.trim(),
-    bill_to_email: document.getElementById('billEmail').value.trim(),
-    bill_to_phone: document.getElementById('billPhone').value.trim(),
-    bill_to_address: document.getElementById('billAddress').value.trim(),
-    bill_to_gst: document.getElementById('billGST').value.trim()
+  const payload = {
+    billing_account_id: null,
+    bill_to_name: res.display,
+    bill_to_email: email,
+    bill_to_phone: phone,
+    bill_to_company: company,
+    bill_to_gst: gst,
+    billing_type: res.type
   };
 
-  const shouldSave = document.getElementById('billSaveToDB')?.checked;
-  const existingId = currentItinerary.billing_account_id;
+  await updateItineraryBilling(payload);
+  closeModal();
+}
+
+async function selectBillingAccountFromSearch(accId) {
+  const acc = dbBillingAccounts.find(a => a.id === accId);
+  if (!acc) return;
+
+  const data = {
+    billing_account_id: accId,
+    bill_to_name: acc.display_name,
+    bill_to_company: acc.company_name || '',
+    bill_to_email: acc.email || '',
+    bill_to_phone: acc.phone || '',
+    bill_to_address: acc.address || '',
+    bill_to_gst: acc.gst_number || ''
+  };
+
+  await updateItineraryBilling(data);
+  closeModal();
+}
+
+function prepareNewBillingItin(input) {
+  toggleItinNewBillForm(true);
+  document.getElementById('itinBillDisplay').value = input;
+  // Simple heuristic for type
+  if (input.toLowerCase().includes('co') || input.toLowerCase().includes('inc') || input.toLowerCase().includes('ltd')) {
+    document.getElementById('itinBillType').value = 'corporate';
+  } else {
+    document.getElementById('itinBillType').value = 'individual';
+  }
+  handleItinBillTypeChange();
+}
+
+async function addNewBillingItin() {
+  const display = document.getElementById('itinBillDisplay').value.trim();
+  if (!display) { showToast('Display Name is required', 'error'); return; }
+
+  const type = document.getElementById('itinBillType').value;
+  const payload = {
+    account_type: type,
+    display_name: display,
+    company_name: document.getElementById('itinBillCompany').value.trim(),
+    email: document.getElementById('itinBillEmail').value.trim(),
+    phone: document.getElementById('itinBillPhone').value.trim(),
+    gst_number: document.getElementById('itinBillGst').value.trim(),
+    address: document.getElementById('itinBillAddress').value.trim()
+  };
+
+  const shouldSave = document.getElementById('itinBillSaveDB').checked;
+  let finalBillingData = {
+    bill_to_name: payload.display_name,
+    bill_to_company: payload.company_name,
+    bill_to_email: payload.email,
+    bill_to_phone: payload.phone,
+    bill_to_address: payload.address,
+    bill_to_gst: payload.gst_number
+  };
 
   if (shouldSave) {
     try {
-      // Logic: If company OR GST is present, it's corporate. Otherwise personal.
-      const isCorporate = !!(data.bill_to_company || data.bill_to_gst);
-
-      const payload = {
-        display_name: data.bill_to_name, // Only use the bill_to_name
-        company_name: data.bill_to_company,
-        email: data.bill_to_email,
-        phone: data.bill_to_phone,
-        address: data.bill_to_address,
-        gst_number: data.bill_to_gst,
-        account_type: isCorporate ? 'corporate' : 'personal'
-      };
-
-      let url = '/api/v2/billing-accounts';
-      let method = 'POST';
-      if (existingId) {
-        url += '/' + existingId;
-        method = 'PUT';
-      }
-
-      const resp = await fetch(url, {
-        method: method, headers: { 'Content-Type': 'application/json' },
+      const resp = await fetch('/api/v2/billing-accounts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       if (resp.ok) {
         const d = await resp.json();
-        if (d.billing_account && d.billing_account.id) {
-          data.billing_account_id = d.billing_account.id;
-          showToast(`Billing Account ${method === 'POST' ? 'saved to' : 'updated in'} Database`, 'success');
-        }
-      } else if (resp.status === 409) {
-        const err = await resp.json();
-        showToast(err.error || 'Duplicate account found.', 'warning');
-        return;
+        finalBillingData.billing_account_id = d.billing_account.id;
+        await loadDBBillingAccounts(); // Refresh cache
       }
     } catch (e) { console.error('Error saving billing to DB:', e); }
   }
 
-  try {
-    const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
-    });
-    if (r.ok) { const d = await r.json(); currentItinerary = d.itinerary; renderBilling(); renderInfoCards(); closeModal(); showToast('Billing updated', 'success'); }
-    else showToast('Failed', 'error');
-  } catch (e) { showToast('Error', 'error'); }
+  await updateItineraryBilling(finalBillingData);
+  closeModal();
 }
 
-// ---- Link Billing Account from DB ----
-function showLinkBillingModal(event) {
-  if (event) event.stopPropagation();
-  const searchInput = document.getElementById('dbBillingSearch');
-  const list = document.getElementById('dbBillingList');
-  const hiddenInput = document.getElementById('selectedBillingId');
-  const preview = document.getElementById('billingAccountPreview');
-
-  searchInput.value = '';
-  hiddenInput.value = '';
-  list.innerHTML = '';
-  list.style.display = 'none';
-  preview.style.display = 'none';
-
-  const filterList = () => {
-    const val = searchInput.value.toLowerCase();
-    list.innerHTML = '';
-    const matches = dbBillingAccounts.filter(acc => {
-      const name = (acc.display_name || '').toLowerCase();
-      const company = (acc.company_name || '').toLowerCase();
-      const gst = (acc.gst_number || '').toLowerCase();
-      return name.includes(val) || company.includes(val) || gst.includes(val);
+async function updateItineraryBilling(data) {
+  try {
+    const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
     });
+    if (r.ok) {
+      const d = await r.json();
+      currentItinerary = d.itinerary;
+      renderBilling();
+      renderSupplier();
+      renderInfoCards();
+      showToast('Billing updated', 'success');
+    } else {
+      showToast('Failed to update billing', 'error');
+    }
+  } catch (e) {
+    showToast('Error', 'error');
+  }
+}
 
-    if (matches.length > 0) {
-      list.style.display = 'block';
-      matches.forEach(acc => {
-        const div = document.createElement('div');
-        div.className = 'dropdown-item';
-        div.innerHTML = `<div>${acc.display_name}</div><span class="sub-text">${acc.company_name || acc.gst_number || acc.account_type}</span>`;
-        div.onclick = () => {
-          searchInput.value = acc.display_name;
-          hiddenInput.value = acc.id;
-          list.style.display = 'none';
 
-          // Show preview
-          preview.style.display = 'block';
-          preview.innerHTML = `
-            <strong>${acc.display_name}</strong><br>
-            ${acc.company_name ? '🏢 ' + acc.company_name + '<br>' : ''}
-            ${acc.email ? '📧 ' + acc.email + '<br>' : ''}
-            ${acc.phone ? '📞 ' + acc.phone + '<br>' : ''}
-            ${acc.address ? '📍 ' + acc.address + '<br>' : ''}
-            ${acc.gst_number ? '🧾 GST: ' + acc.gst_number : ''}
-          `;
-        };
-        list.appendChild(div);
-      });
-    } else { list.style.display = 'none'; }
+// ==================== SUPPLIER ====================
+function renderSupplier() {
+  const it = currentItinerary;
+  if (!it) return;
+
+  let accountInfo = '';
+  if (it.supplier_account) {
+    accountInfo = `
+    <div style="grid-column: 1 / -1; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px dashed var(--border);">
+      <div style="font-weight:600; color:var(--primary); font-size:1.05rem;">
+        Supplier Account: ${it.supplier_account.display_name}
+      </div>
+    </div>`;
+  }
+
+  const nameLabel = (it.supplier_account && it.supplier_account.account_type === 'corporate') || (!it.supplier_account && (it.supplier_company || it.supplier_gst)) ? 'Contact Name' : 'Name';
+
+  document.getElementById('supplierContainer').innerHTML = `<div class="billing-grid">
+    ${accountInfo}
+    <div class="billing-item"><div class="label">${nameLabel}</div><div class="value">${it.supplier_name || '-'}</div></div>
+    ${it.supplier_company ? `<div class="billing-item"><div class="label">Company</div><div class="value">${it.supplier_company || '-'}</div></div>` : ''}
+    <div class="billing-item"><div class="label">Email</div><div class="value">${it.supplier_email || '-'}</div></div>
+    <div class="billing-item"><div class="label">Phone</div><div class="value">${it.supplier_phone || '-'}</div></div>
+    <div class="billing-item"><div class="label">Address</div><div class="value">${it.supplier_address || '-'}</div></div>
+    ${it.supplier_gst ? `<div class="billing-item"><div class="label">GST</div><div class="value">${it.supplier_gst || '-'}</div></div>` : ''}
+  </div>`;
+}
+
+function openUnifiedSupplierModal() {
+  const searchInput = document.getElementById('itinSupplierSearch');
+  searchInput.value = '';
+  document.getElementById('itinSupplierResults').style.display = 'none';
+  toggleItinNewSupForm(false);
+  showModal('unifiedSupplierModal');
+
+  if (!searchInput.dataset.listenerAdded) {
+    ['click', 'focus'].forEach(evt => {
+      searchInput.addEventListener(evt, searchSupplierUnifiedItin);
+    });
+    searchInput.dataset.listenerAdded = 'true';
+  }
+}
+
+function toggleItinNewSupForm(show) {
+  const form = document.getElementById('itinNewSupplierForm');
+  form.style.display = show ? 'block' : 'none';
+  if (show) {
+    document.getElementById('itinSupplierResults').style.display = 'none';
+    document.getElementById('itinSupDisplay').value = '';
+    document.getElementById('itinSupCompany').value = '';
+    document.getElementById('itinSupGst').value = '';
+    document.getElementById('itinSupEmail').value = '';
+    document.getElementById('itinSupPhone').value = '';
+    document.getElementById('itinSupAddress').value = '';
+  }
+}
+
+function handleItinSupTypeChange() {
+  const type = document.getElementById('itinSupType').value;
+  document.getElementById('itinSupCorpFields').style.display = type === 'corporate' ? 'block' : 'none';
+}
+
+function searchSupplierUnifiedItin() {
+  const q = document.getElementById('itinSupplierSearch').value.toLowerCase().trim();
+  const resultsDiv = document.getElementById('itinSupplierResults');
+  // Results will show even if q is empty
+  /*
+  if (q.length === 0) { resultsDiv.style.display = 'none'; return; }
+  */
+
+  unifiedSupplierResults = [];
+  dbSupplierAccounts.forEach(acc => {
+    const displayName = (acc.display_name || '').toLowerCase();
+    const companyName = (acc.company_name || '').toLowerCase();
+    const gst = (acc.gst_number || '').toLowerCase();
+    const emailRaw = acc.email || '';
+    const phoneRaw = acc.phone || '';
+    const email = emailRaw.toLowerCase();
+    const phone = phoneRaw.toLowerCase();
+    if (!q || displayName.includes(q) || companyName.includes(q) || gst.includes(q) || email.includes(q) || phone.includes(q)) {
+      const contactParts = [];
+      if (emailRaw) contactParts.push(emailRaw);
+      if (phoneRaw) contactParts.push(phoneRaw);
+      unifiedSupplierResults.push({ id: acc.id, display: acc.display_name || 'Unnamed Account', sub: acc.account_type === 'corporate' ? 'Corporate' : 'Individual', contact: contactParts.join(' • '), raw: acc });
+    }
+  });
+
+  let html = unifiedSupplierResults.slice(0, 10).map((r, idx) => {
+    const isB2B = r.sub.includes('Corporate');
+    const dotColor = isB2B ? '#4caf50' : '#2196f3';
+    return `
+    <div class="dropdown-item" onclick="selectUnifiedSupplierByIndex(${idx})">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+        <div style="font-weight:600;">${r.display}</div>
+        <div style="font-size:0.75rem; color:var(--text-secondary); display:flex; align-items:center; gap:5px;">
+          <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${dotColor};"></span>${r.sub}
+        </div>
+      </div>
+      ${r.contact ? `<div style="font-size:0.75rem; color:var(--text-secondary); margin-top:2px;">${r.contact}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  html += `
+    <div class="dropdown-item" style="background:rgba(37,99,235,0.05); color:var(--primary); font-weight:600;" onclick="prepareNewSupplierItin('${q}')">
+      + Create New Supplier Account: "${q}"
+    </div>`;
+
+  resultsDiv.innerHTML = html;
+  resultsDiv.style.display = 'block';
+}
+
+async function selectUnifiedSupplierByIndex(idx) {
+  const res = unifiedSupplierResults[idx];
+  if (!res) return;
+  const raw = res.raw;
+  const data = {
+    supplier_account_id: raw.id,
+    supplier_name: raw.contact_name || raw.display_name,
+    supplier_company: raw.company_name || '',
+    supplier_email: raw.email || '',
+    supplier_phone: raw.phone || '',
+    supplier_address: raw.address || '',
+    supplier_gst: raw.gst_number || ''
+  };
+  await updateItinerarySupplier(data);
+  closeModal();
+}
+
+function prepareNewSupplierItin(input) {
+  toggleItinNewSupForm(true);
+  document.getElementById('itinSupDisplay').value = input;
+  document.getElementById('itinSupType').value = 'corporate';
+  handleItinSupTypeChange();
+}
+
+async function addNewSupplierItin() {
+  const display = document.getElementById('itinSupDisplay').value.trim();
+  if (!display) { showToast('Display Name is required', 'error'); return; }
+
+  const payload = {
+    account_type: document.getElementById('itinSupType').value,
+    display_name: display,
+    company_name: document.getElementById('itinSupCompany').value.trim(),
+    email: document.getElementById('itinSupEmail').value.trim(),
+    phone: document.getElementById('itinSupPhone').value.trim(),
+    gst_number: document.getElementById('itinSupGst').value.trim(),
+    address: document.getElementById('itinSupAddress').value.trim()
   };
 
-  searchInput.oninput = filterList;
-  searchInput.onclick = filterList;
+  const shouldSave = document.getElementById('itinSupSaveDB').checked;
+  let finalData = {
+    supplier_name: payload.display_name,
+    supplier_company: payload.company_name,
+    supplier_email: payload.email,
+    supplier_phone: payload.phone,
+    supplier_address: payload.address,
+    supplier_gst: payload.gst_number
+  };
 
-  showModal('linkBillingModal');
+  if (shouldSave) {
+    try {
+      const resp = await fetch('/api/v2/supplier-accounts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (resp.ok) {
+        const d = await resp.json();
+        finalData.supplier_account_id = d.supplier_account.id;
+        await loadDBSuppliers();
+      }
+    } catch (e) { console.error('Error saving supplier to DB:', e); }
+  }
+
+  await updateItinerarySupplier(finalData);
+  closeModal();
 }
 
-async function linkBillingFromDB() {
-  const accId = document.getElementById('selectedBillingId').value;
-  if (!accId) { showToast('Please select a billing account', 'error'); return; }
-  const acc = dbBillingAccounts.find(a => a.id === accId);
-  if (!acc) return;
+async function updateItinerarySupplier(data) {
   try {
     const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        billing_account_id: accId,
-        bill_to_name: acc.display_name || acc.contact_name, // Use display_name primarily
-        bill_to_company: acc.company_name || '',
-        bill_to_email: acc.email || '', bill_to_phone: acc.phone || '',
-        bill_to_address: acc.address || '', bill_to_gst: acc.gst_number || '',
-        billing_type: (acc.company_name || acc.gst_number) ? 'corporate' : (acc.account_type || 'personal')
-      })
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
     });
-    if (r.ok) { const d = await r.json(); currentItinerary = d.itinerary; renderBilling(); renderInfoCards(); closeModal(); showToast('Billing account linked', 'success'); }
-    else showToast('Failed', 'error');
+    if (r.ok) {
+      const d = await r.json();
+      currentItinerary = d.itinerary;
+      renderSupplier();
+      renderInfoCards(); // maybe not needed but safe
+      showToast('Supplier updated', 'success');
+    } else {
+      showToast('Failed to update supplier', 'error');
+    }
   } catch (e) { showToast('Error', 'error'); }
 }
+
+// ---- Billing ----
+// Obsolete billing functions removed as they are replaced by unified versions.
 
 // ==================== INIT ====================
 document.addEventListener('DOMContentLoaded', async () => {
   initializeSidebar();
   await checkAuth();
-  await Promise.all([loadItineraries(), loadDBPassengers(), loadDBBillingAccounts(), loadAirlines()]);
+  await Promise.all([loadItineraries(), loadDBPassengers(), loadDBBillingAccounts(), loadDBSuppliers(), loadDBCorporates(), loadAirlines()]);
 });
 
 // ==================== IMAGE SHARING ====================
@@ -2082,7 +2446,36 @@ async function shareItineraryImage() {
     canvas.toBlob(async (blob) => {
       if (!blob) { showToast('Failed to generate blob', 'error'); return; }
 
-      const fileName = `itinerary-${currentItinerary.reference_number || 'details'}.png`;
+      let fileName = 'Flight_Itinerary.png';
+      if (currentItinerary && currentItinerary.flights && currentItinerary.flights.length > 0) {
+        const flights = currentItinerary.flights;
+        const firstFlight = flights[0];
+        const dep = firstFlight.departure_airport || 'DEP';
+
+        let typeStr = 'ONE WAY';
+        let routeStr = `${dep} - ${firstFlight.arrival_airport || 'ARR'}`;
+
+        if (currentItinerary.trip_type === 'round_trip') {
+          typeStr = 'ROUND TRIP';
+          routeStr = `${dep} - ${firstFlight.arrival_airport || 'ARR'}`;
+        } else if (currentItinerary.trip_type === 'multi_city') {
+          typeStr = 'MULTI CITY';
+          const dests = [dep];
+          flights.forEach(f => {
+            if (f.arrival_airport && f.arrival_airport !== dests[dests.length - 1]) {
+              dests.push(f.arrival_airport);
+            }
+          });
+          routeStr = dests.join(' - ');
+        }
+
+        const dateStr = (firstFlight.departure_date || '').replace(/[\/\\]/g, '-').trim() || 'DATE';
+        fileName = `${routeStr} (${typeStr}) ${dateStr}.png`.replace(/[<>:"/\\|?*]/g, '_');
+
+        if (fileName.length > 150) {
+          fileName = `${dep} (${typeStr}) ${dateStr}.png`;
+        }
+      }
       const file = new File([blob], fileName, { type: 'image/png' });
 
       // Try Web Share API Level 2 (File Sharing)

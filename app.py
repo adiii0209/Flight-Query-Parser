@@ -2,14 +2,14 @@ import os
 import json
 import uuid
 import requests
-from flask import Flask, request, jsonify, render_template, session, redirect, url_for
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for, send_file
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 from functools import wraps
 from query_parser import extract_flight, extract_multiple_flights
-from models import User, Customer, Itinerary
+from models import User, Customer, Itinerary, Ticket
 from extensions import db
 
 import pytesseract
@@ -19,6 +19,9 @@ app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+# 🔐 Shared secret for ticket parser
+API_KEY = os.getenv("TICKET_PARSER_API_KEY", "supersecretkey")
+
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -599,6 +602,458 @@ def delete_itinerary(itinerary_id):
         db.session.rollback()
         print(f"Itinerary deletion error: {str(e)}")
         return jsonify({"error": "Failed to delete itinerary"}), 500
+
+
+# ==================== TICKET RECEIVE ENDPOINT ====================
+
+@app.route("/api/tickets", methods=["POST"])
+def receive_ticket():
+    """Receive a ticket from the ticket parser and save to database"""
+    # 1. Check API Key
+    auth_header = request.headers.get("Authorization")
+    if auth_header != f"Bearer {API_KEY}":
+        print("Unauthorized request")
+        return jsonify({"error": "Unauthorized"}), 401
+
+    # 2. Get JSON data
+    data = request.get_json()
+    if not data:
+        print("No JSON received")
+        return jsonify({"error": "Invalid JSON"}), 400
+
+    print("\n===== NEW TICKET RECEIVED =====")
+    print(json.dumps(data, indent=2, default=str))
+    print("=================================\n")
+
+    try:
+        booking = data.get("booking") or {}
+        passengers = data.get("passengers") or []
+        segments = data.get("segments") or []
+        journey = data.get("journey") or {}
+        metadata = data.get("metadata") or {}
+
+        # Determine trip type - properly handle layovers
+        # A layover exists when consecutive segments share airports
+        # (arrival airport of seg N == departure airport of seg N+1)
+        seg_count = len(segments)
+        
+        # First, group segments into logical legs (a leg = direct or layover flight)
+        legs = []
+        current_leg_start = 0
+        for i in range(1, seg_count):
+            prev_arr = segments[i-1].get("arrival", {}).get("airport", "").strip().upper()
+            curr_dep = segments[i].get("departure", {}).get("airport", "").strip().upper()
+            # Also check layover_duration field from parser
+            has_layover_info = segments[i].get("layover_duration") and segments[i].get("layover_duration") != "N/A"
+            
+            if prev_arr and curr_dep and prev_arr == curr_dep or has_layover_info:
+                # This is a layover/connection, same leg continues
+                continue
+            else:
+                # New leg starts here
+                legs.append(segments[current_leg_start:i])
+                current_leg_start = i
+        legs.append(segments[current_leg_start:])
+        
+        # Also check journey data from parser for trip_type hint
+        journey_trip_type = journey.get("trip_type", "").lower() if journey else ""
+        
+        num_legs = len(legs)
+        if journey_trip_type in ["round_trip", "return"]:
+            trip_type = "round_trip"
+        elif journey_trip_type == "multi_city":
+            trip_type = "multi_city"
+        elif num_legs >= 3:
+            trip_type = "multi_city"
+        elif num_legs == 2:
+            # Check if it's a round trip (second leg returns to origin of first leg)
+            first_leg_origin = legs[0][0].get("departure", {}).get("airport", "").strip().upper()
+            second_leg_dest = legs[1][-1].get("arrival", {}).get("airport", "").strip().upper()
+            if first_leg_origin and second_leg_dest and first_leg_origin == second_leg_dest:
+                trip_type = "round_trip"
+            else:
+                trip_type = "multi_city"
+        else:
+            trip_type = "one_way"
+
+        # Find a user to associate with (use first available user for API tickets)
+        user = User.query.first()
+        if not user:
+            return jsonify({"error": "No users found in system"}), 400
+
+        # Calculate grand_total from passengers if available to ensure it's not just basic fare
+        calculated_grand_total = 0
+        pax_fares_found = False
+        for p in passengers:
+            f = p.get("fare") or {}
+            total = f.get("total_fare")
+            if total:
+                try:
+                    calculated_grand_total += float(str(total).replace(',', ''))
+                    pax_fares_found = True
+                except ValueError:
+                    pass
+        
+        final_grand_total = calculated_grand_total if pax_fares_found else booking.get("grand_total", 0)
+
+        # Compute uniform class
+        uni_c = set()
+        for seg in segments:
+            bc = seg.get("booking_class")
+            v = ""
+            if isinstance(bc, dict):
+                v = (bc.get("cabin") or bc.get("full_form") or "").strip().lower()
+            elif isinstance(bc, str) and bc.strip():
+                v = bc.strip().lower()
+            if v and v != "n/a":
+                uni_c.add(v)
+        
+        if len(uni_c) > 0:
+            # If at least ONE valid inline class is present, we hide universal class
+            final_class = "None"
+        else:
+            # If nothing was found inline (all N/A or empty), default to generic Economy
+            final_class = booking.get("class_of_travel", "Economy").title()
+
+        # Create ticket
+        ticket = Ticket(
+            pnr=booking.get("pnr"),
+            booking_date=booking.get("booking_date"),
+            phone=booking.get("phone"),
+            currency=booking.get("currency", "INR"),
+            grand_total=final_grand_total,
+            class_of_travel=final_class,
+            trip_type=trip_type,
+            passengers_data=json.dumps(passengers),
+            segments_data=json.dumps(segments),
+            journey_data=json.dumps(journey),
+            raw_data=json.dumps(data),
+            status="unmatched",
+            user_id=user.id,
+            parser_version=metadata.get("parser_version")
+        )
+
+        # Try to match against issued itineraries
+        matched = False
+        pnr = booking.get("pnr", "").strip().upper()
+        if pnr:
+            # Match by PNR in itinerary flights_data
+            issued_itineraries = Itinerary.query.filter(
+                Itinerary.status.in_(['confirmed', 'issued'])
+            ).all()
+            for itin in issued_itineraries:
+                if itin.flights_data and pnr.lower() in itin.flights_data.lower():
+                    ticket.matched_itinerary_id = itin.id
+                    ticket.status = "matched"
+                    matched = True
+                    break
+
+        db.session.add(ticket)
+        db.session.commit()
+
+        return jsonify({
+            "status": "accepted",
+            "ticket_id": ticket.id,
+            "matched": matched,
+            "matched_itinerary_id": ticket.matched_itinerary_id
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Ticket receive error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to process ticket: {str(e)}"}), 500
+
+
+# ==================== TICKETS PAGE ====================
+
+@app.route("/tickets")
+def tickets_page():
+    """Serve the tickets dashboard page"""
+    return render_template('tickets.html')
+
+
+# ==================== TICKET CRUD ROUTES ====================
+
+@app.route("/api/tickets/list", methods=["GET"])
+@login_required
+def get_tickets():
+    """Get all tickets for the logged-in user"""
+    tickets = Ticket.query.filter_by(user_id=session['user_id']).order_by(Ticket.created_at.desc()).all()
+    
+    result = []
+    for t in tickets:
+        passengers = json.loads(t.passengers_data) if t.passengers_data else []
+        segments = json.loads(t.segments_data) if t.segments_data else []
+        journey = json.loads(t.journey_data) if t.journey_data else {}
+        
+        # Group segments into logical legs (handling layovers)
+        legs = []
+        current_leg_start = 0
+        for i in range(1, len(segments)):
+            prev_arr = segments[i-1].get("arrival", {}).get("airport", "").strip().upper()
+            curr_dep = segments[i].get("departure", {}).get("airport", "").strip().upper()
+            has_layover_info = segments[i].get("layover_duration") and segments[i].get("layover_duration") != "N/A"
+            
+            if (prev_arr and curr_dep and prev_arr == curr_dep) or has_layover_info:
+                continue
+            else:
+                legs.append(list(range(current_leg_start, i)))
+                current_leg_start = i
+        legs.append(list(range(current_leg_start, len(segments))))
+        
+        # Build route info from legs
+        route_parts = []
+        for leg_indices in legs:
+            if not leg_indices:
+                continue
+            first_seg = segments[leg_indices[0]]
+            last_seg = segments[leg_indices[-1]]
+            dep_code = first_seg.get("departure", {}).get("airport", "")
+            arr_code = last_seg.get("arrival", {}).get("airport", "")
+            if dep_code and not route_parts:
+                route_parts.append(dep_code)
+            if arr_code:
+                route_parts.append(arr_code)
+        
+        result.append({
+            "id": t.id,
+            "created_at": t.created_at.isoformat(),
+            "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+            "pnr": t.pnr,
+            "booking_date": t.booking_date,
+            "phone": t.phone,
+            "currency": t.currency,
+            "grand_total": t.grand_total,
+            "class_of_travel": t.class_of_travel,
+            "trip_type": t.trip_type,
+            "status": t.status,
+            "matched_itinerary_id": t.matched_itinerary_id,
+            "parser_version": t.parser_version,
+            "passengers": passengers,
+            "segments": segments,
+            "journey": journey,
+            "legs": legs,
+            "route": " → ".join(route_parts) if route_parts else "",
+            "passenger_names": [p.get("name", "") for p in passengers]
+        })
+    
+    return jsonify({"tickets": result})
+
+
+@app.route("/api/tickets/<ticket_id>", methods=["GET"])
+@login_required
+def get_ticket(ticket_id):
+    """Get a specific ticket with full data"""
+    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+    if not ticket:
+        return jsonify({"error": "Ticket not found"}), 404
+    
+    passengers = json.loads(ticket.passengers_data) if ticket.passengers_data else []
+    segments = json.loads(ticket.segments_data) if ticket.segments_data else []
+    journey = json.loads(ticket.journey_data) if ticket.journey_data else {}
+    raw = json.loads(ticket.raw_data) if ticket.raw_data else {}
+    
+    return jsonify({
+        "id": ticket.id,
+        "created_at": ticket.created_at.isoformat(),
+        "updated_at": ticket.updated_at.isoformat() if ticket.updated_at else None,
+        "pnr": ticket.pnr,
+        "booking_date": ticket.booking_date,
+        "phone": ticket.phone,
+        "currency": ticket.currency,
+        "grand_total": ticket.grand_total,
+        "class_of_travel": ticket.class_of_travel,
+        "trip_type": ticket.trip_type,
+        "status": ticket.status,
+        "matched_itinerary_id": ticket.matched_itinerary_id,
+        "parser_version": ticket.parser_version,
+        "passengers": passengers,
+        "segments": segments,
+        "journey": journey,
+        "raw_data": raw
+    })
+
+
+@app.route("/api/tickets/<ticket_id>", methods=["PUT"])
+@login_required
+def update_ticket(ticket_id):
+    """Update a ticket (edit passengers, segments, fares, etc.)"""
+    try:
+        ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+        if not ticket:
+            return jsonify({"error": "Ticket not found"}), 404
+        
+        data = request.get_json()
+        
+        if 'pnr' in data:
+            ticket.pnr = data['pnr']
+        if 'booking_date' in data:
+            ticket.booking_date = data['booking_date']
+        if 'phone' in data:
+            ticket.phone = data['phone']
+        if 'currency' in data:
+            ticket.currency = data['currency']
+        if 'grand_total' in data:
+            ticket.grand_total = data['grand_total']
+        if 'class_of_travel' in data:
+            ticket.class_of_travel = data['class_of_travel']
+        if 'trip_type' in data:
+            ticket.trip_type = data['trip_type']
+        if 'passengers' in data:
+            ticket.passengers_data = json.dumps(data['passengers'])
+        if 'segments' in data:
+            ticket.segments_data = json.dumps(data['segments'])
+        if 'journey' in data:
+            ticket.journey_data = json.dumps(data['journey'])
+        if 'raw_data' in data:
+            ticket.raw_data = json.dumps(data['raw_data'])
+        if 'status' in data:
+            ticket.status = data['status']
+        
+        ticket.updated_at = datetime.utcnow()
+        db.session.commit()
+        
+        return jsonify({"message": "Ticket updated successfully"})
+    
+    except Exception as e:
+        db.session.rollback()
+        print(f"Ticket update error: {str(e)}")
+        return jsonify({"error": f"Failed to update ticket: {str(e)}"}), 500
+
+
+@app.route("/api/tickets/<ticket_id>", methods=["DELETE"])
+@login_required
+def delete_ticket(ticket_id):
+    """Delete a ticket"""
+    try:
+        ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+        if not ticket:
+            return jsonify({"error": "Ticket not found"}), 404
+        
+        db.session.delete(ticket)
+        db.session.commit()
+        return jsonify({"message": "Ticket deleted successfully"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Failed to delete ticket: {str(e)}"}), 500
+
+
+@app.route("/api/tickets/<ticket_id>/pdf", methods=["GET"])
+@login_required
+def generate_ticket_pdf(ticket_id):
+    """Generate PDF for a ticket (with or without fare)"""
+    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+    if not ticket:
+        return jsonify({"error": "Ticket not found"}), 404
+    
+    include_fare = request.args.get('include_fare', 'true').lower() == 'true'
+    
+    passengers = json.loads(ticket.passengers_data) if ticket.passengers_data else []
+    segments = json.loads(ticket.segments_data) if ticket.segments_data else []
+    
+    # Extract journey and raw data for additional info
+    journey = json.loads(ticket.journey_data) if ticket.journey_data else {}
+    raw = json.loads(ticket.raw_data) if ticket.raw_data else {}
+    gst_details = raw.get("gst_details") or {}
+    
+    # Build data dict for PDF generator
+    pdf_data = {
+        "booking_date": ticket.booking_date,
+        "phone": ticket.phone,
+        "pnr": ticket.pnr,
+        "currency": ticket.currency,
+        "grand_total": ticket.grand_total,
+        "class_of_travel": ticket.class_of_travel,
+        "passengers": passengers,
+        "segments": segments,
+        "journey": journey,
+        "reference_number": raw.get("booking", {}).get("reference_number"),
+        "gst_company_name": gst_details.get("company_name"),
+        "gst_number": gst_details.get("gst_number"),
+        "trip_type": ticket.trip_type,
+    }
+    
+    import io
+    from reportlab.pdfgen import canvas as pdf_canvas
+    from reportlab.lib.pagesizes import A4
+    from ticket_pdf import draw_ticket
+    
+    buffer = io.BytesIO()
+    c = pdf_canvas.Canvas(buffer, pagesize=A4)
+    draw_ticket(c, pdf_data, include_fare=include_fare)
+    c.save()
+    buffer.seek(0)
+    
+    # ── GENERATE DOWNLOAD FILENAME ──
+    pax_name = ""
+    if passengers and len(passengers) > 0:
+        pax_name = passengers[0].get("name", "").strip()
+        if len(passengers) > 1:
+            pax_name += f" x{len(passengers)}"
+    if not pax_name:
+        pax_name = "Passenger"
+        
+    date_str = ""
+    if segments and len(segments) > 0:
+        dep = segments[0].get("departure", {})
+        o_date = dep.get("date", "")
+        try:
+            import dateutil.parser
+            d_obj = dateutil.parser.parse(o_date)
+            d_short = d_obj.strftime("%d %b %y")
+            if d_short.startswith("0"): 
+                d_short = d_short[1:]
+            date_str = d_short
+        except Exception:
+            date_str = o_date.replace("/", "-").replace("\\", "-")
+        
+    route_str = ""
+    trip = (ticket.trip_type or "one_way").lower()
+    trip_txt = "ONE WAY"
+    if trip == "round_trip": trip_txt = "ROUND TRIP"
+    elif trip == "multi_city": trip_txt = "MULTI CITY"
+    
+    if segments and len(segments) > 0:
+        if trip == "one_way":
+            dap = segments[0].get("departure", {}).get("airport", "DEP")
+            aap = segments[-1].get("arrival", {}).get("airport", "ARR")
+            route_str = f"{dap} → {aap}"
+        elif trip == "round_trip":
+            # For round trip, take the departure and the midpoint destination 
+            dap = segments[0].get("departure", {}).get("airport", "DEP")
+            mid_idx = max(0, len(segments) // 2 - 1) if len(segments) % 2 == 0 else len(segments) // 2
+            aap = segments[mid_idx].get("arrival", {}).get("airport", "ARR")
+            route_str = f"{dap} ↔ {aap}"
+        else:
+            # Multi city
+            dests = [segments[0].get("departure", {}).get("airport", "DEP")]
+            for seg in segments:
+                arr = seg.get("arrival", {}).get("airport", "ARR")
+                if arr and arr != dests[-1]:
+                    dests.append(arr)
+            route_str = " → ".join(dests)
+            
+    import re
+    # Combine filename
+    if trip == "one_way":
+        raw_fname = f"{pax_name} {route_str} {date_str}.pdf"
+    else:
+        raw_fname = f"{pax_name} {route_str} ({trip_txt}) {date_str}.pdf"
+        
+    # Remove windows invalid path chars, though arrows → ↔ are valid unicode
+    filename = re.sub(r'[\\/*?:"<>|]', "", raw_fname).strip()
+    filename = re.sub(r'\s+', " ", filename)  # remove double spaces just in case
+    if not filename.endswith(".pdf"): 
+        filename += ".pdf"
+    
+    return send_file(
+        buffer,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=filename
+    )
 
 
 

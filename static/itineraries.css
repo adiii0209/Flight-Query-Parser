@@ -249,20 +249,26 @@ body {
   gap: 1rem;
 }
 
-.menu-toggle {
-  background: rgba(255, 255, 255, 0.15);
-  border: none;
-  color: rgba(206, 15, 15, 0);
+.top-header .menu-toggle {
+  background: rgba(255, 255, 255, 0.15) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  color: white !important;
   width: 42px;
   height: 42px;
   border-radius: 10px;
   font-size: 1.3rem;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.2s;
+  display: flex !important;
+  flex-direction: row !important;
+  /* Override dashboard.css column layout */
+  align-items: center;
+  justify-content: center;
+  box-shadow: none !important;
 }
 
-.menu-toggle:hover {
-  background: rgba(255, 255, 255, 0.25);
+.top-header .menu-toggle:hover {
+  background: rgba(255, 255, 255, 0.25) !important;
 }
 
 .header-content h1 {
@@ -1208,8 +1214,10 @@ body {
   backdrop-filter: blur(4px);
   z-index: 2000;
   display: none;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  padding-top: 5vh;
+  padding-bottom: 5vh;
 }
 
 .modal-overlay.show {
@@ -1222,7 +1230,7 @@ body {
   padding: 1.5rem;
   max-width: 460px;
   width: 90%;
-  max-height: 80vh;
+  max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 20px 60px var(--shadow-lg);
   display: none;
@@ -1831,11 +1839,16 @@ body {
   transform: translateY(-1px);
 }
 
-.search-icon {
+.search-wrapper .search-icon {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  transform: none !important;
   font-size: 1.1rem;
   color: var(--text-secondary);
   margin-right: 0.75rem;
   opacity: 0.7;
+  display: inline-block;
 }
 
 .search-input {

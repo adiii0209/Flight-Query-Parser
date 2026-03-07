@@ -883,10 +883,57 @@
     }
 
     /* ── TEST USER ──────────────────────────────────────── */
-    function loginTestUser() {
-      document.getElementById('loginUsername').value = 'adi.is.tired';
-      document.getElementById('loginPassword').value = 'jdxj66pyic@12';
-      handleLogin();
+    async function loginTestUser() {
+      const username = 'adi.is.tired';
+      const password = 'jdxj66pyic@12';
+
+      document.getElementById('loginUsername').value = username;
+      document.getElementById('loginPassword').value = password;
+
+      setLoading('loginBtn', true, 'Connecting…');
+      clearNotif();
+
+      try {
+        // 1. Try Login first
+        const logRes = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        if (logRes.ok) {
+          showNotif('Welcome back! Redirecting…', 'success');
+          const next = new URLSearchParams(window.location.search).get('next') || '/';
+          setTimeout(() => window.location.href = next, 900);
+          return;
+        }
+
+        // 2. If login fails, attempt to register automatically
+        const regRes = await fetch('/api/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            full_name: 'Test User',
+            email: 'test_user@timetravels.com',
+            username: username,
+            password: password
+          })
+        });
+
+        if (regRes.ok) {
+          showNotif('Test account ready! Redirecting…', 'success');
+          const next = new URLSearchParams(window.location.search).get('next') || '/';
+          setTimeout(() => window.location.href = next, 900);
+        } else {
+          const errorData = await regRes.json();
+          showNotif(errorData.error || 'Test login failed', 'error');
+          setLoading('loginBtn', false, 'Sign In');
+        }
+      } catch (err) {
+        console.error(err);
+        showNotif('Network error — try again', 'error');
+        setLoading('loginBtn', false, 'Sign In');
+      }
     }
 
     /* ── ENTER KEY ──────────────────────────────────────── */
