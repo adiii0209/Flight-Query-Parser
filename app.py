@@ -20,7 +20,7 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 # 🔐 Shared secret for ticket parser
-API_KEY = os.getenv("TICKET_PARSER_API_KEY", "supersecretkey")
+API_KEY =timetours@1978
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
