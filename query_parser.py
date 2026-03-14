@@ -15,7 +15,7 @@ OPENROUTER_API_KEY = "sk-or-v1-580e1ae08755f4419be63935c4eb78e41c38d21ae0ece5f1e
 if not OPENROUTER_API_KEY:
     raise ValueError("OPENROUTER_API_KEY is not set")
 OPENROUTER_URL = os.getenv("OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions")
-MODEL = os.getenv("MODEL", "mistralai/mistral-small-creative")
+MODEL = os.getenv("MODEL", "openai/gpt-4o-mini")
 MAX_TOKENS = 400
 TEMPERATURE = 0
 
