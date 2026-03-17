@@ -3,8 +3,8 @@ import json
 import uuid
 import requests
 import base64
-import io
-from flask import Flask, request, jsonify, render_template, render_template_string, session, redirect, url_for, send_file
+from io import BytesIO
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for, send_file
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
@@ -15,24 +15,13 @@ import hashlib
 from query_parser import extract_flight, extract_multiple_flights
 from models import User, Customer, Itinerary, Ticket, Aggregator, LedgerEntry, TicketOperation, OperationLedgerLink, BookingGroup
 from extensions import db
-
 import gspread
 from google.oauth2.service_account import Credentials
 import re
-import threading
-import queue
 from copy import deepcopy
 from werkzeug.utils import secure_filename
-
 import pytesseract
-try:
-    import pdf417gen
-except Exception:
-    pdf417gen = None
-try:
-    from playwright.sync_api import sync_playwright
-except Exception:
-    sync_playwright = None
+from pdf417gen import encode, render_image
 
 load_dotenv()
 app = Flask(__name__)
@@ -40,18 +29,42 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 # 🔐 Shared secret for ticket parser
-API_KEY ="timetours@1978"
+API_KEY = os.getenv("TICKET_PARSER_API_KEY", "supersecretkey")
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 db.init_app(app)
 
-_playwright_runtime = None
-_playwright_browser = None
-_playwright_lock = threading.Lock()
-_playwright_task_queue = queue.Queue()
-_playwright_worker_started = False
+# Register API v2 Blueprint
+# Register API v2 Blueprint
+from routes_v2 import api_v2
+from extensions_v2 import db_session
+from ocr import ocr_bp
+app.register_blueprint(api_v2)
+app.register_blueprint(ocr_bp)
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    db_session.remove()
+
+# ==================== AUTHENTICATION DECORATOR ====================
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+# 🔐 Shared secret for ticket parser
+API_KEY = os.getenv("TICKET_PARSER_API_KEY", "supersecretkey")
+
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+db.init_app(app)
 
 # Register API v2 Blueprint
 # Register API v2 Blueprint
@@ -82,184 +95,6 @@ def login_required(f):
 def home():
     """Serve the main HTML page"""
     return render_template('index.html')
-
-
-def _get_playwright_browser():
-    global _playwright_runtime, _playwright_browser
-    if sync_playwright is None:
-        raise RuntimeError("Playwright is not installed on the server.")
-
-    with _playwright_lock:
-        if _playwright_browser:
-            return _playwright_browser
-        _playwright_runtime = sync_playwright().start()
-        _playwright_browser = _playwright_runtime.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-dev-shm-usage",
-                "--font-render-hinting=medium",
-            ],
-        )
-        return _playwright_browser
-
-
-def _playwright_render_worker():
-    while True:
-        task = _playwright_task_queue.get()
-        if task is None:
-            _playwright_task_queue.task_done()
-            break
-
-        try:
-            browser = _get_playwright_browser()
-            context = browser.new_context(
-                viewport={"width": task["viewport_width"], "height": 960},
-                device_scale_factor=2,
-                color_scheme="light",
-            )
-            try:
-                page = context.new_page()
-                page.set_content(task["html"], wait_until="networkidle")
-                if task["cards_html"]:
-                    bbox = page.evaluate(
-                        """
-                        () => {
-                          const root = document.querySelector('#cards');
-                          if (!root) return null;
-                          const children = Array.from(root.children).filter((node) => {
-                            const style = window.getComputedStyle(node);
-                            return style.display !== 'none' && style.visibility !== 'hidden';
-                          });
-                          const targets = children.length ? children : [root];
-                          let left = Infinity;
-                          let top = Infinity;
-                          let right = -Infinity;
-                          let bottom = -Infinity;
-                          for (const node of targets) {
-                            const rect = node.getBoundingClientRect();
-                            if (!rect.width || !rect.height) continue;
-                            left = Math.min(left, rect.left);
-                            top = Math.min(top, rect.top);
-                            right = Math.max(right, rect.right);
-                            bottom = Math.max(bottom, rect.bottom);
-                          }
-                          if (!isFinite(left) || !isFinite(top) || !isFinite(right) || !isFinite(bottom)) {
-                            const rect = root.getBoundingClientRect();
-                            return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
-                          }
-                          return { x: left, y: top, width: right - left, height: bottom - top };
-                        }
-                        """
-                    )
-                    if not bbox:
-                        raise RuntimeError("Could not determine flight card bounds for screenshot")
-                    image_bytes = page.screenshot(
-                        type="png",
-                        animations="disabled",
-                        clip={
-                            "x": max(float(bbox["x"]), 0),
-                            "y": max(float(bbox["y"]), 0),
-                            "width": max(float(bbox["width"]), 1),
-                            "height": max(float(bbox["height"]), 1),
-                        },
-                    )
-                else:
-                    image_bytes = page.locator("#render-root").screenshot(type="png", animations="disabled")
-            finally:
-                context.close()
-            task["result"]["image_bytes"] = image_bytes
-        except Exception as exc:
-            task["result"]["error"] = exc
-        finally:
-            task["event"].set()
-            _playwright_task_queue.task_done()
-
-
-def _ensure_playwright_worker():
-    global _playwright_worker_started
-    with _playwright_lock:
-        if _playwright_worker_started:
-            return
-        worker = threading.Thread(target=_playwright_render_worker, name="playwright-render-worker", daemon=True)
-        worker.start()
-        _playwright_worker_started = True
-
-
-def _render_saved_cabin_value(flight, segment=None):
-    if segment is not None:
-        if not segment.get("show_booking_class"):
-            return ""
-        return (segment.get("class_of_travel") or segment.get("cabin_class") or "").strip()
-    if not flight.get("show_cabin_class"):
-        return ""
-    return (flight.get("class_of_travel") or flight.get("cabin_class") or "").strip()
-
-
-def _build_cards_render_groups(flights, trip_type, unit_flights):
-    trip_type = (trip_type or "one_way").strip().lower()
-    flights = flights or []
-    unit_flights = unit_flights or {}
-
-    def build_flight_view(flight, part_label=""):
-        segments = flight.get("segments") or []
-        display_stops = flight.get("stops") or ("Direct" if len(segments) <= 1 else f"{max(0, len(segments) - 1)} Stop(s)")
-        has_multi_segment = len(segments) > 1 and "direct" not in display_stops.lower() and "non-stop" not in display_stops.lower()
-        airline_rows = []
-        if has_multi_segment:
-            for segment in segments:
-                airline_rows.append({
-                    "airline": segment.get("airline") or flight.get("airline") or "Airline",
-                    "flight_number": segment.get("flight_number") or "",
-                    "cabin": _render_saved_cabin_value(flight, segment),
-                })
-        else:
-            airline_rows.append({
-                "airline": flight.get("airline") or "Airline",
-                "flight_number": flight.get("flight_number") or "",
-                "cabin": _render_saved_cabin_value(flight),
-            })
-
-        return {
-            "part_label": part_label,
-            "airline_rows": airline_rows,
-            "date": flight.get("departure_date") or "",
-            "departure_time": flight.get("departure_time") or "--:--",
-            "arrival_time": flight.get("arrival_time") or "--:--",
-            "departure_city": flight.get("departure_city") or flight.get("departure_airport") or "",
-            "arrival_city": flight.get("arrival_city") or flight.get("arrival_airport") or "",
-            "departure_airport": flight.get("departure_airport") or "",
-            "arrival_airport": flight.get("arrival_airport") or "",
-            "duration": flight.get("duration") or "--",
-            "stops": display_stops,
-            "days_offset": flight.get("days_offset") or 0,
-            "fares": flight.get("fares") or {},
-        }
-
-    groups = []
-    if trip_type in ("round_trip", "multi_city") and unit_flights:
-        for unit_id, indices in unit_flights.items():
-            option_flights = [flights[idx] for idx in indices if 0 <= idx < len(flights)]
-            if not option_flights:
-                continue
-            label_prefix = "Round Trip Option" if trip_type == "round_trip" else "Multi-City Option"
-            flight_views = []
-            for idx, flight in enumerate(option_flights):
-                if trip_type == "round_trip":
-                    part_label = "Outbound" if idx == 0 else "Return"
-                else:
-                    part_label = f"Flight {idx + 1}"
-                flight_views.append(build_flight_view(flight, part_label))
-            groups.append({
-                "label": f"{label_prefix} {unit_id}",
-                "flights": flight_views,
-            })
-    else:
-        for idx, flight in enumerate(flights):
-            groups.append({
-                "label": f"Option {idx + 1}",
-                "flights": [build_flight_view(flight)],
-            })
-    return groups
 
 @app.route("/itineraries")
 def itineraries_page():
@@ -568,205 +403,6 @@ def _build_legs_from_data(segments, journey=None):
     return legs
 
 
-def _clean_bcbp_name(name):
-    raw = (name or "").strip().upper()
-    if not raw:
-        return "UNKNOWN/PAX"
-    cleaned = re.sub(r"[^A-Z0-9/ ]+", "", raw)
-    parts = [part for part in cleaned.replace("/", " ").split() if part]
-    if len(parts) >= 2:
-        last_name = parts[-1]
-        first_names = "".join(parts[:-1])
-        return f"{last_name}/{first_names}"[:20]
-    return cleaned.replace(" ", "")[:20] or "UNKNOWN/PAX"
-
-
-def _pad_bcbp_text(value, length, default="", align="left", fill=" "):
-    text = str(value if value not in (None, "") else default)
-    if align == "right":
-        return text[:length].rjust(length, fill)
-    return text[:length].ljust(length, fill)
-
-
-def _pad_bcbp_digits(value, length, default=""):
-    digits = re.sub(r"\D", "", str(value if value not in (None, "") else default))
-    return digits[-length:].zfill(length) if digits else str(default).zfill(length)
-
-
-def _segment_date_value(segment):
-    departure = segment.get("departure") or {}
-    return (
-        departure.get("date")
-        or segment.get("departure_date")
-        or segment.get("date")
-        or ""
-    ).strip()
-
-
-def _segment_departure_airport(segment):
-    departure = segment.get("departure") or {}
-    return (departure.get("airport") or segment.get("departure_airport") or "").strip().upper()
-
-
-def _segment_arrival_airport(segment):
-    arrival = segment.get("arrival") or {}
-    return (arrival.get("airport") or segment.get("arrival_airport") or "").strip().upper()
-
-
-def _segment_flight_number(segment):
-    return (segment.get("flight_number") or "").strip().upper()
-
-
-def _segment_booking_class_letter(segment):
-    booking_class = segment.get("booking_class")
-    if isinstance(booking_class, dict):
-        value = (
-            booking_class.get("letter")
-            or booking_class.get("code")
-            or booking_class.get("cabin")
-            or ""
-        )
-    else:
-        value = booking_class or ""
-    value = str(value).strip().upper()
-    return value[:1] if value else "Y"
-
-
-def _segment_airline_code(segment):
-    airline_code = (segment.get("airline_code") or "").strip().upper()
-    if airline_code:
-        return airline_code[:3]
-    flight_number = _segment_flight_number(segment)
-    match = re.match(r"([A-Z0-9]{2,3})\s*\d+", flight_number)
-    if match:
-        return match.group(1)
-    return ""
-
-
-def _segment_flight_numeric(segment):
-    return _pad_bcbp_digits(_segment_flight_number(segment), 5, default="00000")
-
-
-def _segment_julian_day(segment):
-    raw_date = _segment_date_value(segment)
-    if not raw_date or raw_date.upper() == "N/A":
-        return None
-    for fmt in ("%d %b %Y", "%d %b %y", "%d %B %Y", "%d %B %y", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(raw_date, fmt).strftime("%j")
-        except ValueError:
-            continue
-    return None
-
-
-def _passenger_seat_for_segment(passenger, segment_index):
-    seats = passenger.get("seats") or []
-    for seat in seats:
-        if isinstance(seat, dict) and seat.get("segment_index") == segment_index:
-            seat_value = (seat.get("seat_number") or "").strip().upper()
-            if seat_value and seat_value != "N/A":
-                return _pad_bcbp_text(seat_value, 4, default="0000")
-    seat_value = (passenger.get("seat") or "").strip().upper()
-    if seat_value and seat_value != "N/A":
-        return _pad_bcbp_text(seat_value, 4, default="0000")
-    return "0000"
-
-
-def _passenger_sequence_number(passenger, segment):
-    candidate = (
-        passenger.get("sequence_number")
-        or segment.get("sequence_number")
-        or segment.get("sequence")
-        or ""
-    )
-    return _pad_bcbp_digits(candidate, 5, default="00001")
-
-
-def _build_segment_bcbp_data(ticket, passengers, raw, segment, segment_index):
-    dep_airport = _segment_departure_airport(segment)
-    arr_airport = _segment_arrival_airport(segment)
-    flight_number = _segment_flight_number(segment)
-    julian_day = _segment_julian_day(segment)
-    if not dep_airport or not arr_airport or not flight_number or not julian_day:
-        return None
-
-    primary_passenger = passengers[0] if passengers else {}
-    passenger_name = _pad_bcbp_text(
-        _clean_bcbp_name(primary_passenger.get("name") or primary_passenger.get("first_name") or ""),
-        20,
-        default="UNKNOWN/PAX",
-    )
-    ticket_indicator = "E"
-    pnr_value = (
-        ticket.pnr
-        or ((raw.get("booking") or {}).get("pnr") if isinstance(raw, dict) else "")
-        or segment.get("pnr")
-        or "XXXXXX"
-    )
-    pnr_value = _pad_bcbp_text(str(pnr_value).strip().upper(), 7, default="XXXXXX")
-    from_airport = _pad_bcbp_text(dep_airport, 3)
-    to_airport = _pad_bcbp_text(arr_airport, 3)
-    seat_value = _passenger_seat_for_segment(primary_passenger, segment_index)
-    sequence_value = _passenger_sequence_number(primary_passenger, segment)
-    booking_class = _pad_bcbp_text(_segment_booking_class_letter(segment), 1, default="Y")
-    airline_code = _pad_bcbp_text(_segment_airline_code(segment), 3)
-    flight_numeric = _segment_flight_numeric(segment)
-    status = _pad_bcbp_text(segment.get("status_code") or segment.get("status") or "0", 1, default="0")
-
-    bcbp_string = (
-        f"M1"
-        f"{passenger_name}"
-        f"{ticket_indicator}"
-        f"{pnr_value}"
-        f"{from_airport}"
-        f"{to_airport}"
-        f"{airline_code}"
-        f"{flight_numeric}"
-        f"{_pad_bcbp_digits(julian_day, 3, default='000')}"
-        f"{booking_class}"
-        f"{seat_value}"
-        f"{sequence_value}"
-        f"{status}"
-    )
-    app.logger.info(
-        "BCBP segment=%s ticket=%s value=%r length=%s",
-        segment_index,
-        getattr(ticket, "id", ""),
-        bcbp_string,
-        len(bcbp_string),
-    )
-    return bcbp_string
-
-
-def _generate_pdf417_base64(data_string):
-    if not data_string or pdf417gen is None:
-        return None
-    try:
-        codes = pdf417gen.encode(data_string, columns=6, security_level=2)
-        image = pdf417gen.render_image(codes, scale=2, ratio=3, padding=8)
-        buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
-        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-        return f"data:image/png;base64,{encoded}"
-    except Exception:
-        return None
-
-
-def _segments_with_barcodes(ticket, passengers, segments, raw):
-    enriched_segments = []
-    for segment_index, segment in enumerate(segments or []):
-        segment_copy = _clone_json(segment)
-        barcode_data = _build_segment_bcbp_data(ticket, passengers or [], raw or {}, segment_copy, segment_index)
-        if barcode_data:
-            segment_copy["barcode_data"] = barcode_data
-            segment_copy["barcode_image"] = _generate_pdf417_base64(barcode_data)
-        else:
-            segment_copy["barcode_data"] = None
-            segment_copy["barcode_image"] = None
-        enriched_segments.append(segment_copy)
-    return enriched_segments
-
-
 def _ticket_financials(passengers, journey):
     n_pax = len(passengers)
     mu_per_pax = parseFloat((journey or {}).get("global_markup", 0))
@@ -1042,6 +678,69 @@ def _serialize_ticket_model(ticket):
         "last_booked_by": ticket.last_booked_by,
     }
 
+def _generate_bcbp_barcode(passenger_name, pnr, segment):
+    """
+    Construct IATA BCBP string and generate PDF417 barcode as Base64.
+    Format: M1(PASSENGER/NAME)(PNR) (DEP)(ARR)(AIRLINE)(FLIGHT)(JULIAN DATE)(CLASS)(SEAT)(SEQ)
+    """
+    try:
+        # 1. Clean data fields with fallbacks
+        name = (passenger_name or "PASSENGER/UNKNOWN").upper().replace(" ", "/")[:20].ljust(20)
+        pnr = (pnr or "XXXXXX").upper().ljust(7)[:7]
+        
+        dep = (segment.get("departure", {}).get("airport") or "").upper()
+        arr = (segment.get("arrival", {}).get("airport") or "").upper()
+        
+        # Critical fields check
+        if not dep or not arr:
+            return None
+            
+        airline_flight = (segment.get("flight_number") or "XX0000").upper().replace(" ", "")
+        # Split airline and flight number (assuming 2-letter airline code)
+        airline = airline_flight[:2].ljust(3)
+        flight_num = airline_flight[2:].zfill(5)[:5]
+        
+        # Date to Julian day of year
+        try:
+            from dateutil import parser
+            flight_date_str = segment.get("departure", {}).get("date")
+            if flight_date_str:
+                dt = parser.parse(flight_date_str)
+                julian_day = str(dt.timetuple().tm_yday).zfill(3)
+            else:
+                julian_day = "000"
+        except:
+            julian_day = "000"
+            
+        booking_class = segment.get("booking_class")
+        if isinstance(booking_class, dict):
+            class_letter = (booking_class.get("letter") or "Y").upper()
+        else:
+            class_letter = "Y"
+            
+        seat = (segment.get("seat") or "0000").upper().zfill(4)[:4]
+        seq = (segment.get("sequence_number") or "00001").zfill(5)[:5]
+        
+        # 2. Build BCBP String (Standard format)
+        # M1 + Name + E + PNR + DEP + ARR + Airline + Flight + Julian + Class + Seat + Seq
+        # Following approximate IATA 791 format
+        bcbp_str = f"M1{name}E{pnr}{dep}{arr}{airline}{flight_num}{julian_day}{class_letter}{seat}{seq}00"
+        
+        # 3. Generate PDF417 image
+        codes = encode(bcbp_str, columns=10)
+        image = render_image(codes, scale=3, ratio=3)
+        
+        # 4. Convert to Base64
+        buffered = BytesIO()
+        image.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        
+        return f"data:image/png;base64,{img_str}"
+        
+    except Exception as e:
+        print(f"Barcode generation error: {str(e)}")
+        return None
+
 
 def _restore_ticket_snapshot(snapshot, user_id):
     ticket = Ticket.query.filter_by(id=snapshot["id"], user_id=user_id).first()
@@ -1072,7 +771,30 @@ def _ticket_dict_with_children(ticket):
     journey = json.loads(ticket.journey_data) if ticket.journey_data else {}
     raw = json.loads(ticket.raw_data) if ticket.raw_data else {}
     _ensure_passenger_internal_ids(passengers)
-    segments = _segments_with_barcodes(ticket, passengers, segments, raw)
+    return {
+        "id": ticket.id,
+        "created_at": ticket.created_at.isoformat(),
+        "updated_at": ticket.updated_at.isoformat() if ticket.updated_at else None,
+        "pnr": ticket.pnr,
+        "booking_date": ticket.booking_date,
+        "phone": ticket.phone,
+        "currency": ticket.currency,
+        "grand_total": ticket.grand_total,
+        "class_of_travel": ticket.class_of_travel,
+        "trip_type": ticket.trip_type,
+        "status": ticket.status,
+        "ticket_status": ticket.ticket_status or "live",
+        "matched_itinerary_id": ticket.matched_itinerary_id,
+        "parser_version": ticket.parser_version,
+        "passengers": passengers,
+        "segments": segments,
+    }
+    
+    # Generate barcodes for segments
+    p_name = passengers[0].get("name") if passengers else "PASSENGER"
+    for seg in segments:
+        seg["barcode_base64"] = _generate_bcbp_barcode(p_name, ticket.pnr, seg)
+
     return {
         "id": ticket.id,
         "created_at": ticket.created_at.isoformat(),
@@ -1196,64 +918,6 @@ def _reverse_ticket_operation(operation):
     db.session.flush()
     if operation.aggregator_id:
         _recalc_running_balance(operation.aggregator_id, operation.user_id)
-
-
-def _delete_ledger_entry_with_reverse(entry, user_id):
-    if not entry:
-        return None
-    agg_id = entry.aggregator_id
-    link = OperationLedgerLink.query.filter_by(ledger_entry_id=entry.id, user_id=user_id).first()
-    if link:
-        operation = TicketOperation.query.filter_by(id=link.operation_id, user_id=user_id).first()
-        _reverse_ticket_operation(operation)
-        # Clear ledger flags on tickets involved in this operation
-        if operation:
-            metadata = json.loads(operation.metadata_json or "{}")
-            affected_ids = set()
-            if operation.root_ticket_id:
-                affected_ids.add(operation.root_ticket_id)
-            affected_ids.update(metadata.get("updated_ticket_ids", []) or [])
-            for snapshot in json.loads(operation.before_state or "[]"):
-                if isinstance(snapshot, dict) and snapshot.get("id"):
-                    affected_ids.add(snapshot["id"])
-            for tid in affected_ids:
-                t = Ticket.query.filter_by(id=tid, user_id=user_id).first()
-                if t and t.ledger_hash:
-                    t.ledger_hash = None
-                    t.last_aggregator = None
-                    t.last_booked_by = None
-    else:
-        db.session.delete(entry)
-        # If this ledger entry was directly tied to a ticket, clear ledger_hash
-        if entry.ticket_id:
-            ticket = Ticket.query.filter_by(id=entry.ticket_id, user_id=user_id).first()
-            if ticket and ticket.ledger_hash:
-                ticket.ledger_hash = None
-                ticket.last_aggregator = None
-                ticket.last_booked_by = None
-        # Also clear any tickets that were marked in-ledger for the same PNR/aggregator
-        # If any ticket was mapped to this ledger entry, clear that mapping
-        mapped = Ticket.query.filter(
-            Ticket.user_id == user_id,
-            Ticket.ledger_hash == f"MAPPED_{entry.id}"
-        ).all()
-        for t in mapped:
-            t.ledger_hash = None
-            t.last_aggregator = None
-            t.last_booked_by = None
-    # Clear any tickets that were marked in-ledger for the same PNR/aggregator
-    if entry.pnr:
-        linked_tickets = Ticket.query.filter_by(
-            user_id=user_id,
-            pnr=entry.pnr,
-            last_aggregator=entry.aggregator_id
-        ).all()
-        for t in linked_tickets:
-            if t.ledger_hash:
-                t.ledger_hash = None
-                t.last_aggregator = None
-                t.last_booked_by = None
-    return agg_id
 
 
 def _sqlite_add_column_if_missing(table_name, column_name, column_sql):
@@ -1450,11 +1114,16 @@ def delete_entry(entry_id):
     entry = LedgerEntry.query.filter_by(id=entry_id, user_id=session['user_id']).first()
     if not entry:
         return jsonify({"error": "Not found"}), 404
-    agg_id = _delete_ledger_entry_with_reverse(entry, session['user_id'])
+    agg_id = entry.aggregator_id
+    link = OperationLedgerLink.query.filter_by(ledger_entry_id=entry.id, user_id=session['user_id']).first()
+    if link:
+        operation = TicketOperation.query.filter_by(id=link.operation_id, user_id=session['user_id']).first()
+        _reverse_ticket_operation(operation)
+    else:
+        db.session.delete(entry)
 
     db.session.commit()
-    if agg_id:
-        _recalc_running_balance(agg_id, session['user_id'])
+    _recalc_running_balance(agg_id, session['user_id'])
     return jsonify({"message": "Deleted"})
 
 @app.route("/api/tickets/<ticket_id>/add-to-ledger", methods=["POST"])
@@ -1792,90 +1461,6 @@ def recalculate():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/render/cards-image", methods=["POST"])
-def render_cards_image():
-    try:
-        payload = request.get_json() or {}
-        cards_html = (payload.get("cards_html") or "").strip()
-        head_markup = payload.get("head_markup") or ""
-        theme = (payload.get("theme") or "light").strip()
-        viewport_width = max(int(payload.get("viewport_width") or 1280), 320)
-        requested_cards_width = payload.get("cards_width")
-        cards_width = max(int(requested_cards_width), 1) if requested_cards_width else None
-
-        if cards_html:
-            html = render_template_string(
-                """
-                <!DOCTYPE html>
-                <html lang="en" data-theme="{{ theme }}">
-                <head>
-                  <meta charset="UTF-8">
-                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                  <base href="{{ base_href }}">
-                  {{ head_markup|safe }}
-                  <style>
-                    html, body {
-                      margin: 0;
-                      padding: 0;
-                      background: #ffffff;
-                    }
-                    body {
-                      padding: 24px;
-                    }
-                    #cards {
-                      margin: 0 auto !important;
-                      width: {{ cards_width }}px !important;
-                      max-width: {{ cards_width }}px !important;
-                      min-width: 0 !important;
-                    }
-                  </style>
-                </head>
-                <body>
-                  {{ cards_html|safe }}
-                </body>
-                </html>
-                """,
-                cards_html=cards_html,
-                head_markup=head_markup,
-                theme=theme,
-                cards_width=cards_width or viewport_width,
-                base_href=request.host_url,
-            )
-        else:
-            flights = payload.get("flights") or []
-            trip_type = payload.get("trip_type") or "one_way"
-            unit_flights = payload.get("unit_flights") or {}
-            if not flights:
-                return jsonify({"error": "No flight cards to render"}), 400
-            groups = _build_cards_render_groups(flights, trip_type, unit_flights)
-            html = render_template("cards_image.html", groups=groups, trip_type=trip_type)
-
-        _ensure_playwright_worker()
-        done_event = threading.Event()
-        result = {}
-        _playwright_task_queue.put({
-            "html": html,
-            "viewport_width": viewport_width,
-            "cards_html": bool(cards_html),
-            "event": done_event,
-            "result": result,
-        })
-        done_event.wait()
-        if result.get("error"):
-            raise result["error"]
-        image_bytes = result["image_bytes"]
-
-        return send_file(
-            io.BytesIO(image_bytes),
-            mimetype="image/png",
-            as_attachment=False,
-            download_name="flight-cards.png",
-        )
-    except Exception as e:
-        app.logger.exception("Server-side card render failed")
-        return jsonify({"error": f"Failed to render cards image: {str(e)}"}), 500
 
 @app.route("/api/itineraries", methods=["POST"])
 @login_required
@@ -2531,28 +2116,9 @@ def delete_ticket(ticket_id):
         ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
         if not ticket:
             return jsonify({"error": "Ticket not found"}), 404
-
-        ledger_entries = LedgerEntry.query.filter_by(ticket_id=ticket.id, user_id=session['user_id']).all()
-        mapped_entry = None
-        if ticket.ledger_hash and ticket.ledger_hash.startswith("MAPPED_"):
-            mapped_id = ticket.ledger_hash.replace("MAPPED_", "").strip()
-            if mapped_id:
-                mapped_entry = LedgerEntry.query.filter_by(id=mapped_id, user_id=session['user_id']).first()
-
-        agg_ids = set()
-        for entry in ledger_entries:
-            agg_id = _delete_ledger_entry_with_reverse(entry, session['user_id'])
-            if agg_id:
-                agg_ids.add(agg_id)
-        if mapped_entry and mapped_entry not in ledger_entries:
-            agg_id = _delete_ledger_entry_with_reverse(mapped_entry, session['user_id'])
-            if agg_id:
-                agg_ids.add(agg_id)
-
+        
         db.session.delete(ticket)
         db.session.commit()
-        for agg_id in agg_ids:
-            _recalc_running_balance(agg_id, session['user_id'])
         return jsonify({"message": "Ticket deleted successfully"})
     except Exception as e:
         db.session.rollback()
@@ -2575,7 +2141,6 @@ def generate_ticket_pdf(ticket_id):
     # Extract journey and raw data for additional info
     journey = json.loads(ticket.journey_data) if ticket.journey_data else {}
     raw = json.loads(ticket.raw_data) if ticket.raw_data else {}
-    segments = _segments_with_barcodes(ticket, passengers, segments, raw)
     gst_details = raw.get("gst_details") or {}
     
     # Build data dict for PDF generator

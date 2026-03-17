@@ -73,6 +73,7 @@ class Ticket(db.Model):
     segments_data = db.Column(db.Text)    # JSON array of segments
     journey_data = db.Column(db.Text)     # JSON journey summary
     raw_data = db.Column(db.Text)         # Full raw JSON from parser
+    booking_group_id = db.Column(db.String, db.ForeignKey('booking_group.id'), nullable=True)
     # Status & matching
     status = db.Column(db.String(20), default='unmatched')  # unmatched, matched, edited
     matched_itinerary_id = db.Column(db.String, db.ForeignKey('itinerary.id'), nullable=True)
@@ -81,3 +82,87 @@ class Ticket(db.Model):
     user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
     # Parser metadata
     parser_version = db.Column(db.String(30))
+    # ===== Cancellation & Split Fields =====
+    ticket_status = db.Column(db.String(20), default='live')  # live, cancelled, changed
+    ledger_hash = db.Column(db.String(64), nullable=True)  # Hash of fare data added to ledger
+    parent_ticket_id = db.Column(db.String, db.ForeignKey('ticket.id'), nullable=True) # For split tickets
+    cancellation_charge = db.Column(db.Float, default=0)
+    last_aggregator = db.Column(db.String(100), nullable=True)
+    last_booked_by = db.Column(db.String(100), nullable=True)
+
+    # Relationship for split tickets
+    children = db.relationship('Ticket', backref=db.backref('parent', remote_side='Ticket.id'), lazy=True)
+
+class Aggregator(db.Model):
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = db.Column(db.String(120), nullable=False)  # e.g. Indigo, Riya, TBO, Amadeus
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
+    entries = db.relationship('LedgerEntry', backref='aggregator', lazy=True, cascade='all, delete-orphan',
+                              order_by='LedgerEntry.row_order')
+
+
+class BookingGroup(db.Model):
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
+    pnr = db.Column(db.String(20), nullable=False)
+    status = db.Column(db.String(20), default='merged')
+    itinerary_data = db.Column(db.Text)
+    discrepancy_data = db.Column(db.Text)
+    tickets = db.relationship('Ticket', backref='booking_group', lazy=True)
+
+class LedgerEntry(db.Model):
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    aggregator_id = db.Column(db.String, db.ForeignKey('aggregator.id'), nullable=False)
+    user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
+    row_order = db.Column(db.Integer, default=0)  # for ordering
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Ledger columns
+    invoice_no = db.Column(db.String(50), default='')
+    date = db.Column(db.String(20), default='')
+    pnr = db.Column(db.String(20), default='')
+    basic = db.Column(db.Float, default=0)
+    k3 = db.Column(db.Float, default=0)
+    other_taxes = db.Column(db.Float, default=0)
+    mu = db.Column(db.Float, default=0)
+    xxd = db.Column(db.String(50), default='')
+    ticket_total = db.Column(db.Float, default=0)
+    aggregator_total = db.Column(db.Float, default=0)
+    running_balance = db.Column(db.Float, default=0)
+    booking_by = db.Column(db.String(10), default='')
+    entry_type = db.Column(db.String(20), default='New')
+    billing = db.Column(db.String(120), default='')
+    remarks = db.Column(db.Text, default='')
+    seat_status = db.Column(db.String(50), default='')
+    seat_remarks = db.Column(db.String(200), default='')
+    meal_status = db.Column(db.String(50), default='')
+    # Link to ticket (optional)
+    ticket_id = db.Column(db.String, db.ForeignKey('ticket.id'), nullable=True)
+
+
+class TicketOperation(db.Model):
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
+    ticket_id = db.Column(db.String, db.ForeignKey('ticket.id'), nullable=True)
+    root_ticket_id = db.Column(db.String, db.ForeignKey('ticket.id'), nullable=False)
+    action_type = db.Column(db.String(20), nullable=False)  # cancel, change
+    scenario = db.Column(db.String(40), nullable=False)  # full, passenger, sector, passenger_sector
+    status = db.Column(db.String(20), default='active')  # active, reversed
+    aggregator_id = db.Column(db.String, db.ForeignKey('aggregator.id'), nullable=True)
+    preview_data = db.Column(db.Text)   # JSON summary shown to the user
+    before_state = db.Column(db.Text)   # JSON snapshot of ticket records before mutation
+    after_state = db.Column(db.Text)    # JSON snapshot of ticket records after mutation
+    metadata_json = db.Column(db.Text)  # JSON execution metadata including attachment info
+
+
+class OperationLedgerLink(db.Model):
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
+    operation_id = db.Column(db.String, db.ForeignKey('ticket_operation.id'), nullable=False)
+    ledger_entry_id = db.Column(db.String, db.ForeignKey('ledger_entry.id'), nullable=False)

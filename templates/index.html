@@ -1594,6 +1594,26 @@
       color: var(--text-primary);
     }
 
+
+    .fare-extra-toggle-btn {
+      padding: 1px 6px;
+      font-size: 0.65rem;
+      border-radius: 4px;
+      border: 1.5px solid var(--primary);
+      background: var(--bg-card);
+      color: var(--primary);
+      cursor: pointer;
+      transition: all 0.2s;
+      font-weight: 600;
+      white-space: nowrap;
+      margin-left: 4px;
+    }
+
+    .fare-extra-toggle-btn:hover {
+      background: var(--primary);
+      color: white;
+    }
+
     .customer-selector {
       display: flex;
       gap: 0.5rem;
@@ -2572,6 +2592,8 @@
       align-items: center;
       gap: 0.5rem;
       line-height: 1.2;
+      justify-content: space-between;
+      flex-wrap: wrap;
     }
 
     .airline-name-small {
@@ -2584,6 +2606,99 @@
       font-size: 0.8rem;
       color: var(--text-secondary);
       font-family: 'JetBrains Mono', monospace;
+    }
+
+    .airline-row-main {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+
+    .cabin-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.12rem 0.42rem;
+      border-radius: 999px;
+      border: 1px solid rgba(37, 99, 235, 0.18);
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      box-shadow: none;
+      line-height: 1.2;
+      vertical-align: middle;
+    }
+
+    .cabin-pill.cabin-economy {
+      background: rgba(37, 99, 235, 0.08);
+      border-color: rgba(37, 99, 235, 0.18);
+      color: #1d4ed8;
+    }
+
+    .cabin-pill.cabin-premium_economy {
+      background: rgba(147, 51, 234, 0.08);
+      border-color: rgba(147, 51, 234, 0.18);
+      color: #7e22ce;
+    }
+
+    .cabin-pill.cabin-business {
+      background: rgba(234, 179, 8, 0.14);
+      border-color: rgba(202, 138, 4, 0.28);
+      color: #a16207;
+    }
+
+    .cabin-pill.cabin-first {
+      background: rgba(22, 163, 74, 0.08);
+      border-color: rgba(22, 163, 74, 0.18);
+      color: #15803d;
+    }
+
+    .cabin-select-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .cabin-select {
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      min-width: 138px;
+      max-width: 168px;
+      padding: 0.42rem 2rem 0.42rem 0.8rem;
+      border-radius: 999px;
+      border: 1px solid rgba(37, 99, 235, 0.18);
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.95));
+      color: var(--text-primary);
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.74rem;
+      font-weight: 600;
+      line-height: 1.2;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+      background-image:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 246, 255, 0.95)),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat: no-repeat, no-repeat;
+      background-position: 0 0, right 0.7rem center;
+      background-size: auto, 0.8rem;
+    }
+
+    .cabin-select:hover {
+      border-color: rgba(37, 99, 235, 0.34);
+      transform: translateY(-1px);
+    }
+
+    .cabin-select:focus {
+      border-color: rgba(37, 99, 235, 0.44);
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
     }
 
     /* Expand/Collapse Styles */
@@ -2646,6 +2761,52 @@
       min-width: 100px;
       /* slightly smaller min-width */
       flex-shrink: 0;
+    }
+
+    .summary-main.has-cabin-display {
+      flex-direction: column;
+      gap: 0.75rem;
+      align-items: stretch;
+    }
+
+    .summary-airline.has-cabin-display {
+      flex-direction: row;
+      justify-content: space-between;
+      align-items: flex-start;
+      width: 100%;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      gap: 0.75rem;
+    }
+
+    .summary-airline.has-cabin-display .airline-stack {
+      gap: 0.4rem;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .summary-airline.has-cabin-display .airline-row {
+      align-items: flex-start;
+    }
+
+    .summary-airline.has-cabin-display .summary-date {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin: 0;
+      background: rgba(37, 99, 235, 0.05);
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+      align-self: flex-start;
+    }
+
+    .flight-summary.has-cabin-display .flight-route-visual {
+      width: 100%;
+      max-width: none;
+      justify-content: space-between;
+      gap: 0.25rem;
+      padding-top: 0.1rem;
     }
 
     .airline-name {
@@ -2930,6 +3091,15 @@
 
       .airline-stack {
         gap: 0.4rem !important;
+      }
+
+      .airline-row {
+        align-items: flex-start !important;
+      }
+
+      .cabin-select {
+        min-width: 128px;
+        max-width: 100%;
       }
 
       .summary-date {
@@ -4115,6 +4285,8 @@
     let billingAccounts = [];
     let savePassengers = []; // Temporary list of passengers to be saved with itinerary
     let saveWizardStep = 1;
+    let pendingCabinSelections = {};
+    let activeCabinEditorFlights = new Set();
 
     // Check authentication status on load
     window.addEventListener('DOMContentLoaded', async () => {
@@ -6150,6 +6322,18 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       }
     }
 
+    function toggleExtraField(uniqueKey, field) {
+      const input = document.querySelector(`.fare-${field}-${uniqueKey}`);
+      if (!input) return;
+      if (input.value === 'Included') {
+        input.value = 'Chargeable';
+      } else if (input.value === 'Chargeable') {
+        input.value = '';
+      } else {
+        input.value = 'Included';
+      }
+    }
+
 
     function toggleFareSection(unitId, suffix = '') {
       const section = document.getElementById(`fare-section-${unitId}${suffix}`);
@@ -6224,11 +6408,17 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
              <!-- Meal / Seat -->
              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
                 <div>
-                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Seat</label>
+                   <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px;">
+                      <label style="font-size: 0.65rem; color: var(--text-secondary); display: block; margin: 0;">Seat</label>
+                      <!-- <button type="button" class="fare-extra-toggle-btn" onclick="toggleExtraField('${uniqueKey}', 'seat')">Toggle</button> -->
+                   </div>
                    <input type="text" class="form-input fare-seat-${uniqueKey}" placeholder="A12" style="padding: 4px 6px; font-size: 0.75rem;">
                 </div>
                 <div>
-                   <label style="font-size: 0.65rem; color: var(--text-secondary); display: block;">Meal</label>
+                   <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px;">
+                      <label style="font-size: 0.65rem; color: var(--text-secondary); display: block; margin: 0;">Meal</label>
+                      <!-- <button type="button" class="fare-extra-toggle-btn" onclick="toggleExtraField('${uniqueKey}', 'meal')">Toggle</button> -->
+                   </div>
                    <input type="text" class="form-input fare-meal-${uniqueKey}" placeholder="Veg" style="padding: 4px 6px; font-size: 0.75rem;">
                 </div>
              </div>
@@ -6682,6 +6872,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       document.getElementById("cards").innerHTML = '';
       document.getElementById("cardsSection").style.display = 'none';
       document.getElementById("outputSection").style.display = 'none';
+      pendingCabinSelections = {};
+      activeCabinEditorFlights = new Set();
 
       try {
         // Send flight texts and their selected fares
@@ -6708,6 +6900,15 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           showNotification(data.error || 'Failed to parse flights', 'error');
           return;
         }
+
+        (data.flights || []).forEach(flight => {
+          if (!flight || typeof flight !== 'object') return;
+          flight.show_cabin_class = false;
+          (flight.segments || []).forEach(segment => {
+            if (!segment || typeof segment !== 'object') return;
+            segment.show_booking_class = false;
+          });
+        });
 
         // Update the saver fare inputs with extracted values if any
         let flightIndex = 0;
@@ -6931,6 +7132,89 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         return val;
       };
 
+      const cabinOptions = [
+        { value: '', label: 'None' },
+        { value: 'economy', label: 'Economy' },
+        { value: 'premium_economy', label: 'Premium Economy' },
+        { value: 'business', label: 'Business Class' },
+        { value: 'first', label: 'First Class' }
+      ];
+
+      const normalizeCabinClass = (value) => {
+        const raw = safe(value, '').toString().trim().toLowerCase();
+        if (!raw || raw === 'none' || raw === 'n/a') return '';
+        if (raw.includes('premium')) return 'premium_economy';
+        if (raw.includes('business')) return 'business';
+        if (raw.includes('first')) return 'first';
+        if (raw.includes('economy')) return 'economy';
+        return '';
+      };
+
+      const cabinLabel = (value) => {
+        const normalized = normalizeCabinClass(value);
+        if (!normalized) return '';
+        const match = cabinOptions.find(option => option.value === normalized);
+        return match ? match.label : 'Economy';
+      };
+
+      const cabinClassName = (value) => {
+        const normalized = normalizeCabinClass(value);
+        return normalized ? `cabin-${normalized}` : '';
+      };
+
+      const cabinInlineStyle = (value) => {
+        const normalized = normalizeCabinClass(value);
+        const styles = {
+          economy: 'background:rgba(37,99,235,0.08) !important;border:1px solid rgba(37,99,235,0.18) !important;color:#1d4ed8 !important;',
+          premium_economy: 'background:rgba(147,51,234,0.08) !important;border:1px solid rgba(147,51,234,0.18) !important;color:#7e22ce !important;',
+          business: 'background:rgba(234,179,8,0.14) !important;border:1px solid rgba(202,138,4,0.28) !important;color:#a16207 !important;',
+          first: 'background:rgba(22,163,74,0.08) !important;border:1px solid rgba(22,163,74,0.18) !important;color:#15803d !important;'
+        };
+        return styles[normalized] || '';
+      };
+
+      const getCabinSelectionKey = (segmentIndex = null) => `${index}:${segmentIndex === null ? 'flight' : segmentIndex}`;
+      const isCabinSaved = (segmentIndex = null) => {
+        if (segmentIndex !== null && segmentIndex !== undefined) {
+          const segment = flight.segments && flight.segments[segmentIndex];
+          return !!(segment && segment.show_booking_class && normalizeCabinClass(segment.cabin_class || segment.class_of_travel));
+        }
+        return !!(flight.show_cabin_class && normalizeCabinClass(flight.class_of_travel || flight.cabin_class));
+      };
+      const getSavedCabinValue = (segmentIndex = null) => {
+        if (segmentIndex !== null && segmentIndex !== undefined) {
+          const segment = flight.segments && flight.segments[segmentIndex];
+          if (!segment || !segment.show_booking_class) return '';
+          return segment.cabin_class || segment.class_of_travel || '';
+        }
+        if (!flight.show_cabin_class) return '';
+        return flight.class_of_travel || flight.cabin_class || '';
+      };
+      const getEditingCabinValue = (segmentIndex = null) => {
+        const pendingKey = getCabinSelectionKey(segmentIndex);
+        if (Object.prototype.hasOwnProperty.call(pendingCabinSelections, pendingKey)) {
+          return pendingCabinSelections[pendingKey];
+        }
+        return normalizeCabinClass(getSavedCabinValue(segmentIndex));
+      };
+
+      const renderCabinControl = (segmentIndex = null) => {
+        const isEditing = isGlobalEditMode && flight.is_editable && activeCabinEditorFlights.has(index);
+        const normalized = getEditingCabinValue(segmentIndex);
+        if (!isEditing) {
+          if (!normalized || normalized === 'none') return '';
+          return `<span class="cabin-pill ${cabinClassName(normalized)}" style="${cabinInlineStyle(normalized)}">${cabinLabel(normalized)}</span>`;
+        }
+        const onChangeArgs = segmentIndex === null ? `${index}, null, this.value` : `${index}, ${segmentIndex}, this.value`;
+        return `
+          <span class="cabin-select-wrap" onclick="event.stopPropagation()">
+            <select class="cabin-select" onclick="event.stopPropagation()" onchange="updateFlightCabinClass(${onChangeArgs})">
+              ${cabinOptions.map(option => `<option value="${option.value}" ${option.value === normalized ? 'selected' : ''}>${option.label}</option>`).join('')}
+            </select>
+          </span>
+        `;
+      };
+
       const airlineName = safe(flight.airline, 'Airline');
       const flightNumber = safe(flight.flight_number, '');
       const depTime = safe(flight.departure_time, '--:--');
@@ -6945,6 +7229,9 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const displayStops = safe(flight.stops, hasSegments ? `${flight.segments.length - 1} Stop(s)` : 'Direct');
       const isDirect = displayStops.toLowerCase().includes('non-stop') || displayStops.toLowerCase().includes('direct') || (flight.segments && flight.segments.length <= 1);
       const isMissingDate = !flight.departure_date || flight.departure_date === 'N/A';
+      const hasSavedCabinDisplay = (hasSegments && !isDirect)
+        ? (flight.segments || []).some((seg) => seg && seg.show_booking_class && normalizeCabinClass(seg.cabin_class || seg.class_of_travel))
+        : (!!flight.show_cabin_class && !!normalizeCabinClass(flight.class_of_travel || flight.cabin_class));
 
       // Helper for city display
       const formatCity = (city, airport) => {
@@ -6955,20 +7242,28 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       };
 
       return `
-        <div class="flight-summary" onclick="toggleDetails('${uniqueId}')">
-            <div class="summary-main">
-                <div class="summary-airline">
+        <div class="flight-summary ${hasSavedCabinDisplay ? 'has-cabin-display' : ''}" onclick="toggleDetails('${uniqueId}')">
+            <div class="summary-main ${hasSavedCabinDisplay ? 'has-cabin-display' : ''}">
+                <div class="summary-airline ${hasSavedCabinDisplay ? 'has-cabin-display' : ''}">
                     <div class="airline-stack">
                         ${(hasSegments && !isDirect)
-          ? flight.segments.map(s => `
+          ? flight.segments.map((s, segIdx) => `
                               <div class="airline-row">
-                                <span class="airline-name-small">${safe(s.airline, 'Airline')}</span>
-                                <span class="flight-code-small">${safe(s.flight_number, '')}</span>
+                                <div class="airline-row-main">
+                                  <span class="airline-name-small">${safe(s.airline, 'Airline')}</span>
+                                  <span class="flight-code-small">${safe(s.flight_number, '')}</span>
+                                  ${renderCabinControl(segIdx)}
+                                </div>
                               </div>
                             `).join('')
           : `
-                              <div class="airline-name">${airlineName}</div>
-                              <div class="flight-code">${flightNumber}</div>
+                              <div class="airline-row">
+                                <div class="airline-row-main">
+                                  <span class="airline-name">${airlineName}</span>
+                                  <span class="flight-code">${flightNumber}</span>
+                                  ${renderCabinControl()}
+                                </div>
+                              </div>
                             `
         }
                     </div>
@@ -7552,6 +7847,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             const editor = document.getElementById(`inline-editor-${index}`);
             if (editor) {
               editor.style.display = 'none';
+              getRelatedFlightIndices(index).forEach(idx => {
+                activeCabinEditorFlights.delete(idx);
+                clearPendingCabinSelections(idx);
+              });
               // Reset edit button state
               const editBtn = document.getElementById(`edit-btn-${index}`);
               if (editBtn) {
@@ -7572,14 +7871,48 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       }
     }
 
+    function getRelatedFlightIndices(flightIndex) {
+      const match = Object.values(unitFlights || {}).find(ids => Array.isArray(ids) && ids.includes(flightIndex));
+      return (match && match.length) ? [...match] : [flightIndex];
+    }
+
+    function clearPendingCabinSelections(flightIndex) {
+      Object.keys(pendingCabinSelections).forEach(key => {
+        if (key.startsWith(`${flightIndex}:`)) {
+          delete pendingCabinSelections[key];
+        }
+      });
+    }
+
+    function initializePendingCabinSelections(flightIndex) {
+      const flight = currentFlights[flightIndex];
+      if (!flight) return;
+
+      pendingCabinSelections[`${flightIndex}:flight`] = flight.show_cabin_class
+        ? ((flight.cabin_class || flight.class_of_travel || '').toString().trim().toLowerCase())
+        : '';
+
+      (flight.segments || []).forEach((segment, segIdx) => {
+        pendingCabinSelections[`${flightIndex}:${segIdx}`] = segment && segment.show_booking_class
+          ? ((segment.cabin_class || segment.class_of_travel || '').toString().trim().toLowerCase())
+          : '';
+      });
+    }
+
+    function updateFlightCabinClass(flightIndex, segmentIndex, cabinValue) {
+      const key = `${flightIndex}:${segmentIndex !== null && segmentIndex !== undefined ? segmentIndex : 'flight'}`;
+      pendingCabinSelections[key] = (cabinValue || '').toString().trim().toLowerCase();
+    }
+
     // createSegmentsHTML is no longer used separately, integrated into createFlightCard
     function createSegmentsHTML(flight) { return ''; }
 
     // ============== Inline Fare Editor Functions ==============
 
     function toggleInlineFareEditor(flightIndex) {
-      const editor = document.getElementById(`inline-editor-${flightIndex}`);
-      const editBtn = document.getElementById(`edit-btn-${flightIndex}`);
+      let editor = document.getElementById(`inline-editor-${flightIndex}`);
+      let editBtn = document.getElementById(`edit-btn-${flightIndex}`);
+      const relatedFlightIndices = getRelatedFlightIndices(flightIndex);
 
       if (!editor) return;
 
@@ -7588,6 +7921,16 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         editor.style.display = 'block';
         editBtn.innerHTML = '✕ Cancel';
         editBtn.classList.add('active');
+        relatedFlightIndices.forEach(idx => activeCabinEditorFlights.add(idx));
+        relatedFlightIndices.forEach(idx => initializePendingCabinSelections(idx));
+        renderResults(currentFlights);
+        editor = document.getElementById(`inline-editor-${flightIndex}`);
+        editBtn = document.getElementById(`edit-btn-${flightIndex}`);
+        if (editor) editor.style.display = 'block';
+        if (editBtn) {
+          editBtn.innerHTML = '✕ Cancel';
+          editBtn.classList.add('active');
+        }
 
         // Populate editor with current fare data
         populateInlineFareEditor(flightIndex);
@@ -7596,6 +7939,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         editor.style.display = 'none';
         editBtn.innerHTML = '✏️ Edit';
         editBtn.classList.remove('active');
+        relatedFlightIndices.forEach(idx => {
+          activeCabinEditorFlights.delete(idx);
+          clearPendingCabinSelections(idx);
+        });
+        renderResults(currentFlights);
       }
     }
 
@@ -7912,6 +8260,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
       const isRoundTrip = currentTripType === 'round_trip' && currentFlights[flightIndex + 1];
       const isSplit = isRoundTrip && document.getElementById(`inline-split-toggle-${flightIndex}`)?.checked;
+      const relatedFlightIndices = getRelatedFlightIndices(flightIndex);
 
       // Update the split flag
       if (isRoundTrip) {
@@ -8027,6 +8376,46 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         }
       }
 
+      const labelMap = {
+        economy: 'Economy',
+        premium_economy: 'Premium Economy',
+        business: 'Business Class',
+        first: 'First Class'
+      };
+      relatedFlightIndices.forEach(idx => {
+        const targetFlight = currentFlights[idx];
+        if (!targetFlight) return;
+
+        const flightKey = `${idx}:flight`;
+        if (Object.prototype.hasOwnProperty.call(pendingCabinSelections, flightKey)) {
+          const normalized = pendingCabinSelections[flightKey];
+          if (normalized) {
+            targetFlight.cabin_class = normalized;
+            targetFlight.class_of_travel = labelMap[normalized] || 'Economy';
+            targetFlight.show_cabin_class = true;
+          } else {
+            delete targetFlight.cabin_class;
+            delete targetFlight.class_of_travel;
+            targetFlight.show_cabin_class = false;
+          }
+        }
+
+        (targetFlight.segments || []).forEach((segment, segIdx) => {
+          const segmentKey = `${idx}:${segIdx}`;
+          if (!Object.prototype.hasOwnProperty.call(pendingCabinSelections, segmentKey)) return;
+          const normalized = pendingCabinSelections[segmentKey];
+          if (normalized) {
+            segment.cabin_class = normalized;
+            segment.class_of_travel = labelMap[normalized] || 'Economy';
+            segment.show_booking_class = true;
+          } else {
+            delete segment.cabin_class;
+            delete segment.class_of_travel;
+            segment.show_booking_class = false;
+          }
+        });
+      });
+
       // Check if dates were changed and trigger recalculation if so
       const needsRecalc = [];
       if (mainData.newDate && mainData.newDate !== flight.departure_date) {
@@ -8050,7 +8439,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       }
 
       showNotification('Fares updated successfully', 'success');
-      toggleInlineFareEditor(flightIndex);
+      relatedFlightIndices.forEach(idx => {
+        activeCabinEditorFlights.delete(idx);
+        clearPendingCabinSelections(idx);
+      });
+      renderResults(currentFlights);
     }
 
 
@@ -8673,100 +9066,39 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       document.body.removeChild(textarea);
     }
 
-    async function ensureHtml2Canvas() {
-      if (typeof html2canvas === 'undefined') {
-        return new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-          script.onload = () => resolve();
-          script.onerror = () => reject('Failed to load html2canvas');
-          document.head.appendChild(script);
-        });
-      }
-      return Promise.resolve();
-    }
-
     async function generateImageBlob() {
-      await ensureHtml2Canvas();
       const cardsContainer = document.getElementById('cards');
-      const htmlEl = document.documentElement;
+      const cardsRect = cardsContainer ? cardsContainer.getBoundingClientRect() : null;
+      const headMarkup = Array.from(document.head.querySelectorAll('style, link[rel="stylesheet"]'))
+        .map(node => node.outerHTML)
+        .join('\n');
+      const response = await fetch('/api/render/cards-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cards_html: cardsContainer ? cardsContainer.outerHTML : '',
+          head_markup: headMarkup,
+          theme: document.documentElement.getAttribute('data-theme') || 'light',
+          viewport_width: Math.max(Math.ceil(window.innerWidth || 1280), 320),
+          cards_width: cardsRect ? Math.ceil(cardsRect.width) : null,
+          flights: currentFlights,
+          trip_type: currentTripType,
+          unit_flights: unitFlights
+        })
+      });
 
-      // 1. Store current theme and Force Light Mode
-      const currentTheme = htmlEl.getAttribute('data-theme');
-      const isDark = currentTheme === 'dark';
-
-      if (isDark) {
-        htmlEl.setAttribute('data-theme', 'light');
-      }
-
-      // Temporarily shrink-wrap container to prevent extra right-side whitespace
-      // and force desktop-widths on mobile so the flight details don't squash.
-      const oldWidth = cardsContainer.style.width;
-      const oldMinWidth = cardsContainer.style.minWidth;
-      const oldMargin = cardsContainer.style.margin;
-      const oldDisplay = cardsContainer.style.display;
-      const oldGridTemplate = cardsContainer.style.gridTemplateColumns;
-
-      const cardCount = cardsContainer.children.length;
-      const isMobileSize = window.innerWidth <= 768;
-
-      if (isMobileSize) {
-        if (currentTripType === 'one_way') {
-          cardsContainer.style.width = cardCount === 1 ? '450px' : '1000px';
-          cardsContainer.style.minWidth = cardCount === 1 ? '450px' : '1000px';
-        } else {
-          cardsContainer.style.width = '1000px';
-          cardsContainer.style.minWidth = '1000px';
+      if (!response.ok) {
+        let message = 'Failed to render image';
+        try {
+          const error = await response.json();
+          message = error.error || message;
+        } catch (e) {
+          // Ignore JSON parse failures and keep the default message.
         }
-      } else {
-        cardsContainer.style.width = 'max-content';
+        throw new Error(message);
       }
 
-      cardsContainer.style.margin = '0 auto';
-
-      // If there's only one card, the CSS grid `repeat(2, 1fr)` gives it 50% max width with 50% empty space.
-      // Changing it to inline-block perfectly shrink wraps a single card.
-      if (cardCount === 1) {
-        cardsContainer.style.display = 'inline-block';
-        cardsContainer.style.gridTemplateColumns = '1fr';
-      } else {
-        cardsContainer.style.display = 'inline-grid';
-      }
-
-      // 2. Add capturing class to remove shadows/blurs
-      cardsContainer.classList.add('capturing');
-
-      try {
-        const canvas = await html2canvas(cardsContainer, {
-          backgroundColor: '#ffffff', // Use solid white for background
-          scale: 2,
-          logging: false,
-          useCORS: true,
-          windowWidth: Math.max(window.innerWidth, 1000) // Make internal iframe think it's desktop
-        });
-
-        // 4. Restore State
-        if (isDark) htmlEl.setAttribute('data-theme', 'dark');
-        cardsContainer.classList.remove('capturing');
-        cardsContainer.style.width = oldWidth;
-        cardsContainer.style.minWidth = oldMinWidth;
-        cardsContainer.style.margin = oldMargin;
-        cardsContainer.style.display = oldDisplay;
-        cardsContainer.style.gridTemplateColumns = oldGridTemplate;
-
-        return new Promise(resolve => {
-          canvas.toBlob(blob => resolve(blob), 'image/png');
-        });
-      } catch (e) {
-        if (isDark) htmlEl.setAttribute('data-theme', 'dark');
-        cardsContainer.classList.remove('capturing');
-        cardsContainer.style.width = oldWidth;
-        cardsContainer.style.minWidth = oldMinWidth;
-        cardsContainer.style.margin = oldMargin;
-        cardsContainer.style.display = oldDisplay;
-        cardsContainer.style.gridTemplateColumns = oldGridTemplate;
-        throw e;
-      }
+      return await response.blob();
     }
 
 
@@ -8793,7 +9125,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             fallbackCopy(plainText);
           }
           showNotification('Text copied for Email (no formatting)', 'success');
-        } catch {
+        } catch (e) {
           fallbackCopy(plainText);
         }
         return;
@@ -8856,7 +9188,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             const item = new ClipboardItem({ 'image/png': imageBlob });
             await navigator.clipboard.write([item]);
             showNotification('Image copied! Paste into WhatsApp (Ctrl+V)', 'success');
-          } catch {
+          } catch (e) {
             // Fallback: download image
             downloadImage(imageBlob);
             showNotification('Image downloaded. Attach manually.', 'warning');
@@ -8945,7 +9277,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         const blob = await generateImageBlob();
         downloadImage(blob);
         showNotification('Image downloaded!', 'success');
-      } catch {
+      } catch (e) {
         showNotification('Failed to generate image', 'error');
       }
     }
@@ -9003,8 +9335,6 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       </nav>
     </div>
   </div>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
   <script>
     // Sidebar Functionality

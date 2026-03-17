@@ -3,6 +3,7 @@ let allTickets = [];
 let currentTicket = null;
 let currentFilter = 'all';
 let editedData = {};
+let changeAttachmentState = { token: '', filename: '' };
 
 // ==================== SIDEBAR & THEME ====================
 function initializeSidebar() {
@@ -232,6 +233,20 @@ function renderTicketCards() {
             ? '<span class="match-badge matched">✅ Matched</span>'
             : '<span class="match-badge unmatched">Unmatched</span>';
 
+        // Ticket status badge (live/cancelled/changed)
+        const tStatus = t.ticket_status || 'live';
+        const tStatusBadge = tStatus === 'cancelled'
+            ? '<span style="background:rgba(239,68,68,0.12);color:#ef4444;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">🔴 Cancelled</span>'
+            : tStatus === 'changed'
+            ? '<span style="background:rgba(245,158,11,0.12);color:#f59e0b;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">🟡 Changed</span>'
+            : '<span style="background:rgba(16,185,129,0.12);color:#10b981;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">🟢 Live</span>';
+        const splitBadge = t.parent_ticket_id
+            ? '<span style="background:rgba(15,23,42,0.08);color:var(--text-secondary);padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Split Booking</span>'
+            : (t.children && t.children.length ? '<span style="background:rgba(37,99,235,0.08);color:var(--primary);padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Has Splits</span>' : '');
+        const mergedBadge = t.booking_group_id
+            ? '<span style="background:rgba(5,150,105,0.12);color:#059669;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Merged Booking</span>'
+            : '';
+
         // Calculate actual total for display on card
         let calculatedTotal = 0;
         const globalMarkup = parseFloat(journey.global_markup) || 0;
@@ -264,6 +279,9 @@ function renderTicketCards() {
                     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.4rem;">
                         <span class="pnr-label">${safe(t.pnr, '---')}</span>
                         ${statusBadge}
+                        ${tStatusBadge}
+                        ${splitBadge}
+                        ${mergedBadge}
                     </div>
                 </div>
                 <div class="itin-card-meta">
@@ -272,7 +290,7 @@ function renderTicketCards() {
                     ${t.class_of_travel && t.class_of_travel !== 'None' ? `<span class="meta-item"><b>Class:</b> ${safe(t.class_of_travel, 'Economy')}</span>` : ''}
                 </div>
                 <div class="ticket-card-pax">
-                    ${passengers.map(p => `<span class="pax-chip">👤 ${safe(p.name, 'Passenger')}</span>`).join('')}
+                    ${passengers.map(p => `<span class="pax-chip">👤 ${safe(p.name, 'Passenger')}<br><span style="font-size:0.68rem;color:var(--text-secondary);">${safe(p.system_ticket_number, '')}</span></span>`).join('')}
                 </div>
                 <div class="itin-card-footer">
                     <span class="itin-amount">${formatCurrency(displayTotal, t.currency || 'INR')}</span>
@@ -302,7 +320,139 @@ function showListView() {
     document.getElementById('listView').style.display = 'block';
     currentTicket = null;
     editedData = {};
+    changeAttachmentState = { token: '', filename: '' };
     loadTickets();
+}
+
+async function openPnrMergeModal() {
+    try {
+        const r = await fetch('/api/tickets/pnr-groups');
+        const data = await r.json();
+        if (!r.ok) {
+            showToast(data.error || 'Failed to load PNR groups', 'error');
+            return;
+        }
+        const groups = data.groups || [];
+        if (!groups.length) {
+            showToast('No multi-passenger PNR groups detected right now', 'info');
+            return;
+        }
+
+        const groupsHtml = groups.map(group => {
+            const discrepancyCount = Object.keys(group.discrepancies || {}).length;
+            const passengerBadge = group.has_different_passengers
+                ? '<span style="background:rgba(16,185,129,0.12);color:#10b981;padding:0.2rem 0.55rem;border-radius:999px;font-size:0.72rem;font-weight:700;">Different passengers</span>'
+                : '<span style="background:rgba(239,68,68,0.12);color:#ef4444;padding:0.2rem 0.55rem;border-radius:999px;font-size:0.72rem;font-weight:700;">Same passenger</span>';
+            return `<div style="padding:1rem;border:1px solid var(--border);border-radius:14px;background:var(--bg-main);cursor:pointer;" onclick='openPnrGroupDetail(${JSON.stringify(group).replace(/"/g, '&quot;')})'>
+                <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:flex-start;flex-wrap:wrap;">
+                    <div>
+                        <div style="font-weight:800;font-size:1rem;">PNR ${group.pnr}</div>
+                        <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:0.2rem;">${group.ticket_count} tickets detected</div>
+                    </div>
+                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                        ${group.can_auto_merge
+                            ? '<span style="background:rgba(16,185,129,0.12);color:#10b981;padding:0.2rem 0.55rem;border-radius:999px;font-size:0.72rem;font-weight:700;">Ready to merge</span>'
+                            : `<span style="background:rgba(245,158,11,0.12);color:#f59e0b;padding:0.2rem 0.55rem;border-radius:999px;font-size:0.72rem;font-weight:700;">${discrepancyCount} discrepancy fields</span>`}
+                        ${passengerBadge}
+                        ${group.merged_ticket_count ? `<span style="background:rgba(37,99,235,0.12);color:var(--primary);padding:0.2rem 0.55rem;border-radius:999px;font-size:0.72rem;font-weight:700;">${group.merged_ticket_count} already merged</span>` : ''}
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+
+        const html = `<h3 style="margin-top:0;">PNR Booking Merge Detection</h3>
+            <p style="color:var(--text-secondary);font-size:0.88rem;">Review detected passenger tickets that share the same PNR, inspect mismatches, and merge them under one booking object when safe.</p>
+            <div style="display:grid;gap:0.85rem;max-height:60vh;overflow:auto;">${groupsHtml}</div>
+            <div style="display:flex;justify-content:flex-end;margin-top:1.25rem;">
+                <button class="btn-action secondary" onclick="_closeModal()">Close</button>
+            </div>`;
+        _createModalOverlay(html);
+    } catch (e) {
+        console.error(e);
+        showToast('Failed to load PNR groups', 'error');
+    }
+}
+
+function openPnrGroupDetail(group) {
+    const compareFields = [
+        ['airline', 'Airline'],
+        ['route', 'Route'],
+        ['flight_numbers', 'Flight Numbers'],
+        ['departure_airport', 'Departure Airport'],
+        ['arrival_airport', 'Arrival Airport'],
+        ['departure_datetime', 'Departure Time'],
+        ['arrival_datetime', 'Arrival Time']
+    ];
+
+    const discrepancyKeys = new Set(Object.keys(group.discrepancies || {}));
+    const fieldSummaryHtml = compareFields.map(([key, label]) => {
+        const mismatched = discrepancyKeys.has(key);
+        return `<div style="padding:0.75rem;border-radius:12px;border:1px solid ${mismatched ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.25)'};background:${mismatched ? 'rgba(245,158,11,0.06)' : 'rgba(16,185,129,0.06)'};">
+            <div style="font-size:0.76rem;color:var(--text-secondary);text-transform:uppercase;font-weight:700;">${label}</div>
+            <div style="margin-top:0.3rem;font-weight:700;color:${mismatched ? '#d97706' : '#059669'};">${mismatched ? 'Mismatch detected' : 'All tickets match'}</div>
+        </div>`;
+    }).join('');
+
+    const ticketsHtml = (group.tickets || []).map(ticket => {
+        const rows = compareFields.map(([key, label]) => {
+            const mismatched = discrepancyKeys.has(key);
+            return `<tr>
+                <td style="padding:0.45rem 0.5rem;font-size:0.82rem;color:var(--text-secondary);">${label}</td>
+                <td style="padding:0.45rem 0.5rem;font-size:0.82rem;font-weight:600;color:${mismatched ? '#d97706' : 'var(--text-primary)'};">${ticket[key] || '—'}</td>
+            </tr>`;
+        }).join('');
+        return `<div style="padding:1rem;border:1px solid var(--border);border-radius:14px;background:var(--bg-main);">
+            <div style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;align-items:flex-start;">
+                <div>
+                    <div style="font-weight:800;">${(ticket.passenger_names || []).join(', ') || 'Passenger'}</div>
+                    <div style="font-size:0.76rem;color:var(--text-secondary);margin-top:0.2rem;">${(ticket.system_ticket_numbers || []).join(', ') || 'No system ID'} | Ticket ${ticket.ticket_id}</div>
+                </div>
+                ${ticket.booking_group_id ? '<span style="background:rgba(37,99,235,0.12);color:var(--primary);padding:0.2rem 0.55rem;border-radius:999px;font-size:0.72rem;font-weight:700;">Already linked</span>' : ''}
+            </div>
+            <table style="width:100%;margin-top:0.85rem;border-collapse:collapse;">${rows}</table>
+        </div>`;
+    }).join('');
+
+    const warningHtml = group.can_auto_merge
+        ? '<div style="padding:0.85rem 1rem;border-radius:12px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);color:#059669;font-weight:700;">All compared booking fields match. This group can be merged safely.</div>'
+        : group.has_different_passengers
+            ? '<div style="padding:0.85rem 1rem;border-radius:12px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);color:#b45309;font-weight:700;">Discrepancies were detected. Review carefully before forcing a merge.</div>'
+            : '<div style="padding:0.85rem 1rem;border-radius:12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);color:#b91c1c;font-weight:700;">These tickets appear to belong to the same passenger after ignoring title prefixes and letter case, so they should not be merged.</div>';
+
+    const html = `<h3 style="margin-top:0;">PNR ${group.pnr}</h3>
+        ${warningHtml}
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;margin-top:1rem;">${fieldSummaryHtml}</div>
+        <div style="display:grid;gap:0.85rem;max-height:45vh;overflow:auto;margin-top:1rem;">${ticketsHtml}</div>
+        <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1.25rem;">
+            <button class="btn-action secondary" onclick="openPnrMergeModal()">Back</button>
+            ${group.has_different_passengers
+                ? (group.can_auto_merge
+                    ? `<button class="btn-action primary" onclick='mergePnrGroup("${group.pnr}", false, ${JSON.stringify(group.tickets.map(t => t.ticket_id)).replace(/"/g, '&quot;')})'>Merge Booking</button>`
+                    : `<button class="btn-action primary" style="background:linear-gradient(135deg,#d97706,#f59e0b);" onclick='mergePnrGroup("${group.pnr}", true, ${JSON.stringify(group.tickets.map(t => t.ticket_id)).replace(/"/g, '&quot;')})'>Merge Anyway</button>`)
+                : ''}
+        </div>`;
+    _createModalOverlay(html);
+}
+
+async function mergePnrGroup(pnr, forceMerge, ticketIds) {
+    try {
+        const r = await fetch(`/api/tickets/pnr-groups/${encodeURIComponent(pnr)}/merge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ force_merge: forceMerge, ticket_ids: ticketIds })
+        });
+        const result = await r.json();
+        if (!r.ok) {
+            showToast(result.error || 'Merge failed', 'error');
+            return;
+        }
+        showToast(result.message || 'Booking merged', 'success');
+        _closeModal();
+        await loadTickets();
+    } catch (e) {
+        console.error(e);
+        showToast('Merge failed', 'error');
+    }
 }
 
 // ==================== RENDER DETAIL ====================
@@ -352,12 +502,26 @@ function renderDetailView() {
         headerRouteHtml = `${depCode} ${t.trip_type === 'round_trip' ? '↔' : '→'} ${arrCode}`;
     }
 
+    // Ticket status badge for detail
+    const detailTStatus = t.ticket_status || 'live';
+    const detailTStatusBadge = detailTStatus === 'cancelled'
+        ? '<span style="background:rgba(239,68,68,0.12);color:#ef4444;padding:0.2rem 0.7rem;border-radius:8px;font-size:0.82rem;font-weight:700;">🔴 Cancelled</span>'
+        : detailTStatus === 'changed'
+        ? '<span style="background:rgba(245,158,11,0.12);color:#f59e0b;padding:0.2rem 0.7rem;border-radius:8px;font-size:0.82rem;font-weight:700;">🟡 Changed</span>'
+        : '<span style="background:rgba(16,185,129,0.12);color:#10b981;padding:0.2rem 0.7rem;border-radius:8px;font-size:0.82rem;font-weight:700;">🟢 Live</span>';
+
+    // Cancellation charge display
+    const charge = parseFloat(t.cancellation_charge) || 0;
+    const chargeHtml = charge > 0 ? `<span style="background:rgba(239,68,68,0.1); color:#dc2626; padding:0.2rem 0.6rem; border-radius:8px; font-size:0.8rem; font-weight:700; border:1px solid rgba(239,68,68,0.2);">⚠️ XXD: ₹${charge.toLocaleString('en-IN')}</span>` : '';
+
     document.getElementById('ticketDetailHeader').innerHTML = `
         <div>
             <h1>${headerRouteHtml}</h1>
             <div class="detail-subtitle">
                 <span class="pnr-label" style="font-size:0.9rem;">${safe(t.pnr, 'No PNR')}</span>
                 &nbsp;${t.status === 'matched' ? '<span class="match-badge matched">✅ Matched</span>' : '<span class="match-badge unmatched">Unmatched</span>'}
+                &nbsp;${detailTStatusBadge}
+                &nbsp;${chargeHtml}
                 &nbsp;•&nbsp; ${tripDisplay}
             </div>
         </div>
@@ -424,6 +588,7 @@ function renderSegmentsSection() {
     const segments = editedData.segments || [];
     const journey = editedData.journey || {};
     const tripType = editedData.trip_type || 'one_way';
+    const cabinClassOptions = ['Economy', 'Premium Economy', 'Business', 'First'];
 
     // Use journey legs from API if available, otherwise fall back to grouping
     let legs;
@@ -492,13 +657,25 @@ function renderSegmentsSection() {
         const legId = `leg-${legIdx}`;
         const isCollapsible = hasStops;
 
-        html += `<div class="leg-group-v2">
+        html += `<div class="leg-group-v2" style="${(function() {
+            const segs = legIndices.map(i => segments[i]);
+            const isFullyCancelled = segs.every(s => s.status === 'cancelled');
+            return isFullyCancelled ? 'border: 2px solid #ef4444; background: rgba(239, 68, 68, 0.05);' : '';
+        })()}">
             <div class="leg-header-v2" ${isCollapsible ? `onclick="toggleLeg('${legId}')" style="cursor:pointer;"` : ''}>
                 <div style="display:flex; width:100%; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
                     
                     <!-- Left: Badge -->
-                    <div style="display:flex; align-items:center;">
+                    <div style="display:flex; align-items:center; gap:0.5rem;">
                         <span class="leg-badge-v2">${legLabel}</span>
+                        ${(function() {
+                            const segs = legIndices.map(i => segments[i]);
+                            const cancelled = segs.every(s => s.status === 'cancelled');
+                            const partial = !cancelled && segs.some(s => s.status === 'cancelled');
+                            if (cancelled) return '<span style="background:#ef4444; color:white; font-size:0.65rem; padding:1px 6px; border-radius:4px; font-weight:700;">CANCELLED</span>';
+                            if (partial) return '<span style="background:#f59e0b; color:white; font-size:0.65rem; padding:1px 6px; border-radius:4px; font-weight:700;">PARTIAL CANCEL</span>';
+                            return '';
+                        })()}
                     </div>
 
                     <!-- Middle: Visual Route + Duration -->
@@ -586,13 +763,23 @@ function renderSegmentsSection() {
             if (bkClassStr.toUpperCase() === 'N/A') {
                 bkClassStr = '';
             }
+            const showCabinClass = !!seg.show_booking_class && !!bkClassStr;
+            const segmentCardClass = showCabinClass ? 'segment-card-v2 has-cabin-class' : 'segment-card-v2';
+            const depDateTimeClass = showCabinClass ? 'tl-datetime has-cabin-class' : 'tl-datetime';
+            const arrDateTimeClass = showCabinClass ? 'tl-datetime has-cabin-class' : 'tl-datetime';
 
-            html += `<div class="segment-card-v2">
+            html += `<div class="${segmentCardClass}" style="${seg.status === 'cancelled' ? 'opacity:0.85; border-left:6px solid #ef4444; background:rgba(239,68,68,0.08); box-shadow: inset 0 0 10px rgba(239,68,68,0.1);' : ''}">
                 <div class="segment-header-v2">
                     <div class="segment-airline-info">
-                        <span class="segment-airline-v2">${safe(seg.airline, 'Airline')}</span>
-                        <span class="segment-fltnum-v2">${safe(seg.flight_number)}</span>
-                        ${bkClassStr ? `<span class="seg-class-chip">${bkClassStr}</span>` : ''}
+                        <div class="segment-airline-main">
+                            <span class="segment-airline-v2">${safe(seg.airline, 'Airline')}</span>
+                            <span class="segment-fltnum-v2">${safe(seg.flight_number)}</span>
+                        </div>
+                        ${showCabinClass ? `<span class="seg-class-chip">${bkClassStr}</span>` : ''}
+                        ${seg.status === 'cancelled' ? `
+                            <span class="status-badge" style="background:#ef4444; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700; box-shadow:0 2px 4px rgba(239,68,68,0.2);">🔴 CANCELLED</span>
+                            ${editedData.cancellation_charge > 0 ? `<span style="background:rgba(239,68,68,0.08); color:#ef4444; font-size:0.75rem; font-weight:700; padding:2px 8px; border-radius:10px; border:1px solid rgba(239,68,68,0.2);">Charge: ₹${editedData.cancellation_charge}</span>` : ''}
+                        ` : ''}
                     </div>
                     <div style="display:flex;align-items:center;gap:0.5rem;">
                         <button class="btn-action small secondary" onclick="editSegment(${segIdx})">✏️ Edit</button>
@@ -606,7 +793,7 @@ function renderSegmentsSection() {
                                 <span class="tl-code">${safe(dep.airport, '---')}</span>
                                 ${dep.city ? `<span class="tl-city" style="font-size:0.75rem; color:var(--text-secondary);">(${safe(dep.city)})</span>` : ''}
                             </div>
-                            <div class="tl-datetime" style="display:flex; gap:0.4rem; align-items:baseline; margin-top:2px; justify-content:flex-start;">
+                            <div class="${depDateTimeClass}" style="display:flex; gap:0.4rem; align-items:baseline; margin-top:2px; justify-content:flex-start;">
                                 <span class="tl-time">${safe(dep.time, '--:--')}</span>
                                 <span class="tl-date">${safe(dep.date)}</span>
                             </div>
@@ -623,7 +810,7 @@ function renderSegmentsSection() {
                                 <span class="tl-code">${safe(arr.airport, '---')}</span>
                                 ${arr.city ? `<span class="tl-city" style="font-size:0.75rem; color:var(--text-secondary);">(${safe(arr.city)})</span>` : ''}
                             </div>
-                            <div class="tl-datetime" style="display:flex; gap:0.4rem; align-items:baseline; margin-top:2px; justify-content:flex-start;">
+                            <div class="${arrDateTimeClass}" style="display:flex; gap:0.4rem; align-items:baseline; margin-top:2px; justify-content:flex-start;">
                                 <span class="tl-time">${safe(arr.time, '--:--')}</span>
                                 <span class="tl-date">${safe(arr.date)}</span>
                             </div>
@@ -684,13 +871,39 @@ function renderPassengersSection() {
                 <div class="field-item"><label>Ticket Number</label><input type="text" value="${safe(p.ticket_number)}" onchange="editedData.passengers[${i}].ticket_number=this.value"></div>
                 <div class="field-item"><label>Frequent Flyer</label><input type="text" value="${safe(p.frequent_flyer_number)}" onchange="editedData.passengers[${i}].frequent_flyer_number=this.value"></div>
                 <div class="field-item"><label>Baggage</label><input type="text" value="${safe(p.baggage)}" onchange="editedData.passengers[${i}].baggage=this.value"></div>
-                <div class="field-item"><label>Meal</label><input type="text" value="${safe(p.meal)}" onchange="editedData.passengers[${i}].meal=this.value"></div>
             </div>`;
 
-        // Section-wise seat assignment
+        const getAncHTML = (paxIdx, segIdx) => {
+            const ancs = p.ancillaries || [];
+            const hasAnc = ancs.some(anc => anc.segment_index === segIdx);
+            if (!hasAnc) return '';
+
+            let aHtml = `<div style="margin-top: 0.5rem; display:flex; flex-direction:column; gap:0.5rem; border-top: 1px dashed var(--border); padding-top: 0.5rem;">`;
+            ancs.forEach((anc, globalAncIdx) => {
+                if (anc.segment_index === segIdx) {
+                    aHtml += `<div style="display:flex; flex-direction:row; align-items:center; gap:0.5rem;">
+                        <input type="text" placeholder="Ancillary Service (e.g. Wheelchair)" value="${safe(anc.name)}" onchange="updateAncillaryForSegment(${paxIdx}, ${globalAncIdx}, this.value)" style="flex:1;">
+                        <button class="btn-action small danger" onclick="removeAncillary(${paxIdx}, ${globalAncIdx})" style="flex: 0 0 auto; padding: 0.4rem 0.8rem;">✕</button>
+                    </div>`;
+                }
+            });
+            aHtml += `</div>`;
+            return aHtml;
+        };
+
+        const getBarcodeHTML = (segIdx) => {
+            const seg = segments[segIdx] || {};
+            if (!seg.barcode_image) return '';
+            return `<div style="margin-top:0.75rem; border-top:1px dashed var(--border); padding-top:0.75rem;">
+                <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:0.35rem;">Boarding Barcode</div>
+                <img src="${seg.barcode_image}" alt="PDF417 barcode for segment ${segIdx + 1}" style="display:block; width:100%; max-width:280px; height:auto; background:#fff; border:1px solid var(--border); border-radius:10px; padding:0.35rem;">
+            </div>`;
+        };
+
+        // Section-wise seat and meal assignment
         if (hasMultipleSegments) {
-            html += `<div class="seat-section-title">Seat Assignments by Segment</div>
-            <div class="seat-grid">`;
+            html += `<div class="seat-section-title">Seat & Meal Assignments by Segment</div>
+            <div class="seat-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">`;
             legs.forEach((legIndices, legIdx) => {
                 const legLabel = getLegLabel(legIdx, legs.length, tripType);
                 legIndices.forEach((segIdx) => {
@@ -700,59 +913,48 @@ function renderPassengersSection() {
                     // Find seat for this segment
                     const seatObj = seats.find(s => s.segment_index === segIdx) || {};
                     const seatNum = seatObj.seat_number || '';
-                    html += `<div class="field-item seat-field">
-                        <label>${dep} → ${arr}</label>
-                        <input type="text" placeholder="e.g. 12A" value="${safe(seatNum)}" onchange="updateSeatForSegment(${i}, ${segIdx}, this.value)">
+
+                    // Find meal for this segment
+                    const mealObj = (p.meals || []).find(m => m.segment_index === segIdx) || {};
+                    const mealName = mealObj.name || mealObj.code || '';
+
+                    html += `<div class="field-item seat-field" style="background:var(--bg-main); padding:0.5rem; border-radius:8px; border:1px solid var(--border);">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <label style="color:var(--primary); font-weight:700; margin:0;">${dep} → ${arr}</label>
+                            <button class="btn-action small success" onclick="addAncillary(${i}, ${segIdx})" style="padding: 2px 8px; font-size: 11px;">+ Service</button>
+                        </div>
+                        <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
+                            <input type="text" placeholder="Seat (e.g. 12A)" value="${safe(seatNum)}" onchange="updateSeatForSegment(${i}, ${segIdx}, this.value)" style="flex:1;">
+                            <input type="text" placeholder="Meal (e.g. VGML)" value="${safe(mealName)}" onchange="updateMealForSegment(${i}, ${segIdx}, this.value)" style="flex:1;">
+                        </div>
+                        ${getAncHTML(i, segIdx)}
+                        ${getBarcodeHTML(segIdx)}
                     </div>`;
                 });
             });
             html += `</div>`;
         } else {
             const seatNum = seats.length > 0 ? (seats[0].seat_number || (typeof seats[0] === 'string' ? seats[0] : '')) : '';
-            html += `<div class="seat-section-title">Seat Assignment</div>
-            <div class="seat-grid">
-                <div class="field-item seat-field">
-                    <label>Seat</label>
-                    <input type="text" placeholder="e.g. 12A" value="${safe(typeof seatNum === 'object' ? seatNum.seat_number : seatNum)}" onchange="updateSeatForSegment(${i}, 0, this.value)">
+            const mealObj = (p.meals || []).length > 0 ? (p.meals[0].name || p.meals[0].code || '') : (typeof p.meal === 'string' ? p.meal : '');
+            const firstSeg = segments[0] || {};
+            const dep = (firstSeg.departure || {}).airport || '?';
+            const arr = (firstSeg.arrival || {}).airport || '?';
+
+            html += `<div class="seat-section-title">Seat & Meal Assignment</div>
+            <div class="seat-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+                <div class="field-item seat-field" style="background:var(--bg-main); padding:0.5rem; border-radius:8px; border:1px solid var(--border);">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <label style="color:var(--primary); font-weight:700; margin:0;">${dep} → ${arr}</label>
+                        <button class="btn-action small success" onclick="addAncillary(${i}, 0)" style="padding: 2px 8px; font-size: 11px;">+ Service</button>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
+                        <input type="text" placeholder="Seat (e.g. 12A)" value="${safe(typeof seatNum === 'object' ? seatNum.seat_number : seatNum)}" onchange="updateSeatForSegment(${i}, 0, this.value)" style="flex:1;">
+                        <input type="text" placeholder="Meal (e.g. VGML)" value="${safe(mealObj)}" onchange="updateMealForSegment(${i}, 0, this.value)" style="flex:1;">
+                    </div>
+                    ${getAncHTML(i, 0)}
+                    ${getBarcodeHTML(0)}
                 </div>
             </div>`;
-        }
-
-        // Ancillary Services Assignment
-        const getAncHTML = (paxIdx, segIdx, dep, arr) => {
-            let aHtml = `<div style="margin-top: 1.5rem; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
-                <label style="font-weight: 600; font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">${dep} ${arr ? '→ ' + arr : ''} Ancillaries</label>
-                <button class="btn-action small success" onclick="addAncillary(${paxIdx}, ${segIdx})" style="padding: 2px 8px; font-size: 11px;">+ Add Service</button>
-            </div><div class="seat-grid" style="margin-bottom: 0.5rem;">`;
-            const ancs = p.ancillaries || [];
-            let found = 0;
-            ancs.forEach((anc, globalAncIdx) => {
-                if (anc.segment_index === segIdx) {
-                    found++;
-                    aHtml += `<div class="field-item" style="display:flex; flex-direction:row; align-items:center; gap:6px; margin: 0;">
-                        <input type="text" placeholder="Service" value="${safe(anc.name)}" onchange="updateAncillaryForSegment(${paxIdx}, ${globalAncIdx}, this.value)" style="flex:1; min-width: 0; font-size: 0.85rem; padding: 0.4rem 0.6rem;">
-                        <button class="btn-action small danger" onclick="removeAncillary(${paxIdx}, ${globalAncIdx})" style="flex: 0 0 28px; height: 28px; padding: 0; display:flex; align-items:center; justify-content:center; font-size: 12px; border-radius: 6px;">✕</button>
-                    </div>`;
-                }
-            });
-            if (found === 0) {
-                aHtml += `<div style="grid-column: 1/-1; font-size: 0.85rem; color: #999; padding-bottom: 0.5rem;">No ancillary services.</div>`;
-            }
-            aHtml += `</div>`;
-            return aHtml;
-        };
-
-        if (hasMultipleSegments) {
-            legs.forEach((legIndices) => {
-                legIndices.forEach((segIdx) => {
-                    const seg = segments[segIdx];
-                    const dep = (seg.departure || {}).airport || '?';
-                    const arr = (seg.arrival || {}).airport || '?';
-                    html += getAncHTML(i, segIdx, dep, arr);
-                });
-            });
-        } else {
-            html += getAncHTML(i, 0, "Flight", "");
         }
 
         html += `</div>`;
@@ -794,20 +996,32 @@ function renderFareSection() {
         const base = parseFloat(cf.base_fare) || 0;
         const k3 = parseFloat(cf.k3_gst) || 0;
         const other = parseFloat(cf.other_taxes) || 0;
-        const displayOther = other + (globalMarkup * passengers.length);
-        const total = base + k3 + displayOther;
+        const markupTotal = globalMarkup * passengers.length;
+        const bothAddition = other + markupTotal;
+        const total = base + k3 + bothAddition;
 
         html += `<table class="fare-table">
             <thead><tr>
-                <th>Total Passengers</th><th>Total Base Fare</th>
-                <th>Total Airline GST (K3)</th><th>Total Other Taxes & Fees</th>
+                <th>Pax</th><th>Total Base Fare</th>
+                <th>Airline GST (K3)</th><th>Other Taxes</th>
+                <th>Markup (MU)</th>
+                <th>Taxes + MU (PDF)</th>
                 <th>Total Fare</th>
             </tr></thead><tbody>
             <tr>
                 <td>${passengers.length}</td>
                 <td><input type="number" value="${base}" onchange="editedData.journey.consolidated_fare.base_fare=parseFloat(this.value)||0; recalcFareGlobal()"></td>
                 <td><input type="number" value="${k3}" onchange="editedData.journey.consolidated_fare.k3_gst=parseFloat(this.value)||0; recalcFareGlobal()"></td>
-                <td><input type="number" id="cons-other" value="${displayOther}" onchange="editedData.journey.consolidated_fare.other_taxes=(parseFloat(this.value)||0)-((parseFloat(editedData.journey.global_markup)||0)*${passengers.length}); recalcFareGlobal()"></td>
+                <td>
+                    <input type="number" id="cons-other" value="${other}" onchange="editedData.journey.consolidated_fare.other_taxes=parseFloat(this.value)||0; recalcFareGlobal()">
+                </td>
+                <td>
+                    <input type="number" id="cons-markup" value="${markupTotal}" onchange="editedData.journey.global_markup=(parseFloat(this.value)||0)/${passengers.length || 1}; recalcFareGlobal()">
+                    <div id="cons-markup-hint" style="font-size:0.7rem; color:var(--text-secondary); margin-top:4px;">
+                        ${globalMarkup} / pax
+                    </div>
+                </td>
+                <td style="color:var(--accent-primary); font-weight:600;" id="cons-both">${formatCurrency(bothAddition, curr)}</td>
                 <td><strong id="cons-total">${formatCurrency(total, curr)}</strong></td>
             </tr>
             </tbody></table>`;
@@ -815,7 +1029,9 @@ function renderFareSection() {
         html += `<table class="fare-table">
             <thead><tr>
                 <th>Sr</th><th>Passenger</th><th>Base Fare</th>
-                <th>Airline GST (K3)</th><th>Other Taxes & Fees</th>
+                <th>Airline GST (K3)</th><th>Other Taxes</th>
+                <th>Markup (MU)</th>
+                <th>Taxes + MU (PDF)</th>
                 <th>Total Fare</th>
             </tr></thead><tbody>`;
 
@@ -825,8 +1041,8 @@ function renderFareSection() {
             const base = parseFloat(fare.base_fare) || 0;
             const k3 = parseFloat(fare.k3_gst) || 0;
             const other = parseFloat(fare.other_taxes) || 0;
-            const displayOther = other + globalMarkup;
-            const total = base + k3 + displayOther;
+            const bothAddition = other + globalMarkup;
+            const total = base + k3 + bothAddition;
 
             if (!fare.total_fare || parseFloat(fare.total_fare) !== total) {
                 if (!editedData.passengers[i].fare) editedData.passengers[i].fare = {};
@@ -838,7 +1054,13 @@ function renderFareSection() {
                 <td><strong>${safe(p.name, paxType)}</strong><br><small style="color:var(--text-secondary)">${paxType}</small></td>
                 <td><input type="number" value="${base}" onchange="editedData.passengers[${i}].fare.base_fare=parseFloat(this.value)||0; recalcFareGlobal()"></td>
                 <td><input type="number" value="${k3}" onchange="editedData.passengers[${i}].fare.k3_gst=parseFloat(this.value)||0; recalcFareGlobal()"></td>
-                <td><input type="number" id="pax-other-${i}" value="${displayOther}" onchange="editedData.passengers[${i}].fare.other_taxes=(parseFloat(this.value)||0)-(parseFloat(editedData.journey.global_markup)||0); recalcFareGlobal()"></td>
+                <td>
+                    <input type="number" id="pax-other-${i}" value="${other}" onchange="editedData.passengers[${i}].fare.other_taxes=parseFloat(this.value)||0; recalcFareGlobal()">
+                </td>
+                <td>
+                    <input type="number" id="pax-markup-${i}" value="${globalMarkup}" onchange="editedData.journey.global_markup=parseFloat(this.value)||0; recalcFareGlobal()">
+                </td>
+                <td style="color:var(--accent-primary); font-weight:600;" id="pax-both-${i}">${formatCurrency(bothAddition, curr)}</td>
                 <td><strong id="pax-total-${i}">${formatCurrency(total, curr)}</strong></td>
             </tr>`;
         });
@@ -866,17 +1088,139 @@ function renderFareSection() {
 }
 
 function renderActionsSection() {
+    const tStatus = editedData.ticket_status || 'live';
+    const isCancelled = tStatus === 'cancelled';
+    const isMergedView = !!editedData.is_merged_view;
+
+    if (isMergedView) {
+        document.getElementById('actionsSection').innerHTML = `
+            <div class="section-header-row"><h2>âš¡ Actions</h2></div>
+            <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
+                <div class="pdf-btn-group">
+                    <button class="pdf-btn with-fare" onclick="downloadPDF(true)">ðŸ“„ PDF (With Fare)</button>
+                    <button class="pdf-btn without-fare" onclick="downloadPDF(false)">ðŸ“„ PDF (Without Fare)</button>
+                </div>
+                <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(5,150,105,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(5,150,105,0.2);">
+                    <span style="font-weight:700; color:#059669;">Merged booking view. Passenger tickets are grouped here as one booking.</span>
+                </div>
+            </div>`;
+        return;
+    }
+
     document.getElementById('actionsSection').innerHTML = `
         <div class="section-header-row"><h2>⚡ Actions</h2></div>
-        <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
-            <div class="pdf-btn-group">
-                <button class="pdf-btn with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
-                <button class="pdf-btn without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
-            </div>
-        </div>`;
+                <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
+                    <div class="pdf-btn-group">
+                        <button class="pdf-btn with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
+                        <button class="pdf-btn without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
+                        <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">Sheet Export:</span>
+                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('AB')">📊 AB</button>
+                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('CK')">📊 CK</button>
+                    </div>
+                    ${!editedData.ledger_hash ? `
+                    <div id="ledgerBtnGroup" style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
+                        <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">Add to Ledger:</span>
+                        <select id="ledgerAggSelect" style="padding:0.35rem 0.5rem; border-radius:8px; border:1px solid var(--border); font-family:inherit; font-size:0.82rem; background:var(--bg-card); color:var(--text-primary);">
+                            <option value="">Loading...</option>
+                        </select>
+                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('AB')">📒 AB</button>
+                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('CK')">📒 CK</button>
+                    </div>` : `
+                    <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(16,185,129,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(16,185,129,0.2);">
+                        <span style="font-weight:700; color:#10b981;">✅ In Ledger</span>
+                    </div>`}
+                    ${!isCancelled ? `
+                    <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(239,68,68,0.05); padding:0.5rem 1rem; border-radius:12px; border:1px solid rgba(239,68,68,0.2);">
+                        <button class="pdf-btn" style="background:linear-gradient(135deg,#dc2626,#ef4444); color:white; padding:0.5rem 1rem;" onclick="openCancelModal()">❌ Cancel / Split</button>
+                        <button class="pdf-btn" style="background:linear-gradient(135deg,#d97706,#f59e0b); color:white; padding:0.5rem 1rem;" onclick="openChangeModal()">🔄 Change</button>
+                    </div>` : `
+                    <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(239,68,68,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px dashed rgba(239,68,68,0.3);">
+                        <span style="font-weight:700; color:#ef4444;">🔴 This ticket is cancelled</span>
+                    </div>`}
+                </div>`;
+    loadLedgerAggregators();
 }
 
-// ==================== EDIT HELPERS ====================
+async function loadLedgerAggregators() {
+    try {
+        const r = await fetch('/api/aggregators');
+        if (!r.ok) return;
+        const d = await r.json();
+        const sel = document.getElementById('ledgerAggSelect');
+        if (!sel) return;
+        let html = '<option value="">Select aggregator</option>';
+        (d.aggregators || []).forEach(a => {
+            html += `<option value="${a.id}">${a.name}</option>`;
+        });
+        sel.innerHTML = html;
+    } catch (e) { }
+}
+
+async function addToLedger(bookingBy) {
+    if (document.activeElement) document.activeElement.blur();
+    const sel = document.getElementById('ledgerAggSelect');
+    const aggId = sel ? sel.value : '';
+    if (!aggId) {
+        showToast('Please select an aggregator first', 'error');
+        return;
+    }
+    showToast('Adding to ledger...', 'info');
+    try {
+        await saveTicket();
+        const r = await fetch(`/api/tickets/${currentTicket.id}/add-to-ledger`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ aggregator_id: aggId, booking_by: bookingBy })
+        });
+        const data = await r.json();
+        if (!r.ok) {
+            if (r.status === 402) {
+                _showLowBalanceModal(data);
+            } else if (r.status === 409) {
+                showToast(data.error || 'Duplicate: ticket data unchanged since last ledger add', 'error');
+            } else {
+                showToast(data.error || 'Failed', 'error');
+            }
+            return;
+        }
+        showToast('Added to ledger!', 'success');
+        await openTicket(currentTicket.id);
+    } catch (e) {
+        console.error(e);
+        showToast('Network error', 'error');
+    }
+}
+
+function _showLowBalanceModal(data) {
+    const html = `
+        <div style="text-align:center; padding:1.5rem;">
+            <div style="font-size:3.5rem; margin-bottom:1rem; animation: bounce 2s infinite;">⚠️</div>
+            <h2 style="margin-top:0; color:#ef4444; font-weight:800; letter-spacing:-0.02em;">Insufficient Ledger Balance</h2>
+            <p style="color:var(--text-secondary); margin-bottom:1.5rem; font-size:1.1rem; line-height:1.5;">
+                Your current balance for this aggregator is <br>
+                <strong style="color:var(--text-primary); font-size:1.4rem;">${formatCurrency(data.current_balance, 'INR')}</strong><br>
+                Required for this entry: <strong style="color:var(--text-primary); font-size:1.4rem;">${formatCurrency(data.required_amount, 'INR')}</strong>
+            </p>
+            
+            <div style="background:rgba(239,68,68,0.06); border:2px dashed rgba(239,68,68,0.3); padding:1.2rem; border-radius:16px; margin-bottom:2rem;">
+                <p style="margin:0; font-size:0.95rem; color:#ef4444; font-weight:700;">💰 Shortfall: ${formatCurrency(data.required_amount - data.current_balance, 'INR')}</p>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:1rem;">
+                <button class="btn-action primary" style="background:linear-gradient(135deg,#10b981,#059669); color:white; border:none; width:100%; padding:1rem; font-weight:700; font-size:1rem; box-shadow:0 4px 12px rgba(16,185,129,0.3);" onclick="window.location.href='/ledger?aggregator_id=${data.aggregator_id}&add_funds=true'">
+                    🚀 Add Funds to Ledger Now
+                </button>
+                <button class="btn-action secondary" style="width:100%; border:1px solid var(--border); padding:0.8rem; background:transparent; font-weight:600;" onclick="_closeModal()">
+                    Later
+                </button>
+            </div>
+        </div>
+    `;
+    _createModalOverlay(html);
+}
+
 function recalcFareGlobal(redraw = true) {
     if (!editedData.journey) editedData.journey = {};
     if (!editedData.journey.fare_display) {
@@ -884,39 +1228,61 @@ function recalcFareGlobal(redraw = true) {
     }
     const isConsolidated = editedData.journey.fare_display === 'consolidated';
     const globalMarkup = parseFloat(editedData.journey.global_markup) || 0;
+    const curr = editedData.currency || 'INR';
     let gt = 0;
 
     if (isConsolidated) {
         const cf = editedData.journey.consolidated_fare || {};
         const passengersCount = (editedData.passengers || []).length;
-        const displayOther = (parseFloat(cf.other_taxes) || 0) + (globalMarkup * passengersCount);
-        const total = (parseFloat(cf.base_fare) || 0) + (parseFloat(cf.k3_gst) || 0) + displayOther;
+        const other = parseFloat(cf.other_taxes) || 0;
+        const markupTotal = globalMarkup * passengersCount;
+        const bothAddition = other + markupTotal;
+        const total = (parseFloat(cf.base_fare) || 0) + (parseFloat(cf.k3_gst) || 0) + bothAddition;
         gt = total;
 
         const otherEl = document.getElementById('cons-other');
-        if (otherEl && redraw) otherEl.value = displayOther;
+        if (otherEl && redraw) otherEl.value = other;
+
+        const markupEl = document.getElementById('cons-markup');
+        if (markupEl && redraw) markupEl.value = markupTotal;
+
+        const hintEl = document.getElementById('cons-markup-hint');
+        if (hintEl && redraw) hintEl.textContent = `${globalMarkup} / pax`;
+
+        const bothEl = document.getElementById('cons-both');
+        if (bothEl && redraw) bothEl.textContent = formatCurrency(bothAddition, curr);
+
         const ct = document.getElementById('cons-total');
-        if (ct && redraw) ct.textContent = formatCurrency(total, editedData.currency || 'INR');
+        if (ct && redraw) ct.textContent = formatCurrency(total, curr);
     } else {
         editedData.passengers.forEach((p, i) => {
             const f = p.fare || {};
             const base = parseFloat(f.base_fare) || 0;
             const k3 = parseFloat(f.k3_gst) || 0;
             const other = parseFloat(f.other_taxes) || 0;
-            const displayOther = other + globalMarkup;
-            const total = base + k3 + displayOther;
+            const bothAddition = other + globalMarkup;
+            const total = base + k3 + bothAddition;
             f.total_fare = total;
             gt += total;
 
             const otherEl = document.getElementById('pax-other-' + i);
-            if (otherEl && redraw) otherEl.value = displayOther;
+            if (otherEl && redraw) otherEl.value = other;
+
+            const markupEl = document.getElementById('pax-markup-' + i);
+            if (markupEl && redraw) markupEl.value = globalMarkup;
+
+            // Sync global markups dynamically
+            if (redraw && i > 0 && markupEl) markupEl.value = globalMarkup;
+
+            const bothEl = document.getElementById('pax-both-' + i);
+            if (bothEl && redraw) bothEl.textContent = formatCurrency(bothAddition, curr);
+
             const pt = document.getElementById('pax-total-' + i);
-            if (pt && redraw) pt.textContent = formatCurrency(total, editedData.currency || 'INR');
+            if (pt && redraw) pt.textContent = formatCurrency(total, curr);
         });
     }
 
     editedData.grand_total = gt;
-    const curr = editedData.currency || 'INR';
 
     if (redraw) {
         const overrideEl = document.getElementById('override-grand-total');
@@ -969,6 +1335,24 @@ function updateAncillaryForSegment(paxIdx, ancIdx, value) {
     }
 }
 
+function updateMealForSegment(paxIdx, segIdx, value) {
+    if (!editedData.passengers[paxIdx].meals) editedData.passengers[paxIdx].meals = [];
+    const meals = editedData.passengers[paxIdx].meals;
+    const existing = meals.findIndex(m => m.segment_index === segIdx);
+
+    // Clear out old single-string meal to avoid confusing extraction
+    if (editedData.passengers[paxIdx].meal) {
+        delete editedData.passengers[paxIdx].meal;
+    }
+
+    if (existing >= 0) {
+        meals[existing].name = value;
+        meals[existing].code = value;
+    } else {
+        meals.push({ segment_index: segIdx, name: value, code: value });
+    }
+}
+
 function addAncillary(paxIdx, segIdx) {
     if (!editedData.passengers[paxIdx].ancillaries) editedData.passengers[paxIdx].ancillaries = [];
     editedData.passengers[paxIdx].ancillaries.push({ segment_index: segIdx, name: '', code: '' });
@@ -986,6 +1370,17 @@ function editSegment(idx) {
     const seg = editedData.segments[idx];
     const dep = seg.departure || {};
     const arr = seg.arrival || {};
+    let selectedCabinClass = '';
+    const bc = seg.booking_class;
+    if (typeof bc === 'object' && bc !== null) {
+        selectedCabinClass = bc.full_form || bc.cabin || bc.letter || '';
+    } else if (typeof bc === 'string') {
+        selectedCabinClass = bc.trim();
+    }
+    if (!seg.show_booking_class) {
+        selectedCabinClass = '';
+    }
+    const cabinOptions = ['', 'Economy', 'Premium Economy', 'Business', 'First'];
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
     modal.innerHTML = `
@@ -995,7 +1390,7 @@ function editSegment(idx) {
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; background: var(--bg-main); padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border);">
                 <div class="field-item"><label>Airline</label><input type="text" id="seg-airline" value="${safe(seg.airline)}"></div>
                 <div class="field-item"><label>Flight Number</label><input type="text" id="seg-fltnum" value="${safe(seg.flight_number)}"></div>
-                <div class="field-item"><label>Booking Class</label><input type="text" id="seg-class" value="${safe(seg.booking_class)}"></div>
+                <div class="field-item"><label>Cabin Class</label><select id="seg-class">${cabinOptions.map(option => `<option value="${option}" ${selectedCabinClass === option ? 'selected' : ''}>${option || 'Hidden by default'}</option>`).join('')}</select></div>
                 <div class="field-item" style="grid-column: 1 / -1;"><label>Duration</label><input type="text" id="seg-duration" value="${safe(seg.duration_extracted || seg.duration_calculated)}"></div>
             </div>
 
@@ -1039,7 +1434,13 @@ function saveSegmentEdit(idx) {
     const seg = editedData.segments[idx];
     seg.airline = document.getElementById('seg-airline').value;
     seg.flight_number = document.getElementById('seg-fltnum').value;
-    seg.booking_class = document.getElementById('seg-class').value;
+    const selectedCabinClass = document.getElementById('seg-class').value.trim();
+    seg.show_booking_class = !!selectedCabinClass;
+    if (selectedCabinClass) {
+        seg.booking_class = selectedCabinClass;
+    } else {
+        delete seg.booking_class;
+    }
     if (!seg.departure) seg.departure = {};
     seg.departure.airport = document.getElementById('seg-dep-apt').value;
     seg.departure.city = document.getElementById('seg-dep-city').value;
@@ -1065,6 +1466,10 @@ function saveSegmentEdit(idx) {
 // ==================== SAVE & PDF ====================
 async function saveTicket(silent = false) {
     if (!currentTicket || !editedData) return;
+    if (editedData.is_merged_view) {
+        if (!silent) showToast('Merged booking views are read-only', 'info');
+        return;
+    }
     try {
         const payload = {
             pnr: editedData.pnr,
@@ -1131,6 +1536,741 @@ async function deleteTicket() {
         showToast('Ticket deleted', 'success');
         showListView();
     } catch (e) { showToast('Delete failed', 'error'); }
+}
+
+async function exportToSheet(bookingBy) {
+    if (document.activeElement) document.activeElement.blur();
+
+    showToast('Exporting to Google Sheet...', 'info');
+    try {
+        await saveTicket(); // Ensure data is saved first
+        const r = await fetch(`/api/tickets/${currentTicket.id}/export-sheet`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ booking_by: bookingBy, type: 'New' })
+        });
+        const data = await r.json();
+        if (!r.ok) {
+            showToast(data.error || 'Export failed', 'error');
+            return;
+        }
+        showToast('Successfully exported to Google Sheet!', 'success');
+        await openTicket(currentTicket.id);
+    } catch (e) {
+        console.error(e);
+        showToast('Export failed', 'error');
+    }
+}
+
+// ==================== CANCEL / SPLIT / CHANGE MODALS ====================
+
+function _createModalOverlay(innerHTML) {
+    const overlay = document.createElement('div');
+    overlay.id = 'cancel-change-modal';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);animation:fadeIn 0.2s ease;';
+    overlay.innerHTML = `<div style="background:var(--bg-card);border-radius:20px;padding:2rem;max-width:680px;width:95%;max-height:88vh;overflow-y:auto;box-shadow:0 24px 48px rgba(0,0,0,0.35);border:1px solid var(--border);" onclick="event.stopPropagation()">${innerHTML}</div>`;
+    overlay.onclick = () => overlay.remove();
+    document.body.appendChild(overlay);
+    return overlay;
+}
+
+function _closeModal() {
+    const m = document.getElementById('cancel-change-modal');
+    if (m) m.remove();
+}
+
+// ========== CANCEL MODAL ==========
+function openCancelModal() {
+    if (!editedData || !editedData.passengers || editedData.passengers.length === 0) {
+        showToast('No passengers to cancel', 'error');
+        return;
+    }
+    
+    // Requirement: Check if added to ledger
+    if (!editedData.ledger_hash) {
+        showToast('Please add this booking to the ledger first before cancelling.', 'warning');
+        return;
+    }
+
+    _openWorkflowModal('cancel');
+}
+
+// ========== CHANGE MODAL ==========
+function openChangeModal() {
+    if (!editedData || !editedData.passengers || editedData.passengers.length === 0) {
+        showToast('No passengers to change', 'error');
+        return;
+    }
+    
+    // Requirement: Check if added to ledger
+    if (!editedData.ledger_hash) {
+        showToast('Please add this booking to the ledger first before changing.', 'warning');
+        return;
+    }
+
+    changeAttachmentState = { token: '', filename: '' };
+    _openWorkflowModal('change');
+}
+
+function _openWorkflowModal(mode) {
+    const segments = editedData.segments || [];
+    const journey = editedData.journey || {};
+    let legs;
+    if (journey.legs && journey.legs.length > 0) {
+        legs = journey.legs.map(leg => leg.segments || []);
+    } else {
+        legs = groupSegmentsIntoLegs(segments);
+    }
+
+    // If multi-sector, first pick sector(s)
+    if (legs.length > 1) {
+        _workflowStep_SectorSelect(legs, segments, mode);
+    } else {
+        _workflowStep_PassengerSelect(null, mode);
+    }
+}
+
+function _workflowStep_SectorSelect(legs, segments, mode) {
+    let modeLabel = mode === 'cancel' ? 'Cancel' : 'Change';
+    let html = `<h3 style="margin-top:0;display:flex;align-items:center;gap:0.5rem;">\u2708\ufe0f Select Sector to ${modeLabel}</h3>
+    <p style="color:var(--text-secondary);font-size:0.88rem;margin-bottom:1rem;">Select which sector(s) to ${mode.toLowerCase()}.</p>
+    <div style="display:flex;flex-direction:column;gap:0.75rem;" id="sectorChoices">`;
+
+    legs.forEach((legIndices, legIdx) => {
+        const firstSeg = segments[legIndices[0]] || {};
+        const lastSeg = segments[legIndices[legIndices.length - 1]] || {};
+        const dep = (firstSeg.departure || {}).airport || '???';
+        const arr = (lastSeg.arrival || {}).airport || '???';
+        const depDate = (firstSeg.departure || {}).date || '';
+
+        const isCancelled = legIndices.every(idx => (segments[idx] || {}).status === 'cancelled');
+        const isPartial = !isCancelled && legIndices.some(idx => (segments[idx] || {}).status === 'cancelled');
+
+        html += `<label style="display:flex;align-items:center;gap:0.75rem;padding:1rem;border-radius:12px;border:2px solid var(--border);${isCancelled ? 'opacity:0.6; cursor:not-allowed;' : 'cursor:pointer; transition:all 0.2s;'}" 
+            ${!isCancelled ? `onmouseover="this.style.borderColor='var(--primary)'" onmouseout="if(!this.querySelector('input').checked)this.style.borderColor='var(--border)'" onclick="this.querySelector('input').checked=!this.querySelector('input').checked; this.style.borderColor=this.querySelector('input').checked?'var(--primary)':'var(--border)'; this.style.background=this.querySelector('input').checked?'rgba(37,99,235,0.06)':'transparent'"` : ''}>
+            <input type="checkbox" value="${legIdx}" style="display:none;" class="sector-cb" ${isCancelled ? 'disabled' : ''}>
+            <div style="width:42px;height:42px;background:linear-gradient(135deg,${isCancelled ? '#94a3b8,#cbd5e1' : '#1e40af,#3b82f6'});color:white;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85rem;">L${legIdx + 1}</div>
+            <div style="flex:1;">
+                <div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:0.5rem;">
+                    ${dep} \u2192 ${arr}
+                    ${isCancelled ? '<span style="background:#ef4444;color:white;font-size:0.6rem;padding:1px 4px;border-radius:4px;">CANCELLED</span>' : ''}
+                    ${isPartial ? '<span style="background:#f59e0b;color:white;font-size:0.6rem;padding:1px 4px;border-radius:4px;">PARTIAL</span>' : ''}
+                </div>
+                <div style="font-size:0.78rem;color:var(--text-secondary);">${depDate}</div>
+            </div>
+        </label>`;
+    });
+
+    html += `</div>
+    <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1.5rem;">
+        <button class="btn-action secondary" onclick="_closeModal()">Cancel</button>
+        <button class="btn-action primary" onclick="_onSectorNext('${mode}')">Next \u2192</button>
+    </div>`;
+
+    _createModalOverlay(html);
+}
+
+function _onSectorNext(mode) {
+    const cbs = document.querySelectorAll('.sector-cb');
+    const selectedSectors = [];
+    cbs.forEach(cb => { if (cb.checked) selectedSectors.push(parseInt(cb.value)); });
+    if (selectedSectors.length === 0) {
+        showToast('Please select at least one sector', 'error');
+        return;
+    }
+    _closeModal();
+    _workflowStep_PassengerSelect(selectedSectors, mode);
+}
+
+function _workflowStep_PassengerSelect(sectorIndices, mode) {
+    const passengers = editedData.passengers || [];
+    const n = passengers.length;
+    let modeLabel = mode === 'cancel' ? 'Cancel' : 'Change';
+
+    let html = `<h3 style="margin-top:0;display:flex;align-items:center;gap:0.5rem;">\ud83d\udc65 Select Passengers to ${modeLabel}</h3>
+    <p style="color:var(--text-secondary);font-size:0.88rem;margin-bottom:0.5rem;">Click to select. <strong>All selected = full ${mode.toLowerCase()}.</strong> Fewer = PNR split.</p>
+    
+    <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;font-size:0.9rem;cursor:pointer;font-weight:600;color:var(--primary);">
+        <input type="checkbox" id="selectAllPax" onchange="const cbs=document.querySelectorAll('.pax-cb'); cbs.forEach(cb=>cb.checked=this.checked); cbs.forEach(cb=>cb.parentElement.style.borderColor=this.checked?'var(--primary)':'var(--border)'); cbs.forEach(cb=>cb.parentElement.style.background=this.checked?'rgba(37,99,235,0.06)':'transparent')"> Select All Passengers
+    </label>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.75rem;" id="paxChoices">`;
+
+    passengers.forEach((p, i) => {
+        const paxType = getPaxLabel(p.pax_type || p.type);
+        html += `<label style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;border-radius:12px;border:2px solid var(--border);cursor:pointer;transition:all 0.2s;" onclick="this.querySelector('input').checked=!this.querySelector('input').checked; this.style.borderColor=this.querySelector('input').checked?'var(--primary)':'var(--border)'; this.style.background=this.querySelector('input').checked?'rgba(37,99,235,0.06)':'transparent'">
+            <input type="checkbox" value="${i}" style="display:none;" class="pax-cb">
+            <div style="width:36px;height:36px;background:var(--bg-tertiary);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;border:1px solid var(--border);">👤</div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-weight:700;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</div>
+                <div style="font-size:0.72rem;color:var(--text-secondary);">${paxType} • ${p.ticket_number || 'No Ticket'}</div>
+            </div>
+        </label>`;
+    });
+
+    html += `</div>
+    <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1.5rem;">
+        <button class="btn-action secondary" onclick="_closeModal()">Cancel</button>
+        <button class="btn-action primary" onclick="_onPaxNext('${mode}', ${JSON.stringify(sectorIndices).replace(/"/g, '&quot;')})">Next \u2192</button>
+    </div>`;
+
+    _createModalOverlay(html);
+}
+
+function _onPaxNext(mode, sectorIndices) {
+    const passengers = editedData.passengers || [];
+    const cbs = document.querySelectorAll('.pax-cb');
+    const selectedPax = [];
+    cbs.forEach(cb => { if (cb.checked) selectedPax.push(parseInt(cb.value)); });
+    if (selectedPax.length === 0) {
+        showToast('Please select at least one passenger', 'error');
+        return;
+    }
+    _closeModal();
+
+    if (mode === 'cancel') {
+        const hasSpecial = passengers.some(p => {
+            const t = (p.pax_type || p.type || '').toUpperCase();
+            return ['CHD', 'CNN', 'CHILD', 'INF', 'INFANT'].includes(t);
+        });
+
+        // Requirement: If sectors are selected, we MUST ask for those sector fares
+        if (sectorIndices && sectorIndices.length > 0) {
+            _workflowStep_SectorFareSplit(sectorIndices, selectedPax, mode);
+        } else if (selectedPax.length < passengers.length && hasSpecial) {
+             _workflowStep_FareSplit(sectorIndices, selectedPax, mode);
+        } else if (selectedPax.length < passengers.length) {
+             _cancelStep_ConfirmPartial(sectorIndices, selectedPax, null);
+        } else {
+             _cancelStep_ConfirmFull(sectorIndices, selectedPax);
+        }
+    } else {
+        // MODE CHANGE
+        _changeStep_ExtraFares(sectorIndices, selectedPax);
+    }
+}
+
+function _workflowStep_FareSplit(sectorIndices, selectedPax, mode, sectorFares) {
+    const passengers = editedData.passengers || [];
+    const journey = editedData.journey || {};
+    let totalBase = 0, totalK3 = 0, totalOther = 0;
+    
+    if (journey.consolidated_fare) {
+        totalBase = parseFloat(journey.consolidated_fare.base_fare) || 0;
+        totalK3 = parseFloat(journey.consolidated_fare.k3_gst) || 0;
+        totalOther = parseFloat(journey.consolidated_fare.other_taxes) || 0;
+    } else {
+        passengers.forEach(p => {
+            const f = p.fare || {};
+            totalBase += parseFloat(f.base_fare) || 0;
+            totalK3 += parseFloat(f.k3_gst) || 0;
+            totalOther += parseFloat(f.other_taxes) || 0;
+        });
+    }
+
+    let html = `<h3 style="margin-top:0;">\ud83d\udcb0 Fare Split (Unequal)</h3>
+    <p style="color:var(--text-secondary);font-size:0.88rem;margin-bottom:1rem;">
+        Enter individual share of ORIGINAL fare for each passenger.<br>
+        <strong>Total:</strong> Base \u20b9${totalBase.toLocaleString('en-IN')} | K3 \u20b9${totalK3.toLocaleString('en-IN')} | Other \u20b9${totalOther.toLocaleString('en-IN')}
+    </p>
+    <div style="display:flex;flex-direction:column;gap:0.75rem;">`;
+
+    passengers.forEach((p, i) => {
+        const paxType = getPaxLabel(p.pax_type || p.type);
+        const isSelected = selectedPax.includes(i);
+        const f = p.fare || {};
+        const defBase = parseFloat(f.base_fare) || (totalBase / passengers.length);
+        const defK3 = parseFloat(f.k3_gst) || (totalK3 / passengers.length);
+        const defOther = parseFloat(f.other_taxes) || (totalOther / passengers.length);
+
+        html += `<div style="padding:0.75rem;border-radius:10px;border:1px solid ${isSelected ? 'rgba(37,99,235,0.4)' : 'var(--border)'};background:${isSelected ? 'rgba(37,99,235,0.04)' : 'var(--bg-main)'};">
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
+                <strong>${safe(p.name, 'Passenger ' + (i + 1))}</strong>
+                <span style="font-size:0.75rem;color:var(--text-secondary);">(${paxType})</span>
+                ${isSelected ? '<span style="color:var(--primary);font-size:0.75rem;font-weight:700;">PROCESSED</span>' : '<span style="color:#10b981;font-size:0.75rem;font-weight:700;">REMAINING</span>'}
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;">
+                <div class="field-item"><label>Base Fare</label><input type="number" id="split-base-${i}" value="${Math.round(defBase)}" style="font-size:0.85rem;"></div>
+                <div class="field-item"><label>K3 GST</label><input type="number" id="split-k3-${i}" value="${Math.round(defK3)}" style="font-size:0.85rem;"></div>
+                <div class="field-item"><label>Other Taxes</label><input type="number" id="split-other-${i}" value="${Math.round(defOther)}" style="font-size:0.85rem;"></div>
+            </div>
+        </div>`;
+    });
+
+    html += `</div>
+    <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1.5rem;">
+        <button class="btn-action secondary" onclick="_closeModal()">Back</button>
+        <button class="btn-action primary" onclick="_onFareSplitNext('${mode}', ${JSON.stringify(sectorIndices).replace(/"/g, '&quot;')}, ${JSON.stringify(selectedPax).replace(/"/g, '&quot;')}, ${sectorFares ? JSON.stringify(sectorFares).replace(/"/g, '&quot;') : 'null'})">Next \u2192</button>
+    </div>`;
+
+    _createModalOverlay(html);
+}
+
+function _onFareSplitNext(mode, sectorIndices, selectedPax, sectorFares) {
+    const passengers = editedData.passengers || [];
+    const perPersonFares = [];
+    for (let i = 0; i < passengers.length; i++) {
+        perPersonFares.push({
+            base_fare: parseFloat(document.getElementById('split-base-' + i)?.value) || 0,
+            k3_gst: parseFloat(document.getElementById('split-k3-' + i)?.value) || 0,
+            other_taxes: parseFloat(document.getElementById('split-other-' + i)?.value) || 0,
+        });
+    }
+    _closeModal();
+    if (mode === 'cancel') {
+        _cancelStep_ConfirmPartial(sectorIndices, selectedPax, perPersonFares, sectorFares);
+    } else {
+        _changeStep_ExtraFares(sectorIndices, selectedPax, perPersonFares);
+    }
+}
+
+function _cancelStep_ConfirmFull(sectorIndices, selectedPax, sectorFares) {
+    const hasPersistent = !!editedData.last_aggregator;
+    let html = `<h3 style="margin-top:0;color:#ef4444;">\u274c Full Cancellation</h3>
+    <p style="color:var(--text-secondary);font-size:0.88rem;">All passengers selected. This will cancel the entire booking.</p>
+    <div style="margin:1.5rem 0;display:flex;flex-direction:column;gap:1rem;">
+        <div class="field-item">
+            <label>Cancellation Charge (XXD)</label>
+            <input type="number" id="cancel-charge" value="0" placeholder="Enter cancellation charge" style="font-size:1rem;font-weight:600;">
+        </div>
+        ${!hasPersistent ? `
+        <div class="field-item">
+            <label>Add to Ledger (Aggregator)</label>
+            <select id="cancel-agg-select" style="padding:0.5rem;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:0.88rem;background:var(--bg-main);color:var(--text-primary);">
+                <option value="">No ledger entry</option>
+            </select>
+        </div>
+        <div class="field-item">
+            <label>Booked By</label>
+            <select id="cancel-booking-by" style="padding:0.5rem;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:0.88rem;background:var(--bg-main);color:var(--text-primary);">
+                <option value="AB">AB</option>
+                <option value="CK">CK</option>
+            </select>
+        </div>` : `<p style="font-size:0.8rem;color:var(--text-secondary);">Reusing existing aggregator and booked-by details.</p>`}
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:0.75rem;">
+        <button class="btn-action secondary" onclick="_closeModal()">Back</button>
+        <button class="btn-action primary" style="background:linear-gradient(135deg,#dc2626,#ef4444);color:white;" onclick="_executeCancel(${JSON.stringify(selectedPax).replace(/"/g, '&quot;')}, true, null, ${JSON.stringify(sectorIndices).replace(/"/g, '&quot;')}, ${sectorFares ? JSON.stringify(sectorFares).replace(/"/g, '&quot;') : 'null'})">Confirm Cancellation</button>
+    </div>`;
+
+    const overlay = _createModalOverlay(html);
+    if (!hasPersistent) _loadAggregatorsIntoSelect('cancel-agg-select');
+}
+
+function _cancelStep_ConfirmPartial(sectorIndices, selectedPax, perPersonFares, sectorFares) {
+    const passengers = editedData.passengers || [];
+    const cancelledNames = selectedPax.map(i => safe(passengers[i]?.name, 'Passenger ' + (i + 1))).join(', ');
+    const remainingCount = passengers.length - selectedPax.length;
+    const hasPersistent = !!editedData.last_aggregator;
+
+    let html = `<h3 style="margin-top:0;color:#d97706;">\u2702\ufe0f PNR Split & Partial Cancellation</h3>
+    <p style="color:var(--text-secondary);font-size:0.88rem;">
+        <strong>${selectedPax.length}</strong> passenger(s) will be split out and cancelled: <strong>${cancelledNames}</strong><br>
+        <strong>${remainingCount}</strong> passenger(s) remain on original PNR.
+    </p>
+    <div style="margin:1.5rem 0;display:flex;flex-direction:column;gap:1rem;">
+        <div class="field-item">
+            <label>New PNR for Cancelled Passengers</label>
+            <input type="text" id="split-new-pnr" placeholder="Enter new PNR (e.g. ABC123)" style="font-size:1rem;font-weight:600;letter-spacing:1px;text-transform:uppercase;">
+        </div>
+        <div class="field-item">
+            <label>Cancellation Charge (XXD)</label>
+            <input type="number" id="cancel-charge" value="0" placeholder="Enter cancellation charge" style="font-size:1rem;font-weight:600;">
+        </div>
+        ${!hasPersistent ? `
+        <div class="field-item">
+            <label>Add to Ledger (Aggregator)</label>
+            <select id="cancel-agg-select" style="padding:0.5rem;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:0.88rem;background:var(--bg-main);color:var(--text-primary);">
+                <option value="">No ledger entry</option>
+            </select>
+        </div>
+        <div class="field-item">
+            <label>Booked By</label>
+            <select id="cancel-booking-by" style="padding:0.5rem;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:0.88rem;background:var(--bg-main);color:var(--text-primary);">
+                <option value="AB">AB</option>
+                <option value="CK">CK</option>
+            </select>
+        </div>` : `<p style="font-size:0.8rem;color:var(--text-secondary);">Reusing existing aggregator and booked-by details.</p>`}
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:0.75rem;">
+        <button class="btn-action secondary" onclick="_closeModal()">Back</button>
+        <button class="btn-action primary" style="background:linear-gradient(135deg,#d97706,#f59e0b);color:white;" onclick="_executeCancel(${JSON.stringify(selectedPax).replace(/"/g, '&quot;')}, false, ${perPersonFares ? JSON.stringify(perPersonFares).replace(/"/g, '&quot;') : 'null'}, ${JSON.stringify(sectorIndices).replace(/"/g, '&quot;')}, ${sectorFares ? JSON.stringify(sectorFares).replace(/"/g, '&quot;') : 'null'})">Confirm Split & Cancel</button>
+    </div>`;
+
+    const overlay = _createModalOverlay(html);
+    if (!hasPersistent) _loadAggregatorsIntoSelect('cancel-agg-select');
+}
+
+// ========== SECTOR-WISE FARE INPUT ==========
+function _workflowStep_SectorFareSplit(sectorIndices, selectedPax, mode) {
+    const segments = editedData.segments || [];
+    const journey = editedData.journey || {};
+    let totalBase = 0, totalK3 = 0, totalOther = 0;
+    
+    if (journey.consolidated_fare) {
+        totalBase = parseFloat(journey.consolidated_fare.base_fare) || 0;
+        totalK3 = parseFloat(journey.consolidated_fare.k3_gst) || 0;
+        totalOther = parseFloat(journey.consolidated_fare.other_taxes) || 0;
+    } else {
+        (editedData.passengers || []).forEach(p => {
+            const f = p.fare || {};
+            totalBase += parseFloat(f.base_fare) || 0;
+            totalK3 += parseFloat(f.k3_gst) || 0;
+            totalOther += parseFloat(f.other_taxes) || 0;
+        });
+    }
+
+    let html = `<h3 style="margin-top:0;">🛑 Sector-wise Refund Details</h3>
+    <p style="color:var(--text-secondary);font-size:0.88rem;margin-bottom:1rem;">
+        Select fares for the <strong>selected sectors (${sectorIndices.length})</strong> that you want to refund.<br>
+        <strong>Total Original PNR Fare:</strong> ₹${(totalBase+totalK3+totalOther).toLocaleString('en-IN')}
+    </p>
+    <div style="display:flex;flex-direction:column;gap:1rem;">`;
+
+    sectorIndices.forEach(legIdx => {
+        let legs;
+        if (journey.legs && journey.legs.length > 0) {
+            legs = journey.legs.map(leg => leg.segments || []);
+        } else {
+            legs = groupSegmentsIntoLegs(segments);
+        }
+        const segIndices = legs[legIdx] || [];
+        const firstSeg = segments[segIndices[0]] || {};
+        const lastSeg = segments[segIndices[segIndices.length-1]] || {};
+        const routeStr = `${(firstSeg.departure||{}).airport} \u2192 ${(lastSeg.arrival||{}).airport}`;
+
+        html += `<div style="padding:1rem; border-radius:12px; background:rgba(37,99,235,0.03); border:1px solid var(--border);">
+            <div style="font-weight:700; margin-bottom:0.75rem; color:var(--primary); font-size:1rem;">Sector: ${routeStr}</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.75rem;">
+                <div class="field-item"><label>Sector Base</label><input type="number" id="sector-base-${legIdx}" value="0"></div>
+                <div class="field-item"><label>Sector K3</label><input type="number" id="sector-k3-${legIdx}" value="0"></div>
+                <div class="field-item"><label>Sector Other</label><input type="number" id="sector-other-${legIdx}" value="0"></div>
+            </div>
+        </div>`;
+    });
+
+    html += `</div>
+    <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1.5rem;">
+        <button class="btn-action secondary" onclick="_closeModal()">Cancel</button>
+        <button class="btn-action primary" onclick="_onSectorFareNext('${mode}', ${JSON.stringify(sectorIndices).replace(/"/g, '&quot;')}, ${JSON.stringify(selectedPax).replace(/"/g, '&quot;')})">Next \u2192</button>
+    </div>`;
+
+    _createModalOverlay(html);
+}
+
+function _onSectorFareNext(mode, sectorIndices, selectedPax) {
+    const sectorFares = [];
+    sectorIndices.forEach(idx => {
+        sectorFares.push({
+            leg_idx: idx,
+            base_fare: parseFloat(document.getElementById('sector-base-'+idx)?.value) || 0,
+            k3_gst: parseFloat(document.getElementById('sector-k3-'+idx)?.value) || 0,
+            other_taxes: parseFloat(document.getElementById('sector-other-'+idx)?.value) || 0
+        });
+    });
+    _closeModal();
+    
+    const passengers = editedData.passengers || [];
+    const hasSpecial = passengers.some(p => {
+        const t = (p.pax_type || p.type || '').toUpperCase();
+        return ['CHD', 'CNN', 'CHILD', 'INF', 'INFANT'].includes(t);
+    });
+
+    if (selectedPax.length < passengers.length && hasSpecial) {
+         _workflowStep_FareSplit(sectorIndices, selectedPax, mode, sectorFares);
+    } else if (selectedPax.length < passengers.length) {
+         _cancelStep_ConfirmPartial(sectorIndices, selectedPax, null, sectorFares);
+    } else {
+         _cancelStep_ConfirmFull(sectorIndices, selectedPax, sectorFares);
+    }
+}
+
+// ========== CHANGE WORKFLOW STEPS ==========
+
+function _changeStep_ExtraFares(sectorIndices, selectedPax, perPersonFares) {
+    const passengers = editedData.passengers || [];
+    const isSplit = selectedPax.length < passengers.length;
+    const changingNames = selectedPax.map(i => safe(passengers[i]?.name, 'Passenger ' + (i + 1))).join(', ');
+    const hasPersistent = !!editedData.last_aggregator;
+
+    let html = `<h3 style="margin-top:0;color:var(--primary);">\ud83d\udd04 Step 3: Change Details</h3>
+    <p style="color:var(--text-secondary);font-size:0.88rem;">
+        Entering extra amounts for: <strong>${isSplit ? changingNames : 'Whole Booking'}</strong>
+    </p>
+    <div style="margin:1.5rem 0;display:flex;flex-direction:column;gap:1rem;">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;">
+            <div class="field-item"><label>EXTRA Base</label><input type="number" id="change-extra-base" value="0"></div>
+            <div class="field-item"><label>EXTRA K3</label><input type="number" id="change-extra-k3" value="0"></div>
+            <div class="field-item"><label>EXTRA Other</label><input type="number" id="change-extra-other" value="0"></div>
+        </div>
+        <div class="field-item">
+            <label>Change/Cancellation Charge (XXD)</label>
+            <input type="number" id="change-xxd" value="0" placeholder="Enter change charge">
+        </div>
+        <div class="field-item">
+            <label>Upload New Ticket</label>
+            <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+                <input type="file" id="change-ticket-file" accept=".pdf,.png,.jpg,.jpeg,.webp" style="flex:1;min-width:220px;">
+                <button type="button" class="btn-action secondary" onclick="_uploadChangeAttachment()">Upload</button>
+            </div>
+            <div id="change-upload-status" style="margin-top:0.5rem;font-size:0.8rem;color:var(--text-secondary);">
+                ${changeAttachmentState.filename ? `Uploaded: <strong>${changeAttachmentState.filename}</strong>` : 'Upload the revised ticket before confirmation.'}
+            </div>
+        </div>
+        ${isSplit ? `
+        <div class="field-item">
+            <label>New PNR (optional)</label>
+            <input type="text" id="change-new-pnr" placeholder="Leave empty to keep current PNR" style="text-transform:uppercase;letter-spacing:1px;">
+        </div>` : ''}
+        <div class="field-item">
+            <label>Remarks</label>
+            <input type="text" id="change-remarks" value="Ticket changed" placeholder="Reason for change">
+        </div>
+        ${!hasPersistent ? `
+        <div class="field-item">
+            <label>Add to Ledger (Aggregator)</label>
+            <select id="change-agg-select" style="padding:0.5rem;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:0.88rem;background:var(--bg-main);color:var(--text-primary);">
+                <option value="">No ledger entry</option>
+            </select>
+        </div>
+        <div class="field-item">
+            <label>Booked By</label>
+            <select id="change-booking-by" style="padding:0.5rem;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:0.88rem;background:var(--bg-main);color:var(--text-primary);">
+                <option value="AB">AB</option>
+                <option value="CK">CK</option>
+            </select>
+        </div>` : `<p style="font-size:0.8rem;color:var(--text-secondary);">Reusing existing aggregator and booked-by details.</p>`}
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:0.75rem;">
+        <button class="btn-action secondary" onclick="_closeModal()">Back</button>
+        <button class="btn-action primary" onclick="_executeChange(${JSON.stringify(selectedPax).replace(/"/g, '&quot;')}, ${perPersonFares ? JSON.stringify(perPersonFares).replace(/"/g, '&quot;') : 'null'})">Confirm Change</button>
+    </div>`;
+
+    const overlay = _createModalOverlay(html);
+    if (!hasPersistent) _loadAggregatorsIntoSelect('change-agg-select');
+}
+
+async function _uploadChangeAttachment() {
+    const input = document.getElementById('change-ticket-file');
+    const file = input?.files?.[0];
+    if (!file) {
+        showToast('Choose the revised ticket file first', 'error');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const r = await fetch(`/api/tickets/${currentTicket.id}/change-attachment`, {
+            method: 'POST',
+            body: formData
+        });
+        const result = await r.json();
+        if (!r.ok) {
+            showToast(result.error || 'Upload failed', 'error');
+            return;
+        }
+        changeAttachmentState = {
+            token: result.attachment_token,
+            filename: result.filename
+        };
+        const status = document.getElementById('change-upload-status');
+        if (status) status.innerHTML = `Uploaded: <strong>${result.filename}</strong>`;
+        showToast('New ticket uploaded', 'success');
+    } catch (e) {
+        console.error(e);
+        showToast('Upload failed', 'error');
+    }
+}
+
+function _buildPreviewHtml(summary, actionType) {
+    const money = (value) => formatCurrency(value || 0, editedData.currency || 'INR');
+    const paxHtml = (summary.affected_passengers || []).map(p => `<div style="padding:0.55rem 0.7rem;border:1px solid var(--border);border-radius:10px;background:var(--bg-main);">
+        <div style="font-weight:700;">${p.name}</div>
+        <div style="font-size:0.75rem;color:var(--text-secondary);">${p.system_ticket_number || 'No system ID'}</div>
+    </div>`).join('');
+    const sectorHtml = (summary.affected_sectors || []).map(s => `<div style="padding:0.55rem 0.7rem;border:1px solid var(--border);border-radius:10px;background:var(--bg-main);font-weight:600;">${s}</div>`).join('');
+    const bookingsHtml = (summary.resulting_bookings || []).map(b => `<div style="padding:0.75rem;border:1px solid var(--border);border-radius:12px;background:var(--bg-main);">
+        <div style="display:flex;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;">
+            <strong>${b.label}</strong>
+            <span>${b.ticket_status.toUpperCase()}</span>
+        </div>
+        <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:0.35rem;">PNR: ${b.pnr || 'No PNR'} | Pax: ${b.passenger_count} | Sectors: ${b.sector_count}</div>
+        <div style="margin-top:0.35rem;font-weight:700;">${money(b.grand_total)}</div>
+    </div>`).join('');
+
+    return `
+        <h3 style="margin-top:0;">Preview ${actionType === 'cancel' ? 'Cancellation' : 'Change'}</h3>
+        <div style="display:grid;gap:1rem;">
+            <div>
+                <div style="font-size:0.78rem;color:var(--text-secondary);text-transform:uppercase;font-weight:700;">Scenario</div>
+                <div style="font-size:1rem;font-weight:700;margin-top:0.2rem;">${(summary.scenario || '').replace(/_/g, ' + ').toUpperCase()}</div>
+            </div>
+            <div>
+                <div style="font-size:0.78rem;color:var(--text-secondary);text-transform:uppercase;font-weight:700;margin-bottom:0.45rem;">Affected Passengers</div>
+                <div style="display:grid;gap:0.5rem;">${paxHtml}</div>
+            </div>
+            <div>
+                <div style="font-size:0.78rem;color:var(--text-secondary);text-transform:uppercase;font-weight:700;margin-bottom:0.45rem;">Affected Sectors</div>
+                <div style="display:grid;gap:0.5rem;">${sectorHtml}</div>
+            </div>
+            <div style="padding:0.9rem;border-radius:14px;background:rgba(37,99,235,0.05);border:1px solid var(--border);">
+                <div style="font-weight:700;margin-bottom:0.5rem;">Fare Summary</div>
+                <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0.45rem;font-size:0.88rem;">
+                    <div>Affected Fare: ${money(summary.affected_fare?.total)}</div>
+                    <div>Operation Fee: ${money(summary.fees?.operation_fee)}</div>
+                    ${actionType === 'change' ? `<div>Extra Fare: ${money(summary.fees?.extra_fare?.total)}</div>` : ''}
+                    <div>${actionType === 'cancel' ? 'Net Refund' : 'Total Collection'}: <strong>${money(actionType === 'cancel' ? summary.financial_impact?.refund_amount : summary.financial_impact?.additional_collection)}</strong></div>
+                </div>
+            </div>
+            <div>
+                <div style="font-size:0.78rem;color:var(--text-secondary);text-transform:uppercase;font-weight:700;margin-bottom:0.45rem;">Resulting Bookings</div>
+                <div style="display:grid;gap:0.65rem;">${bookingsHtml}</div>
+            </div>
+        </div>`;
+}
+
+function _showOperationPreview(summary, actionType, payload) {
+    const confirmLabel = actionType === 'cancel' ? 'Confirm Cancellation' : 'Confirm Change';
+    const html = `${_buildPreviewHtml(summary, actionType)}
+        <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1.5rem;">
+            <button class="btn-action secondary" onclick="_closeModal()">Back</button>
+            <button class="btn-action primary" onclick='_confirmOperation("${actionType}", ${JSON.stringify(payload).replace(/"/g, '&quot;')})'>${confirmLabel}</button>
+        </div>`;
+    _createModalOverlay(html);
+}
+
+async function _confirmOperation(actionType, payload) {
+    _closeModal();
+    showToast(`Processing ${actionType}...`, 'info');
+
+    try {
+        await saveTicket(true);
+        const endpoint = actionType === 'cancel' ? 'cancel' : 'change';
+        const r = await fetch(`/api/tickets/${currentTicket.id}/${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await r.json();
+        if (!r.ok) {
+            showToast(result.error || `${actionType} failed`, 'error');
+            return;
+        }
+        showToast(result.message || `${actionType} completed`, 'success');
+        await openTicket(currentTicket.id);
+    } catch (e) {
+        console.error(e);
+        showToast(`${actionType} failed`, 'error');
+    }
+}
+
+async function _executeChange(selectedPax, perPersonFares) {
+    const extraBase = parseFloat(document.getElementById('change-extra-base')?.value) || 0;
+    const extraK3 = parseFloat(document.getElementById('change-extra-k3')?.value) || 0;
+    const extraOther = parseFloat(document.getElementById('change-extra-other')?.value) || 0;
+    const xxdCharge = parseFloat(document.getElementById('change-xxd')?.value) || 0;
+    const newPnr = document.getElementById('change-new-pnr')?.value?.toUpperCase() || '';
+    const remarks = document.getElementById('change-remarks')?.value || 'Ticket changed';
+    const aggId = document.getElementById('change-agg-select')?.value || '';
+    const bookingBy = document.getElementById('change-booking-by')?.value || 'AB';
+
+    if (!changeAttachmentState.token) {
+        showToast('Upload the new ticket before confirmation', 'error');
+        return;
+    }
+
+    _closeModal();
+
+    try {
+        await saveTicket(true);
+        const body = {
+            action_type: 'change',
+            passenger_indices: selectedPax,
+            extra_fare: { base_fare: extraBase, k3_gst: extraK3, other_taxes: extraOther },
+            xxd_charge: xxdCharge,
+            remarks: remarks,
+            per_person_fares: perPersonFares,
+            attachment_token: changeAttachmentState.token
+        };
+        if (aggId) body.aggregator_id = aggId;
+        if (bookingBy) body.booking_by = bookingBy;
+        if (newPnr) body.new_pnr = newPnr;
+
+        const r = await fetch(`/api/tickets/${currentTicket.id}/operations/preview`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const summary = await r.json();
+        if (!r.ok) {
+            showToast(summary.error || 'Preview failed', 'error');
+            return;
+        }
+        _showOperationPreview(summary, 'change', body);
+    } catch (e) {
+        console.error(e);
+        showToast('Change preview failed', 'error');
+    }
+}
+
+
+async function _loadAggregatorsIntoSelect(selectId) {
+    try {
+        const r = await fetch('/api/aggregators');
+        if (!r.ok) return;
+        const d = await r.json();
+        const sel = document.getElementById(selectId);
+        if (!sel) return;
+        let html = '<option value="">No ledger entry</option>';
+        (d.aggregators || []).forEach(a => {
+            html += `<option value="${a.id}">${a.name}</option>`;
+        });
+        sel.innerHTML = html;
+    } catch (e) { }
+}
+
+async function _executeCancel(selectedPax, isFullCancel, perPersonFares, sectorIndices, sectorFares) {
+    const charge = parseFloat(document.getElementById('cancel-charge')?.value) || 0;
+    const aggId = document.getElementById('cancel-agg-select')?.value || '';
+    const bookingBy = document.getElementById('cancel-booking-by')?.value || 'AB';
+    const newPnr = document.getElementById('split-new-pnr')?.value?.toUpperCase() || '';
+
+    if (!isFullCancel && !newPnr) {
+        showToast('Please enter a new PNR for the split passengers', 'error');
+        return;
+    }
+    try {
+        await saveTicket(true);
+        const body = {
+            action_type: 'cancel',
+            passenger_indices: selectedPax,
+            cancellation_charge: charge,
+            booking_by: bookingBy,
+            sector_indices: sectorIndices || [],
+            sector_fares: sectorFares || null
+        };
+        if (aggId) body.aggregator_id = aggId;
+        if (newPnr) body.new_pnr = newPnr;
+        if (perPersonFares) body.per_person_fares = perPersonFares;
+
+        _closeModal();
+        const r = await fetch(`/api/tickets/${currentTicket.id}/operations/preview`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const summary = await r.json();
+        if (!r.ok) {
+            showToast(summary.error || 'Preview failed', 'error');
+            return;
+        }
+        _showOperationPreview(summary, 'cancel', body);
+    } catch (e) {
+        console.error(e);
+        showToast('Cancellation preview failed', 'error');
+    }
 }
 
 // ==================== INIT ====================

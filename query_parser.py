@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==================== CONFIG ====================
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 if not OPENROUTER_API_KEY:
     raise ValueError("OPENROUTER_API_KEY is not set")

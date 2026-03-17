@@ -855,7 +855,7 @@
           showNotif(data.error || 'Invalid credentials', 'error');
           setLoading('loginBtn', false, 'Sign In');
         }
-      } catch { showNotif('Network error — try again', 'error'); setLoading('loginBtn', false, 'Sign In'); }
+      } catch (e) { showNotif('Network error — try again', 'error'); setLoading('loginBtn', false, 'Sign In'); }
     }
 
     /* ── REGISTER ───────────────────────────────────────── */
@@ -879,7 +879,7 @@
           showNotif(data.error || 'Registration failed', 'error');
           setLoading('registerBtn', false, 'Create Account');
         }
-      } catch { showNotif('Network error — try again', 'error'); setLoading('registerBtn', false, 'Create Account'); }
+      } catch (e) { showNotif('Network error — try again', 'error'); setLoading('registerBtn', false, 'Create Account'); }
     }
 
     /* ── TEST USER ──────────────────────────────────────── */

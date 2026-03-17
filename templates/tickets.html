@@ -371,6 +371,23 @@
             overflow: hidden;
         }
 
+        .seat-field {
+            background: var(--bg-main);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem !important;
+            transition: all 0.2s ease;
+        }
+
+        .seat-field input {
+            min-width: 0;
+        }
+
+        .seat-field:hover {
+            border-color: var(--primary);
+            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.06);
+        }
+
         /* Segment Card V2 - Timeline Style */
         .segment-card-v2 {
             background: var(--bg-main);
@@ -400,6 +417,13 @@
             flex-wrap: wrap;
         }
 
+        .segment-airline-main {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
         .segment-airline-v2 {
             font-weight: 700;
             font-size: 0.92rem;
@@ -419,6 +443,31 @@
             padding: 0.1rem 0.45rem;
             border-radius: 4px;
             font-weight: 600;
+        }
+
+        .segment-card-v2.has-cabin-class .segment-header-v2 {
+            align-items: flex-start;
+        }
+
+        .segment-card-v2.has-cabin-class .segment-airline-info {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.3rem;
+        }
+
+        .segment-card-v2.has-cabin-class .segment-airline-main {
+            width: 100%;
+        }
+
+        .tl-datetime.has-cabin-class {
+            width: 100%;
+            justify-content: space-between !important;
+            gap: 0.75rem !important;
+        }
+
+        .tl-datetime.has-cabin-class .tl-date {
+            margin-left: auto;
+            text-align: right;
         }
 
         .seg-dur-chip {
@@ -895,6 +944,7 @@
             <a href="/itineraries" class="sidebar-link">📋 Itineraries</a>
             <a href="/billing" class="sidebar-link">💰 Billing</a>
             <a href="/tickets" class="sidebar-link active">🎫 Tickets</a>
+            <a href="/ledger" class="sidebar-link">📒 Ledger</a>
             <div class="sidebar-divider"></div>
             <a href="/passengers" class="sidebar-link">👥 Passengers</a>
             <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
@@ -926,6 +976,9 @@
                     <span class="search-icon">🔍</span>
                     <input type="text" id="ticketSearch" class="search-input"
                         placeholder="Search tickets by PNR, passenger, route..." oninput="renderTicketCards()">
+                </div>
+                <div style="display:flex;justify-content:flex-end;">
+                    <button class="btn-action primary" onclick="openPnrMergeModal()">Review PNR Groups</button>
                 </div>
                 <div class="filter-bar">
                     <button class="tab active" onclick="filterTickets('all', this)">All</button>

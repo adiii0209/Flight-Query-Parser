@@ -8,3 +8,6 @@ pytesseract
 opencv-python-headless
 Pillow
 PyMuPDF
+pdf417gen
+playwright
+reportlab

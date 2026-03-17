@@ -10,6 +10,8 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Table, TableStyle
+import base64
+import io
 import os
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
@@ -43,7 +45,7 @@ def _ct(city, terminal):
         return f"{c}  ({t})"
     return c
 
-def _txt(c, x, y, text, font="Helvetica", size=8, col=None, align="left"):
+def _txt(c, x, y, text, font="Times-Roman", size=8, col=None, align="left"):
     if not _t(text): return 0
     s = str(text)
     c.saveState()
@@ -85,13 +87,13 @@ def _rect(c, x, y, w, h, fill=None, stroke=None, lw=0.4, radius=0):
 def _section_heading(c, x, y, label, col, right_x):
     """Draw coloured bold label + extending rule to right_x. Returns new y."""
     c.saveState()
-    c.setFont("Helvetica-Bold", 7.5)
+    c.setFont("Times-Bold", 7.5)
     c.setFillColor(col)
     c.drawString(x, y, label.upper())
-    tw = c.stringWidth(label.upper(), "Helvetica-Bold", 7.5)
+    tw = c.stringWidth(label.upper(), "Times-Bold", 7.5)
     c.setStrokeColor(RULE)
     c.setLineWidth(0.4)
-    c.line(x + tw + 8, y + 3.5, right_x, y + 3.5)
+    #c.line(x + tw + 8, y + 3.5, right_x, y + 3.5)
     c.restoreState()
     return y - 13
 
@@ -122,8 +124,67 @@ def _leg_tag(idx, trip_type):
     if trip_type == "round_trip":
         return "OUTBOUND" if idx == 0 else "RETURN"
     if trip_type == "multi_city":
-        return f"SEGMENT {idx + 1}"
+        return f"FLIGHT {idx + 1}"
     return ""
+
+
+def _barcode_image_reader(data_uri):
+    value = _t(data_uri)
+    if not value or not value.startswith("data:image"):
+        return None
+    try:
+        _, encoded = value.split(",", 1)
+        return ImageReader(io.BytesIO(base64.b64decode(encoded)))
+    except Exception:
+        return None
+
+
+def _fit_font_size(c, text, font, max_size, max_width, min_size=7):
+    value = _t(text)
+    if not value:
+        return max_size
+    size = max_size
+    while size > min_size and c.stringWidth(value, font, size) > max_width:
+        size -= 0.5
+    return size
+
+
+def _draw_traveller_icon(c, x, y, size=10, col=None):
+    icon_path = os.path.join(_DIR, "traveller.png")
+    if os.path.isfile(icon_path):
+        try:
+            draw_h = size
+            draw_w = size
+            c.drawImage(
+                ImageReader(icon_path),
+                x - draw_w / 2,
+                y - draw_h + 1,
+                width=10,
+                height=10,
+                mask="auto"
+            )
+            return
+        except Exception:
+            pass
+
+    c.saveState()
+    c.setFillColor(col or INK)
+    head_r = size * 0.22
+    body_w = size * 0.7
+    body_h = size * 0.48
+    body_x = x - body_w / 2
+    body_y = y - body_h - head_r - 1
+    c.circle(x, y, head_r, fill=1, stroke=0)
+    c.roundRect(body_x, body_y, body_w, body_h, size * 0.16, fill=1, stroke=0)
+    c.restoreState()
+
+
+def _draw_traveler_icon(c, x, y, col=BRAND):
+    c.saveState()
+    c.setFillColor(col)
+    c.circle(x + 4, y + 7, 2.5, fill=1, stroke=0)
+    c.roundRect(x + 1, y, 6, 5, 2, fill=1, stroke=0)
+    c.restoreState()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -143,6 +204,44 @@ def draw_ticket(c, data, include_fare=True):
                   _t(journey.get("trip_type")) or "one_way")
     n_pax = len(passengers)
     curr_code = _t(data.get("currency")) or "INR"
+    bdate = _t(data.get("booking_date"))
+    phone = _t(data.get("phone"))
+    pnr = _t(data.get("pnr")) or "—"
+    ref = _t(data.get("reference_number"))
+    tdsp = trip_type.replace("_", " ").title()
+    gst_no = _t(data.get("gst_number"))
+    gst_comp = _t(data.get("gst_company_name"))
+
+    cotv = _t(data.get("class_of_travel"))
+    if cotv and cotv.lower() != "none":
+        cotv = cotv.title()
+    else:
+        cotv = None
+
+    FTH = 28
+    PAGE_BOTTOM_LIMIT = M + 14
+
+    def _draw_footer():
+        _hline(c, M, M + FTH, IW, RULE, 0.5)
+        _rect(c, M, M, 4, FTH, fill=ACCENT)
+        _txt(c, CX, M + 6,
+             "Time Travels Pvt Ltd  |  www.timetours.in  |  +91 33 400 11 333",
+             "Times-Bold", 6, INK2, align="center")
+
+    def _start_continuation_page():
+        nonlocal T
+        c.showPage()
+        _rect(c, 0, 0, W, H, fill=WHITE)
+        T = H - M
+
+    def _ensure_space(required_height):
+        nonlocal T
+        if T - required_height < PAGE_BOTTOM_LIMIT:
+            _start_continuation_page()
+
+    def _start_section(label, color):
+        _ensure_space(24)
+        return _section_heading(c, M + 10, T - 11, label, color, RIGHT - 10)
 
     # White page
     _rect(c, 0, 0, W, H, fill=WHITE)
@@ -153,69 +252,83 @@ def draw_ticket(c, data, include_fare=True):
     HDR_H = 62
     HDR_Y = T - HDR_H
 
-    # Outer frame
-    _rect(c, M, HDR_Y, IW, HDR_H, stroke=RULE, lw=0.5)
-    # 3 px left accent bar
-    _rect(c, M, HDR_Y, 4, HDR_H, fill=BRAND)
-
-    # ── FIX 1: Wider logo (was width=44, now width=90) ─────────────────────
     logo = os.path.join(_DIR, "logo.png")
-    logo_x = M + 14
-    LOGO_W = 90   # <-- increased from 44
+
+    # ── LOGO ON RIGHT ─────────────────────────────────────────
+    LOGO_W = 75
+    logo_x = RIGHT - LOGO_W-25
+
     try:
-        c.drawImage(ImageReader(logo), logo_x, HDR_Y + 9,
-                    width=LOGO_W+5, height=44, mask="auto")
-        name_x = logo_x + LOGO_W + 10   # push text right to avoid overlap
+        c.drawImage(
+            ImageReader(logo),
+            logo_x,
+            HDR_Y + 30,
+            width=LOGO_W + 25,
+            height=25,
+            mask="auto"
+        )
     except Exception:
-        name_x = logo_x
+        pass
 
 
-    # Divider
-    div_x = RIGHT - 165
-    _vline(c, div_x, HDR_Y + 10, HDR_Y + HDR_H - 10, RULE, 0.5)
+    # ── E-TICKET ON LEFT ──────────────────────────────────────
+    _txt(
+        c,
+        M ,
+        HDR_Y + 44,
+        "E-TICKET",
+        "Times-Bold",
+        14,
+        BRAND,
+        "left"
+    )
 
-    # Right block – E-TICKET badge
-    _txt(c, RIGHT - 12, HDR_Y + 44, "E-TICKET",
-         "Helvetica-Bold", 14, BRAND, "right")
     # Amber underline below label
-    tw_et = c.stringWidth("E-TICKET", "Helvetica-Bold", 14)
-    _rect(c, RIGHT - 12 - tw_et, HDR_Y + 41, tw_et, 2, fill=ACCENT)
+    '''tw_et = c.stringWidth("E-TICKET", "Times-Bold", 14)
 
-    bdate = _t(data.get("booking_date"))
-    phone = _t(data.get("phone"))
+    _rect(
+        c,
+        M ,
+        HDR_Y + 41,
+        tw_et,
+        2,
+        fill=ACCENT
+    )'''
+
+    # Booking info under E-TICKET
     if bdate:
-        _txt(c, RIGHT - 12, HDR_Y + 28, f"Issued: {bdate}",
-             size=6.5, col=INK3, align="right")
+        _txt(
+            c,
+            M,
+            HDR_Y + 28,
+            f"Issued: {bdate}",
+            size=6.5,
+            col=INK,
+            align="left"
+        )
+
     if phone:
-        _txt(c, RIGHT - 12, HDR_Y + 18, f"Phone: {phone}",
-             size=6.5, col=INK3, align="right")
+        _txt(
+            c,
+            M ,
+            HDR_Y + 18,
+            f"Phone: {phone}",
+            size=6.5,
+            col=INK,
+            align="left"
+        )
 
     T -= HDR_H + G
-
     # ══════════════════════════════════════════════════════════════════════════
     #  PNR / TRIP INFO ROW  – three clean info cells
     # ══════════════════════════════════════════════════════════════════════════
     INFO_H = 38
-    _rect(c, M, T - INFO_H, IW, INFO_H, stroke=RULE, lw=0.5)
-
-    pnr      = _t(data.get("pnr")) or "—"
-    ref      = _t(data.get("reference_number"))
-    tdsp     = trip_type.replace("_", " ").title()
-    gst_no   = _t(data.get("gst_number"))
-    gst_comp = _t(data.get("gst_company_name"))
-    
-    # Universal class of travel
-    cotv = _t(data.get("class_of_travel"))
-    if cotv:
-        cotv = cotv.title()
-    else:
-        cotv = None
-
+    _rect(c, M, T - INFO_H, IW, INFO_H, stroke=RULE, lw=0.5, radius=6)
 
     # Cell renderer
     def _info_cell(cx, label, value, vcol=INK, vsize=10, bold=True):
         _txt(c, cx, T - 13, label, size=6, col=INK3)
-        fn = "Helvetica-Bold" if bold else "Helvetica"
+        fn = "Times-Bold" if bold else "Times-Roman"
         _txt(c, cx, T - 26, value, fn, vsize, vcol)
 
     # dynamically distributed cells
@@ -231,130 +344,84 @@ def draw_ticket(c, data, include_fare=True):
     for i, (lbl, val, vc, vs, bd) in enumerate(cells):
         cx = M + i * cell_w + 8
         _info_cell(cx, lbl, val, vc, vs, bd)
-        if i < len(cells) - 1:
-            _vline(c, M + (i + 1) * cell_w, T - INFO_H + 6, T - 6, RULE, 0.5)
+        '''if i < len(cells) - 1:
+            _vline(c, M + (i + 1) * cell_w, T - INFO_H + 6, T - 6, RULE, 0.5)'''
 
     T -= INFO_H + G
 
-    # GST row (optional)
-    if gst_no or gst_comp:
-        GST_H = 22
-        _rect(c, M, T - GST_H, IW, GST_H, stroke=RULE, lw=0.4)
-        parts = []
-        if gst_comp: parts.append(gst_comp)
-        if gst_no:   parts.append(f"GSTIN: {gst_no}")
-        _txt(c, M + 10, T - 8,  "GST:", "Helvetica-Bold", 6.5, ACCENT)
-        _txt(c, M + 34, T - 8,  "  |  ".join(parts), "Helvetica", 7, INK2)
-        T -= GST_H + G
-
-    # ══════════════════════════════════════════════════════════════════════════
-    #  PASSENGER TABLE
-    # ══════════════════════════════════════════════════════════════════════════
-    RH = 14
-    PAX_TBL_H = (1 + n_pax) * RH
-    PAX_H     = PAX_TBL_H + 22
-    _rect(c, M, T - PAX_H, IW, PAX_H, stroke=RULE, lw=0.5)
-    cur_y = _section_heading(c, M + 10, T - 11, "Passenger Details", BRAND, RIGHT - 10)
-
-    if cotv:
-        p_cols = [18, 160, 40, 115, 115, 73]
-        head_r = ["#", "Full Name", "Type", "Ticket Number", "Frequent Flyer", "Class"]
-    else:
-        # Distribute the 73 points of the missing Class column across the others
-        # giving more to "Type" so the gap between it and "Ticket Number" 
-        # is balanced with the rest of the table. (total 521)
-        p_cols = [18, 183, 70, 125, 125]
-        head_r = ["#", "Full Name", "Type", "Ticket Number", "Frequent Flyer"]
-
-    rows = [head_r]
-    for i, p in enumerate(passengers, 1):
-        pt = _t(p.get("pax_type") or p.get("type")) or "ADT"
-        lb = ("Child"  if pt.upper() in ("CHD", "CNN") else
-              "Infant" if pt.upper() in ("INF",) else "Adult")
-        row = [str(i), _t(p.get("name")), lb,
-               _t(p.get("ticket_number")),
-               _t(p.get("frequent_flyer_number"))]
-        if cotv:
-            row.append(cotv)
-        rows.append(row)
-
-    tbl = Table(rows, colWidths=p_cols)
-    tbl.setStyle(TableStyle([
-        ("FONT",          (0, 0), (-1, 0),  "Helvetica-Bold", 6.5),
-        ("TEXTCOLOR",     (0, 0), (-1, 0),  INK3),
-        ("BACKGROUND",    (0, 0), (-1, 0),  colors.Color(0.96, 0.97, 1.0)),
-        ("FONT",          (0, 1), (-1, -1), "Helvetica", 7),
-        ("TEXTCOLOR",     (0, 1), (-1, -1), INK),
-        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [WHITE, colors.Color(0.97, 0.98, 1.0)]),
-        ("ALIGN",         (0, 0), (-1, -1), "LEFT"),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
-        ("TOPPADDING",    (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ("LINEBELOW",     (0, 0), (-1, -1), 0.3, RULE),
-    ]))
-    tbl.wrapOn(c, W, H)
-    tbl.drawOn(c, M + 1, cur_y - PAX_TBL_H + 2)
-    T -= PAX_H + G
-
-    # ══════════════════════════════════════════════════════════════════════════
-    #  FLIGHT SEGMENTS
-    # ══════════════════════════════════════════════════════════════════════════
     legs     = _group_legs(segments, journey)
     num_legs = len(legs)
 
     SEG_HEADER_H = 16   # airline strip height
-    SEG_BODY_H   = 76   # tall enough for top_y=fy-25 + IATA(24pt) + time + city + date + padding
+    SEG_BODY_H   = 72   # tighter flight block while preserving text spacing
     SEG_H        = SEG_HEADER_H + SEG_BODY_H
     LAY_H        = 16
     LLEG_H       = 16
-    LEG_G        = 6
+    LEG_G        = 4
 
     has_lbls    = trip_type in ("round_trip", "multi_city")
     total_segs  = sum(len(l) for l in legs)
     total_lays  = sum(max(0, len(l) - 1) for l in legs)
-    FLT_H = (22
-             + total_segs * SEG_H
-             + total_lays * LAY_H
-             + (num_legs if has_lbls else 0) * LLEG_H
-             + max(0, num_legs - 1) * LEG_G)
+    fy = _start_section("Flight Details", BRAND)
 
-    _rect(c, M, T - FLT_H, IW, FLT_H, stroke=RULE, lw=0.5)
-    fy = _section_heading(c, M + 10, T - 11, "Flight Details", BRAND, RIGHT - 10)
+    global_seg_idx = 0
 
     for li, leg in enumerate(legs):
-        if li > 0:
-            fy -= LEG_G
-            _hline(c, M + 10, fy + LEG_G / 2, IW - 20, RULE, 0.6)
-
-        # Leg label pill
-        ltag = _leg_tag(li, trip_type)
-        if ltag:
-            pill_w = c.stringWidth(ltag, "Helvetica-Bold", 6) + 14
-            _rect(c, M + 10, fy - LLEG_H + 4, pill_w, 12,
-                  fill=BRAND_PALE, stroke=BRAND, lw=0.5, radius=2)
-            _txt(c, M + 10 + 7, fy - LLEG_H + 9, ltag,
-                 "Helvetica-Bold", 6, BRAND)
-            fy -= LLEG_H
+        leg_gap_pending = li > 0
+        leg_label_pending = bool(_leg_tag(li, trip_type))
 
         for si, seg in enumerate(leg):
+            needed_h = SEG_H
+            if leg_gap_pending:
+                needed_h += LEG_G
+            if leg_label_pending:
+                needed_h += LLEG_H
+            if si > 0:
+                needed_h += LAY_H
+            if fy - needed_h < PAGE_BOTTOM_LIMIT:
+                T = fy
+                _start_continuation_page()
+                fy = T
+                leg_gap_pending = False
+
+            if leg_gap_pending:
+                fy -= LEG_G
+                leg_gap_pending = False
+
+            ltag = _leg_tag(li, trip_type)
+            if leg_label_pending and ltag:
+                fy -= 2
+                leg_label_pending = False
 
             # ── layover strip ───────────────────────────────────────────────
             if si > 0:
                 lay_city = (_t(seg.get("departure", {}).get("city")) or
                             _t(seg.get("departure", {}).get("airport")))
                 lay_dur  = _t(seg.get("layover") or seg.get("layover_duration"))
-                parts = ["LAYOVER"]
-                if lay_dur:  parts.append(lay_dur)
-                if lay_city: parts.append(f"at {lay_city}")
-                lay_text = "  ·  ".join(parts)
+                
+                if not lay_dur and isinstance(journey.get("layovers"), list):
+                    for lo in journey["layovers"]:
+                        if isinstance(lo, dict) and lo.get("after_segment") == global_seg_idx - 1:
+                            lay_dur = _t(lo.get("duration"))
+                            break
 
-                # Pale amber band
-                _rect(c, M + 1, fy - LAY_H, IW - 2, LAY_H,
-                      fill=ACCENT_PALE)
-                _txt(c, CX, fy - LAY_H + 4, lay_text,
-                     "Helvetica-Bold", 5.5, ACCENT, "center")
+                parts = []
+                if lay_dur:  parts.append(lay_dur)
+                parts.append("Layover")
+                if lay_city: parts.append(f"in {lay_city}")
+                lay_text = " ".join(parts)
+
+                tw = c.stringWidth(lay_text, "Times-Roman", 6.5)
+                c.saveState()
+                c.setStrokeColor(ACCENT)
+                c.setLineWidth(0.5)
+                c.setDash(2, 2)
+                _hline(c, CX - tw/2 - 16, fy - LAY_H/2, 12, ACCENT, 0.5)
+                _hline(c, CX + tw/2 + 4,  fy - LAY_H/2, 12, ACCENT, 0.5)
+                c.restoreState()
+
+                _txt(c, CX, fy - LAY_H/2 - 2.5, lay_text,
+                     "Times-Roman", 6.5, ACCENT, "center")
                 fy -= LAY_H
 
             # ── airline header strip ────────────────────────────────────────
@@ -372,7 +439,7 @@ def draw_ticket(c, data, include_fare=True):
             else:
                 bkclass  = _t(bk_obj)
 
-            if bkclass.lower() == "n/a":
+            if bkclass.lower() in ("n/a", "none"):
                 bkclass = ""
 
             dur      = _t(seg.get("duration_extracted") or
@@ -384,105 +451,286 @@ def draw_ticket(c, data, include_fare=True):
             ax = M + 12
             if airline:
                 _txt(c, ax, fy - SEG_HEADER_H + 5, airline,
-                     "Helvetica-Bold", 7, BRAND)
-                ax += c.stringWidth(airline, "Helvetica-Bold", 7) + 10
+                     "Times-Bold", 7, BRAND)
+                ax += c.stringWidth(airline, "Times-Bold", 7) + 20
             if fnum:
                 _txt(c, ax, fy - SEG_HEADER_H + 5, fnum,
-                     "Helvetica-Bold", 7, INK2)
-                ax += c.stringWidth(fnum, "Helvetica-Bold", 7) + 12
+                     "Times-Bold", 7, INK2)
+                ax += c.stringWidth(fnum, "Times-Bold", 7) + 12
             if bkclass:
                 _txt(c, ax, fy - SEG_HEADER_H + 5, f"Class: {bkclass}",
                      size=6, col=INK3)
 
-            fy -= SEG_HEADER_H
+            leg_badge = _leg_tag(li, trip_type) if trip_type in ("round_trip", "multi_city") else ""
+            if leg_badge:
+                badge_fill = colors.Color(0.90, 0.97, 0.93) if leg_badge == "OUTBOUND" else colors.Color(0.95, 0.91, 0.99)
+                badge_text = GREEN if leg_badge == "OUTBOUND" else colors.Color(0.46, 0.20, 0.67)
+                badge_w = c.stringWidth(leg_badge, "Times-Bold", 6) + 14
+                badge_x = RIGHT - 10 - badge_w
+                _rect(c, badge_x, fy - SEG_HEADER_H + 2.5, badge_w, 10.5,
+                      fill=badge_fill, stroke=None, radius=4)
+                _txt(c, badge_x + badge_w / 2, fy - SEG_HEADER_H + 5.2, leg_badge,
+                     "Times-Bold", 6, badge_text, align="center")
+
+            fy -= SEG_HEADER_H + 15
 
             # ── body: DEP  ~~✈~~  ARR ──────────────────────────────────────
             d_ap   = _t(dep.get("airport")) or "---"
-            d_city = _ct(_t(dep.get("city")), _t(dep.get("terminal")))
+            d_city_name = _t(dep.get("city")) or d_ap
+            d_terminal = _t(dep.get("terminal"))
+            d_terminal_text = f"Terminal {d_terminal}" if d_terminal else ""
             d_time = _t(dep.get("time")) or "--:--"
             d_date = _t(dep.get("date")) or ""
 
             a_ap   = _t(arr.get("airport")) or "---"
-            a_city = _ct(_t(arr.get("city")), _t(arr.get("terminal")))
+            a_city_name = _t(arr.get("city")) or a_ap
+            a_terminal = _t(arr.get("terminal"))
+            a_terminal_text = f"Terminal {a_terminal}" if a_terminal else ""
             a_time = _t(arr.get("time")) or "--:--"
             a_date = _t(arr.get("date")) or ""
 
             # thin top divider for subsequent segments
-            if si > 0 or li > 0:
+            if si > 0:
                 _hline(c, M + 1, fy, IW - 2, RULE, 0.3)
 
-            # Vertical anchors: top_y=fy-25 pushes IATA well below the strip.
-            # Each row stacks downward; all fit within SEG_BODY_H=76.
-            top_y  = fy - 25        # IATA code baseline (24pt tall → top edge at fy-1)
-            time_y = top_y - 16     # time row
-            city_y = time_y - 12    # city / terminal row
-            date_y = city_y - 11    # date row (bottom ~fy-64, within 76pt body)
+            city_y = fy - 10
+            time_y = city_y - 12
+            terminal_y = time_y - 10
+            date_y = terminal_y - 10
+
+            left_x = M + 14
+            right_x = RIGHT - 14
+            max_side_w = 150
+            dep_iata_text = f"({d_ap})"
+            dep_city_size = _fit_font_size(c, d_city_name, "Times-Bold", 10.5, max_side_w - 34, min_size=8)
+            dep_iata_size = 8
+            dep_city_w = c.stringWidth(d_city_name, "Times-Bold", dep_city_size)
+            dep_iata_w = c.stringWidth(dep_iata_text, "Times-Roman", dep_iata_size)
+            dep_group_w = dep_city_w + 4 + dep_iata_w
+
+            arr_iata_text = f"({a_ap})"
+            arr_city_size = _fit_font_size(c, a_city_name, "Times-Bold", 10.5, max_side_w - 34, min_size=8)
+            arr_iata_size = 8
+            arr_city_w = c.stringWidth(a_city_name, "Times-Bold", arr_city_size)
+            arr_iata_w = c.stringWidth(arr_iata_text, "Times-Roman", arr_iata_size)
+            arr_group_w = arr_city_w + 4 + arr_iata_w
+            arr_group_x = right_x - arr_group_w
+
+            # Connector line shrinks around the visible city/IATA labels.
+            conn_y = city_y + 2
+            conn_lx = left_x + dep_group_w + 18
+            conn_rx = arr_group_x - 18
 
             # DEP (left)
-            _txt(c, M + 14, top_y, d_ap, "Helvetica-Bold", 24, INK)
-            _txt(c, M + 14, time_y, d_time, "Helvetica-Bold", 10, INK2)
-            _txt(c, M + 14, city_y, d_city, size=6.5, col=INK3)
-            _txt(c, M + 14, date_y, d_date, size=6, col=INK3)
+            _txt(c, left_x, city_y, d_city_name, "Times-Bold", dep_city_size, INK)
+            _txt(c, left_x + dep_city_w + 4, city_y + 1, dep_iata_text, size=dep_iata_size, col=INK)
+            _txt(c, left_x, time_y, d_time, "Times-Bold", 8.5, INK)
+            if d_terminal_text:
+                _txt(c, left_x, terminal_y, d_terminal_text, size=7, col=INK)
+            if d_date:
+                _txt(c, left_x, date_y, d_date, size=7, col=INK)
 
             # ARR (right-aligned)
-            tw_ap  = c.stringWidth(a_ap,   "Helvetica-Bold", 24)
-            tw_ti  = c.stringWidth(a_time, "Helvetica-Bold", 10)
-            _txt(c, RIGHT - 14 - tw_ap,  top_y,  a_ap,   "Helvetica-Bold", 24, INK)
-            _txt(c, RIGHT - 14 - tw_ti,  time_y, a_time, "Helvetica-Bold", 10, INK2)
-            if a_city:
-                tw_ac = c.stringWidth(a_city, "Helvetica", 6.5)
-                _txt(c, RIGHT - 14 - tw_ac, city_y, a_city, size=6.5, col=INK3)
+            _txt(c, arr_group_x, city_y, a_city_name, "Times-Bold", arr_city_size, INK)
+            _txt(c, arr_group_x + arr_city_w + 4, city_y + 1, arr_iata_text, size=arr_iata_size, col=INK)
+            tw_ti  = c.stringWidth(a_time, "Times-Bold", 8.5)
+            _txt(c, right_x - tw_ti, time_y, a_time, "Times-Bold", 8.5, INK)
+            if a_terminal_text:
+                tw_term = c.stringWidth(a_terminal_text, "Times-Roman", 7)
+                _txt(c, right_x - tw_term, terminal_y, a_terminal_text, size=7, col=INK)
             if a_date:
-                tw_ad = c.stringWidth(a_date, "Helvetica", 6)
-                _txt(c, RIGHT - 14 - tw_ad, date_y, a_date, size=6, col=INK3)
-
-            # Connector line — sits midway between IATA baseline and time row
-            conn_y   = top_y - 8
-            conn_lx  = M + 14 + 52
-            conn_rx  = RIGHT - 14 - 52
+                tw_ad = c.stringWidth(a_date, "Times-Roman", 7)
+                _txt(c, right_x - tw_ad, date_y, a_date, size=7, col=INK)
 
             c.saveState()
             c.setStrokeColor(SEP)
             c.setLineWidth(0.6)
             c.setDash(4, 3)
-            c.line(conn_lx + 6, conn_y, conn_rx - 6, conn_y)
+            if conn_rx > conn_lx:
+                c.line(conn_lx + 6, conn_y, conn_rx - 6, conn_y)
             c.restoreState()
 
             # End dots
             c.saveState()
             c.setFillColor(BRAND)
-            c.circle(conn_lx + 4,  conn_y, 3, fill=1, stroke=0)
-            c.circle(conn_rx - 4, conn_y, 3, fill=1, stroke=0)
+            if conn_rx > conn_lx:
+                c.circle(conn_lx + 4,  conn_y, 3, fill=1, stroke=0)
+                c.circle(conn_rx - 4, conn_y, 3, fill=1, stroke=0)
             c.restoreState()
 
-            # Plane icon centred ABOVE the connector line
+            # Plane / Airline icon centred ABOVE the connector line
             c.saveState()
             cx_icon = CX
-            cy_icon = conn_y + 6          # sits above the dashed line
-            icon_w = 10
-            icon_h = 10
-            icon_path = os.path.join(_DIR, "airplane (2).png")
-            try:
-                c.translate(cx_icon, cy_icon + icon_h/2 - 2)
-                c.rotate(-25)  # Rotate 45 degrees clockwise
-                c.drawImage(ImageReader(icon_path), -icon_w/2, -icon_h/2,
-                            width=icon_w, height=icon_h, mask="auto")
-            except Exception:
-                c.setFillColor(BRAND)
-                c.setFont("Helvetica", 14)
-                ptw = c.stringWidth("\u2708", "Helvetica", 14)
-                # If falling back to unicode, just mirror it to face right
-                c.transform(-1, 0, 0, 1, 2 * cx_icon, 0)
-                c.drawString(cx_icon - ptw / 2, cy_icon, "\u2708")
+            cy_icon = conn_y + 4          # center for logos or baseline for plane
+            
+            logo_found = False
+            if airline:
+                logo_path = os.path.join(_DIR, "Airline Logos", f"{airline}.png")
+                if os.path.isfile(logo_path):
+                    try:
+                        img = ImageReader(logo_path)
+                        iw, ih = img.getSize()
+                        aspect = iw / ih
+                        draw_h = 14
+                        draw_w = draw_h * aspect
+                        if draw_w > 60:
+                            draw_w = 60
+                            draw_h = draw_w / aspect
+                        
+                        c.drawImage(img, cx_icon - draw_w/2, cy_icon,
+                                    width=draw_w, height=draw_h, mask="auto")
+                        logo_found = True
+                    except Exception:
+                        pass
+
+            if not logo_found:
+                icon_w = 10
+                icon_h = 10
+                icon_path = os.path.join(_DIR, "airplane (2).png")
+                try:
+                    c.translate(cx_icon, conn_y + 6 + icon_h/2 - 2)
+                    c.rotate(-25)  # Rotate 45 degrees clockwise
+                    c.drawImage(ImageReader(icon_path), -icon_w/2, -icon_h/2,
+                                width=icon_w, height=icon_h, mask="auto")
+                except Exception:
+                    # If falling back to unicode, just mirror it to face right
+                    c.restoreState() # reset from translate/rotate
+                    c.saveState()
+                    c.setFillColor(BRAND)
+                    c.setFont("Times-Roman", 14)
+                    ptw = c.stringWidth("\u2708", "Times-Roman", 14)
+                    c.transform(-1, 0, 0, 1, 2 * cx_icon, 0)
+                    c.drawString(cx_icon - ptw / 2, conn_y + 6, "\u2708")
             c.restoreState()
 
             # Duration
             if dur:
-                _txt(c, CX, conn_y - 16, dur, size=6, col=INK3, align="center")
+                _txt(c, CX, conn_y - 14, dur, size=6, col=INK3, align="center")
 
             fy -= SEG_BODY_H
+            global_seg_idx += 1
 
-    T -= FLT_H + G
+    T = fy - 4
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  TRAVELLERS
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # Unified travellers data
+    n_seg = len(segments)
+    traveller_blocks = []
+    for p in passengers:
+        pname = _t(p.get("name")) or "Passenger"
+        pt = _t(p.get("pax_type") or p.get("type")) or "ADT"
+        type_label = ("Child" if pt.upper() in ("CHD", "CNN") else
+                      "Infant" if pt.upper() in ("INF",) else "Adult")
+        bag = _t(p.get("baggage"))
+        ticket_no = _t(p.get("ticket_number"))
+        ff_no = _t(p.get("frequent_flyer_number"))
+        seats = p.get("seats") or []
+        ancs = p.get("ancillaries") or []
+        meals = p.get("meals") or []
+
+        seg_map = {}
+        for s in seats:
+            si = (s.get("segment_index", 0) if isinstance(s, dict) else 0)
+            sn = _t(s.get("seat_number") if isinstance(s, dict) else s)
+            if sn:
+                seg_map.setdefault(si, {})["seat"] = sn
+        for a in ancs:
+            if isinstance(a, dict):
+                si = a.get("segment_index", 0)
+                desc = _t(a.get("name") or a.get("code"))
+                if desc:
+                    seg_map.setdefault(si, {}).setdefault("anc", []).append(desc)
+        for m in meals:
+            if isinstance(m, dict):
+                si = m.get("segment_index", 0)
+                desc = _t(m.get("name") or m.get("code"))
+                if desc:
+                    seg_map.setdefault(si, {}).setdefault("meal", []).append(desc)
+
+        segs_info = []
+        segment_indices = sorted(set(seg_map.keys()) | {idx for idx, seg in enumerate(segments) if _t(seg.get("barcode_image"))})
+        for si in segment_indices:
+            info = seg_map.get(si, {})
+            seg = segments[si] if si < n_seg else {}
+            barcode_image = seg.get("barcode_image")
+            if not info.get("seat") and not info.get("anc") and not info.get("meal") and not _t(barcode_image):
+                continue
+            dap = _t(seg.get("departure", {}).get("airport"))
+            aap = _t(seg.get("arrival", {}).get("airport"))
+            airline_name = _t(seg.get("airline"))
+            fnum = _t(seg.get("flight_number"))
+            route = f"{dap} -> {aap}" if dap and aap else f"Seg {si+1}"
+            if airline_name or fnum:
+                route = f"{route}  |  {airline_name} {fnum}".strip()
+            parts = []
+            if info.get("seat"):
+                parts.append(f"Seat: {info.get('seat')}")
+            if info.get("anc"):
+                parts.append(", ".join(info.get("anc", [])))
+            if info.get("meal"):
+                parts.append(f"Meal: {', '.join(info.get('meal', []))}")
+            segs_info.append({
+                "route": route,
+                "details": "  |  ".join(parts),
+                "barcode_image": barcode_image
+            })
+
+        traveller_blocks.append({
+            "name": pname,
+            "type_label": type_label,
+            "ticket_number": ticket_no,
+            "ff_no": ff_no,
+            "baggage": bag,
+            "segments": segs_info
+        })
+
+    # Travellers
+    if traveller_blocks:
+        ty = _start_section("Travellers", BRAND)
+        for traveller in traveller_blocks:
+            seg_count = max(1, len(traveller["segments"]))
+            card_h = 44 + (seg_count * 42)
+            if ty - card_h < PAGE_BOTTOM_LIMIT:
+                T = ty
+                _start_continuation_page()
+                ty = _start_section("Travellers", BRAND)
+
+            #_rect(c, M, ty - card_h, IW, card_h, stroke=RULE, lw=0.5, radius=6)
+            name_line = f"{traveller['name']} ({traveller['type_label']})"
+            name_x = M + 30
+            _draw_traveller_icon(c, M + 18, ty - 14, size=8, col=INK)
+            _txt(c, name_x, ty - 17, name_line, "Times-Bold", 9, INK)
+            meta_parts = []
+            if traveller["ticket_number"]:
+                meta_parts.append(f"Ticket: {traveller['ticket_number']}")
+            if traveller["ff_no"]:
+                meta_parts.append(f"FF: {traveller['ff_no']}")
+            if traveller["baggage"]:
+                meta_parts.append(f"Baggage: {traveller['baggage']}")
+            if meta_parts:
+                _txt(c, name_x, ty - 29, "  |  ".join(meta_parts), size=7, col=INK3)
+
+            row_y = ty - 43
+            detail_x = name_x
+            for seg_info in traveller["segments"]:
+                _rect(c, M + 12, row_y - 30, IW - 24, 34, fill=colors.Color(0.985, 0.988, 0.998), stroke=None, radius=4)
+                _txt(c, detail_x, row_y - 2, seg_info["route"], "Times-Bold", 7.5, INK)
+                if seg_info["details"]:
+                    _txt(c, detail_x, row_y - 14, seg_info["details"], size=7, col=INK2)
+                barcode = _barcode_image_reader(seg_info.get("barcode_image"))
+                if barcode:
+                    try:
+                        c.drawImage(barcode, RIGHT - 148, row_y - 24, width=120, height=24, mask="auto")
+                    except Exception:
+                        pass
+                row_y -= 42
+
+            ty -= card_h + 4
+
+        T = ty - 4
 
     # ══════════════════════════════════════════════════════════════════════════
     #  FARE DETAILS
@@ -493,11 +741,12 @@ def draw_ticket(c, data, include_fare=True):
             fare_display = "per_passenger" if n_pax <= 1 else "consolidated"
         is_consolidated = (fare_display == "consolidated")
 
-        FR      = 14
+        FR      = 16
         n_fr    = 3 if is_consolidated else (2 + n_pax)
         FAR_TBL = n_fr * FR
-        FAR_H   = FAR_TBL + 22
-        _rect(c, M, T - FAR_H, IW, FAR_H, stroke=RULE, lw=0.5)
+        FAR_H   = FAR_TBL + 28
+        _ensure_space(FAR_H + G)
+        _rect(c, M, T - FAR_H, IW, FAR_H, fill=colors.Color(0.995, 0.997, 1.0), stroke=RULE, lw=0.5, radius=8)
         fc = _section_heading(c, M + 10, T - 11, "Fare Details", BRAND, RIGHT - 10)
 
         frows = []
@@ -569,100 +818,46 @@ def draw_ticket(c, data, include_fare=True):
         li2 = len(frows) - 1
 
         ft.setStyle(TableStyle([
-            ("FONT",          (0, 0), (-1, 0),       "Helvetica-Bold", 6.5),
+            ("FONT",          (0, 0), (-1, 0),       "Times-Bold", 7.5),
             ("TEXTCOLOR",     (0, 0), (-1, 0),       INK3),
-            ("BACKGROUND",    (0, 0), (-1, 0),       colors.Color(0.96, 0.97, 1.0)),
-            ("FONT",          (0, 1), (-1, li2-1),   "Helvetica", 7),
+            ("BACKGROUND",    (0, 0), (-1, 0),       colors.Color(0.985, 0.989, 0.997)),
+            ("FONT",          (0, 1), (-1, li2-1),   "Times-Roman", 7.8),
             ("TEXTCOLOR",     (0, 1), (-1, li2-1),   INK),
-            ("FONT",          (h_idx_span, li2), (-1, li2),   "Helvetica-Bold", 8.5),
-            ("TEXTCOLOR",     (h_idx_span, li2), (-1, li2),   GREEN),
-            ("BACKGROUND",    (h_idx_span, li2), (-1, li2),   colors.Color(0.93, 0.98, 0.95)),
-            ("ROWBACKGROUNDS",(0, 1), (-1, li2-1),   [WHITE, colors.Color(0.97, 0.98, 1.0)]),
+            ("FONT",          (0, li2), (-1, li2),   "Times-Bold", 8.5),
+            ("TEXTCOLOR",     (0, li2), (-1, li2),   INK),
+            ("BACKGROUND",    (0, li2), (-1, li2),   colors.Color(0.985, 0.989, 0.997)),
+            ("ROWBACKGROUNDS",(0, 1), (-1, li2-1),   [WHITE, colors.Color(0.992, 0.995, 1.0)]),
             ("ALIGN",         (c_idx, 0), (-1, -1), "RIGHT"),
             ("ALIGN",         (0, 0), (c_idx-1, -1),  "LEFT"),
             ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
-            ("TOPPADDING",    (0, 0), (-1, -1), 2),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            ("LINEBELOW",     (0, 0), (-1, -1), 0.3, RULE),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+            ("TOPPADDING",    (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LINEBELOW",     (0, 0), (-1, 0),   0.5, colors.Color(0.90, 0.93, 0.97)),
+            ("LINEABOVE",     (0, li2), (-1, li2), 0.6, colors.Color(0.86, 0.90, 0.96)),
+            ("LINEBELOW",     (0, li2), (-1, li2), 0.2, colors.Color(0.90, 0.93, 0.97)),
+            ("LINEBELOW",     (0, 1), (-1, li2-1), 0.2, colors.Color(0.93, 0.95, 0.98)),
         ]))
         ft.wrapOn(c, W, H)
-        ft.drawOn(c, M + 1, fc - FAR_TBL + 2)
+        ft.drawOn(c, M + 1, fc - FAR_TBL - 2)
         T -= FAR_H + G
-
-    # ══════════════════════════════════════════════════════════════════════════
-    #  SEATS & SERVICES
-    # ══════════════════════════════════════════════════════════════════════════
-    n_seg = len(segments)
-    svc_blocks = []
-    for p in passengers:
-        pname = _t(p.get("name")) or "Passenger"
-        bag   = _t(p.get("baggage"))
-        seats = p.get("seats") or []
-        ancs  = p.get("ancillaries") or []
-
-        seg_map = {}
-        for s in seats:
-            si  = (s.get("segment_index", 0) if isinstance(s, dict) else 0)
-            sn  = _t(s.get("seat_number") if isinstance(s, dict) else s)
-            if sn: seg_map.setdefault(si, {})["seat"] = sn
-        for a in ancs:
-            if isinstance(a, dict):
-                si   = a.get("segment_index", 0)
-                desc = _t(a.get("name") or a.get("code"))
-                if desc:
-                    seg_map.setdefault(si, {}).setdefault("anc", []).append(desc)
-
-        segs_info = []
-        for si in sorted(seg_map.keys()):
-            info  = seg_map[si]
-            # Verify we genuinely have a seat or ancillary before adding a sector row
-            if not info.get("seat") and not info.get("anc"):
-                continue
-            
-            seg   = segments[si] if si < n_seg else {}
-            dap   = _t(seg.get("departure", {}).get("airport"))
-            aap   = _t(seg.get("arrival",   {}).get("airport"))
-            route = f"{dap} → {aap}" if dap and aap else f"Seg {si+1}"
-            segs_info.append((route, info.get("seat", ""),
-                              ", ".join(info.get("anc", []))))
-        
-        if segs_info or bag:
-            svc_blocks.append((pname, bag, segs_info))
-
-    if svc_blocks:
-        svc_h = 22 + sum(14 + len(sb[2]) * 11 + 5 for sb in svc_blocks)
-        _rect(c, M, T - svc_h, IW, svc_h, stroke=RULE, lw=0.5)
-        sy = _section_heading(c, M + 10, T - 11, "Seats & Services",
-                              ACCENT, RIGHT - 10)
-
-        for pname, bag, segs_info in svc_blocks:
-            _txt(c, M + 10, sy - 10, pname, "Helvetica-Bold", 7.5, INK)
-            if bag:
-                bw = c.stringWidth(pname, "Helvetica-Bold", 7.5)
-                _txt(c, M + 10 + bw + 10, sy - 10,
-                     f"Baggage: {bag}", size=6.5, col=INK3)
-            sy -= 14
-
-            for route, seat_v, anc_v in segs_info:
-                _txt(c, M + 20, sy - 8, route, size=6, col=INK3)
-                parts = []
-                if seat_v: parts.append(f"Seat: {seat_v}")
-                if anc_v:  parts.append(anc_v)
-                if parts:
-                    _txt(c, M + 130, sy - 8, "  |  ".join(parts),
-                         size=6.5, col=INK)
-                sy -= 11
-
-            _hline(c, M + 10, sy - 3, IW - 20, RULE, 0.3)
-            sy -= 8
-
-        T -= svc_h + G
 
     # ══════════════════════════════════════════════════════════════════════════
     #  IMPORTANT NOTES
     # ══════════════════════════════════════════════════════════════════════════
+    # GST below fares
+    if gst_no or gst_comp:
+        GST_H = 34
+        _ensure_space(GST_H + G)
+        _rect(c, RIGHT - 190, T - GST_H, 190, GST_H, stroke=RULE, lw=0.4, radius=6)
+        _txt(c, RIGHT - 178, T - 10, "GST", "Times-Bold", 7, ACCENT)
+        if gst_comp:
+            _txt(c, RIGHT - 178, T - 19, gst_comp, "Times-Roman", 7.2, INK2)
+        if gst_no:
+            _txt(c, RIGHT - 178, T - 28, f"GSTIN: {gst_no}", "Times-Roman", 7.2, INK2)
+        T -= GST_H + G
+
     notes = [
         "Please carry a valid government-issued photo ID at check-in.",
         "Check departure terminal with the airline; arrive 2 hrs before departure.",
@@ -672,7 +867,8 @@ def draw_ticket(c, data, include_fare=True):
     ]
     NL     = 11
     NOTE_H = len(notes) * NL + 22
-    _rect(c, M, T - NOTE_H, IW, NOTE_H, stroke=RULE, lw=0.5)
+    _ensure_space(NOTE_H + G)
+    _rect(c, M, T - NOTE_H, IW, NOTE_H, stroke=RULE, lw=0.5, radius=6)
     ny = _section_heading(c, M + 10, T - 11, "Important Notes",
                           ACCENT, RIGHT - 10)
 
@@ -680,7 +876,7 @@ def draw_ticket(c, data, include_fare=True):
         c.saveState()
         c.setFillColor(ACCENT)
         c.circle(M + 16, ny - 2, 1.5, fill=1, stroke=0)
-        c.setFont("Helvetica", 6)
+        c.setFont("Times-Roman", 7)
         c.setFillColor(INK2)
         c.drawString(M + 22, ny - 4, n)
         c.restoreState()
@@ -691,12 +887,7 @@ def draw_ticket(c, data, include_fare=True):
     # ══════════════════════════════════════════════════════════════════════════
     #  FOOTER
     # ══════════════════════════════════════════════════════════════════════════
-    FTH = 28
-    # Thin top rule
-    _hline(c, M, M + FTH, IW, RULE, 0.5)
-    # left accent stripe
-    _rect(c, M, M, 4, FTH, fill=ACCENT)
+    if T < M + FTH + 4:
+        _start_continuation_page()
+    _draw_footer()
 
-    _txt(c, CX, M + 6,
-         "Time Travels Pvt Ltd  |  www.timetours.in  |  +91 33 400 11 333",
-         "Helvetica-Bold", 6, INK2, align="center")
