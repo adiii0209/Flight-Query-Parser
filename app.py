@@ -35,6 +35,7 @@ except Exception:
     sync_playwright = None
 
 load_dotenv()
+os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False

@@ -5,7 +5,42 @@
                 "setup": {
                     "nixPkgs": [
                         "tesseract",
-                        "poppler"
+                        "poppler",
+                        "chromium",
+                        "alsa-lib",
+                        "atk",
+                        "at-spi2-atk",
+                        "at-spi2-core",
+                        "cairo",
+                        "cups",
+                        "dbus",
+                        "expat",
+                        "fontconfig",
+                        "freetype",
+                        "gdk-pixbuf",
+                        "glib",
+                        "gtk3",
+                        "libdrm",
+                        "libxkbcommon",
+                        "nss",
+                        "nspr",
+                        "pango",
+                        "xorg.libX11",
+                        "xorg.libXcomposite",
+                        "xorg.libXdamage",
+                        "xorg.libXext",
+                        "xorg.libXfixes",
+                        "xorg.libXrandr",
+                        "xorg.libXrender",
+                        "xorg.libXcursor",
+                        "xorg.libXi",
+                        "libxcb"
+                    ]
+                },
+                "install": {
+                    "cmds": [
+                        "pip install -r requirements.txt",
+                        "python -m playwright install chromium"
                     ]
                 }
             }
