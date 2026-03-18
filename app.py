@@ -8,6 +8,8 @@ import uuid
 import requests
 import base64
 import io
+import subprocess
+import sys
 from flask import Flask, request, jsonify, render_template, render_template_string, session, redirect, url_for, send_file
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
@@ -61,6 +63,7 @@ _playwright_browser = None
 _playwright_lock = threading.Lock()
 _playwright_task_queue = queue.Queue()
 _playwright_worker_started = False
+_playwright_install_attempted = False
 
 # Register API v2 Blueprint
 # Register API v2 Blueprint
@@ -103,14 +106,49 @@ async def _get_playwright_browser():
 
     _playwright_runtime = await async_playwright().start()
     print("[INFO] Playwright browsers path:", os.environ.get("PLAYWRIGHT_BROWSERS_PATH", ""))
-    _playwright_browser = await _playwright_runtime.chromium.launch(
-        headless=True,
-        args=[
-            "--disable-dev-shm-usage",
-            "--font-render-hinting=medium",
-        ],
-    )
+    try:
+        _playwright_browser = await _playwright_runtime.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-dev-shm-usage",
+                "--font-render-hinting=medium",
+            ],
+        )
+    except Exception as exc:
+        message = str(exc)
+        if "Executable doesn't exist" in message and not _playwright_install_attempted:
+            await _install_playwright_browsers()
+            _playwright_browser = await _playwright_runtime.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-dev-shm-usage",
+                    "--font-render-hinting=medium",
+                ],
+            )
+        else:
+            raise
     return _playwright_browser
+
+
+async def _install_playwright_browsers():
+    global _playwright_install_attempted
+    if _playwright_install_attempted:
+        return
+    _playwright_install_attempted = True
+    loop = asyncio.get_running_loop()
+    cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
+    print("[INFO] Playwright browsers missing. Installing:", " ".join(cmd))
+
+    def _run():
+        return subprocess.run(cmd, capture_output=True, text=True)
+
+    result = await loop.run_in_executor(None, _run)
+    if result.stdout:
+        print("[INFO] Playwright install stdout:", result.stdout.strip())
+    if result.stderr:
+        print("[WARN] Playwright install stderr:", result.stderr.strip())
+    if result.returncode != 0:
+        raise RuntimeError("Playwright install failed with exit code " + str(result.returncode))
 
 
 async def _playwright_render_loop():
