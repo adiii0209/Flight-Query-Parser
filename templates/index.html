@@ -4300,7 +4300,7 @@
     function createCardsSnapshotHtml() {
       const cardsContainer = document.getElementById('cards');
       if (!cardsContainer) return '';
-      return cardsContainer.outerHTML;
+      return inlineFlightAssetMarkup(cardsContainer.outerHTML);
     }
 
     async function applyRenderPreviewState(expandedIndices = []) {
@@ -9130,6 +9130,9 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         timeline.style.display = 'none';
         if (arrow) arrow.classList.remove('rotated');
       }
+      cardsImageBlobCache.clear();
+      lastPreloadKey = '';
+      scheduleCardsImagePreload();
     }
 
     function copyOutput() {
@@ -9253,6 +9256,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     async function generateImageBlob() {
       const payload = buildCardsImagePayload();
+      const requestKey = getCardsImageRequestKey(payload);
+      const cachedBlob = cardsImageBlobCache.get(requestKey);
+      if (cachedBlob) {
+        return cachedBlob;
+      }
       const response = await fetch('/api/render/cards-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -9270,7 +9278,13 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         throw new Error(message);
       }
 
-      return await response.blob();
+      const blob = await response.blob();
+      cardsImageBlobCache.set(requestKey, blob);
+      if (cardsImageBlobCache.size > 8) {
+        const oldestKey = cardsImageBlobCache.keys().next().value;
+        if (oldestKey) cardsImageBlobCache.delete(oldestKey);
+      }
+      return blob;
     }
 
     function getExpandedFlightIndices() {
@@ -9296,20 +9310,24 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     let imagePreloadTimer = null;
     let lastPreloadKey = '';
     let imagePreloadPromise = null;
+    const cardsImageBlobCache = new Map();
+
+    function getCardsImageRequestKey(payload) {
+      return JSON.stringify([
+        payload.theme,
+        payload.cards_width,
+        payload.cards_height,
+        payload.viewport_width,
+        payload.cards_html
+      ]);
+    }
 
     async function preloadCardsImage() {
       if (!currentFlights || currentFlights.length === 0) return;
       try {
         const payload = buildCardsImagePayload();
-        const requestKey = JSON.stringify([
-          payload.theme,
-          payload.cards_width,
-          payload.cards_height,
-          payload.viewport_width,
-          payload.cards_html
-        ]);
+        const requestKey = getCardsImageRequestKey(payload);
         if (requestKey === lastPreloadKey) return;
-        lastPreloadKey = requestKey;
         imagePreloadPromise = fetch('/api/render/cards-image/preload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -9318,10 +9336,13 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           if (!response.ok) {
             throw new Error('Preload request failed');
           }
-          return response.json();
+          const data = await response.json();
+          lastPreloadKey = requestKey;
+          return data;
         });
         await imagePreloadPromise;
       } catch (error) {
+        lastPreloadKey = '';
         console.warn('Image preload skipped', error);
       } finally {
         imagePreloadPromise = null;
@@ -9510,10 +9531,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       showNotification('Generating image…', 'info');
       try {
         if (imagePreloadPromise) {
-          await Promise.race([
-            imagePreloadPromise.catch(() => null),
-            new Promise(resolve => setTimeout(resolve, 2500))
-          ]);
+          await imagePreloadPromise.catch(() => null);
         }
         const blob = await generateImageBlob();
         downloadImage(blob);

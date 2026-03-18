@@ -211,54 +211,86 @@ async def _playwright_render_loop():
 
         context = None
         try:
-            browser = await _get_playwright_browser()
-            try:
-                context = await browser.new_context(
-                    viewport={"width": task["viewport_width"], "height": task.get("viewport_height", 960)},
-                    device_scale_factor=2,
-                    color_scheme="light",
-                )
-            except Exception as exc:
-                if "Target page, context or browser has been closed" not in str(exc):
-                    raise
-                print("[WARN] Browser context creation failed. Resetting Playwright browser and retrying once.")
-                await _reset_playwright_browser()
+            last_exc = None
+            for render_attempt in range(2):
                 browser = await _get_playwright_browser()
-                context = await browser.new_context(
-                    viewport={"width": task["viewport_width"], "height": task.get("viewport_height", 960)},
-                    device_scale_factor=2,
-                    color_scheme="light",
-                )
-            page = await context.new_page()
-            page.set_default_timeout(10000)
-            await page.goto(task["page_url"], wait_until="domcontentloaded")
-            await page.wait_for_function("window.__cardsRenderReady === true", timeout=10000)
-            await page.wait_for_function(
-                """
-                (selector) => {
-                  const el = document.querySelector(selector);
-                  if (!el) return false;
-                  const rect = el.getBoundingClientRect();
-                  return rect.width > 0 && rect.height > 0;
-                }
-                """,
-                arg=task.get("selector", "#cards"),
-                timeout=5000
-            )
-            await page.evaluate(
-                """
-                async () => {
-                  if (document.fonts && document.fonts.ready) {
-                    await document.fonts.ready;
-                  }
-                }
-                """
-            )
-            image_bytes = await page.locator(task.get("selector", "#cards")).screenshot(
-                type="png",
-                animations="disabled"
-            )
-            task["result"]["image_bytes"] = image_bytes
+                try:
+                    context = await browser.new_context(
+                        viewport={"width": task["viewport_width"], "height": task.get("viewport_height", 960)},
+                        device_scale_factor=2,
+                        color_scheme="light",
+                    )
+                except Exception as exc:
+                    if "Target page, context or browser has been closed" not in str(exc):
+                        raise
+                    print("[WARN] Browser context creation failed. Resetting Playwright browser and retrying once.")
+                    await _reset_playwright_browser()
+                    browser = await _get_playwright_browser()
+                    context = await browser.new_context(
+                        viewport={"width": task["viewport_width"], "height": task.get("viewport_height", 960)},
+                        device_scale_factor=2,
+                        color_scheme="light",
+                    )
+                try:
+                    page = await context.new_page()
+                    page.set_default_timeout(10000)
+                    await page.goto(task["page_url"], wait_until="domcontentloaded")
+                    await page.wait_for_function("window.__cardsRenderReady === true", timeout=10000)
+                    await page.wait_for_function(
+                        """
+                        (selector) => {
+                          const el = document.querySelector(selector);
+                          if (!el) return false;
+                          const rect = el.getBoundingClientRect();
+                          return rect.width > 0 && rect.height > 0;
+                        }
+                        """,
+                        arg=task.get("selector", "#cards"),
+                        timeout=5000
+                    )
+                    await page.evaluate(
+                        """
+                        async () => {
+                          if (document.fonts && document.fonts.ready) {
+                            await document.fonts.ready;
+                          }
+                          await new Promise((resolve) => requestAnimationFrame(resolve));
+                          await new Promise((resolve) => requestAnimationFrame(resolve));
+                          const images = Array.from(document.images || []);
+                          await Promise.all(images.map((img) => {
+                            if (img.complete) return Promise.resolve();
+                            return new Promise((resolve) => {
+                              img.addEventListener('load', resolve, { once: true });
+                              img.addEventListener('error', resolve, { once: true });
+                            });
+                          }));
+                        }
+                        """
+                    )
+                    image_bytes = await page.locator(task.get("selector", "#cards")).screenshot(
+                        type="png",
+                        animations="disabled"
+                    )
+                    task["result"]["image_bytes"] = image_bytes
+                    task["result"].pop("error", None)
+                    last_exc = None
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    if render_attempt == 0:
+                        print(f"[WARN] Playwright render pass failed, retrying once: {exc}")
+                        await _reset_playwright_browser()
+                        continue
+                    raise
+                finally:
+                    if context:
+                        try:
+                            await context.close()
+                        except Exception:
+                            pass
+                        context = None
+            if last_exc is not None:
+                raise last_exc
         except Exception as exc:
             task["result"]["error"] = exc
         finally:
@@ -2110,9 +2142,9 @@ def preload_cards_image():
         cache_key = render_request["cache_key"]
         cached = _get_cached_render_bytes(cache_key)
         if cached is not None:
-            return jsonify({"status": "cached", "cache_key": cache_key})
-        job = _queue_render_request(render_request)
-        return jsonify({"status": job["status"], "cache_key": cache_key})
+            return jsonify({"status": "cached", "cache_key": cache_key, "ready": True})
+        _render_request_bytes(render_request, timeout=22)
+        return jsonify({"status": "ready", "cache_key": cache_key, "ready": True})
     except Exception as e:
         app.logger.exception("Card image preload failed")
         return jsonify({"error": f"Failed to preload cards image: {str(e)}"}), 500
