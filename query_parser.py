@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==================== CONFIG ====================
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_API_KEY = "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"
 
 if not OPENROUTER_API_KEY:
     raise ValueError("OPENROUTER_API_KEY is not set")
@@ -1770,27 +1770,31 @@ class FlightParser:
         flights = self._gds_parser.parse(raw_text)
         return flights if flights else None
 
-    def _call_llm_raw(self, prompt: str, text: str, max_tokens: int = MAX_TOKENS) -> Optional[str]:
+    def _call_llm_raw(self, prompt: str, text: str, max_tokens: int = MAX_TOKENS, response_format: Optional[Dict] = None) -> Optional[str]:
         """
         Make the LLM API call and return the raw content string.
         Strips markdown fences. Returns None on HTTP / network error.
         """
         try:
+            payload = {
+                "model": MODEL,
+                "messages": [
+                    {"role": "system", "content": prompt},
+                    {"role": "user",   "content": text}
+                ],
+                "max_tokens": max_tokens,
+                "temperature": TEMPERATURE
+            }
+            if response_format:
+                payload["response_format"] = response_format
+
             response = requests.post(
                 OPENROUTER_URL,
                 headers={
                     "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                     "Content-Type": "application/json",
                 },
-                json={
-                    "model": MODEL,
-                    "messages": [
-                        {"role": "system", "content": prompt},
-                        {"role": "user",   "content": text}
-                    ],
-                    "max_tokens": max_tokens,
-                    "temperature": TEMPERATURE
-                },
+                json=payload,
                 timeout=60
             )
             if response.status_code != 200:
@@ -1807,7 +1811,7 @@ class FlightParser:
 
     def _call_llm(self, prompt: str, text: str, max_tokens: int = MAX_TOKENS) -> Optional[Dict]:
         """Call LLM expecting a single JSON object ({ ... }). Returns dict or None."""
-        content = self._call_llm_raw(prompt, text, max_tokens)
+        content = self._call_llm_raw(prompt, text, max_tokens, response_format={"type": "json_object"})
         if not content:
             return None
         # Find the first '{' and last '}' — extract the outermost object
@@ -1817,6 +1821,8 @@ class FlightParser:
             Logger.error(f"No JSON object found in LLM response: {content[:200]}")
             return None
         json_str = content[start:end + 1]
+        json_str = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", json_str)
+        json_str = re.sub(r",\s*([}\]])", r"\1", json_str)
         try:
             return json.loads(json_str)
         except json.JSONDecodeError as e:
@@ -1836,6 +1842,8 @@ class FlightParser:
         content = self._call_llm_raw(prompt, text, max_tokens)
         if not content:
             return None
+        content = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", content)
+        content = re.sub(r",\s*([}\]])", r"\1", content)
 
         # ── Attempt 1: clean array parse ──────────────────────────────────
         arr_start = content.find('[')
