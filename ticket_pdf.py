@@ -302,6 +302,7 @@ def draw_ticket(c, data, include_fare=True):
             M,
             HDR_Y + 28,
             f"Issued: {bdate}",
+            "Times-Bold",
             size=6.5,
             col=INK,
             align="left"
@@ -313,6 +314,7 @@ def draw_ticket(c, data, include_fare=True):
             M ,
             HDR_Y + 18,
             f"Phone: {phone}",
+            "Times-Bold",
             size=6.5,
             col=INK,
             align="left"
@@ -703,15 +705,13 @@ def draw_ticket(c, data, include_fare=True):
             name_x = M + 30
             _draw_traveller_icon(c, M + 18, ty - 14, size=8, col=INK)
             _txt(c, name_x, ty - 17, name_line, "Times-Bold", 9, INK)
-            meta_parts = []
+            right_x = RIGHT - 16
             if traveller["ticket_number"]:
-                meta_parts.append(f"Ticket: {traveller['ticket_number']}")
+                _txt(c, right_x, ty - 17, f"Ticket: {traveller['ticket_number']}", "Times-Bold", 7.5, INK, align="right")
             if traveller["ff_no"]:
-                meta_parts.append(f"FF: {traveller['ff_no']}")
+                _txt(c, right_x, ty - 29, f"FF: {traveller['ff_no']}", "Times-Bold", 7, INK, align="right")
             if traveller["baggage"]:
-                meta_parts.append(f"Baggage: {traveller['baggage']}")
-            if meta_parts:
-                _txt(c, name_x, ty - 29, "  |  ".join(meta_parts), size=7, col=INK3)
+                _txt(c, name_x, ty - 29, f"Baggage: {traveller['baggage']}", size=7, col=INK)
 
             row_y = ty - 43
             detail_x = name_x
