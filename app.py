@@ -69,6 +69,8 @@ _playwright_install_attempted = False
 _render_cache = OrderedDict()
 _render_cache_lock = threading.Lock()
 _render_cache_max = 20
+_render_jobs = set()
+_render_jobs_lock = threading.Lock()
 
 # Register API v2 Blueprint
 # Register API v2 Blueprint
@@ -300,6 +302,119 @@ def _ensure_playwright_worker():
         worker = threading.Thread(target=_playwright_render_worker, name="playwright-render-worker", daemon=True)
         worker.start()
         _playwright_worker_started = True
+
+
+def _store_render_cache(cache_key, image_bytes):
+    with _render_cache_lock:
+        _render_cache[cache_key] = image_bytes
+        _render_cache.move_to_end(cache_key)
+        while len(_render_cache) > _render_cache_max:
+            _render_cache.popitem(last=False)
+
+
+def _build_render_request(payload):
+    cards_html = (payload.get("cards_html") or "").strip()
+    head_markup = payload.get("head_markup") or ""
+    theme = (payload.get("theme") or "light").strip()
+    viewport_width = max(int(payload.get("viewport_width") or 1280), 320)
+    requested_cards_width = payload.get("cards_width")
+    cards_width = max(int(requested_cards_width), 1) if requested_cards_width else None
+    requested_cards_height = payload.get("cards_height")
+    cards_height = max(int(requested_cards_height), 1) if requested_cards_height else None
+
+    if cards_html:
+        html = render_template_string(
+            """
+            <!DOCTYPE html>
+            <html lang="en" data-theme="{{ theme }}">
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <base href="{{ base_href }}">
+              {{ head_markup|safe }}
+              <style>
+                html, body {
+                  margin: 0;
+                  padding: 0;
+                  background: #ffffff;
+                }
+                body {
+                  padding: 0;
+                }
+                #cards {
+                  margin: 0 !important;
+                  width: {{ cards_width }}px !important;
+                  max-width: {{ cards_width }}px !important;
+                  min-width: 0 !important;
+                }
+              </style>
+            </head>
+            <body>
+              {{ cards_html|safe }}
+            </body>
+            </html>
+            """,
+            cards_html=cards_html,
+            head_markup=head_markup,
+            theme=theme,
+            cards_width=cards_width or viewport_width,
+            base_href=request.host_url,
+        )
+    else:
+        flights = payload.get("flights") or []
+        trip_type = payload.get("trip_type") or "one_way"
+        unit_flights = payload.get("unit_flights") or {}
+        if not flights:
+            raise ValueError("No flight cards to render")
+        groups = _build_cards_render_groups(flights, trip_type, unit_flights)
+        html = render_template("cards_image.html", groups=groups, trip_type=trip_type)
+
+    cache_key = hashlib.sha256(
+        (html + f"|w:{viewport_width}|h:{cards_height}|c:{bool(cards_html)}").encode("utf-8")
+    ).hexdigest()
+    return {
+        "cache_key": cache_key,
+        "html": html,
+        "viewport_width": cards_width or min(viewport_width, 1400),
+        "viewport_height": min(max((cards_height or 900) + 40, 240), 4000),
+        "cards_html": bool(cards_html),
+    }
+
+
+def _queue_render_request(render_request):
+    cache_key = render_request["cache_key"]
+    with _render_cache_lock:
+        if cache_key in _render_cache:
+            return "cached"
+    with _render_jobs_lock:
+        if cache_key in _render_jobs:
+            return "queued"
+        _render_jobs.add(cache_key)
+
+    _ensure_playwright_worker()
+    done_event = threading.Event()
+    result = {}
+    task = {
+        "html": render_request["html"],
+        "viewport_width": render_request["viewport_width"],
+        "viewport_height": render_request["viewport_height"],
+        "cards_html": render_request["cards_html"],
+        "event": done_event,
+        "result": result,
+    }
+    _playwright_task_queue.put(task)
+
+    def _finalize():
+        done_event.wait()
+        try:
+            if result.get("image_bytes"):
+                _store_render_cache(cache_key, result["image_bytes"])
+        finally:
+            with _render_jobs_lock:
+                _render_jobs.discard(cache_key)
+
+    threading.Thread(target=_finalize, name=f"render-cache-{cache_key[:8]}", daemon=True).start()
+    return "queued"
 
 
 def _render_saved_cabin_value(flight, segment=None):
@@ -1915,65 +2030,8 @@ def recalculate():
 def render_cards_image():
     try:
         payload = request.get_json() or {}
-        cards_html = (payload.get("cards_html") or "").strip()
-        head_markup = payload.get("head_markup") or ""
-        theme = (payload.get("theme") or "light").strip()
-        viewport_width = max(int(payload.get("viewport_width") or 1280), 320)
-        requested_cards_width = payload.get("cards_width")
-        cards_width = max(int(requested_cards_width), 1) if requested_cards_width else None
-        requested_cards_height = payload.get("cards_height")
-        cards_height = max(int(requested_cards_height), 1) if requested_cards_height else None
-
-        if cards_html:
-            html = render_template_string(
-                """
-                <!DOCTYPE html>
-                <html lang="en" data-theme="{{ theme }}">
-                <head>
-                  <meta charset="UTF-8">
-                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                  <base href="{{ base_href }}">
-                  {{ head_markup|safe }}
-                  <style>
-                    html, body {
-                      margin: 0;
-                      padding: 0;
-                      background: #ffffff;
-                    }
-                    body {
-                      padding: 0;
-                    }
-                    #cards {
-                      margin: 0 !important;
-                      width: {{ cards_width }}px !important;
-                      max-width: {{ cards_width }}px !important;
-                      min-width: 0 !important;
-                    }
-                  </style>
-                </head>
-                <body>
-                  {{ cards_html|safe }}
-                </body>
-                </html>
-                """,
-                cards_html=cards_html,
-                head_markup=head_markup,
-                theme=theme,
-                cards_width=cards_width or viewport_width,
-                base_href=request.host_url,
-            )
-        else:
-            flights = payload.get("flights") or []
-            trip_type = payload.get("trip_type") or "one_way"
-            unit_flights = payload.get("unit_flights") or {}
-            if not flights:
-                return jsonify({"error": "No flight cards to render"}), 400
-            groups = _build_cards_render_groups(flights, trip_type, unit_flights)
-            html = render_template("cards_image.html", groups=groups, trip_type=trip_type)
-
-        cache_key = hashlib.sha256(
-            (html + f"|w:{viewport_width}|c:{bool(cards_html)}").encode("utf-8")
-        ).hexdigest()
+        render_request = _build_render_request(payload)
+        cache_key = render_request["cache_key"]
         with _render_cache_lock:
             cached = _render_cache.get(cache_key)
             if cached:
@@ -1990,10 +2048,10 @@ def render_cards_image():
         done_event = threading.Event()
         result = {}
         _playwright_task_queue.put({
-            "html": html,
-            "viewport_width": cards_width or min(viewport_width, 1400),
-            "viewport_height": min(max((cards_height or 900) + 40, 240), 4000),
-            "cards_html": bool(cards_html),
+            "html": render_request["html"],
+            "viewport_width": render_request["viewport_width"],
+            "viewport_height": render_request["viewport_height"],
+            "cards_html": render_request["cards_html"],
             "event": done_event,
             "result": result,
         })
@@ -2001,11 +2059,7 @@ def render_cards_image():
         if result.get("error"):
             raise result["error"]
         image_bytes = result["image_bytes"]
-        with _render_cache_lock:
-            _render_cache[cache_key] = image_bytes
-            _render_cache.move_to_end(cache_key)
-            while len(_render_cache) > _render_cache_max:
-                _render_cache.popitem(last=False)
+        _store_render_cache(cache_key, image_bytes)
         print("[INFO] Server-side card render succeeded.")
 
         return send_file(
@@ -2020,6 +2074,23 @@ def render_cards_image():
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"Failed to render cards image: {str(e)}"}), 500
+
+
+@app.route("/api/render/cards-image/preload", methods=["POST"])
+def preload_cards_image():
+    try:
+        payload = request.get_json() or {}
+        render_request = _build_render_request(payload)
+        cache_key = render_request["cache_key"]
+        with _render_cache_lock:
+            if cache_key in _render_cache:
+                _render_cache.move_to_end(cache_key)
+                return jsonify({"status": "cached", "cache_key": cache_key})
+        status = _queue_render_request(render_request)
+        return jsonify({"status": status, "cache_key": cache_key})
+    except Exception as e:
+        app.logger.exception("Card image preload failed")
+        return jsonify({"error": f"Failed to preload cards image: {str(e)}"}), 500
 
 @app.route("/api/itineraries", methods=["POST"])
 @login_required

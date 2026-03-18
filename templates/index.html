@@ -7096,6 +7096,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
       // Render output text using the consolidated logic
       regenerateOutputText();
+      scheduleCardsImagePreload();
 
       // Scroll to results
       document.getElementById("cardsSection").scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -9137,24 +9138,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     }
 
     async function generateImageBlob() {
-      const cardsContainer = document.getElementById('cards');
-      const cardsRect = cardsContainer ? cardsContainer.getBoundingClientRect() : null;
-      const headMarkup = getExportStyleMarkup();
-      const cardsHTML = cardsContainer ? inlineFlightAssetMarkup(cardsContainer.outerHTML) : '';
+      const payload = buildCardsImagePayload();
       const response = await fetch('/api/render/cards-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cards_html: cardsHTML,
-          head_markup: headMarkup,
-          theme: document.documentElement.getAttribute('data-theme') || 'light',
-          viewport_width: Math.max(Math.ceil((cardsRect ? cardsRect.width : window.innerWidth) + 80), 320),
-          cards_width: cardsRect ? Math.ceil(cardsRect.width) : null,
-          cards_height: cardsRect ? Math.ceil(cardsRect.height) : null,
-          flights: currentFlights,
-          trip_type: currentTripType,
-          unit_flights: unitFlights
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
@@ -9169,6 +9157,58 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       }
 
       return await response.blob();
+    }
+
+    function buildCardsImagePayload() {
+      const cardsContainer = document.getElementById('cards');
+      const cardsRect = cardsContainer ? cardsContainer.getBoundingClientRect() : null;
+      const headMarkup = getExportStyleMarkup();
+      const cardsHTML = cardsContainer ? inlineFlightAssetMarkup(cardsContainer.outerHTML) : '';
+      return {
+        cards_html: cardsHTML,
+        head_markup: headMarkup,
+        theme: document.documentElement.getAttribute('data-theme') || 'light',
+        viewport_width: Math.max(Math.ceil((cardsRect ? cardsRect.width : window.innerWidth) + 80), 320),
+        cards_width: cardsRect ? Math.ceil(cardsRect.width) : null,
+        cards_height: cardsRect ? Math.ceil(cardsRect.height) : null,
+        flights: currentFlights,
+        trip_type: currentTripType,
+        unit_flights: unitFlights
+      };
+    }
+
+    let imagePreloadTimer = null;
+    let lastPreloadKey = '';
+
+    async function preloadCardsImage() {
+      if (!currentFlights || currentFlights.length === 0) return;
+      try {
+        const payload = buildCardsImagePayload();
+        const requestKey = JSON.stringify([
+          payload.cards_width,
+          payload.cards_height,
+          payload.viewport_width,
+          payload.trip_type,
+          payload.cards_html
+        ]);
+        if (requestKey === lastPreloadKey) return;
+        lastPreloadKey = requestKey;
+        fetch('/api/render/cards-image/preload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          keepalive: true
+        }).catch(() => {});
+      } catch (error) {
+        console.warn('Image preload skipped', error);
+      }
+    }
+
+    function scheduleCardsImagePreload() {
+      if (imagePreloadTimer) clearTimeout(imagePreloadTimer);
+      imagePreloadTimer = setTimeout(() => {
+        preloadCardsImage();
+      }, 250);
     }
 
 
