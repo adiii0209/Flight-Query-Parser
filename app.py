@@ -1,4 +1,8 @@
 import os
+if os.name == "nt":
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "C:\\pw-browsers")
+else:
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
 import json
 import uuid
 import requests
@@ -21,6 +25,7 @@ from google.oauth2.service_account import Credentials
 import re
 import threading
 import queue
+import asyncio
 from copy import deepcopy
 from werkzeug.utils import secure_filename
 
@@ -30,12 +35,15 @@ try:
 except Exception:
     pdf417gen = None
 try:
+    from playwright.async_api import async_playwright
+except Exception:
+    async_playwright = None
+try:
     from playwright.sync_api import sync_playwright
 except Exception:
     sync_playwright = None
 
 load_dotenv()
-os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -85,95 +93,108 @@ def home():
     return render_template('index.html')
 
 
-def _get_playwright_browser():
+async def _get_playwright_browser():
     global _playwright_runtime, _playwright_browser
-    if sync_playwright is None:
-        raise RuntimeError("Playwright is not installed on the server.")
+    if async_playwright is None:
+        raise RuntimeError("Playwright async API is not installed on the server.")
 
-    with _playwright_lock:
-        if _playwright_browser:
-            return _playwright_browser
-        _playwright_runtime = sync_playwright().start()
-        _playwright_browser = _playwright_runtime.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-dev-shm-usage",
-                "--font-render-hinting=medium",
-            ],
-        )
+    if _playwright_browser:
         return _playwright_browser
 
+    _playwright_runtime = await async_playwright().start()
+    print("[INFO] Playwright browsers path:", os.environ.get("PLAYWRIGHT_BROWSERS_PATH", ""))
+    _playwright_browser = await _playwright_runtime.chromium.launch(
+        headless=True,
+        args=[
+            "--disable-dev-shm-usage",
+            "--font-render-hinting=medium",
+        ],
+    )
+    return _playwright_browser
 
-def _playwright_render_worker():
+
+async def _playwright_render_loop():
+    loop = asyncio.get_running_loop()
     while True:
-        task = _playwright_task_queue.get()
+        task = await loop.run_in_executor(None, _playwright_task_queue.get)
         if task is None:
             _playwright_task_queue.task_done()
             break
 
+        context = None
         try:
-            browser = _get_playwright_browser()
-            context = browser.new_context(
+            browser = await _get_playwright_browser()
+            context = await browser.new_context(
                 viewport={"width": task["viewport_width"], "height": 960},
                 device_scale_factor=2,
                 color_scheme="light",
             )
-            try:
-                page = context.new_page()
-                page.set_content(task["html"], wait_until="networkidle")
-                if task["cards_html"]:
-                    bbox = page.evaluate(
-                        """
-                        () => {
-                          const root = document.querySelector('#cards');
-                          if (!root) return null;
-                          const children = Array.from(root.children).filter((node) => {
-                            const style = window.getComputedStyle(node);
-                            return style.display !== 'none' && style.visibility !== 'hidden';
-                          });
-                          const targets = children.length ? children : [root];
-                          let left = Infinity;
-                          let top = Infinity;
-                          let right = -Infinity;
-                          let bottom = -Infinity;
-                          for (const node of targets) {
-                            const rect = node.getBoundingClientRect();
-                            if (!rect.width || !rect.height) continue;
-                            left = Math.min(left, rect.left);
-                            top = Math.min(top, rect.top);
-                            right = Math.max(right, rect.right);
-                            bottom = Math.max(bottom, rect.bottom);
-                          }
-                          if (!isFinite(left) || !isFinite(top) || !isFinite(right) || !isFinite(bottom)) {
-                            const rect = root.getBoundingClientRect();
-                            return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
-                          }
-                          return { x: left, y: top, width: right - left, height: bottom - top };
-                        }
-                        """
-                    )
-                    if not bbox:
-                        raise RuntimeError("Could not determine flight card bounds for screenshot")
-                    image_bytes = page.screenshot(
-                        type="png",
-                        animations="disabled",
-                        clip={
-                            "x": max(float(bbox["x"]), 0),
-                            "y": max(float(bbox["y"]), 0),
-                            "width": max(float(bbox["width"]), 1),
-                            "height": max(float(bbox["height"]), 1),
-                        },
-                    )
-                else:
-                    image_bytes = page.locator("#render-root").screenshot(type="png", animations="disabled")
-            finally:
-                context.close()
+            page = await context.new_page()
+            await page.set_content(task["html"], wait_until="networkidle")
+            if task["cards_html"]:
+                bbox = await page.evaluate(
+                    """
+                    () => {
+                      const root = document.querySelector('#cards');
+                      if (!root) return null;
+                      const children = Array.from(root.children).filter((node) => {
+                        const style = window.getComputedStyle(node);
+                        return style.display !== 'none' && style.visibility !== 'hidden';
+                      });
+                      const targets = children.length ? children : [root];
+                      let left = Infinity;
+                      let top = Infinity;
+                      let right = -Infinity;
+                      let bottom = -Infinity;
+                      for (const node of targets) {
+                        const rect = node.getBoundingClientRect();
+                        if (!rect.width || !rect.height) continue;
+                        left = Math.min(left, rect.left);
+                        top = Math.min(top, rect.top);
+                        right = Math.max(right, rect.right);
+                        bottom = Math.max(bottom, rect.bottom);
+                      }
+                      if (!isFinite(left) || !isFinite(top) || !isFinite(right) || !isFinite(bottom)) {
+                        const rect = root.getBoundingClientRect();
+                        return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+                      }
+                      return { x: left, y: top, width: right - left, height: bottom - top };
+                    }
+                    """
+                )
+                if not bbox:
+                    raise RuntimeError("Could not determine flight card bounds for screenshot")
+                image_bytes = await page.screenshot(
+                    type="png",
+                    animations="disabled",
+                    clip={
+                        "x": max(float(bbox["x"]), 0),
+                        "y": max(float(bbox["y"]), 0),
+                        "width": max(float(bbox["width"]), 1),
+                        "height": max(float(bbox["height"]), 1),
+                    },
+                )
+            else:
+                image_bytes = await page.locator("#render-root").screenshot(type="png", animations="disabled")
             task["result"]["image_bytes"] = image_bytes
         except Exception as exc:
             task["result"]["error"] = exc
         finally:
-            task["event"].set()
-            _playwright_task_queue.task_done()
+            try:
+                if context:
+                    await context.close()
+            finally:
+                task["event"].set()
+                _playwright_task_queue.task_done()
+
+
+def _playwright_render_worker():
+    try:
+        asyncio.run(_playwright_render_loop())
+    except Exception:
+        print("[ERROR] Playwright render worker failed to start.")
+        import traceback
+        traceback.print_exc()
 
 
 def _ensure_playwright_worker():
@@ -1867,6 +1888,7 @@ def render_cards_image():
         if result.get("error"):
             raise result["error"]
         image_bytes = result["image_bytes"]
+        print("[INFO] Server-side card render succeeded.")
 
         return send_file(
             io.BytesIO(image_bytes),
@@ -1876,6 +1898,9 @@ def render_cards_image():
         )
     except Exception as e:
         app.logger.exception("Server-side card render failed")
+        print("[ERROR] Server-side card render failed:", str(e))
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": f"Failed to render cards image: {str(e)}"}), 500
 
 @app.route("/api/itineraries", methods=["POST"])

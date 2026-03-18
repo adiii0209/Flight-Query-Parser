@@ -9278,7 +9278,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         downloadImage(blob);
         showNotification('Image downloaded!', 'success');
       } catch (e) {
-        showNotification('Failed to generate image', 'error');
+        const message = e && e.message ? e.message : 'Failed to generate image';
+        showNotification(message, 'error');
       }
     }
   </script>
