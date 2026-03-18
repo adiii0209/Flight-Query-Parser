@@ -32,10 +32,6 @@ import hashlib
 from collections import OrderedDict
 from copy import deepcopy
 from werkzeug.utils import secure_filename
-try:
-    import imgkit
-except Exception:
-    imgkit = None
 
 import pytesseract
 try:
@@ -110,18 +106,26 @@ async def _get_playwright_browser():
     if async_playwright is None:
         raise RuntimeError("Playwright async API is not installed on the server.")
 
-    if _playwright_browser:
+    if _playwright_browser and _playwright_browser.is_connected():
         return _playwright_browser
 
-    _playwright_runtime = await async_playwright().start()
-    print("[INFO] Playwright browsers path:", os.environ.get("PLAYWRIGHT_BROWSERS_PATH", ""))
+    if _playwright_browser and not _playwright_browser.is_connected():
+        _playwright_browser = None
+
+    if _playwright_runtime is None:
+        _playwright_runtime = await async_playwright().start()
+        print("[INFO] Playwright browsers path:", os.environ.get("PLAYWRIGHT_BROWSERS_PATH", ""))
+
     try:
         _playwright_browser = await _playwright_runtime.chromium.launch(
             headless=True,
             args=[
                 "--no-sandbox",
+                "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
+                "--no-zygote",
+                "--single-process",
                 "--font-render-hinting=medium",
             ],
         )
@@ -132,13 +136,42 @@ async def _get_playwright_browser():
             _playwright_browser = await _playwright_runtime.chromium.launch(
                 headless=True,
                 args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--no-zygote",
+                    "--single-process",
                     "--font-render-hinting=medium",
                 ],
             )
         else:
             raise
+
+    def _handle_disconnect():
+        global _playwright_browser
+        print("[WARN] Playwright browser disconnected. Clearing cached browser instance.")
+        _playwright_browser = None
+
+    _playwright_browser.on("disconnected", _handle_disconnect)
     return _playwright_browser
+
+
+async def _reset_playwright_browser():
+    global _playwright_browser, _playwright_runtime
+    old_browser = _playwright_browser
+    _playwright_browser = None
+    if old_browser:
+        try:
+            await old_browser.close()
+        except Exception:
+            pass
+    if _playwright_runtime:
+        try:
+            await _playwright_runtime.stop()
+        except Exception:
+            pass
+        _playwright_runtime = None
 
 
 async def _install_playwright_browsers():
@@ -173,18 +206,26 @@ async def _playwright_render_loop():
         context = None
         try:
             browser = await _get_playwright_browser()
-            context = await browser.new_context(
-                viewport={"width": task["viewport_width"], "height": 960},
-                device_scale_factor=2,
-                color_scheme="light",
-            )
+            try:
+                context = await browser.new_context(
+                    viewport={"width": task["viewport_width"], "height": 960},
+                    device_scale_factor=1,
+                    color_scheme="light",
+                )
+            except Exception as exc:
+                if "Target page, context or browser has been closed" not in str(exc):
+                    raise
+                print("[WARN] Browser context creation failed. Resetting Playwright browser and retrying once.")
+                await _reset_playwright_browser()
+                browser = await _get_playwright_browser()
+                context = await browser.new_context(
+                    viewport={"width": task["viewport_width"], "height": 960},
+                    device_scale_factor=1,
+                    color_scheme="light",
+                )
             page = await context.new_page()
             page.set_default_timeout(10000)
             await page.set_content(task["html"], wait_until="domcontentloaded")
-            try:
-                await page.wait_for_load_state("networkidle", timeout=2000)
-            except Exception:
-                pass
             if task["cards_html"]:
                 bbox = await page.evaluate(
                     """
