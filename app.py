@@ -28,8 +28,14 @@ import re
 import threading
 import queue
 import asyncio
+import hashlib
+from collections import OrderedDict
 from copy import deepcopy
 from werkzeug.utils import secure_filename
+try:
+    import imgkit
+except Exception:
+    imgkit = None
 
 import pytesseract
 try:
@@ -64,6 +70,9 @@ _playwright_lock = threading.Lock()
 _playwright_task_queue = queue.Queue()
 _playwright_worker_started = False
 _playwright_install_attempted = False
+_render_cache = OrderedDict()
+_render_cache_lock = threading.Lock()
+_render_cache_max = 20
 
 # Register API v2 Blueprint
 # Register API v2 Blueprint
@@ -110,7 +119,9 @@ async def _get_playwright_browser():
         _playwright_browser = await _playwright_runtime.chromium.launch(
             headless=True,
             args=[
+                "--no-sandbox",
                 "--disable-dev-shm-usage",
+                "--disable-gpu",
                 "--font-render-hinting=medium",
             ],
         )
@@ -168,7 +179,12 @@ async def _playwright_render_loop():
                 color_scheme="light",
             )
             page = await context.new_page()
-            await page.set_content(task["html"], wait_until="networkidle")
+            page.set_default_timeout(10000)
+            await page.set_content(task["html"], wait_until="domcontentloaded")
+            try:
+                await page.wait_for_load_state("networkidle", timeout=2000)
+            except Exception:
+                pass
             if task["cards_html"]:
                 bbox = await page.evaluate(
                     """
@@ -1912,6 +1928,21 @@ def render_cards_image():
             groups = _build_cards_render_groups(flights, trip_type, unit_flights)
             html = render_template("cards_image.html", groups=groups, trip_type=trip_type)
 
+        cache_key = hashlib.sha256(
+            (html + f"|w:{viewport_width}|c:{bool(cards_html)}").encode("utf-8")
+        ).hexdigest()
+        with _render_cache_lock:
+            cached = _render_cache.get(cache_key)
+            if cached:
+                _render_cache.move_to_end(cache_key)
+                print("[INFO] Render cache hit.")
+                return send_file(
+                    io.BytesIO(cached),
+                    mimetype="image/png",
+                    as_attachment=False,
+                    download_name="flight-cards.png",
+                )
+
         _ensure_playwright_worker()
         done_event = threading.Event()
         result = {}
@@ -1926,6 +1957,11 @@ def render_cards_image():
         if result.get("error"):
             raise result["error"]
         image_bytes = result["image_bytes"]
+        with _render_cache_lock:
+            _render_cache[cache_key] = image_bytes
+            _render_cache.move_to_end(cache_key)
+            while len(_render_cache) > _render_cache_max:
+                _render_cache.popitem(last=False)
         print("[INFO] Server-side card render succeeded.")
 
         return send_file(
