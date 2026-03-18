@@ -208,7 +208,7 @@ async def _playwright_render_loop():
             browser = await _get_playwright_browser()
             try:
                 context = await browser.new_context(
-                    viewport={"width": task["viewport_width"], "height": 960},
+                    viewport={"width": task["viewport_width"], "height": task.get("viewport_height", 960)},
                     device_scale_factor=1,
                     color_scheme="light",
                 )
@@ -219,7 +219,7 @@ async def _playwright_render_loop():
                 await _reset_playwright_browser()
                 browser = await _get_playwright_browser()
                 context = await browser.new_context(
-                    viewport={"width": task["viewport_width"], "height": 960},
+                    viewport={"width": task["viewport_width"], "height": task.get("viewport_height", 960)},
                     device_scale_factor=1,
                     color_scheme="light",
                 )
@@ -1921,6 +1921,8 @@ def render_cards_image():
         viewport_width = max(int(payload.get("viewport_width") or 1280), 320)
         requested_cards_width = payload.get("cards_width")
         cards_width = max(int(requested_cards_width), 1) if requested_cards_width else None
+        requested_cards_height = payload.get("cards_height")
+        cards_height = max(int(requested_cards_height), 1) if requested_cards_height else None
 
         if cards_html:
             html = render_template_string(
@@ -1939,10 +1941,10 @@ def render_cards_image():
                       background: #ffffff;
                     }
                     body {
-                      padding: 24px;
+                      padding: 0;
                     }
                     #cards {
-                      margin: 0 auto !important;
+                      margin: 0 !important;
                       width: {{ cards_width }}px !important;
                       max-width: {{ cards_width }}px !important;
                       min-width: 0 !important;
@@ -1989,7 +1991,8 @@ def render_cards_image():
         result = {}
         _playwright_task_queue.put({
             "html": html,
-            "viewport_width": viewport_width,
+            "viewport_width": cards_width or min(viewport_width, 1400),
+            "viewport_height": min(max((cards_height or 900) + 40, 240), 4000),
             "cards_html": bool(cards_html),
             "event": done_event,
             "result": result,

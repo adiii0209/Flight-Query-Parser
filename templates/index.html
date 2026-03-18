@@ -9066,20 +9066,89 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       document.body.removeChild(textarea);
     }
 
+    function getExportStyleMarkup() {
+      const styleTags = Array.from(document.head.querySelectorAll('style'))
+        .map(node => node.outerHTML)
+        .join('\n');
+      const exportOverrides = `
+        <style>
+          #cards, #cards * {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Arial, sans-serif !important;
+          }
+          #cards .flight-code,
+          #cards .airport-code,
+          #cards .mono,
+          #cards [style*="monospace"] {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace !important;
+          }
+          #cards img[src^="/static/"],
+          #cards img[src^="http://"],
+          #cards img[src^="https://"] {
+            image-rendering: auto;
+          }
+          #cards .info-icon-svg,
+          #cards .layover-icon-svg {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+          }
+          #cards .currency-symbol {
+            font-family: "Segoe UI Symbol", "Noto Sans", Arial, sans-serif !important;
+          }
+        </style>
+      `;
+      return styleTags + '\n' + exportOverrides;
+    }
+
+    function inlineFlightAssetMarkup(html) {
+      if (!html) return '';
+      const planeSvg = `
+        <span class="info-icon-svg" aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M21 16.5L13.2 13.4V6.8L16.1 4.7V3.5L12 5L7.9 3.5V4.7L10.8 6.8V13.4L3 16.5V18L10.8 16.2V20L8.7 21.5V22.5L12 21.3L15.3 22.5V21.5L13.2 20V16.2L21 18V16.5Z" fill="currentColor"/>
+          </svg>
+        </span>
+      `.trim();
+      const clockSvg = `
+        <span class="info-icon-svg" aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="2"/>
+            <path d="M12 7.5V12L15 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+      `.trim();
+      const layoverSvg = `
+        <span class="layover-icon-svg" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 11.5L11.5 3L13.5 5L7 11.5H21V14.5H7L13.5 21L11.5 23L3 14.5V11.5Z" fill="#2563eb"/>
+          </svg>
+        </span>
+      `.trim();
+
+      return html
+        .replace(/<div class="info-icon">[^<]*<\/div>/g, (match) => {
+          if (match.includes('âœˆ') || match.includes('✈')) return `<div class="info-icon">${planeSvg}</div>`;
+          if (match.includes('â±') || match.includes('⏱')) return `<div class="info-icon">${clockSvg}</div>`;
+          return match;
+        })
+        .replace(/<img src="\/static\/travel\.png" alt="Airport">/g, layoverSvg)
+        .replace(/â€¢/g, '&bull;');
+    }
+
     async function generateImageBlob() {
       const cardsContainer = document.getElementById('cards');
       const cardsRect = cardsContainer ? cardsContainer.getBoundingClientRect() : null;
-      const headMarkup = Array.from(document.head.querySelectorAll('style, link[rel="stylesheet"]'))
-        .map(node => node.outerHTML)
-        .join('\n');
+      const headMarkup = getExportStyleMarkup();
+      const cardsHTML = cardsContainer ? inlineFlightAssetMarkup(cardsContainer.outerHTML) : '';
       const response = await fetch('/api/render/cards-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          cards_html: cardsContainer ? cardsContainer.outerHTML : '',
+          cards_html: cardsHTML,
           head_markup: headMarkup,
           theme: document.documentElement.getAttribute('data-theme') || 'light',
-          viewport_width: Math.max(Math.ceil(window.innerWidth || 1280), 320),
+          viewport_width: Math.max(Math.ceil((cardsRect ? cardsRect.width : window.innerWidth) + 80), 320),
           cards_width: cardsRect ? Math.ceil(cardsRect.width) : null,
           cards_height: cardsRect ? Math.ceil(cardsRect.height) : null,
           flights: currentFlights,
