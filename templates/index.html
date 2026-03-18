@@ -9498,9 +9498,18 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         return cachedBlob;
       }
       if (useClientSideImageRender) {
-        const fallbackBlob = await generateImageBlobClientSide(mode);
-        cardsImageBlobCache.set(requestKey, fallbackBlob);
-        return fallbackBlob;
+        try {
+          const fallbackBlob = await generateImageBlobClientSide(mode);
+          cardsImageBlobCache.set(requestKey, fallbackBlob);
+          return fallbackBlob;
+        } catch (fallbackError) {
+          console.warn('Client-side image render failed.', fallbackError);
+          if (prefersClientSideImageRender) {
+            useClientSideImageRender = false;
+          } else {
+            throw fallbackError;
+          }
+        }
       }
       const response = await fetch('/api/render/cards-image', {
         method: 'POST',
@@ -9564,7 +9573,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     let lastPreloadKey = '';
     let imagePreloadPromise = null;
     const cardsImageBlobCache = new Map();
-    let useClientSideImageRender = false;
+    const prefersClientSideImageRender = !['localhost', '127.0.0.1'].includes(window.location.hostname);
+    let useClientSideImageRender = prefersClientSideImageRender;
 
     function getCardsImageRequestKey(payload) {
       return JSON.stringify([
