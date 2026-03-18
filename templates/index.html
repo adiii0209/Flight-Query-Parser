@@ -1321,6 +1321,135 @@
       border-left-color: var(--primary);
     }
 
+    .download-flight-overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10050;
+      overflow: hidden;
+    }
+
+    .download-flight {
+      position: fixed;
+      left: var(--flight-start-x, 0px);
+      top: var(--flight-start-y, 0px);
+      width: 28px;
+      height: 28px;
+      transform: translate(-50%, -50%);
+      will-change: transform, opacity;
+      filter: drop-shadow(0 10px 16px rgba(37, 99, 235, 0.28));
+      opacity: 0;
+    }
+
+    .download-flight img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      transform-origin: center center;
+    }
+
+    .download-flight-boom {
+      position: fixed;
+      left: var(--flight-end-x, 0px);
+      top: var(--flight-end-y, 0px);
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      transform: translate(-50%, -50%) scale(0.2);
+      opacity: 0;
+      background:
+        radial-gradient(circle, rgba(255, 255, 255, 1) 0 18%, rgba(251, 191, 36, 0.98) 19% 36%, rgba(249, 115, 22, 0.9) 37% 56%, rgba(37, 99, 235, 0.24) 57% 100%);
+      box-shadow:
+        0 0 0 0 rgba(249, 115, 22, 0.35),
+        0 0 34px rgba(251, 191, 36, 0.6);
+      will-change: transform, opacity;
+      animation: download-flight-boom 520ms ease-out forwards;
+    }
+
+    .download-flight-boom::before,
+    .download-flight-boom::after {
+      content: '';
+      position: absolute;
+      inset: 50%;
+      border-radius: 999px;
+      border: 2px solid rgba(251, 191, 36, 0.95);
+      transform: translate(-50%, -50%) scale(0.2);
+      opacity: 0;
+      animation: download-flight-spark 520ms ease-out forwards;
+    }
+
+    .download-flight-boom::after {
+      border-color: rgba(248, 113, 113, 0.9);
+      animation-delay: 70ms;
+    }
+
+    .download-flight-label {
+      position: fixed;
+      left: calc(var(--flight-end-x, 0px) - 10px);
+      top: calc(var(--flight-end-y, 0px) + 22px);
+      transform: translate(-50%, 0) scale(0.75);
+      padding: 0.34rem 0.68rem;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      box-shadow: 0 10px 24px rgba(37, 99, 235, 0.3);
+      opacity: 0;
+      white-space: nowrap;
+      animation: download-flight-label 640ms ease-out forwards;
+    }
+
+    @keyframes download-flight-boom {
+      0% {
+        transform: translate(-50%, -50%) scale(0.15);
+        opacity: 0;
+      }
+
+      28% {
+        opacity: 1;
+      }
+
+      100% {
+        transform: translate(-50%, -50%) scale(5.1);
+        opacity: 0;
+      }
+    }
+
+    @keyframes download-flight-spark {
+      0% {
+        transform: translate(-50%, -50%) scale(0.2);
+        opacity: 0;
+      }
+
+      32% {
+        opacity: 1;
+      }
+
+      100% {
+        transform: translate(-50%, -50%) scale(3.8);
+        opacity: 0;
+      }
+    }
+
+    @keyframes download-flight-label {
+      0% {
+        transform: translate(-50%, 8px) scale(0.75);
+        opacity: 0;
+      }
+
+      30% {
+        opacity: 1;
+      }
+
+      100% {
+        transform: translate(-50%, 0) scale(1);
+        opacity: 1;
+      }
+    }
+
     /* Modal Styles */
     .modal-overlay {
       position: fixed;
@@ -2308,6 +2437,19 @@
       /* Red for stops usually */
     }
 
+    .route-line::after {
+      content: '' !important;
+      right: -1px;
+      transform: translate(100%, -50%) rotate(180deg) !important;
+      width: 12px;
+      height: 12px;
+      background: url('/icons/timeline%20plane.png') center center / 13px 13px no-repeat;
+      filter: brightness(0) saturate(100%) invert(34%) sepia(93%) saturate(1841%) hue-rotate(211deg) brightness(92%) contrast(92%);
+      padding: 0 !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+    }
+
     .stops-text.direct {
       color: var(--success);
     }
@@ -2496,6 +2638,30 @@
       width: 14px;
       height: 14px;
       object-fit: contain;
+    }
+
+    .info-icon img.timeline-plane-icon {
+      width: 15px;
+      height: 15px;
+      filter: brightness(0) saturate(100%) invert(34%) sepia(93%) saturate(1841%) hue-rotate(211deg) brightness(92%) contrast(92%);
+    }
+
+    .currency-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      vertical-align: middle;
+      margin-right: 0.12rem;
+      position: relative;
+      top: -1px;
+    }
+
+    .currency-icon img {
+      width: 12px;
+      height: 12px;
+      display: block;
+      object-fit: contain;
+      filter: brightness(0) saturate(100%) invert(34%) sepia(93%) saturate(1841%) hue-rotate(211deg) brightness(92%) contrast(92%);
     }
 
     .layover-pill-icon {
@@ -6828,6 +6994,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           const mus = {};
           const svcs = {};
           const fareExtras = {}; // New object for extra details
+          const fareOrder = [];
+          const fareLabels = {};
           const fareCards = document.querySelectorAll(`#fare-list-${unitId}${suffix} .fare-card`);
 
           let localError = false;
@@ -6838,6 +7006,9 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
             const fareKey = card.dataset.fareKey;
             const uniqueKey = `${fareKey}-unit-${unitId}${suffix}`;
+            const fareLabel = (card.querySelector('.fare-card-header label')?.textContent || fareKey).trim();
+            fareOrder.push(fareKey);
+            fareLabels[fareKey] = fareLabel;
 
             const fareInput = card.querySelector(`.fare-${uniqueKey}`);
             const muInput = card.querySelector(`.mu-${uniqueKey}`);
@@ -6908,7 +7079,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             hasError = true;
           }
 
-          return { fares, mus, svcs, fareExtras, error: localError };
+          return { fares, mus, svcs, fareExtras, fareOrder, fareLabels, error: localError };
         };
 
         const isSplit = document.getElementById(`split-fares-toggle-${unitId}`)?.checked;
@@ -6942,6 +7113,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           let muToUse = {};
           let svcToUse = {};
           let extrasToUse = {};
+          let fareOrderToUse = [];
+          let fareLabelsToUse = {};
 
           if (isSplit && flightIds.length === 2) {
             if (idx === 0 && outboundData) { // Outbound
@@ -6949,17 +7122,23 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
               muToUse = outboundData.mus;
               svcToUse = outboundData.svcs;
               extrasToUse = outboundData.fareExtras;
+              fareOrderToUse = outboundData.fareOrder || [];
+              fareLabelsToUse = outboundData.fareLabels || {};
             } else if (idx === 1 && returnData) { // Return
               faresToUse = returnData.fares;
               muToUse = returnData.mus;
               svcToUse = returnData.svcs;
               extrasToUse = returnData.fareExtras;
+              fareOrderToUse = returnData.fareOrder || [];
+              fareLabelsToUse = returnData.fareLabels || {};
             }
           } else if (sharedData) {
             faresToUse = sharedData.fares;
             muToUse = sharedData.mus;
             svcToUse = sharedData.svcs;
             extrasToUse = sharedData.fareExtras;
+            fareOrderToUse = sharedData.fareOrder || [];
+            fareLabelsToUse = sharedData.fareLabels || {};
           }
 
           flightTexturesByUnit[unitId] = flightTexturesByUnit[unitId] || [];
@@ -6971,6 +7150,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             fare_mu: muToUse,
             fare_svc: svcToUse,
             fare_extra_details: extrasToUse,
+            fare_order: fareOrderToUse,
+            fare_labels: fareLabelsToUse,
             has_layover: hasLayover,
             is_multiple: isMultiple,
             is_split: isSplit, // Track if unit was split
@@ -7680,7 +7861,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
                     </div>
                     <div class="flight-info-block">
                         <div class="info-row">
-                             <div class="info-icon"><img src="${timelinePlaneIcon}" alt=""></div>
+                             <div class="info-icon"><img class="timeline-plane-icon" src="${timelinePlaneIcon}" alt=""></div>
                              <span style="font-weight: 600; color: var(--text-primary);">${airlineName} ${flightNumber}</span>
                         </div>
                         ${duration && duration !== '--' ? `<div class="info-row"><div class="info-icon"><img src="${watchIcon}" alt=""></div><span>${duration}</span></div>` : ''}
@@ -7731,18 +7912,19 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       let extraClass = '';
       if (variant === 'outbound') extraClass = ' fare-footer-outbound';
       else if (variant === 'return') extraClass = ' fare-footer-return';
-
+      const rupeeIcon = '<span class="currency-icon"><img src="/icons/rupee.png" alt="Rs"></span>';
       const numFares = Object.keys(flight.fares || {}).length;
+      const orderedFareEntries = getOrderedFareEntries(flight);
 
       let faresHTML = `<div class="card-footer-fares${extraClass}">`;
-      Object.entries(flight.fares).forEach(([type, base]) => {
+      orderedFareEntries.forEach(([type, base]) => {
         const perFareMU = flight.fare_mu && flight.fare_mu[type] !== undefined ? flight.fare_mu[type] : (flight.markup || 0);
         const finalFare = base + perFareMU;
         const perFareSVC = flight.fare_svc && flight.fare_svc[type] !== undefined ? flight.fare_svc[type] : (flight.service_charge || 0);
         const perFareGST = perFareSVC > 0 ? Math.round(perFareSVC * 0.18) : 0;
         let extraText = '';
         if (perFareSVC > 0) {
-          extraText = ` <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(+ ₹${perFareSVC} SVC + ₹${perFareGST} GST)</span>`;
+          extraText = ` <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal;">(+ ${rupeeIcon}${perFareSVC} SVC + ${rupeeIcon}${perFareGST} GST)</span>`;
         }
 
         const fareUniqueId = `fare-${type}-${Math.random().toString(36).substr(2, 5)}`;
@@ -7768,10 +7950,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         faresHTML += `
               <div class="footer-fare-item" ${hasClickableDetails ? `onclick="toggleFareDetails('${fareUniqueId}')" style="cursor:pointer;"` : ''}>
                 <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-                    <span class="footer-fare-label">${type}</span>
+                    <span class="footer-fare-label">${getFareDisplayLabel(flight, type)}</span>
                     ${hasClickableDetails ? `<span id="fare-toggle-icon-${fareUniqueId}" style="font-size:0.7rem; color:var(--text-secondary); transition: transform 0.3s ease;">▼</span>` : ''}
                 </div>
-                <span class="footer-fare-price">₹ ${finalFare.toLocaleString('en-IN')}${extraText}</span>
+                <span class="footer-fare-price">${rupeeIcon}${finalFare.toLocaleString('en-IN')}${extraText}</span>
                 
                 ${hasClickableDetails ? `
                 <div id="${fareUniqueId}" class="fare-details-collapsible" style="display:none; width:100%; margin-top:0.5rem; border-top:1px solid var(--border); padding-top:0.5rem; text-align: left;">
@@ -7783,6 +7965,25 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       });
       faresHTML += '</div>';
       return faresHTML;
+    }
+
+    function getOrderedFareEntries(flight) {
+      const fares = flight && flight.fares ? flight.fares : {};
+      const fareOrder = Array.isArray(flight && flight.fare_order) ? flight.fare_order : [];
+      const orderedKeys = fareOrder.filter((key) => Object.prototype.hasOwnProperty.call(fares, key));
+      Object.keys(fares).forEach((key) => {
+        if (!orderedKeys.includes(key)) orderedKeys.push(key);
+      });
+      return orderedKeys.map((key) => [key, fares[key]]);
+    }
+
+    function getFareDisplayLabel(flight, type) {
+      const customLabel = flight && flight.fare_labels ? flight.fare_labels[type] : '';
+      if (customLabel && customLabel.trim()) return customLabel.trim();
+      return String(type || '')
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (char) => char.toUpperCase())
+        .trim();
     }
 
     function createRoundTripFlightCard(outbound, returnFlight, index, unitId) {
@@ -8428,6 +8629,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         const newFareMU = {};
         const newFareSVC = {};
         const newFareExtras = {};
+        const newFareOrder = [];
+        const newFareLabels = {};
         let hasError = false;
 
         // Collect Date
@@ -8439,6 +8642,9 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           if (!checkbox || !checkbox.checked) return;
 
           const fareKey = card.dataset.fareKey;
+          const fareLabel = (card.querySelector('.fare-card-header label')?.textContent || fareKey).trim();
+          newFareOrder.push(fareKey);
+          newFareLabels[fareKey] = fareLabel;
           const uniqueId = `inline-fare-card-${fareKey}-${flightIndex}${suffix}`;
           const fareInput = document.querySelector(`.inline-fare-${uniqueId}`);
           const muInput = document.querySelector(`.inline-mu-${uniqueId}`);
@@ -8476,7 +8682,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           }
 
         });
-        return { newFares, newFareMU, newFareSVC, newFareExtras, newDate, hasError };
+        return { newFares, newFareMU, newFareSVC, newFareExtras, newFareOrder, newFareLabels, newDate, hasError };
       };
 
       // Collect Main (Outbound/Shared)
@@ -8489,6 +8695,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       flight.fare_mu = mainData.newFareMU;
       flight.fare_svc = mainData.newFareSVC;
       flight.fare_extra_details = mainData.newFareExtras;
+      flight.fare_order = mainData.newFareOrder;
+      flight.fare_labels = mainData.newFareLabels;
 
       if (isRoundTrip) {
         const returnFlight = currentFlights[flightIndex + 1];
@@ -8501,6 +8709,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           returnFlight.fare_mu = retData.newFareMU;
           returnFlight.fare_svc = retData.newFareSVC;
           returnFlight.fare_extra_details = retData.newFareExtras;
+          returnFlight.fare_order = retData.newFareOrder;
+          returnFlight.fare_labels = retData.newFareLabels;
         } else {
           // Copy Main to Return, BUT KEEP RETURN DATE if it exists and wasn't edited in shared mode?
           // If shared mode, we only displayed one date input (main).
@@ -8527,6 +8737,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           returnFlight.fare_mu = JSON.parse(JSON.stringify(mainData.newFareMU));
           returnFlight.fare_svc = JSON.parse(JSON.stringify(mainData.newFareSVC));
           returnFlight.fare_extra_details = JSON.parse(JSON.stringify(mainData.newFareExtras));
+          returnFlight.fare_order = JSON.parse(JSON.stringify(mainData.newFareOrder));
+          returnFlight.fare_labels = JSON.parse(JSON.stringify(mainData.newFareLabels));
         }
       }
 
@@ -8717,7 +8929,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       output += `\n`;
 
       // Fares (no dash separator)
-      Object.entries(flight.fares).forEach(([type, base]) => {
+      getOrderedFareEntries(flight).forEach(([type, base]) => {
         const perFareMU = flight.fare_mu && flight.fare_mu[type] !== undefined ? flight.fare_mu[type] : (flight.markup || 0);
         const finalFare = base + perFareMU;
         const perFareSVC = flight.fare_svc && flight.fare_svc[type] !== undefined ? flight.fare_svc[type] : (flight.service_charge || 0);
@@ -8727,7 +8939,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         if (perFareSVC > 0) {
           svcText = ` (+ ₹${perFareSVC} SVC + ₹${perFareGST} GST)`;
         }
-        output += `*${type.charAt(0).toUpperCase() + type.slice(1)} Fare:* ₹${finalFare.toLocaleString('en-IN')} per person${svcText}\n`;
+        output += `*${getFareDisplayLabel(flight, type)}:* ₹${finalFare.toLocaleString('en-IN')} per person${svcText}\n`;
 
         // Add baggage/extra info on new lines
         if (flight.fare_extra_details && flight.fare_extra_details[type]) {
@@ -8799,7 +9011,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     function formatFaresOutput(flight) {
       let fareLines = '';
-      Object.entries(flight.fares).forEach(([type, base]) => {
+      getOrderedFareEntries(flight).forEach(([type, base]) => {
         // Use per-fare markup if available, otherwise use global markup
         const perFareMU = flight.fare_mu && flight.fare_mu[type] !== undefined ? flight.fare_mu[type] : (flight.markup || 0);
         const finalFare = base + perFareMU;
@@ -8813,7 +9025,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           extraText = ` (+ ₹${perFareSVC} SVC + ₹${perFareGST} GST)`;
         }
 
-        fareLines += `*${type.charAt(0).toUpperCase() + type.slice(1)} Fare:* ₹${finalFare.toLocaleString('en-IN')} per person${extraText}\n`;
+        fareLines += `*${getFareDisplayLabel(flight, type)}:* ₹${finalFare.toLocaleString('en-IN')} per person${extraText}\n`;
 
         // Add baggage/extra info on new lines
         if (flight.fare_extra_details && flight.fare_extra_details[type]) {
@@ -9260,11 +9472,13 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     function inlineFlightAssetMarkup(html) {
       if (!html) return '';
+      const timelinePlanePng = '<img class="timeline-plane-icon" src="/icons/timeline%20plane.png" alt="">';
       const expandedPlanePng = '<img src="/icons/expanded%20plane.png" alt="">';
       const watchPng = '<img src="/icons/watch.png" alt="">';
       const layoverPng = '<img src="/static/travel.png" alt="Airport">';
 
       return html
+        .replace(/<img class="timeline-plane-icon"[^>]*>/g, timelinePlanePng)
         .replace(/<div class="info-icon">[^<]*<\/div>/g, (match) => {
           if (match.includes('âœˆ') || match.includes('✈') || match.includes('?')) return `<div class="info-icon">${expandedPlanePng}</div>`;
           if (match.includes('â±') || match.includes('⏱') || match.includes('?')) return `<div class="info-icon">${watchPng}</div>`;
@@ -9558,8 +9772,124 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       shareCombined('whatsapp');
     }
 
+    function launchDownloadFlightAnimation() {
+      const sourceButton = document.querySelector('button[onclick="downloadCardsImage()"]');
+      if (!sourceButton) return;
+
+      const rect = sourceButton.getBoundingClientRect();
+      const startX = rect.left + rect.width / 2;
+      const startY = rect.top + rect.height / 2;
+      const endX = Math.max(window.innerWidth - 54, startX + 40);
+      const endY = 34;
+      const durationMs = 2400;
+
+      const overlay = document.createElement('div');
+      overlay.className = 'download-flight-overlay';
+      overlay.style.setProperty('--flight-start-x', `${startX}px`);
+      overlay.style.setProperty('--flight-start-y', `${startY}px`);
+      overlay.style.setProperty('--flight-end-x', `${endX}px`);
+      overlay.style.setProperty('--flight-end-y', `${endY}px`);
+
+      const plane = document.createElement('div');
+      plane.className = 'download-flight';
+      plane.innerHTML = '<img src="/icons/timeline%20plane.png" alt="">';
+      overlay.appendChild(plane);
+      document.body.appendChild(overlay);
+
+      const rightX = window.innerWidth - 32;
+      const leftX = 24;
+      const rise = endY - startY;
+      const pathPoints = [
+        { x: startX, y: startY },
+        { x: rightX, y: startY + rise * 0.18 },
+        { x: leftX, y: startY + rise * 0.58 },
+        { x: endX, y: endY }
+      ];
+
+      const easeInOutSine = (t) => -(Math.cos(Math.PI * t) - 1) / 2;
+      const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+      const catmullRom = (p0, p1, p2, p3, t) => {
+        const t2 = t * t;
+        const t3 = t2 * t;
+        return {
+          x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+          y: 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3)
+        };
+      };
+
+      const catmullRomTangent = (p0, p1, p2, p3, t) => {
+        const t2 = t * t;
+        return {
+          x: 0.5 * ((-p0.x + p2.x) + 2 * (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t + 3 * (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t2),
+          y: 0.5 * ((-p0.y + p2.y) + 2 * (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t + 3 * (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t2)
+        };
+      };
+
+      const getPathState = (progress) => {
+        const p = easeInOutSine(progress);
+        const segmentCount = pathPoints.length - 1;
+        const scaled = p * segmentCount;
+        const segmentIndex = Math.min(Math.floor(scaled), segmentCount - 1);
+        const localT = clamp(scaled - segmentIndex, 0, 1);
+        const p0 = pathPoints[Math.max(0, segmentIndex - 1)];
+        const p1 = pathPoints[segmentIndex];
+        const p2 = pathPoints[Math.min(pathPoints.length - 1, segmentIndex + 1)];
+        const p3 = pathPoints[Math.min(pathPoints.length - 1, segmentIndex + 2)];
+        const point = catmullRom(p0, p1, p2, p3, localT);
+        const tangent = catmullRomTangent(p0, p1, p2, p3, localT);
+        return { point, tangent };
+      };
+
+      let boomShown = false;
+      let labelShown = false;
+      const boomTimer = setTimeout(() => {
+        boomShown = true;
+        const boom = document.createElement('div');
+        boom.className = 'download-flight-boom';
+        overlay.appendChild(boom);
+      }, durationMs - 520);
+
+      const labelTimer = setTimeout(() => {
+        labelShown = true;
+        const label = document.createElement('div');
+        label.className = 'download-flight-label';
+        label.textContent = 'Downloaded';
+        overlay.appendChild(label);
+      }, durationMs - 430);
+
+      const animationStart = performance.now();
+      let rafId = 0;
+      const animatePlane = (now) => {
+        const elapsed = now - animationStart;
+        const progress = clamp(elapsed / durationMs, 0, 1);
+        const { point, tangent } = getPathState(progress);
+        const facingLeft = tangent.x < 0;
+        const bankAngle = Math.atan2(tangent.y, Math.max(Math.abs(tangent.x), 0.001)) * (180 / Math.PI);
+        const opacity = progress < 0.06 ? progress / 0.06 : (progress > 0.94 ? (1 - progress) / 0.06 : 1);
+        const scale = progress < 0.2 ? 0.9 + progress * 0.35 : 0.97 - (progress * 0.18);
+
+        plane.style.opacity = `${clamp(opacity, 0, 1)}`;
+        plane.style.transform = `translate(-50%, -50%) translate3d(${point.x - startX}px, ${point.y - startY}px, 0) rotate(${bankAngle}deg) scale(${facingLeft ? -scale : scale}, ${scale})`;
+
+        if (progress < 1) {
+          rafId = requestAnimationFrame(animatePlane);
+        } else {
+          plane.remove();
+        }
+      };
+      rafId = requestAnimationFrame(animatePlane);
+
+      setTimeout(() => {
+        cancelAnimationFrame(rafId);
+        clearTimeout(boomTimer);
+        clearTimeout(labelTimer);
+        setTimeout(() => overlay.remove(), boomShown || labelShown ? 980 : 0);
+      }, durationMs + 10);
+    }
+
     async function downloadCardsImage() {
       if (document.activeElement) document.activeElement.blur();
+      launchDownloadFlightAnimation();
       showNotification('Preparing download…', 'info', { id: 'download-status', duration: 7000 });
       try {
         if (imagePreloadPromise) {
