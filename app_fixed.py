@@ -1,0 +1,2724 @@
+import os
+import json
+import uuid
+import requests
+import base64
+from io import BytesIO
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for, send_file
+from dotenv import load_dotenv
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import inspect, text
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
+from functools import wraps
+import hashlib
+from query_parser import extract_flight, extract_multiple_flights
+from models import User, Customer, Itinerary, Ticket, Aggregator, LedgerEntry, TicketOperation, OperationLedgerLink, BookingGroup
+from extensions import db
+import gspread
+from google.oauth2.service_account import Credentials
+import re
+from copy import deepcopy
+from werkzeug.utils import secure_filename
+import pytesseract
+from pdf417gen import encode, render_image
+
+load_dotenv()
+app = Flask(__name__)
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+# 🔐 Shared secret for ticket parser
+API_KEY = os.getenv("TICKET_PARSER_API_KEY", "supersecretkey")
+
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+db.init_app(app)
+
+# Register API v2 Blueprint
+# Register API v2 Blueprint
+from routes_v2 import api_v2
+from extensions_v2 import db_session
+from ocr import ocr_bp
+app.register_blueprint(api_v2)
+app.register_blueprint(ocr_bp)
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    db_session.remove()
+
+# ==================== AUTHENTICATION DECORATOR ====================
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+# 🔐 Shared secret for ticket parser
+API_KEY = os.getenv("TICKET_PARSER_API_KEY", "supersecretkey")
+
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+db.init_app(app)
+
+# Register API v2 Blueprint
+# Register API v2 Blueprint
+from routes_v2 import api_v2
+from extensions_v2 import db_session
+from ocr import ocr_bp
+app.register_blueprint(api_v2)
+app.register_blueprint(ocr_bp)
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    db_session.remove()
+
+# ==================== AUTHENTICATION DECORATOR ====================
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# ==================== ROUTES ====================
+
+@app.route("/")
+def home():
+    """Serve the main HTML page"""
+    return render_template('index.html')
+
+@app.route("/itineraries")
+def itineraries_page():
+    """Serve the itineraries management page"""
+    return render_template('itineraries.html')
+
+@app.route("/passengers")
+def passengers_page():
+    """Serve the passengers management page"""
+    return render_template('passengers.html')
+
+@app.route("/corporates")
+def corporates_page():
+    """Serve the corporates management page"""
+    return render_template('corporates.html')
+
+@app.route("/billing")
+def billing_dashboard_page():
+    """Serve the billing dashboard page"""
+    return render_template('billing_dashboard.html')
+
+@app.route("/ledger")
+def ledger_page():
+    """Serve the aggregator ledger dashboard"""
+    return render_template('ledger.html')
+
+@app.route("/login")
+def login_page():
+    """Serve the login/registration page"""
+    return render_template('login.html')
+
+# ==================== AUTH ROUTES ====================
+
+@app.route("/api/register", methods=["POST"])
+def register():
+    """Register a new user"""
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('username') or not data.get('email') or not data.get('password'):
+            return jsonify({"error": "Missing required fields"}), 400
+        
+        # Check if user already exists
+        if User.query.filter_by(username=data['username']).first():
+            return jsonify({"error": "Username already exists"}), 400
+        
+        if User.query.filter_by(email=data['email']).first():
+            return jsonify({"error": "Email already exists"}), 400
+        
+        # Create new user
+        user = User(
+            username=data['username'],
+            email=data['email'],
+            full_name=data.get('full_name', '')
+        )
+        user.set_password(data['password'])
+        
+        db.session.add(user)
+        db.session.commit()
+        
+        # Log the user in
+        session['user_id'] = user.id
+        session['username'] = user.username
+        
+        return jsonify({
+            "message": "Registration successful",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "full_name": user.full_name
+            }
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Registration error: {str(e)}")
+        return jsonify({"error": "Registration failed"}), 500
+
+@app.route("/api/login", methods=["POST"])
+def login():
+    """Login user"""
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('username') or not data.get('password'):
+            return jsonify({"error": "Missing credentials"}), 400
+        
+        user = User.query.filter_by(username=data['username']).first()
+        
+        if not user or not user.check_password(data['password']):
+            return jsonify({"error": "Invalid credentials"}), 401
+        
+        session['user_id'] = user.id
+        session['username'] = user.username
+        
+        return jsonify({
+            "message": "Login successful",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "full_name": user.full_name
+            }
+        })
+        
+    except Exception as e:
+        print(f"Login error: {str(e)}")
+        return jsonify({"error": "Login failed"}), 500
+
+@app.route("/api/logout", methods=["POST"])
+def logout():
+    """Logout user"""
+    session.clear()
+    return jsonify({"message": "Logout successful"})
+
+@app.route("/api/tickets/<ticket_id>/export-sheet", methods=["POST"])
+@login_required
+def export_ticket_to_sheet(ticket_id):
+    """Export ticket to Google Sheet using logic from test.py"""
+    try:
+        data = request.get_json()
+        booking_by = data.get('booking_by', 'AB')
+        ticket_type = data.get('type', 'New')
+
+        ticket = Ticket.query.get(ticket_id)
+        if not ticket:
+            return jsonify({"error": "Ticket not found"}), 404
+
+        # Parse data
+        passengers = json.loads(ticket.passengers_data or '[]')
+        journey = json.loads(ticket.journey_data or '{}')
+        
+        n_pax = len(passengers) if passengers else 1
+        global_mu_single = float(journey.get('global_markup', 0))
+        markup_total = global_mu_single * n_pax
+        
+        base_fare = 0.0
+        k3_gst = 0.0
+        other_taxes = 0.0 # Pure Other Taxes
+        
+        c_fare = journey.get('consolidated_fare')
+        if c_fare:
+            base_fare = float(c_fare.get('base_fare', 0))
+            k3_gst = float(c_fare.get('k3_gst', 0))
+            other_taxes = float(c_fare.get('other_taxes', 0))
+        else:
+            # Fallback to sum of individual passenger fares
+            for p in passengers:
+                f = p.get('fare', {})
+                base_fare += float(f.get('base_fare', 0))
+                k3_gst += float(f.get('k3_gst', 0))
+                other_taxes += float(f.get('other_taxes', 0))
+
+        # ---------- GOOGLE SHEETS LOGIC ----------
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        if not os.path.exists("credentials.json"):
+            return jsonify({"error": "credentials.json not found"}), 500
+            
+        creds = Credentials.from_service_account_file("credentials.json", scopes=scope)
+        gc = gspread.authorize(creds)
+        
+        sheet_id = "1jfm16HEq0G2XeXiyqK2Q3xyNbcSkt1DPtsEV6_256sk"
+        sheet = gc.open_by_key(sheet_id).sheet1
+        
+        all_values = sheet.get_all_values()
+        month_label = datetime.now().strftime("%b %Y")
+        month_row = None
+        
+        # 1. Find the current month section
+        for i, row in enumerate(all_values):
+            if month_label in row:
+                month_row = i
+                break
+        
+        if month_row is None:
+            return jsonify({"error": f"Section for {month_label} not found"}), 400
+            
+        # 2. Find where the NEXT month starts (insertion point)
+        month_pattern = re.compile(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s\d{4}")
+        insert_row_idx = None
+        for i in range(month_row + 1, len(all_values)):
+            row_text = " ".join(all_values[i])
+            if month_pattern.search(row_text) and month_label not in row_text:
+                insert_row_idx = i
+                break
+        
+        if insert_row_idx is None:
+            insert_row_idx = len(all_values)
+            
+        # 3. Get previous balance from Col K (Index 10) of the row just before insertion
+        try:
+            prev_row = all_values[insert_row_idx - 1]
+            prev_balance_str = prev_row[10].replace(',', '').strip() if len(prev_row) > 10 else "0"
+            prev_balance = float(prev_balance_str) if prev_balance_str else 0.0
+        except (ValueError, IndexError):
+            prev_balance = 0.0
+            
+        # Calculations (Same as test.py)
+        ticket_total = base_fare + k3_gst + other_taxes + markup_total
+        indigo_total = ticket_total - markup_total
+        running_balance = prev_balance - indigo_total
+        
+        # Build row
+        # A:Invoice, B:Date, C:PNR, D:Basic, E:K3, F:Other, G:MU, H:Xxd, I:Total, J:Indigo, K:Balance, L:By, M:Type
+        new_row = [
+            "", # A: Invoice (empty as requested)
+            datetime.now().strftime("%d-%b-%Y"), # B
+            ticket.pnr or "—", # C
+            base_fare, # D
+            k3_gst, # E
+            other_taxes, # F
+            markup_total, # G
+            "", # H: Xxd
+            ticket_total, # I
+            indigo_total, # J
+            running_balance, # K
+            booking_by, # L
+            ticket_type, # M
+            "", # N (blank as requested)
+            "", "", "", "" # Padding
+        ]
+        
+        # Insert row at the correct position (1-indexed for gspread)
+        # Use USER_ENTERED to ensure numbers are treated as numbers, not dates
+        sheet.insert_row(new_row, insert_row_idx + 1, value_input_option='USER_ENTERED')
+        
+        # Force Normal Weight (Not Bold) and Number Format for price columns (D to K)
+        # Row index in gspread format is 1-indexed, matching insert_row_idx + 1
+        r_idx = insert_row_idx + 1
+        sheet.format(f"A{r_idx}:R{r_idx}", {
+            "textFormat": {"bold": False},
+            "horizontalAlignment": "CENTER"
+        })
+        # Format the numeric columns specifically to prevent "Date" misinterpretation
+        # B: Date, D-G: Moneys, I-K: Moneys
+        sheet.format(f"B{r_idx}", {"numberFormat": {"type": "DATE", "pattern": "dd-MMM-yyyy"}})
+        sheet.format(f"D{r_idx}:G{r_idx}", {"numberFormat": {"type": "NUMBER", "pattern": "0"}})
+        sheet.format(f"I{r_idx}:K{r_idx}", {"numberFormat": {"type": "NUMBER", "pattern": "0"}})
+        
+        # Mark as added to ledger
+        fare_hash_data = f"{ticket.pnr}:{base_fare}:{k3_gst}:{other_taxes}:{markup_total}:{ticket_total}"
+        ticket.ledger_hash = hashlib.sha256(fare_hash_data.encode()).hexdigest()
+        db.session.commit()
+        
+        return jsonify({"message": f"Exported to {month_label} section", "pnr": ticket.pnr})
+        
+    except Exception as e:
+        print(f"Export error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+def parseFloat(val):
+    try:
+        return float(val)
+    except:
+        return 0.0
+
+
+def _round_money(value):
+    return round(parseFloat(value), 2)
+
+
+def _clone_json(value):
+    return json.loads(json.dumps(value))
+
+
+def _generate_internal_ticket_number():
+    return f"SYS-{datetime.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
+
+
+def _ensure_passenger_internal_ids(passengers):
+    changed = False
+    for passenger in passengers:
+        if not passenger.get("system_ticket_number"):
+            passenger["system_ticket_number"] = _generate_internal_ticket_number()
+            changed = True
+    return changed
+
+
+def _build_legs_from_data(segments, journey=None):
+    journey = journey or {}
+    if journey.get("legs"):
+        legs = []
+        for leg in journey.get("legs", []):
+            indices = leg.get("segments", [])
+            if indices:
+                legs.append(indices)
+        if legs:
+            return legs
+
+    if not segments:
+        return []
+
+    legs = []
+    current_leg = [0]
+    for idx in range(1, len(segments)):
+        prev_arr = (segments[idx - 1].get("arrival") or {}).get("airport", "").strip().upper()
+        curr_dep = (segments[idx].get("departure") or {}).get("airport", "").strip().upper()
+        has_layover = segments[idx].get("layover_duration") and segments[idx].get("layover_duration") != "N/A"
+        if (prev_arr and curr_dep and prev_arr == curr_dep) or has_layover:
+            current_leg.append(idx)
+        else:
+            legs.append(current_leg)
+            current_leg = [idx]
+    legs.append(current_leg)
+    return legs
+
+
+def _ticket_financials(passengers, journey):
+    n_pax = len(passengers)
+    mu_per_pax = parseFloat((journey or {}).get("global_markup", 0))
+    consolidated = (journey or {}).get("consolidated_fare") or {}
+    if consolidated:
+        base = parseFloat(consolidated.get("base_fare", 0))
+        k3 = parseFloat(consolidated.get("k3_gst", 0))
+        other = parseFloat(consolidated.get("other_taxes", 0))
+    else:
+        base = k3 = other = 0.0
+        for passenger in passengers:
+            fare = passenger.get("fare") or {}
+            base += parseFloat(fare.get("base_fare", 0))
+            k3 += parseFloat(fare.get("k3_gst", 0))
+            other += parseFloat(fare.get("other_taxes", 0))
+    mu = mu_per_pax * n_pax
+    total = base + k3 + other + mu
+    return {
+        "base": _round_money(base),
+        "k3": _round_money(k3),
+        "other": _round_money(other),
+        "mu": _round_money(mu),
+        "total": _round_money(total),
+        "non_markup_total": _round_money(base + k3 + other),
+        "mu_per_pax": _round_money(mu_per_pax),
+    }
+
+
+def _passenger_share_map(passengers, journey, per_person_fares=None):
+    n_pax = len(passengers)
+    mu_per_pax = parseFloat((journey or {}).get("global_markup", 0))
+    shares = []
+    if per_person_fares and len(per_person_fares) >= n_pax:
+        for idx in range(n_pax):
+            item = per_person_fares[idx] or {}
+            shares.append({
+                "base": _round_money(item.get("base_fare", 0)),
+                "k3": _round_money(item.get("k3_gst", 0)),
+                "other": _round_money(item.get("other_taxes", 0)),
+                "mu": _round_money(mu_per_pax),
+            })
+    else:
+        explicit = []
+        has_explicit = False
+        for passenger in passengers:
+            fare = passenger.get("fare") or {}
+            base = parseFloat(fare.get("base_fare", 0))
+            k3 = parseFloat(fare.get("k3_gst", 0))
+            other = parseFloat(fare.get("other_taxes", 0))
+            if base or k3 or other:
+                has_explicit = True
+            explicit.append({
+                "base": _round_money(base),
+                "k3": _round_money(k3),
+                "other": _round_money(other),
+                "mu": _round_money(mu_per_pax),
+            })
+        if has_explicit:
+            shares = explicit
+        else:
+            totals = _ticket_financials(passengers, journey)
+            divisor = n_pax or 1
+            for _ in passengers:
+                shares.append({
+                    "base": _round_money(totals["base"] / divisor),
+                    "k3": _round_money(totals["k3"] / divisor),
+                    "other": _round_money(totals["other"] / divisor),
+                    "mu": _round_money(mu_per_pax),
+                })
+
+    for share in shares:
+        share["total"] = _round_money(share["base"] + share["k3"] + share["other"] + share["mu"])
+        share["non_markup_total"] = _round_money(share["base"] + share["k3"] + share["other"])
+    return shares
+
+
+def _sum_components(component_list):
+    base = sum(parseFloat(item.get("base", 0)) for item in component_list)
+    k3 = sum(parseFloat(item.get("k3", 0)) for item in component_list)
+    other = sum(parseFloat(item.get("other", 0)) for item in component_list)
+    mu = sum(parseFloat(item.get("mu", 0)) for item in component_list)
+    return {
+        "base": _round_money(base),
+        "k3": _round_money(k3),
+        "other": _round_money(other),
+        "mu": _round_money(mu),
+        "total": _round_money(base + k3 + other + mu),
+        "non_markup_total": _round_money(base + k3 + other),
+    }
+
+
+def _normalize_selection(indices, max_len):
+    if max_len <= 0:
+        return []
+    if not indices:
+        return list(range(max_len))
+    normalized = sorted({int(idx) for idx in indices if 0 <= int(idx) < max_len})
+    return normalized
+
+
+def _normalize_compare_string(value):
+    return " ".join((value or "").strip().lower().split())
+
+
+def _normalize_passenger_name(name):
+    normalized = _normalize_compare_string(name)
+    normalized = re.sub(r"^(mr|mrs|ms|miss|mstr|master|dr)\.?\s+", "", normalized)
+    return normalized
+
+
+def _sector_fare_map(sector_indices, sector_fares):
+    result = {}
+    for item in sector_fares or []:
+        leg_idx = int(item.get("leg_idx"))
+        if leg_idx in sector_indices:
+            result[leg_idx] = {
+                "base": _round_money(item.get("base_fare", 0)),
+                "k3": _round_money(item.get("k3_gst", 0)),
+                "other": _round_money(item.get("other_taxes", 0)),
+            }
+    return result
+
+
+def _component_ratio(numerator, denominator):
+    denominator = parseFloat(denominator)
+    if denominator <= 0:
+        return 0.0
+    return max(0.0, min(1.0, parseFloat(numerator) / denominator))
+
+
+def _allocate_components(total_components, weights):
+    if not weights:
+        return []
+    total_weight = sum(parseFloat(w) for w in weights)
+    if total_weight <= 0:
+        total_weight = len(weights)
+        weights = [1 for _ in weights]
+    allocated = []
+    for idx, weight in enumerate(weights):
+        ratio = parseFloat(weight) / total_weight
+        allocated.append({
+            "base": _round_money(total_components["base"] * ratio),
+            "k3": _round_money(total_components["k3"] * ratio),
+            "other": _round_money(total_components["other"] * ratio),
+            "mu": _round_money(total_components["mu"] * ratio),
+        })
+    if allocated:
+        for field in ["base", "k3", "other", "mu"]:
+            diff = _round_money(total_components[field] - sum(item[field] for item in allocated))
+            allocated[-1][field] = _round_money(allocated[-1][field] + diff)
+        for item in allocated:
+            item["total"] = _round_money(item["base"] + item["k3"] + item["other"] + item["mu"])
+            item["non_markup_total"] = _round_money(item["base"] + item["k3"] + item["other"])
+    return allocated
+
+
+def _slice_segments(segments, leg_indices, selected_leg_indices):
+    selected_segment_indices = []
+    remapped_legs = []
+    new_idx = 0
+    for leg_idx in selected_leg_indices:
+        if leg_idx >= len(leg_indices):
+            continue
+        source_leg = leg_indices[leg_idx]
+        selected_segment_indices.extend(source_leg)
+        remapped_legs.append(list(range(new_idx, new_idx + len(source_leg))))
+        new_idx += len(source_leg)
+
+    result = []
+    for seg_idx in selected_segment_indices:
+        segment = _clone_json(segments[seg_idx])
+        result.append(segment)
+    return {
+        "segments": result,
+        "original_segment_indices": selected_segment_indices,
+        "legs": remapped_legs,
+    }
+
+
+def _mark_segments_status(segments, ticket_status):
+    marked = _clone_json(segments)
+    for segment in marked:
+        if ticket_status == "cancelled":
+            segment["status"] = "cancelled"
+        elif ticket_status == "changed":
+            segment["status"] = "changed"
+        else:
+            segment["status"] = "live"
+    return marked
+
+
+def _build_journey_for_ticket(source_journey, segments, total_components, passenger_count, leg_structure=None):
+    journey = _clone_json(source_journey or {})
+    journey["consolidated_fare"] = {
+        "base_fare": _round_money(total_components["base"]),
+        "k3_gst": _round_money(total_components["k3"]),
+        "other_taxes": _round_money(total_components["other"]),
+    }
+    journey["global_markup"] = _round_money(total_components["mu"] / passenger_count) if passenger_count else 0.0
+    grouped_legs = leg_structure if leg_structure is not None else _build_legs_from_data(segments, {})
+    journey["legs"] = [{"segments": leg} for leg in grouped_legs]
+    return journey
+
+
+def _ticket_payload_from_parts(source_ticket, passengers, segments, total_components, ticket_status, pnr=None, parent_ticket_id=None, status_note=None, cancellation_charge=0, leg_structure=None):
+    cloned_passengers = _clone_json(passengers)
+    _ensure_passenger_internal_ids(cloned_passengers)
+    weights = []
+    for passenger in cloned_passengers:
+        fare = passenger.get("fare") or {}
+        weights.append(parseFloat(fare.get("base_fare", 0)) + parseFloat(fare.get("k3_gst", 0)) + parseFloat(fare.get("other_taxes", 0)))
+    allocated = _allocate_components(total_components, weights)
+    for idx, passenger in enumerate(cloned_passengers):
+        fare = allocated[idx] if idx < len(allocated) else {"base": 0, "k3": 0, "other": 0, "mu": 0, "total": 0}
+        passenger["fare"] = {
+            "base_fare": fare["base"],
+            "k3_gst": fare["k3"],
+            "other_taxes": fare["other"],
+            "total_fare": fare["total"],
+        }
+    marked_segments = _mark_segments_status(segments, ticket_status)
+    journey = _build_journey_for_ticket(source_ticket.get("journey"), marked_segments, total_components, len(cloned_passengers), leg_structure=leg_structure)
+    raw_data = _clone_json(source_ticket.get("raw_data") or {})
+    if status_note:
+        raw_data.setdefault("operation_notes", [])
+        raw_data["operation_notes"].append(status_note)
+    return {
+        "pnr": pnr if pnr is not None else source_ticket.get("pnr"),
+        "booking_date": source_ticket.get("booking_date"),
+        "phone": source_ticket.get("phone"),
+        "currency": source_ticket.get("currency", "INR"),
+        "grand_total": _round_money(total_components["total"]),
+        "class_of_travel": source_ticket.get("class_of_travel"),
+        "trip_type": source_ticket.get("trip_type"),
+        "passengers_data": json.dumps(cloned_passengers),
+        "segments_data": json.dumps(marked_segments),
+        "journey_data": json.dumps(journey),
+        "raw_data": json.dumps(raw_data),
+        "status": source_ticket.get("status", "edited"),
+        "ticket_status": ticket_status,
+        "matched_itinerary_id": source_ticket.get("matched_itinerary_id"),
+        "parser_version": source_ticket.get("parser_version"),
+        "parent_ticket_id": parent_ticket_id,
+        "cancellation_charge": cancellation_charge,
+        "last_aggregator": source_ticket.get("last_aggregator"),
+        "last_booked_by": source_ticket.get("last_booked_by"),
+    }
+
+
+def _serialize_ticket_model(ticket):
+    return {
+        "id": ticket.id,
+        "pnr": ticket.pnr,
+        "booking_date": ticket.booking_date,
+        "phone": ticket.phone,
+        "currency": ticket.currency,
+        "grand_total": ticket.grand_total,
+        "class_of_travel": ticket.class_of_travel,
+        "trip_type": ticket.trip_type,
+        "passengers_data": ticket.passengers_data,
+        "segments_data": ticket.segments_data,
+        "journey_data": ticket.journey_data,
+        "raw_data": ticket.raw_data,
+        "status": ticket.status,
+        "matched_itinerary_id": ticket.matched_itinerary_id,
+        "parser_version": ticket.parser_version,
+        "ticket_status": ticket.ticket_status,
+        "ledger_hash": ticket.ledger_hash,
+        "parent_ticket_id": ticket.parent_ticket_id,
+        "booking_group_id": ticket.booking_group_id,
+        "cancellation_charge": ticket.cancellation_charge,
+        "last_aggregator": ticket.last_aggregator,
+        "last_booked_by": ticket.last_booked_by,
+    }
+
+def _generate_bcbp_barcode(passenger_name, pnr, segment):
+    """
+    Construct IATA BCBP string and generate PDF417 barcode as Base64.
+    Format: M1(PASSENGER/NAME)(PNR) (DEP)(ARR)(AIRLINE)(FLIGHT)(JULIAN DATE)(CLASS)(SEAT)(SEQ)
+    """
+    try:
+        # 1. Clean data fields with fallbacks
+        name = (passenger_name or "PASSENGER/UNKNOWN").upper().replace(" ", "/")[:20].ljust(20)
+        pnr = (pnr or "XXXXXX").upper().ljust(7)[:7]
+        
+        dep = (segment.get("departure", {}).get("airport") or "").upper()
+        arr = (segment.get("arrival", {}).get("airport") or "").upper()
+        
+        # Critical fields check
+        if not dep or not arr:
+            return None
+            
+        airline_flight = (segment.get("flight_number") or "XX0000").upper().replace(" ", "")
+        # Split airline and flight number (assuming 2-letter airline code)
+        airline = airline_flight[:2].ljust(3)
+        flight_num = airline_flight[2:].zfill(5)[:5]
+        
+        # Date to Julian day of year
+        try:
+            from dateutil import parser
+            flight_date_str = segment.get("departure", {}).get("date")
+            if flight_date_str:
+                dt = parser.parse(flight_date_str)
+                julian_day = str(dt.timetuple().tm_yday).zfill(3)
+            else:
+                julian_day = "000"
+        except:
+            julian_day = "000"
+            
+        booking_class = segment.get("booking_class")
+        if isinstance(booking_class, dict):
+            class_letter = (booking_class.get("letter") or "Y").upper()
+        else:
+            class_letter = "Y"
+            
+        seat = (segment.get("seat") or "0000").upper().zfill(4)[:4]
+        seq = (segment.get("sequence_number") or "00001").zfill(5)[:5]
+        
+        # 2. Build BCBP String (Standard format)
+        # M1 + Name + E + PNR + DEP + ARR + Airline + Flight + Julian + Class + Seat + Seq
+        # Following approximate IATA 791 format
+        bcbp_str = f"M1{name}E{pnr}{dep}{arr}{airline}{flight_num}{julian_day}{class_letter}{seat}{seq}00"
+        
+        # 3. Generate PDF417 image
+        codes = encode(bcbp_str, columns=10)
+        image = render_image(codes, scale=3, ratio=3)
+        
+        # 4. Convert to Base64
+        buffered = BytesIO()
+        image.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        
+        return f"data:image/png;base64,{img_str}"
+        
+    except Exception as e:
+        print(f"Barcode generation error: {str(e)}")
+        return None
+
+
+def _restore_ticket_snapshot(snapshot, user_id):
+    ticket = Ticket.query.filter_by(id=snapshot["id"], user_id=user_id).first()
+    if not ticket:
+        return
+    for field, value in snapshot.items():
+        if field == "id":
+            continue
+        setattr(ticket, field, value)
+
+
+def _apply_ticket_payload(ticket, payload):
+    for field, value in payload.items():
+        setattr(ticket, field, value)
+    ticket.ledger_hash = _compute_fare_hash(
+        ticket.pnr or "",
+        parseFloat(json.loads(ticket.journey_data or "{}").get("consolidated_fare", {}).get("base_fare", 0)),
+        parseFloat(json.loads(ticket.journey_data or "{}").get("consolidated_fare", {}).get("k3_gst", 0)),
+        parseFloat(json.loads(ticket.journey_data or "{}").get("consolidated_fare", {}).get("other_taxes", 0)),
+        parseFloat(json.loads(ticket.journey_data or "{}").get("global_markup", 0)) * len(json.loads(ticket.passengers_data or "[]")),
+        ticket.grand_total or 0,
+    )
+
+
+def _ticket_dict_with_children(ticket):
+    passengers = json.loads(ticket.passengers_data) if ticket.passengers_data else []
+    segments = json.loads(ticket.segments_data) if ticket.segments_data else []
+    journey = json.loads(ticket.journey_data) if ticket.journey_data else {}
+    raw = json.loads(ticket.raw_data) if ticket.raw_data else {}
+    _ensure_passenger_internal_ids(passengers)
+    return {
+        "id": ticket.id,
+        "created_at": ticket.created_at.isoformat(),
+        "updated_at": ticket.updated_at.isoformat() if ticket.updated_at else None,
+        "pnr": ticket.pnr,
+        "booking_date": ticket.booking_date,
+        "phone": ticket.phone,
+        "currency": ticket.currency,
+        "grand_total": ticket.grand_total,
+        "class_of_travel": ticket.class_of_travel,
+        "trip_type": ticket.trip_type,
+        "status": ticket.status,
+        "ticket_status": ticket.ticket_status or "live",
+        "matched_itinerary_id": ticket.matched_itinerary_id,
+        "parser_version": ticket.parser_version,
+        "passengers": passengers,
+        "segments": segments,
+    }
+    
+    # Generate barcodes for segments
+    p_name = passengers[0].get("name") if passengers else "PASSENGER"
+    for seg in segments:
+        seg["barcode_base64"] = _generate_bcbp_barcode(p_name, ticket.pnr, seg)
+
+    return {
+        "id": ticket.id,
+        "created_at": ticket.created_at.isoformat(),
+        "updated_at": ticket.updated_at.isoformat() if ticket.updated_at else None,
+        "pnr": ticket.pnr,
+        "booking_date": ticket.booking_date,
+        "phone": ticket.phone,
+        "currency": ticket.currency,
+        "grand_total": ticket.grand_total,
+        "class_of_travel": ticket.class_of_travel,
+        "trip_type": ticket.trip_type,
+        "status": ticket.status,
+        "ticket_status": ticket.ticket_status or "live",
+        "matched_itinerary_id": ticket.matched_itinerary_id,
+        "parser_version": ticket.parser_version,
+        "passengers": passengers,
+        "segments": segments,
+        "journey": journey,
+        "raw_data": raw,
+        "ledger_hash": ticket.ledger_hash,
+        "parent_ticket_id": ticket.parent_ticket_id,
+        "booking_group_id": ticket.booking_group_id,
+        "cancellation_charge": ticket.cancellation_charge or 0,
+        "last_aggregator": ticket.last_aggregator,
+        "last_booked_by": ticket.last_booked_by,
+        "booking_group": {
+            "id": ticket.booking_group.id,
+            "pnr": ticket.booking_group.pnr,
+            "status": ticket.booking_group.status,
+        } if ticket.booking_group else None,
+        "children": [{"id": child.id, "pnr": child.pnr, "ticket_status": child.ticket_status, "grand_total": child.grand_total} for child in ticket.children],
+    }
+
+
+def _booking_group_sorted_tickets(booking_group):
+    return sorted(list(booking_group.tickets), key=lambda item: (item.created_at, item.id))
+
+
+def _is_booking_group_lead(ticket):
+    if not ticket.booking_group:
+        return False
+    ordered = _booking_group_sorted_tickets(ticket.booking_group)
+    return bool(ordered and ordered[0].id == ticket.id)
+
+
+def _merged_ticket_dict(booking_group, lead_ticket):
+    lead_payload = _ticket_dict_with_children(lead_ticket)
+    merged_passengers = []
+    merged_total = 0.0
+    merged_ticket_ids = []
+    for grouped_ticket in _booking_group_sorted_tickets(booking_group):
+        merged_ticket_ids.append(grouped_ticket.id)
+        merged_total += parseFloat(grouped_ticket.grand_total or 0)
+        ticket_passengers = json.loads(grouped_ticket.passengers_data or "[]")
+        _ensure_passenger_internal_ids(ticket_passengers)
+        for passenger in ticket_passengers:
+            passenger_copy = _clone_json(passenger)
+            passenger_copy["source_ticket_id"] = grouped_ticket.id
+            merged_passengers.append(passenger_copy)
+
+    lead_payload["passengers"] = merged_passengers
+    lead_payload["passenger_names"] = [p.get("name", "") for p in merged_passengers]
+    lead_payload["grand_total"] = _round_money(merged_total)
+    lead_payload["is_merged_view"] = True
+    lead_payload["merged_ticket_ids"] = merged_ticket_ids
+    lead_payload["merged_ticket_count"] = len(merged_ticket_ids)
+    lead_payload["booking_group"] = {
+        "id": booking_group.id,
+        "pnr": booking_group.pnr,
+        "status": booking_group.status,
+    }
+    return lead_payload
+
+
+def _create_ledger_entry_from_plan(agg_id, user_id, row_order, pnr, booking_by, entry_type, components, fee, remarks, ticket_id):
+    entry = LedgerEntry(
+        aggregator_id=agg_id,
+        user_id=user_id,
+        row_order=row_order,
+        date=datetime.now().strftime("%d-%b-%Y"),
+        pnr=pnr or "",
+        basic=components["base"],
+        k3=components["k3"],
+        other_taxes=components["other"],
+        mu=components["mu"],
+        xxd=str(_round_money(fee)) if fee else "",
+        ticket_total=_round_money(components["base"] + components["k3"] + components["other"] + components["mu"]),
+        aggregator_total=_round_money(components["base"] + components["k3"] + components["other"]),
+        booking_by=booking_by or "",
+        entry_type=entry_type,
+        remarks=remarks or "",
+        ticket_id=ticket_id,
+    )
+    db.session.add(entry)
+    db.session.flush()
+    return entry
+
+
+def _reverse_ticket_operation(operation):
+    if not operation or operation.status == "reversed":
+        return
+
+    metadata = json.loads(operation.metadata_json or "{}")
+    created_ticket_ids = metadata.get("created_ticket_ids", [])
+    links = OperationLedgerLink.query.filter_by(operation_id=operation.id, user_id=operation.user_id).all()
+    for link in links:
+        entry = LedgerEntry.query.filter_by(id=link.ledger_entry_id, user_id=operation.user_id).first()
+        if entry:
+            db.session.delete(entry)
+        db.session.delete(link)
+
+    for ticket_id in created_ticket_ids:
+        ticket = Ticket.query.filter_by(id=ticket_id, user_id=operation.user_id).first()
+        if ticket:
+            db.session.delete(ticket)
+
+    for snapshot in json.loads(operation.before_state or "[]"):
+        _restore_ticket_snapshot(snapshot, operation.user_id)
+
+    operation.status = "reversed"
+    db.session.flush()
+    if operation.aggregator_id:
+        _recalc_running_balance(operation.aggregator_id, operation.user_id)
+
+
+def _sqlite_add_column_if_missing(table_name, column_name, column_sql):
+    inspector = inspect(db.engine)
+    if table_name not in inspector.get_table_names():
+        return
+    existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
+    if column_name in existing_columns:
+        return
+    db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}"))
+    db.session.commit()
+
+
+def _sqlite_create_indexes_if_missing():
+    statements = [
+        "CREATE INDEX IF NOT EXISTS ix_ticket_operation_user_id ON ticket_operation (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_ticket_operation_root_ticket_id ON ticket_operation (root_ticket_id)",
+        "CREATE INDEX IF NOT EXISTS ix_operation_ledger_link_operation_id ON operation_ledger_link (operation_id)",
+        "CREATE INDEX IF NOT EXISTS ix_operation_ledger_link_ledger_entry_id ON operation_ledger_link (ledger_entry_id)",
+        "CREATE INDEX IF NOT EXISTS ix_booking_group_user_id ON booking_group (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_booking_group_pnr ON booking_group (pnr)",
+        "CREATE INDEX IF NOT EXISTS ix_ticket_booking_group_id ON ticket (booking_group_id)",
+    ]
+    for statement in statements:
+        db.session.execute(text(statement))
+    db.session.commit()
+
+
+def ensure_schema_compatibility():
+    db.create_all()
+    dialect = db.engine.dialect.name
+    if dialect != "sqlite":
+        return
+
+    _sqlite_add_column_if_missing("ticket_operation", "updated_at", "DATETIME")
+    _sqlite_add_column_if_missing("ticket_operation", "user_id", "VARCHAR")
+    _sqlite_add_column_if_missing("ticket_operation", "ticket_id", "VARCHAR")
+    _sqlite_add_column_if_missing("ticket_operation", "root_ticket_id", "VARCHAR")
+    _sqlite_add_column_if_missing("ticket_operation", "action_type", "VARCHAR(20)")
+    _sqlite_add_column_if_missing("ticket_operation", "scenario", "VARCHAR(40)")
+    _sqlite_add_column_if_missing("ticket_operation", "status", "VARCHAR(20) DEFAULT 'active'")
+    _sqlite_add_column_if_missing("ticket_operation", "aggregator_id", "VARCHAR")
+    _sqlite_add_column_if_missing("ticket_operation", "preview_data", "TEXT")
+    _sqlite_add_column_if_missing("ticket_operation", "before_state", "TEXT")
+    _sqlite_add_column_if_missing("ticket_operation", "after_state", "TEXT")
+    _sqlite_add_column_if_missing("ticket_operation", "metadata_json", "TEXT")
+    _sqlite_add_column_if_missing("ticket", "booking_group_id", "VARCHAR")
+
+    _sqlite_add_column_if_missing("operation_ledger_link", "created_at", "DATETIME")
+    _sqlite_add_column_if_missing("operation_ledger_link", "user_id", "VARCHAR")
+    _sqlite_add_column_if_missing("operation_ledger_link", "operation_id", "VARCHAR")
+    _sqlite_add_column_if_missing("operation_ledger_link", "ledger_entry_id", "VARCHAR")
+
+    _sqlite_create_indexes_if_missing()
+
+# ==================== LEDGER ROUTES ====================
+
+def _recalc_running_balance(aggregator_id, user_id):
+    """Recalculate running balance for ALL entries in an aggregator from top to bottom."""
+    entries = LedgerEntry.query.filter_by(
+        aggregator_id=aggregator_id, user_id=user_id
+    ).order_by(LedgerEntry.row_order).all()
+    balance = 0.0
+    for e in entries:
+        # Same formula as test.py:  running_balance = prev_balance - aggregator_total
+        balance = balance - (e.aggregator_total or 0)
+        e.running_balance = balance
+    db.session.commit()
+
+def _entry_dict(e):
+    return {
+        "id": e.id, "aggregator_id": e.aggregator_id,
+        "row_order": e.row_order,
+        "invoice_no": e.invoice_no or "", "date": e.date or "",
+        "pnr": e.pnr or "",
+        "basic": e.basic or 0, "k3": e.k3 or 0,
+        "other_taxes": e.other_taxes or 0, "mu": e.mu or 0,
+        "xxd": e.xxd or "",
+        "ticket_total": e.ticket_total or 0,
+        "aggregator_total": e.aggregator_total or 0,
+        "running_balance": e.running_balance or 0,
+        "booking_by": e.booking_by or "",
+        "entry_type": e.entry_type or "New",
+        "billing": e.billing or "",
+        "remarks": e.remarks or "",
+        "seat_status": e.seat_status or "",
+        "seat_remarks": e.seat_remarks or "",
+        "meal_status": e.meal_status or "",
+        "ticket_id": e.ticket_id or "",
+    }
+
+@app.route("/api/aggregators", methods=["GET"])
+@login_required
+def list_aggregators():
+    aggs = Aggregator.query.filter_by(user_id=session['user_id']).order_by(Aggregator.created_at).all()
+    return jsonify({"aggregators": [{"id": a.id, "name": a.name} for a in aggs]})
+
+@app.route("/api/aggregators", methods=["POST"])
+@login_required
+def create_aggregator():
+    data = request.get_json()
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Name is required"}), 400
+    agg = Aggregator(name=name, user_id=session['user_id'])
+    db.session.add(agg)
+    db.session.commit()
+    return jsonify({"id": agg.id, "name": agg.name}), 201
+
+@app.route("/api/aggregators/<agg_id>", methods=["DELETE"])
+@login_required
+def delete_aggregator(agg_id):
+    agg = Aggregator.query.filter_by(id=agg_id, user_id=session['user_id']).first()
+    if not agg:
+        return jsonify({"error": "Not found"}), 404
+    db.session.delete(agg)
+    db.session.commit()
+    return jsonify({"message": "Deleted"})
+
+@app.route("/api/aggregators/<agg_id>/entries", methods=["GET"])
+@login_required
+def list_entries(agg_id):
+    entries = LedgerEntry.query.filter_by(
+        aggregator_id=agg_id, user_id=session['user_id']
+    ).order_by(LedgerEntry.row_order).all()
+    return jsonify({"entries": [_entry_dict(e) for e in entries]})
+
+@app.route("/api/aggregators/<agg_id>/entries", methods=["POST"])
+@login_required
+def create_entry(agg_id):
+    data = request.get_json() or {}
+    # Determine next row_order
+    last = LedgerEntry.query.filter_by(
+        aggregator_id=agg_id, user_id=session['user_id']
+    ).order_by(LedgerEntry.row_order.desc()).first()
+    next_order = (last.row_order + 1) if last else 0
+
+    basic = parseFloat(data.get("basic", 0))
+    k3 = parseFloat(data.get("k3", 0))
+    other_taxes = parseFloat(data.get("other_taxes", 0))
+    mu = parseFloat(data.get("mu", 0))
+    ticket_total = basic + k3 + other_taxes + mu
+    aggregator_total = ticket_total - mu
+
+    entry = LedgerEntry(
+        aggregator_id=agg_id,
+        user_id=session['user_id'],
+        row_order=next_order,
+        invoice_no=data.get("invoice_no", ""),
+        date=data.get("date", datetime.now().strftime("%d-%b-%Y")),
+        pnr=data.get("pnr", ""),
+        basic=basic, k3=k3, other_taxes=other_taxes, mu=mu,
+        xxd=data.get("xxd", ""),
+        ticket_total=ticket_total,
+        aggregator_total=aggregator_total,
+        booking_by=data.get("booking_by", ""),
+        entry_type=data.get("entry_type", "New"),
+        billing=data.get("billing", ""),
+        remarks=data.get("remarks", ""),
+        seat_status=data.get("seat_status", ""),
+        seat_remarks=data.get("seat_remarks", ""),
+        meal_status=data.get("meal_status", ""),
+        ticket_id=data.get("ticket_id", None),
+    )
+    db.session.add(entry)
+    db.session.commit()
+    _recalc_running_balance(agg_id, session['user_id'])
+    return jsonify(_entry_dict(LedgerEntry.query.get(entry.id))), 201
+
+@app.route("/api/ledger-entries/<entry_id>", methods=["PUT"])
+@login_required
+def update_entry(entry_id):
+    entry = LedgerEntry.query.filter_by(id=entry_id, user_id=session['user_id']).first()
+    if not entry:
+        return jsonify({"error": "Not found"}), 404
+    data = request.get_json() or {}
+    for field in ["invoice_no", "date", "pnr", "xxd", "booking_by",
+                   "entry_type", "billing", "remarks", "seat_status", "seat_remarks", "meal_status"]:
+        if field in data:
+            setattr(entry, field, data[field])
+    for field in ["basic", "k3", "other_taxes", "mu"]:
+        if field in data:
+            setattr(entry, field, parseFloat(data[field]))
+    # Recalc totals
+    entry.ticket_total = entry.basic + entry.k3 + entry.other_taxes + entry.mu
+    entry.aggregator_total = entry.ticket_total - entry.mu
+    db.session.commit()
+    _recalc_running_balance(entry.aggregator_id, session['user_id'])
+    return jsonify(_entry_dict(LedgerEntry.query.get(entry.id)))
+
+@app.route("/api/ledger-entries/<entry_id>", methods=["DELETE"])
+@login_required
+def delete_entry(entry_id):
+    entry = LedgerEntry.query.filter_by(id=entry_id, user_id=session['user_id']).first()
+    if not entry:
+        return jsonify({"error": "Not found"}), 404
+    agg_id = entry.aggregator_id
+    link = OperationLedgerLink.query.filter_by(ledger_entry_id=entry.id, user_id=session['user_id']).first()
+    if link:
+        operation = TicketOperation.query.filter_by(id=link.operation_id, user_id=session['user_id']).first()
+        _reverse_ticket_operation(operation)
+    else:
+        db.session.delete(entry)
+
+    db.session.commit()
+    _recalc_running_balance(agg_id, session['user_id'])
+    return jsonify({"message": "Deleted"})
+
+@app.route("/api/tickets/<ticket_id>/add-to-ledger", methods=["POST"])
+@login_required
+def add_ticket_to_ledger(ticket_id):
+    """Auto-populate a ledger entry from a ticket's fare data."""
+    data = request.get_json() or {}
+    agg_id = data.get("aggregator_id")
+    booking_by = data.get("booking_by", "AB")
+    if not agg_id:
+        return jsonify({"error": "aggregator_id required"}), 400
+
+    ticket = Ticket.query.get(ticket_id)
+    if not ticket:
+        return jsonify({"error": "Ticket not found"}), 404
+
+    passengers = json.loads(ticket.passengers_data or '[]')
+    journey = json.loads(ticket.journey_data or '{}')
+    n_pax = len(passengers) if passengers else 1
+    mu_per_pax = parseFloat(journey.get('global_markup', 0))
+    mu_total = mu_per_pax * n_pax
+
+    basic = 0.0; k3 = 0.0; other_taxes = 0.0
+    c_fare = journey.get('consolidated_fare')
+    if c_fare:
+        basic = parseFloat(c_fare.get('base_fare', 0))
+        k3 = parseFloat(c_fare.get('k3_gst', 0))
+        other_taxes = parseFloat(c_fare.get('other_taxes', 0))
+    else:
+        for p in passengers:
+            f = p.get('fare', {})
+            basic += parseFloat(f.get('base_fare', 0))
+            k3 += parseFloat(f.get('k3_gst', 0))
+            other_taxes += parseFloat(f.get('other_taxes', 0))
+
+    ticket_total = basic + k3 + other_taxes + mu_total
+    aggregator_total = ticket_total - mu_total
+
+    # Get current balance and next row order
+    last = LedgerEntry.query.filter_by(
+        aggregator_id=agg_id, user_id=session['user_id']
+    ).order_by(LedgerEntry.row_order.desc()).first()
+    
+    curr_bal = last.running_balance if last else 0.0
+    if curr_bal < aggregator_total:
+        return jsonify({
+            "error": "insufficient_balance",
+            "message": f"Insufficient balance in ledger. Current: ₹{curr_bal}, Required: ₹{aggregator_total}",
+            "current_balance": curr_bal,
+            "required_amount": aggregator_total,
+            "aggregator_id": agg_id
+        }), 402
+
+    next_order = (last.row_order + 1) if last else 0
+
+    # Compute ledger hash to prevent duplicates
+    fare_hash_data = f"{ticket.pnr}:{basic}:{k3}:{other_taxes}:{mu_total}:{ticket_total}"
+    new_hash = hashlib.sha256(fare_hash_data.encode()).hexdigest()
+
+    # Check for duplicate by hash
+    if ticket.ledger_hash == new_hash:
+        return jsonify({"error": "This ticket has already been added to a ledger with this exact fare data."}), 409
+        
+    # Check for duplicate by PNR (fallback)
+    existing = LedgerEntry.query.filter_by(pnr=ticket.pnr, user_id=session['user_id']).first()
+    if existing:
+        # If it already exists in the ledger with this PNR, we mark the ticket as hashed and stop
+        ticket.ledger_hash = new_hash
+        db.session.commit()
+        return jsonify({"error": f"PNR {ticket.pnr} already exists in the ledger. Mapping ticket record now."}), 409
+
+    entry = LedgerEntry(
+        aggregator_id=agg_id,
+        user_id=session['user_id'],
+        row_order=next_order,
+        date=datetime.now().strftime("%d-%b-%Y"),
+        pnr=ticket.pnr or "",
+        basic=basic, k3=k3, other_taxes=other_taxes, mu=mu_total,
+        ticket_total=ticket_total,
+        aggregator_total=aggregator_total,
+        booking_by=booking_by,
+        entry_type="New",
+        ticket_id=ticket_id,
+    )
+    db.session.add(entry)
+    ticket.ledger_hash = new_hash
+    ticket.last_aggregator = agg_id
+    ticket.last_booked_by = booking_by
+    db.session.commit()
+    _recalc_running_balance(agg_id, session['user_id'])
+    return jsonify({"message": "Added to ledger", "entry": _entry_dict(LedgerEntry.query.get(entry.id))}), 201
+
+
+@app.route("/api/user", methods=["GET"])
+@login_required
+def get_user():
+    """Get current user info"""
+    user = User.query.get(session['user_id'])
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    return jsonify({
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "full_name": user.full_name
+    })
+
+# ==================== CUSTOMER ROUTES ====================
+
+@app.route("/api/customers", methods=["GET"])
+@login_required
+def get_customers():
+    """Get all customers for the logged-in user"""
+    customers = Customer.query.filter_by(user_id=session['user_id']).all()
+    
+    return jsonify({
+        "customers": [{
+            "id": c.id,
+            "name": c.name,
+            "email": c.email,
+            "phone": c.phone,
+            "address": c.address,
+            "customer_type": c.customer_type,
+            "company_name": c.company_name,
+            "gst_number": c.gst_number
+        } for c in customers]
+    })
+
+@app.route("/api/customers", methods=["POST"])
+@login_required
+def create_customer():
+    """Create a new customer"""
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('name'):
+            return jsonify({"error": "Customer name is required"}), 400
+        
+        customer = Customer(
+            name=data['name'],
+            email=data.get('email'),
+            phone=data.get('phone'),
+            address=data.get('address'),
+            customer_type=data.get('customer_type', 'passenger'),
+            company_name=data.get('company_name'),
+            gst_number=data.get('gst_number'),
+            user_id=session['user_id']
+        )
+        
+        db.session.add(customer)
+        db.session.commit()
+        
+        return jsonify({
+            "message": "Customer created successfully",
+            "customer": {
+                "id": customer.id,
+                "name": customer.name,
+                "email": customer.email,
+                "phone": customer.phone,
+                "customer_type": customer.customer_type
+            }
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Customer creation error: {str(e)}")
+        return jsonify({"error": "Failed to create customer"}), 500
+
+@app.route("/api/customers/<customer_id>", methods=["GET"])
+@login_required
+def get_customer(customer_id):
+    """Get a specific customer"""
+    customer = Customer.query.filter_by(id=customer_id, user_id=session['user_id']).first()
+    
+    if not customer:
+        return jsonify({"error": "Customer not found"}), 404
+    
+    return jsonify({
+        "id": customer.id,
+        "name": customer.name,
+        "email": customer.email,
+        "phone": customer.phone,
+        "address": customer.address,
+        "customer_type": customer.customer_type,
+        "company_name": customer.company_name,
+        "gst_number": customer.gst_number
+    })
+
+# ==================== ITINERARY ROUTES ====================
+
+@app.route("/parse", methods=["POST"])
+def parse():
+    """Parse flight information (public endpoint for initial parsing)"""
+    try:
+        payload = request.get_json()
+        
+        if not payload:
+            print("[ERROR] No payload received")
+            return jsonify({"error": "No data provided"}), 400
+
+        raw_flights = payload.get("flights", [])
+        fares_list = payload.get("fares", [])
+        fare_mu_list = payload.get("fare_mu", [])   # Per-fare markups
+        fare_svc_list = payload.get("fare_svc", []) # Per-fare service charges
+        layover_flags = payload.get("layover_flags", [])
+        multiple_flight_flags = payload.get("multiple_flight_flags", [])
+        markup = payload.get("markup", 0)
+        global_svc = payload.get("global_svc", 0)
+
+        fare_extra_details_list = payload.get("fare_extra_details", [])
+        
+        if not raw_flights:
+            print("[ERROR] No flights provided")
+            return jsonify({"error": "No flights provided"}), 400
+
+        # fares_list can be empty or have empty objects - that's OK, parser will extract
+        if not isinstance(fares_list, list):
+            print("[ERROR] fares_list is not a list")
+            return jsonify({"error": "Invalid fares format"}), 400
+
+        # Parse each flight
+        parsed_flights = []
+        
+        for i, raw_text in enumerate(raw_flights):
+            has_layover = layover_flags[i] if i < len(layover_flags) else False
+            is_multiple = multiple_flight_flags[i] if i < len(multiple_flight_flags) else False
+            
+            # Get user-provided fares for this flight block
+            user_fares = fares_list[i] if i < len(fares_list) else {}
+            user_fare_mu = fare_mu_list[i] if i < len(fare_mu_list) else {}  # Per-fare MU
+            user_fare_svc = fare_svc_list[i] if i < len(fare_svc_list) else {}  # Per-fare SVC
+            user_fare_extras = fare_extra_details_list[i] if i < len(fare_extra_details_list) else {} # Per-fare extras
+            
+            if is_multiple:
+                # Parse as multiple flights
+                print(f"[DEBUG] Parsing multiple flights from block {i+1}")
+                flights_parsed = extract_multiple_flights(raw_text, has_layover=has_layover)
+                
+                if not flights_parsed:
+                    return jsonify({
+                        "error": f"Block #{i+1}: Could not parse any flights. Check text format."
+                    }), 400
+                
+                print(f"[DEBUG] Found {len(flights_parsed)} flights in block {i+1}")
+                
+                for j, flight_data in enumerate(flights_parsed):
+                    # Only include fares that were checked by the user
+                    flight_fares = {}
+                    
+                    for key, val in user_fares.items():
+                        if key == "saver":
+                            # If saver is checked, use manual value or extracted value
+                            if val is not None:
+                                flight_fares[key] = val
+                            elif flight_data.get("saver_fare") is not None:
+                                flight_fares[key] = flight_data["saver_fare"]
+                            else:
+                                flight_fares[key] = 0
+                        else:
+                            # Other fare types use manual values
+                            flight_fares[key] = val
+                    
+                    flight_data["fares"] = flight_fares
+                    flight_data["markup"] = markup
+                    flight_data["fare_mu"] = user_fare_mu      # Per-fare markups
+                    flight_data["fare_svc"] = user_fare_svc    # Per-fare service charges
+                    flight_data["fare_extra_details"] = user_fare_extras # Per-fare extras
+                    flight_data["service_charge"] = global_svc
+                    flight_data["gst"] = int(global_svc * 0.18) if global_svc > 0 else 0
+                    flight_data["is_editable"] = True  # Flag for cards from Multiple Flights mode
+                    
+                    # Remove the saver_fare field as it's now in fares
+                    if "saver_fare" in flight_data:
+                        del flight_data["saver_fare"]
+                    
+                    parsed_flights.append(flight_data)
+            else:
+                # Normal single flight parsing
+                flight_data = extract_flight(raw_text, has_layover=has_layover)
+                
+                # Only include fares that were checked by the user
+                flight_fares = {}
+                for key, val in user_fares.items():
+                    if key == "saver":
+                        if val is not None:
+                            flight_fares[key] = val
+                        elif flight_data.get("saver_fare") is not None:
+                            flight_fares[key] = flight_data["saver_fare"]
+                        else:
+                            flight_fares[key] = 0
+                    else:
+                        flight_fares[key] = val
+                
+                flight_data["fares"] = flight_fares
+                flight_data["markup"] = markup
+                flight_data["fare_mu"] = user_fare_mu      # Per-fare markups
+                flight_data["fare_svc"] = user_fare_svc    # Per-fare service charges
+                flight_data["fare_extra_details"] = user_fare_extras # Per-fare extras
+                flight_data["service_charge"] = global_svc
+                flight_data["gst"] = int(global_svc * 0.18) if global_svc > 0 else 0
+                flight_data["is_editable"] = True
+                
+                # Remove the saver_fare field as it's now in fares
+                if "saver_fare" in flight_data:
+                    del flight_data["saver_fare"]
+                
+                parsed_flights.append(flight_data)
+
+        return jsonify({"flights": parsed_flights})
+        
+    except Exception as e:
+        print(f"[ERROR] Error in parse endpoint: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Failed to parse flights: " + str(e)}), 500
+
+@app.route("/api/recalculate", methods=["POST"])
+def recalculate():
+    """Recalculate flight duration and offsets based on a new date"""
+    try:
+        data = request.get_json()
+        if not data or 'flight' not in data or 'new_date' not in data:
+            return jsonify({"error": "Missing flight data or new date"}), 400
+        
+        flight = data['flight']
+        new_date = data['new_date']
+        
+        from query_parser import recalculate_with_date
+        updated_flight = recalculate_with_date(flight, new_date)
+        
+        return jsonify({"flight": updated_flight})
+    except Exception as e:
+        print(f"Recalculate error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/itineraries", methods=["POST"])
+@login_required
+def save_itinerary():
+    """Save a new itinerary"""
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('flights') or not data.get('final_text'):
+            return jsonify({"error": "Missing required itinerary data"}), 400
+        
+        # Calculate total amount
+        total_amount = 0
+        markup = data.get('markup', 0)
+        for flight in data['flights']:
+            if 'fares' in flight:
+                for fare_value in flight['fares'].values():
+                    total_amount += fare_value + markup
+        
+        # Create itinerary
+        itinerary = Itinerary(
+            total_amount=total_amount,
+            markup=data.get('markup', 0),
+            status='draft',
+            final_text=data['final_text'],
+            flights_data=json.dumps(data['flights']),
+            user_id=session['user_id'],
+            billing_type=data.get('billing_type') or 'passenger',
+            bill_to_name=data.get('bill_to_name'),
+            bill_to_email=data.get('bill_to_email'),
+            bill_to_phone=data.get('bill_to_phone'),
+            bill_to_address=data.get('bill_to_address'),
+            bill_to_company=data.get('bill_to_company'),
+            bill_to_gst=data.get('bill_to_gst'),
+            customer_id=data.get('customer_id')
+        )
+        
+        db.session.add(itinerary)
+        db.session.commit()
+        
+        return jsonify({
+            "message": "Itinerary saved successfully",
+            "itinerary_id": itinerary.id
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Itinerary save error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to save itinerary: {str(e)}"}), 500
+
+@app.route("/api/itineraries", methods=["GET"])
+@login_required
+def get_itineraries():
+    """Get all itineraries for the logged-in user"""
+    itineraries = Itinerary.query.filter_by(user_id=session['user_id']).order_by(Itinerary.created_at.desc()).all()
+    
+    return jsonify({
+        "itineraries": [{
+            "id": i.id,
+            "created_at": i.created_at.isoformat(),
+            "updated_at": i.updated_at.isoformat(),
+            "total_amount": i.total_amount,
+            "markup": i.markup,
+            "status": i.status,
+            "billing_type": i.billing_type,
+            "bill_to_name": i.bill_to_name,
+            "flights_count": len(json.loads(i.flights_data)) if i.flights_data else 0,
+            "hold_deadline": i.hold_deadline.isoformat() if i.hold_deadline else None,
+            "customer": {
+                "name": i.customer.name if i.customer else None
+            } if i.customer else None
+        } for i in itineraries]
+    })
+
+@app.route("/api/itineraries/<itinerary_id>", methods=["GET"])
+@login_required
+def get_itinerary(itinerary_id):
+    """Get a specific itinerary"""
+    itinerary = Itinerary.query.filter_by(id=itinerary_id, user_id=session['user_id']).first()
+    
+    if not itinerary:
+        return jsonify({"error": "Itinerary not found"}), 404
+    
+    return jsonify({
+        "id": itinerary.id,
+        "created_at": itinerary.created_at.isoformat(),
+        "updated_at": itinerary.updated_at.isoformat(),
+        "total_amount": itinerary.total_amount,
+        "markup": itinerary.markup,
+        "status": itinerary.status,
+        "final_text": itinerary.final_text,
+        "flights": json.loads(itinerary.flights_data) if itinerary.flights_data else [],
+        "billing_type": itinerary.billing_type,
+        "bill_to_name": itinerary.bill_to_name,
+        "bill_to_email": itinerary.bill_to_email,
+        "bill_to_phone": itinerary.bill_to_phone,
+        "bill_to_address": itinerary.bill_to_address,
+        "bill_to_company": itinerary.bill_to_company,
+        "bill_to_gst": itinerary.bill_to_gst,
+        "customer": {
+            "id": itinerary.customer.id,
+            "name": itinerary.customer.name,
+            "email": itinerary.customer.email
+        } if itinerary.customer else None
+    })
+
+@app.route("/api/itineraries/<itinerary_id>", methods=["PUT"])
+@login_required
+def update_itinerary(itinerary_id):
+    """Update an existing itinerary"""
+    try:
+        itinerary = Itinerary.query.filter_by(id=itinerary_id, user_id=session['user_id']).first()
+        
+        if not itinerary:
+            return jsonify({"error": "Itinerary not found"}), 404
+        
+        data = request.get_json()
+        
+        if 'status' in data:
+            itinerary.status = data['status']
+        
+        if 'flights' in data:
+            itinerary.flights_data = json.dumps(data['flights'])
+            
+            # Recalculate total amount
+            total_amount = 0
+            for flight in data['flights']:
+                if 'fares' in flight:
+                    for fare_value in flight['fares'].values():
+                        total_amount += fare_value + flight.get('markup', 0)
+            itinerary.total_amount = total_amount
+        
+        if 'final_text' in data:
+            itinerary.final_text = data['final_text']
+        
+        if 'billing_type' in data:
+            itinerary.billing_type = data['billing_type']
+        
+        if 'bill_to_name' in data:
+            itinerary.bill_to_name = data['bill_to_name']
+        
+        if 'bill_to_email' in data:
+            itinerary.bill_to_email = data['bill_to_email']
+        
+        if 'bill_to_phone' in data:
+            itinerary.bill_to_phone = data['bill_to_phone']
+        
+        if 'bill_to_address' in data:
+            itinerary.bill_to_address = data['bill_to_address']
+        
+        if 'bill_to_company' in data:
+            itinerary.bill_to_company = data['bill_to_company']
+        
+        if 'bill_to_gst' in data:
+            itinerary.bill_to_gst = data['bill_to_gst']
+        
+        if 'customer_id' in data:
+            itinerary.customer_id = data['customer_id']
+        
+        itinerary.updated_at = datetime.utcnow()
+        
+        db.session.commit()
+        
+        return jsonify({"message": "Itinerary updated successfully"})
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Itinerary update error: {str(e)}")
+        return jsonify({"error": "Failed to update itinerary"}), 500
+
+@app.route("/api/itineraries/<itinerary_id>", methods=["DELETE"])
+@login_required
+def delete_itinerary(itinerary_id):
+    """Delete an itinerary"""
+    try:
+        itinerary = Itinerary.query.filter_by(id=itinerary_id, user_id=session['user_id']).first()
+        
+        if not itinerary:
+            return jsonify({"error": "Itinerary not found"}), 404
+        
+        db.session.delete(itinerary)
+        db.session.commit()
+        
+        return jsonify({"message": "Itinerary deleted successfully"})
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Itinerary deletion error: {str(e)}")
+        return jsonify({"error": "Failed to delete itinerary"}), 500
+
+
+# ==================== TICKET RECEIVE ENDPOINT ====================
+
+@app.route("/api/tickets", methods=["POST"])
+def receive_ticket():
+    """Receive a ticket from the ticket parser and save to database"""
+    # 1. Check API Key
+    auth_header = request.headers.get("Authorization")
+    if auth_header != f"Bearer {API_KEY}":
+        print("Unauthorized request")
+        return jsonify({"error": "Unauthorized"}), 401
+
+    # 2. Get JSON data
+    data = request.get_json()
+    if not data:
+        print("No JSON received")
+        return jsonify({"error": "Invalid JSON"}), 400
+
+    print("\n===== NEW TICKET RECEIVED =====")
+    print(json.dumps(data, indent=2, default=str))
+    print("=================================\n")
+
+    try:
+        booking = data.get("booking") or {}
+        passengers = data.get("passengers") or []
+        segments = data.get("segments") or []
+        journey = data.get("journey") or {}
+        metadata = data.get("metadata") or {}
+
+        # Determine trip type - properly handle layovers
+        # A layover exists when consecutive segments share airports
+        # (arrival airport of seg N == departure airport of seg N+1)
+        seg_count = len(segments)
+        
+        # First, group segments into logical legs (a leg = direct or layover flight)
+        legs = []
+        current_leg_start = 0
+        for i in range(1, seg_count):
+            prev_arr = segments[i-1].get("arrival", {}).get("airport", "").strip().upper()
+            curr_dep = segments[i].get("departure", {}).get("airport", "").strip().upper()
+            # Also check layover_duration field from parser
+            has_layover_info = segments[i].get("layover_duration") and segments[i].get("layover_duration") != "N/A"
+            
+            if prev_arr and curr_dep and prev_arr == curr_dep or has_layover_info:
+                # This is a layover/connection, same leg continues
+                continue
+            else:
+                # New leg starts here
+                legs.append(segments[current_leg_start:i])
+                current_leg_start = i
+        legs.append(segments[current_leg_start:])
+        
+        # Also check journey data from parser for trip_type hint
+        journey_trip_type = journey.get("trip_type", "").lower() if journey else ""
+        
+        num_legs = len(legs)
+        if journey_trip_type in ["round_trip", "return"]:
+            trip_type = "round_trip"
+        elif journey_trip_type == "multi_city":
+            trip_type = "multi_city"
+        elif num_legs >= 3:
+            trip_type = "multi_city"
+        elif num_legs == 2:
+            # Check if it's a round trip (second leg returns to origin of first leg)
+            first_leg_origin = legs[0][0].get("departure", {}).get("airport", "").strip().upper()
+            second_leg_dest = legs[1][-1].get("arrival", {}).get("airport", "").strip().upper()
+            if first_leg_origin and second_leg_dest and first_leg_origin == second_leg_dest:
+                trip_type = "round_trip"
+            else:
+                trip_type = "multi_city"
+        else:
+            trip_type = "one_way"
+
+        # Find a user to associate with (use first available user for API tickets)
+        user = User.query.first()
+        if not user:
+            return jsonify({"error": "No users found in system"}), 400
+
+        # Calculate grand_total from passengers if available to ensure it's not just basic fare
+        calculated_grand_total = 0
+        pax_fares_found = False
+        for p in passengers:
+            f = p.get("fare") or {}
+            total = f.get("total_fare")
+            if total:
+                try:
+                    calculated_grand_total += float(str(total).replace(',', ''))
+                    pax_fares_found = True
+                except ValueError:
+                    pass
+        
+        final_grand_total = calculated_grand_total if pax_fares_found else booking.get("grand_total", 0)
+
+        # Compute uniform class
+        uni_c = set()
+        for seg in segments:
+            bc = seg.get("booking_class")
+            v = ""
+            if isinstance(bc, dict):
+                v = (bc.get("cabin") or bc.get("full_form") or "").strip().lower()
+            elif isinstance(bc, str) and bc.strip():
+                v = bc.strip().lower()
+            if v and v != "n/a":
+                uni_c.add(v)
+        
+        if len(uni_c) > 0:
+            # If at least ONE valid inline class is present, we hide universal class
+            final_class = "None"
+        else:
+            # If nothing was found inline (all N/A or empty), default to generic Economy
+            final_class = booking.get("class_of_travel", "Economy").title()
+
+        _ensure_passenger_internal_ids(passengers)
+
+        # Create ticket
+        ticket = Ticket(
+            pnr=booking.get("pnr"),
+            booking_date=booking.get("booking_date"),
+            phone=booking.get("phone"),
+            currency=booking.get("currency", "INR"),
+            grand_total=final_grand_total,
+            class_of_travel=final_class,
+            trip_type=trip_type,
+            passengers_data=json.dumps(passengers),
+            segments_data=json.dumps(segments),
+            journey_data=json.dumps(journey),
+            raw_data=json.dumps(data),
+            status="unmatched",
+            user_id=user.id,
+            parser_version=metadata.get("parser_version")
+        )
+
+        # Try to match against issued itineraries
+        matched = False
+        pnr = booking.get("pnr", "").strip().upper()
+        if pnr:
+            # Match by PNR in itinerary flights_data
+            issued_itineraries = Itinerary.query.filter(
+                Itinerary.status.in_(['confirmed', 'issued'])
+            ).all()
+            for itin in issued_itineraries:
+                if itin.flights_data and pnr.lower() in itin.flights_data.lower():
+                    ticket.matched_itinerary_id = itin.id
+                    ticket.status = "matched"
+                    matched = True
+                    break
+
+        db.session.add(ticket)
+        db.session.commit()
+
+        return jsonify({
+            "status": "accepted",
+            "ticket_id": ticket.id,
+            "matched": matched,
+            "matched_itinerary_id": ticket.matched_itinerary_id
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Ticket receive error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to process ticket: {str(e)}"}), 500
+
+
+# ==================== TICKETS PAGE ====================
+
+@app.route("/tickets")
+def tickets_page():
+    """Serve the tickets dashboard page"""
+    return render_template('tickets.html')
+
+
+# ==================== TICKET CRUD ROUTES ====================
+
+def _ticket_signature(ticket):
+    passengers = json.loads(ticket.passengers_data or "[]")
+    segments = json.loads(ticket.segments_data or "[]")
+    journey = json.loads(ticket.journey_data or "{}")
+    legs = _build_legs_from_data(segments, journey)
+
+    route_parts = []
+    for leg in legs:
+        if not leg:
+            continue
+        first_seg = segments[leg[0]]
+        last_seg = segments[leg[-1]]
+        dep_code = (first_seg.get("departure") or {}).get("airport", "")
+        arr_code = (last_seg.get("arrival") or {}).get("airport", "")
+        if dep_code:
+            route_parts.append(dep_code)
+        if arr_code:
+            route_parts.append(arr_code)
+
+    first_segment = segments[0] if segments else {}
+    last_segment = segments[-1] if segments else {}
+    signature = {
+        "ticket_id": ticket.id,
+        "booking_group_id": ticket.booking_group_id,
+        "passenger_names": [p.get("name", "") for p in passengers],
+        "normalized_passenger_names": [_normalize_passenger_name(p.get("name", "")) for p in passengers],
+        "system_ticket_numbers": [p.get("system_ticket_number", "") for p in passengers],
+        "airline": " | ".join((seg.get("airline") or "").strip() for seg in segments),
+        "route": " -> ".join(route_parts),
+        "flight_numbers": " | ".join((seg.get("flight_number") or "").strip() for seg in segments),
+        "departure_airport": (first_segment.get("departure") or {}).get("airport", ""),
+        "arrival_airport": (last_segment.get("arrival") or {}).get("airport", ""),
+        "departure_datetime": f"{(first_segment.get('departure') or {}).get('date', '')} {(first_segment.get('departure') or {}).get('time', '')}".strip(),
+        "arrival_datetime": f"{(last_segment.get('arrival') or {}).get('date', '')} {(last_segment.get('arrival') or {}).get('time', '')}".strip(),
+        "segments": segments,
+        "pnr": ticket.pnr or "",
+        "trip_type": ticket.trip_type,
+    }
+    return signature
+
+
+def _build_pnr_merge_groups(user_id):
+    tickets = Ticket.query.filter(
+        Ticket.user_id == user_id,
+        Ticket.pnr.isnot(None),
+        Ticket.pnr != ""
+    ).order_by(Ticket.created_at.desc()).all()
+
+    groups = {}
+    for ticket in tickets:
+        pnr = (ticket.pnr or "").strip().upper()
+        if not pnr:
+            continue
+        groups.setdefault(pnr, []).append(ticket)
+
+    result = []
+    compare_fields = [
+        "airline", "route", "flight_numbers", "departure_airport",
+        "arrival_airport", "departure_datetime", "arrival_datetime"
+    ]
+
+    for pnr, pnr_tickets in groups.items():
+        if len(pnr_tickets) < 2:
+            continue
+        signatures = [_ticket_signature(ticket) for ticket in pnr_tickets]
+        unique_passengers = sorted({
+            passenger_name
+            for sig in signatures
+            for passenger_name in sig.get("normalized_passenger_names", [])
+            if passenger_name
+        })
+        has_different_passengers = len(unique_passengers) > 1
+        field_values = {}
+        discrepancies = {}
+        for field in compare_fields:
+            values = sorted({
+                _normalize_compare_string(sig.get(field) or "")
+                for sig in signatures
+            })
+            field_values[field] = values
+            if len([value for value in values if value]) > 1:
+                discrepancies[field] = values
+
+        result.append({
+            "pnr": pnr,
+            "ticket_count": len(pnr_tickets),
+            "merged_ticket_count": len([ticket for ticket in pnr_tickets if ticket.booking_group_id]),
+            "can_auto_merge": has_different_passengers and not discrepancies,
+            "has_different_passengers": has_different_passengers,
+            "passenger_conflict": not has_different_passengers,
+            "normalized_passengers": unique_passengers,
+            "discrepancies": discrepancies,
+            "tickets": signatures,
+        })
+
+    return sorted(result, key=lambda item: (item["can_auto_merge"] is False, item["pnr"]))
+
+
+@app.route("/api/tickets/pnr-groups", methods=["GET"])
+@login_required
+def get_pnr_groups():
+    return jsonify({"groups": _build_pnr_merge_groups(session["user_id"])})
+
+
+@app.route("/api/tickets/pnr-groups/<pnr>/merge", methods=["POST"])
+@login_required
+def merge_pnr_group(pnr):
+    data = request.get_json() or {}
+    force_merge = bool(data.get("force_merge"))
+    requested_ticket_ids = set(data.get("ticket_ids") or [])
+    normalized_pnr = (pnr or "").strip().upper()
+    groups = _build_pnr_merge_groups(session["user_id"])
+    group = next((item for item in groups if item["pnr"] == normalized_pnr), None)
+    if not group:
+        return jsonify({"error": "PNR group not found"}), 404
+    if not group.get("has_different_passengers"):
+        return jsonify({"error": "Merge is allowed only when the PNR group contains different passengers."}), 400
+    if group["discrepancies"] and not force_merge:
+        return jsonify({"error": "Discrepancies detected. Use force merge to continue.", "discrepancies": group["discrepancies"]}), 400
+
+    selected_tickets = Ticket.query.filter_by(user_id=session["user_id"], pnr=normalized_pnr).all()
+    if requested_ticket_ids:
+        selected_tickets = [ticket for ticket in selected_tickets if ticket.id in requested_ticket_ids]
+    if len(selected_tickets) < 2:
+        return jsonify({"error": "At least two tickets are required to merge a booking."}), 400
+
+    lead_ticket = selected_tickets[0]
+    existing_group = None
+    for ticket in selected_tickets:
+        if ticket.booking_group_id:
+            existing_group = BookingGroup.query.filter_by(id=ticket.booking_group_id, user_id=session["user_id"]).first()
+            if existing_group:
+                break
+
+    booking_group = existing_group or BookingGroup(
+        user_id=session["user_id"],
+        pnr=normalized_pnr,
+        status="merged",
+    )
+    booking_group.itinerary_data = json.dumps(_ticket_signature(lead_ticket))
+    booking_group.discrepancy_data = json.dumps(group["discrepancies"])
+    db.session.add(booking_group)
+    db.session.flush()
+
+    for ticket in selected_tickets:
+        ticket.booking_group_id = booking_group.id
+
+    db.session.commit()
+    return jsonify({
+        "message": f"Merged {len(selected_tickets)} tickets under PNR {normalized_pnr}.",
+        "booking_group_id": booking_group.id,
+    })
+
+@app.route("/api/tickets/list", methods=["GET"])
+@login_required
+def get_tickets():
+    """Get all tickets for the logged-in user"""
+    tickets = Ticket.query.filter_by(user_id=session['user_id']).order_by(Ticket.created_at.desc()).all()
+    
+    result = []
+    seen_booking_groups = set()
+    for t in tickets:
+        if t.booking_group_id:
+            if t.booking_group_id in seen_booking_groups:
+                continue
+            seen_booking_groups.add(t.booking_group_id)
+            grouped_tickets = _booking_group_sorted_tickets(t.booking_group)
+            lead_ticket = grouped_tickets[0] if grouped_tickets else t
+            payload = _merged_ticket_dict(t.booking_group, lead_ticket)
+        else:
+            payload = _ticket_dict_with_children(t)
+        passengers = payload["passengers"]
+        segments = payload["segments"]
+        journey = payload["journey"]
+        
+        # Group segments into logical legs (handling layovers)
+        legs = _build_legs_from_data(segments, journey)
+        
+        # Build route info from legs
+        route_parts = []
+        for leg_indices in legs:
+            if not leg_indices:
+                continue
+            first_seg = segments[leg_indices[0]]
+            last_seg = segments[leg_indices[-1]]
+            dep_code = first_seg.get("departure", {}).get("airport", "")
+            arr_code = last_seg.get("arrival", {}).get("airport", "")
+            if dep_code and not route_parts:
+                route_parts.append(dep_code)
+            if arr_code:
+                route_parts.append(arr_code)
+        
+        payload.update({
+            "legs": legs,
+            "route": " → ".join(route_parts) if route_parts else "",
+            "passenger_names": [p.get("name", "") for p in passengers],
+        })
+        result.append(payload)
+    
+    return jsonify({"tickets": result})
+
+
+@app.route("/api/tickets/<ticket_id>", methods=["GET"])
+@login_required
+def get_ticket(ticket_id):
+    """Get a specific ticket with full data"""
+    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+    if not ticket:
+        return jsonify({"error": "Ticket not found"}), 404
+    
+    passengers = json.loads(ticket.passengers_data) if ticket.passengers_data else []
+    if _ensure_passenger_internal_ids(passengers):
+        ticket.passengers_data = json.dumps(passengers)
+        db.session.commit()
+
+    # Auto-map to ledger if PNR exists there but hash is missing
+    if not ticket.ledger_hash and ticket.pnr:
+        existing = LedgerEntry.query.filter_by(pnr=ticket.pnr, user_id=session['user_id']).first()
+        if existing:
+            # We use a special marker to indicate it was mapped via PNR
+            ticket.ledger_hash = f"MAPPED_{existing.id}"
+            db.session.commit()
+
+    if ticket.booking_group_id and ticket.booking_group:
+        grouped_tickets = _booking_group_sorted_tickets(ticket.booking_group)
+        lead_ticket = grouped_tickets[0] if grouped_tickets else ticket
+        return jsonify(_merged_ticket_dict(ticket.booking_group, lead_ticket))
+
+    return jsonify(_ticket_dict_with_children(ticket))
+
+
+@app.route("/api/tickets/<ticket_id>", methods=["PUT"])
+@login_required
+def update_ticket(ticket_id):
+    """Update a ticket (edit passengers, segments, fares, etc.)"""
+    try:
+        ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+        if not ticket:
+            return jsonify({"error": "Ticket not found"}), 404
+        
+        data = request.get_json()
+        
+        if 'pnr' in data:
+            ticket.pnr = data['pnr']
+        if 'booking_date' in data:
+            ticket.booking_date = data['booking_date']
+        if 'phone' in data:
+            ticket.phone = data['phone']
+        if 'currency' in data:
+            ticket.currency = data['currency']
+        if 'grand_total' in data:
+            ticket.grand_total = data['grand_total']
+        if 'class_of_travel' in data:
+            ticket.class_of_travel = data['class_of_travel']
+        if 'trip_type' in data:
+            ticket.trip_type = data['trip_type']
+        if 'passengers' in data:
+            passengers = data['passengers']
+            _ensure_passenger_internal_ids(passengers)
+            ticket.passengers_data = json.dumps(passengers)
+        if 'segments' in data:
+            ticket.segments_data = json.dumps(data['segments'])
+        if 'journey' in data:
+            ticket.journey_data = json.dumps(data['journey'])
+        if 'raw_data' in data:
+            ticket.raw_data = json.dumps(data['raw_data'])
+        if 'status' in data:
+            ticket.status = data['status']
+        
+        ticket.updated_at = datetime.utcnow()
+        db.session.commit()
+        
+        return jsonify({"message": "Ticket updated successfully"})
+    
+    except Exception as e:
+        db.session.rollback()
+        print(f"Ticket update error: {str(e)}")
+        return jsonify({"error": f"Failed to update ticket: {str(e)}"}), 500
+
+
+@app.route("/api/tickets/<ticket_id>", methods=["DELETE"])
+@login_required
+def delete_ticket(ticket_id):
+    """Delete a ticket"""
+    try:
+        ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+        if not ticket:
+            return jsonify({"error": "Ticket not found"}), 404
+        
+        db.session.delete(ticket)
+        db.session.commit()
+        return jsonify({"message": "Ticket deleted successfully"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Failed to delete ticket: {str(e)}"}), 500
+
+
+@app.route("/api/tickets/<ticket_id>/pdf", methods=["GET"])
+@login_required
+def generate_ticket_pdf(ticket_id):
+    """Generate PDF for a ticket (with or without fare)"""
+    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+    if not ticket:
+        return jsonify({"error": "Ticket not found"}), 404
+    
+    include_fare = request.args.get('include_fare', 'true').lower() == 'true'
+    
+    passengers = json.loads(ticket.passengers_data) if ticket.passengers_data else []
+    segments = json.loads(ticket.segments_data) if ticket.segments_data else []
+    
+    # Extract journey and raw data for additional info
+    journey = json.loads(ticket.journey_data) if ticket.journey_data else {}
+    raw = json.loads(ticket.raw_data) if ticket.raw_data else {}
+    gst_details = raw.get("gst_details") or {}
+    
+    # Build data dict for PDF generator
+    pdf_data = {
+        "booking_date": ticket.booking_date,
+        "phone": ticket.phone,
+        "pnr": ticket.pnr,
+        "currency": ticket.currency,
+        "grand_total": ticket.grand_total,
+        "class_of_travel": ticket.class_of_travel,
+        "passengers": passengers,
+        "segments": segments,
+        "journey": journey,
+        "reference_number": raw.get("booking", {}).get("reference_number"),
+        "gst_company_name": gst_details.get("company_name"),
+        "gst_number": gst_details.get("gst_number"),
+        "trip_type": ticket.trip_type,
+    }
+    
+    import io
+    from reportlab.pdfgen import canvas as pdf_canvas
+    from reportlab.lib.pagesizes import A4
+    from ticket_pdf import draw_ticket
+    
+    buffer = io.BytesIO()
+    c = pdf_canvas.Canvas(buffer, pagesize=A4)
+    draw_ticket(c, pdf_data, include_fare=include_fare)
+    c.save()
+    buffer.seek(0)
+    
+    # ── GENERATE DOWNLOAD FILENAME ──
+    pax_name = ""
+    if passengers and len(passengers) > 0:
+        pax_name = passengers[0].get("name", "").strip()
+        if len(passengers) > 1:
+            pax_name += f" x{len(passengers)}"
+    if not pax_name:
+        pax_name = "Passenger"
+        
+    date_str = ""
+    if segments and len(segments) > 0:
+        dep = segments[0].get("departure", {})
+        o_date = dep.get("date", "")
+        try:
+            import dateutil.parser
+            d_obj = dateutil.parser.parse(o_date)
+            d_short = d_obj.strftime("%d %b %y")
+            if d_short.startswith("0"): 
+                d_short = d_short[1:]
+            date_str = d_short
+        except Exception:
+            date_str = o_date.replace("/", "-").replace("\\", "-")
+        
+    route_str = ""
+    trip = (ticket.trip_type or "one_way").lower()
+    trip_txt = "ONE WAY"
+    if trip == "round_trip": trip_txt = "ROUND TRIP"
+    elif trip == "multi_city": trip_txt = "MULTI CITY"
+    
+    if segments and len(segments) > 0:
+        if trip == "one_way":
+            dap = segments[0].get("departure", {}).get("airport", "DEP")
+            aap = segments[-1].get("arrival", {}).get("airport", "ARR")
+            route_str = f"{dap} → {aap}"
+        elif trip == "round_trip":
+            # For round trip, take the departure and the midpoint destination 
+            dap = segments[0].get("departure", {}).get("airport", "DEP")
+            mid_idx = max(0, len(segments) // 2 - 1) if len(segments) % 2 == 0 else len(segments) // 2
+            aap = segments[mid_idx].get("arrival", {}).get("airport", "ARR")
+            route_str = f"{dap} ↔ {aap}"
+        else:
+            # Multi city
+            dests = [segments[0].get("departure", {}).get("airport", "DEP")]
+            for seg in segments:
+                arr = seg.get("arrival", {}).get("airport", "ARR")
+                if arr and arr != dests[-1]:
+                    dests.append(arr)
+            route_str = " → ".join(dests)
+            
+    import re
+    # Combine filename
+    if trip == "one_way":
+        raw_fname = f"{pax_name} {route_str} {date_str}.pdf"
+    else:
+        raw_fname = f"{pax_name} {route_str} ({trip_txt}) {date_str}.pdf"
+        
+    # Remove windows invalid path chars, though arrows → ↔ are valid unicode
+    filename = re.sub(r'[\\/*?:"<>|]', "", raw_fname).strip()
+    filename = re.sub(r'\s+', " ", filename)  # remove double spaces just in case
+    if not filename.endswith(".pdf"): 
+        filename += ".pdf"
+    
+    return send_file(
+        buffer,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=filename
+    )
+
+
+
+# ==================== TICKET CANCEL / SPLIT / CHANGE ROUTES ====================
+
+def _compute_fare_hash(pnr, basic, k3, other_taxes, mu, ticket_total):
+    """Compute a deterministic hash from fare data to detect duplicates."""
+    fare_hash_data = f"{pnr}:{basic}:{k3}:{other_taxes}:{mu}:{ticket_total}"
+    return hashlib.sha256(fare_hash_data.encode()).hexdigest()
+
+def _next_ledger_order(agg_id, user_id):
+    last = LedgerEntry.query.filter_by(
+        aggregator_id=agg_id, user_id=user_id
+    ).order_by(LedgerEntry.row_order.desc()).first()
+    return (last.row_order + 1) if last else 0
+
+
+@app.route("/api/tickets/<ticket_id>/cancel", methods=["POST"])
+@login_required
+def cancel_ticket(ticket_id):
+    try:
+        data = request.get_json() or {}
+        ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+        if not ticket:
+            return jsonify({"error": "Ticket not found"}), 404
+        if not ticket.ledger_hash:
+            return jsonify({"error": "This booking has not been added to the ledger yet. Please add it to the ledger first before cancelling."}), 400
+
+        plan = _build_operation_plan(ticket, data, "cancel")
+        operation, created_tickets = _execute_operation(ticket, plan, "cancel")
+        return jsonify({
+            "message": "Cancellation completed successfully.",
+            "operation_id": operation.id,
+            "ticket_status": "cancelled" if plan["scenario"] == "full" else "live",
+            "created_ticket_ids": [item.id for item in created_tickets],
+        }), 200
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"error": f"Cancellation failed: {str(exc)}"}), 500
+
+
+@app.route("/api/tickets/<ticket_id>/change", methods=["POST"])
+@login_required
+def change_ticket(ticket_id):
+    try:
+        data = request.get_json() or {}
+        ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+        if not ticket:
+            return jsonify({"error": "Ticket not found"}), 404
+        if not ticket.ledger_hash:
+            return jsonify({"error": "This booking has not been added to the ledger yet. Please add it to the ledger first before changing."}), 400
+
+        plan = _build_operation_plan(ticket, data, "change")
+        operation, created_tickets = _execute_operation(ticket, plan, "change")
+        return jsonify({
+            "message": "Change completed successfully.",
+            "operation_id": operation.id,
+            "ticket_status": "changed",
+            "created_ticket_ids": [item.id for item in created_tickets],
+        }), 200
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"error": f"Change failed: {str(exc)}"}), 500
+
+
+def _scale_components(components, ratio):
+    return {
+        "base": _round_money(parseFloat(components["base"]) * ratio),
+        "k3": _round_money(parseFloat(components["k3"]) * ratio),
+        "other": _round_money(parseFloat(components["other"]) * ratio),
+        "mu": _round_money(parseFloat(components["mu"]) * ratio),
+        "total": _round_money(parseFloat(components["total"]) * ratio),
+        "non_markup_total": _round_money(parseFloat(components["non_markup_total"]) * ratio),
+    }
+
+
+def _subtract_components(left, right):
+    base = _round_money(parseFloat(left["base"]) - parseFloat(right["base"]))
+    k3 = _round_money(parseFloat(left["k3"]) - parseFloat(right["k3"]))
+    other = _round_money(parseFloat(left["other"]) - parseFloat(right["other"]))
+    mu = _round_money(parseFloat(left["mu"]) - parseFloat(right["mu"]))
+    return {
+        "base": base,
+        "k3": k3,
+        "other": other,
+        "mu": mu,
+        "total": _round_money(base + k3 + other + mu),
+        "non_markup_total": _round_money(base + k3 + other),
+    }
+
+
+def _operation_entry_type(action_type, scenario):
+    mapping = {
+        ("cancel", "full"): "Full Cancel",
+        ("cancel", "passenger"): "Passenger Cancel",
+        ("cancel", "sector"): "Sector Cancel",
+        ("cancel", "passenger_sector"): "Passenger + Sector Cancel",
+        ("change", "full"): "Full Change",
+        ("change", "passenger"): "Passenger Change",
+        ("change", "sector"): "Sector Change",
+        ("change", "passenger_sector"): "Passenger + Sector Change",
+    }
+    return mapping[(action_type, scenario)]
+
+
+def _default_child_pnr(base_pnr, suffix):
+    base = (base_pnr or "NO-PNR").strip().upper() or "NO-PNR"
+    return f"{base}-{suffix}"
+
+
+def _build_operation_plan(ticket, data, action_type):
+    passengers = json.loads(ticket.passengers_data or "[]")
+    segments = json.loads(ticket.segments_data or "[]")
+    journey = json.loads(ticket.journey_data or "{}")
+    raw_data = json.loads(ticket.raw_data or "{}")
+    _ensure_passenger_internal_ids(passengers)
+
+    source_ticket = {
+        "id": ticket.id,
+        "pnr": ticket.pnr,
+        "booking_date": ticket.booking_date,
+        "phone": ticket.phone,
+        "currency": ticket.currency,
+        "grand_total": ticket.grand_total,
+        "class_of_travel": ticket.class_of_travel,
+        "trip_type": ticket.trip_type,
+        "status": ticket.status,
+        "matched_itinerary_id": ticket.matched_itinerary_id,
+        "parser_version": ticket.parser_version,
+        "last_aggregator": ticket.last_aggregator or data.get("aggregator_id"),
+        "last_booked_by": ticket.last_booked_by or data.get("booking_by") or "AB",
+        "journey": journey,
+        "raw_data": raw_data,
+    }
+
+    legs = _build_legs_from_data(segments, journey)
+    passenger_indices = _normalize_selection(data.get("passenger_indices"), len(passengers))
+    sector_indices = _normalize_selection(data.get("sector_indices"), len(legs))
+    if not sector_indices:
+        sector_indices = list(range(len(legs)))
+
+    all_passengers = len(passenger_indices) == len(passengers)
+    all_sectors = len(sector_indices) == len(legs)
+    if all_passengers and all_sectors:
+        scenario = "full"
+    elif not all_passengers and all_sectors:
+        scenario = "passenger"
+    elif all_passengers and not all_sectors:
+        scenario = "sector"
+    else:
+        scenario = "passenger_sector"
+
+    if scenario in ("sector", "passenger_sector") and not data.get("sector_fares"):
+        raise ValueError("Sector-wise fare breakup is required for sector-based cancel/change operations.")
+
+    attachment_token = (data.get("attachment_token") or "").strip()
+    if action_type == "change" and not attachment_token:
+        raise ValueError("Upload the new ticket before confirming the change.")
+
+    financials = _ticket_financials(passengers, journey)
+    passenger_shares = _passenger_share_map(passengers, journey, data.get("per_person_fares"))
+    selected_passenger_components = _sum_components([passenger_shares[idx] for idx in passenger_indices])
+    sector_map = _sector_fare_map(sector_indices, data.get("sector_fares"))
+    sector_components = {
+        "base": _round_money(sum(item["base"] for item in sector_map.values())),
+        "k3": _round_money(sum(item["k3"] for item in sector_map.values())),
+        "other": _round_money(sum(item["other"] for item in sector_map.values())),
+    }
+    sector_components["non_markup_total"] = _round_money(sector_components["base"] + sector_components["k3"] + sector_components["other"])
+    sector_ratio = _component_ratio(sector_components["non_markup_total"], financials["non_markup_total"]) if scenario in ("sector", "passenger_sector") else 1.0
+
+    if scenario == "full":
+        affected_components = financials
+    elif scenario == "passenger":
+        affected_components = selected_passenger_components
+    elif scenario == "sector":
+        affected_components = {
+            "base": sector_components["base"],
+            "k3": sector_components["k3"],
+            "other": sector_components["other"],
+            "mu": _round_money(financials["mu"] * sector_ratio),
+            "total": 0.0,
+            "non_markup_total": sector_components["non_markup_total"],
+        }
+        affected_components["total"] = _round_money(affected_components["base"] + affected_components["k3"] + affected_components["other"] + affected_components["mu"])
+    else:
+        affected_components = {
+            "base": _round_money(selected_passenger_components["base"] * sector_ratio),
+            "k3": _round_money(selected_passenger_components["k3"] * sector_ratio),
+            "other": _round_money(selected_passenger_components["other"] * sector_ratio),
+            "mu": _round_money(selected_passenger_components["mu"] * sector_ratio),
+            "total": 0.0,
+            "non_markup_total": 0.0,
+        }
+        affected_components["non_markup_total"] = _round_money(affected_components["base"] + affected_components["k3"] + affected_components["other"])
+        affected_components["total"] = _round_money(affected_components["non_markup_total"] + affected_components["mu"])
+
+    fee = _round_money(data.get("cancellation_charge", 0) if action_type == "cancel" else data.get("xxd_charge", 0))
+    extra_fare = data.get("extra_fare") or {}
+    extra_components = {
+        "base": _round_money(extra_fare.get("base_fare", 0)),
+        "k3": _round_money(extra_fare.get("k3_gst", 0)),
+        "other": _round_money(extra_fare.get("other_taxes", 0)),
+        "mu": 0.0,
+        "total": 0.0,
+        "non_markup_total": 0.0,
+    }
+    extra_components["non_markup_total"] = _round_money(extra_components["base"] + extra_components["k3"] + extra_components["other"])
+    extra_components["total"] = extra_components["non_markup_total"]
+
+    selected_passengers = [_clone_json(passengers[idx]) for idx in passenger_indices]
+    remaining_passengers = [_clone_json(passengers[idx]) for idx in range(len(passengers)) if idx not in passenger_indices]
+    full_leg_structure = [list(leg) for leg in legs]
+    selected_segments = _slice_segments(segments, legs, sector_indices)
+    remaining_sector_indices = [idx for idx in range(len(legs)) if idx not in sector_indices]
+    remaining_segments = _slice_segments(segments, legs, remaining_sector_indices)
+    full_segments_bundle = {"segments": segments, "legs": full_leg_structure}
+
+    new_pnr = (data.get("new_pnr") or "").strip().upper()
+    ticket_updates = []
+    ticket_creates = []
+
+    if action_type == "cancel":
+        if scenario == "full":
+            payload = _ticket_payload_from_parts(source_ticket, passengers, full_segments_bundle["segments"], financials, "cancelled", pnr=ticket.pnr, parent_ticket_id=ticket.parent_ticket_id, status_note="Full cancellation processed", cancellation_charge=fee, leg_structure=full_segments_bundle["legs"])
+            ticket_updates.append({"ticket_id": ticket.id, "label": "Original booking", "payload": payload})
+        elif scenario == "passenger":
+            remaining_components = _subtract_components(financials, selected_passenger_components)
+            root_payload = _ticket_payload_from_parts(source_ticket, remaining_passengers, full_segments_bundle["segments"], remaining_components, "live", pnr=ticket.pnr, parent_ticket_id=ticket.parent_ticket_id, status_note="Remaining passengers after passenger cancellation", leg_structure=full_segments_bundle["legs"])
+            cancel_payload = _ticket_payload_from_parts(source_ticket, selected_passengers, full_segments_bundle["segments"], selected_passenger_components, "cancelled", pnr=new_pnr or _default_child_pnr(ticket.pnr, "CXL"), parent_ticket_id=ticket.id, status_note="Cancelled passenger split", cancellation_charge=fee, leg_structure=full_segments_bundle["legs"])
+            ticket_updates.append({"ticket_id": ticket.id, "label": "Live booking", "payload": root_payload})
+            ticket_creates.append({"label": "Cancelled booking", "payload": cancel_payload})
+        elif scenario == "sector":
+            remaining_components = _subtract_components(financials, affected_components)
+            root_payload = _ticket_payload_from_parts(source_ticket, passengers, remaining_segments["segments"], remaining_components, "live", pnr=ticket.pnr, parent_ticket_id=ticket.parent_ticket_id, status_note="Live booking after sector cancellation", leg_structure=remaining_segments["legs"])
+            cancel_payload = _ticket_payload_from_parts(source_ticket, passengers, selected_segments["segments"], affected_components, "cancelled", pnr=new_pnr or _default_child_pnr(ticket.pnr, "SCXL"), parent_ticket_id=ticket.id, status_note="Cancelled sector split", cancellation_charge=fee, leg_structure=selected_segments["legs"])
+            ticket_updates.append({"ticket_id": ticket.id, "label": "Live booking", "payload": root_payload})
+            ticket_creates.append({"label": "Cancelled sector booking", "payload": cancel_payload})
+        else:
+            unaffected_components = _subtract_components(financials, selected_passenger_components)
+            live_selected_components = _subtract_components(selected_passenger_components, affected_components)
+            root_payload = _ticket_payload_from_parts(source_ticket, remaining_passengers, full_segments_bundle["segments"], unaffected_components, "live", pnr=ticket.pnr, parent_ticket_id=ticket.parent_ticket_id, status_note="Remaining passengers after passenger + sector cancellation", leg_structure=full_segments_bundle["legs"])
+            live_split_payload = _ticket_payload_from_parts(source_ticket, selected_passengers, remaining_segments["segments"], live_selected_components, "live", pnr=_default_child_pnr(ticket.pnr, "LIVE"), parent_ticket_id=ticket.id, status_note="Live split for remaining sectors", leg_structure=remaining_segments["legs"])
+            cancel_payload = _ticket_payload_from_parts(source_ticket, selected_passengers, selected_segments["segments"], affected_components, "cancelled", pnr=new_pnr or _default_child_pnr(ticket.pnr, "PSCXL"), parent_ticket_id=ticket.id, status_note="Cancelled passenger + sector split", cancellation_charge=fee, leg_structure=selected_segments["legs"])
+            ticket_updates.append({"ticket_id": ticket.id, "label": "Remaining passengers booking", "payload": root_payload})
+            ticket_creates.append({"label": "Live split booking", "payload": live_split_payload})
+            ticket_creates.append({"label": "Cancelled split booking", "payload": cancel_payload})
+    else:
+        if scenario == "full":
+            changed_total = {
+                "base": _round_money(financials["base"] + extra_components["base"]),
+                "k3": _round_money(financials["k3"] + extra_components["k3"]),
+                "other": _round_money(financials["other"] + extra_components["other"]),
+                "mu": financials["mu"],
+                "total": 0.0,
+                "non_markup_total": 0.0,
+            }
+            changed_total["non_markup_total"] = _round_money(changed_total["base"] + changed_total["k3"] + changed_total["other"])
+            changed_total["total"] = _round_money(changed_total["non_markup_total"] + changed_total["mu"])
+            payload = _ticket_payload_from_parts(source_ticket, passengers, full_segments_bundle["segments"], changed_total, "changed", pnr=new_pnr or ticket.pnr, parent_ticket_id=ticket.parent_ticket_id, status_note="Full ticket change confirmed", leg_structure=full_segments_bundle["legs"])
+            ticket_updates.append({"ticket_id": ticket.id, "label": "Changed booking", "payload": payload})
+        elif scenario == "passenger":
+            remaining_components = _subtract_components(financials, selected_passenger_components)
+            changed_components = {
+                "base": _round_money(selected_passenger_components["base"] + extra_components["base"]),
+                "k3": _round_money(selected_passenger_components["k3"] + extra_components["k3"]),
+                "other": _round_money(selected_passenger_components["other"] + extra_components["other"]),
+                "mu": selected_passenger_components["mu"],
+                "total": 0.0,
+                "non_markup_total": 0.0,
+            }
+            changed_components["non_markup_total"] = _round_money(changed_components["base"] + changed_components["k3"] + changed_components["other"])
+            changed_components["total"] = _round_money(changed_components["non_markup_total"] + changed_components["mu"])
+            root_payload = _ticket_payload_from_parts(source_ticket, remaining_passengers, full_segments_bundle["segments"], remaining_components, "live", pnr=ticket.pnr, parent_ticket_id=ticket.parent_ticket_id, status_note="Remaining passengers after passenger change", leg_structure=full_segments_bundle["legs"])
+            changed_payload = _ticket_payload_from_parts(source_ticket, selected_passengers, full_segments_bundle["segments"], changed_components, "changed", pnr=new_pnr or _default_child_pnr(ticket.pnr, "PCHG"), parent_ticket_id=ticket.id, status_note="Changed passenger split", leg_structure=full_segments_bundle["legs"])
+            ticket_updates.append({"ticket_id": ticket.id, "label": "Live booking", "payload": root_payload})
+            ticket_creates.append({"label": "Changed booking", "payload": changed_payload})
+        elif scenario == "sector":
+            remaining_components = _subtract_components(financials, affected_components)
+            changed_components = {
+                "base": _round_money(affected_components["base"] + extra_components["base"]),
+                "k3": _round_money(affected_components["k3"] + extra_components["k3"]),
+                "other": _round_money(affected_components["other"] + extra_components["other"]),
+                "mu": affected_components["mu"],
+                "total": 0.0,
+                "non_markup_total": 0.0,
+            }
+            changed_components["non_markup_total"] = _round_money(changed_components["base"] + changed_components["k3"] + changed_components["other"])
+            changed_components["total"] = _round_money(changed_components["non_markup_total"] + changed_components["mu"])
+            root_payload = _ticket_payload_from_parts(source_ticket, passengers, remaining_segments["segments"], remaining_components, "live", pnr=ticket.pnr, parent_ticket_id=ticket.parent_ticket_id, status_note="Remaining sectors after sector change", leg_structure=remaining_segments["legs"])
+            changed_payload = _ticket_payload_from_parts(source_ticket, passengers, selected_segments["segments"], changed_components, "changed", pnr=new_pnr or _default_child_pnr(ticket.pnr, "SCHG"), parent_ticket_id=ticket.id, status_note="Changed sector split", leg_structure=selected_segments["legs"])
+            ticket_updates.append({"ticket_id": ticket.id, "label": "Live booking", "payload": root_payload})
+            ticket_creates.append({"label": "Changed sector booking", "payload": changed_payload})
+        else:
+            unaffected_components = _subtract_components(financials, selected_passenger_components)
+            live_selected_components = _subtract_components(selected_passenger_components, affected_components)
+            changed_components = {
+                "base": _round_money(affected_components["base"] + extra_components["base"]),
+                "k3": _round_money(affected_components["k3"] + extra_components["k3"]),
+                "other": _round_money(affected_components["other"] + extra_components["other"]),
+                "mu": affected_components["mu"],
+                "total": 0.0,
+                "non_markup_total": 0.0,
+            }
+            changed_components["non_markup_total"] = _round_money(changed_components["base"] + changed_components["k3"] + changed_components["other"])
+            changed_components["total"] = _round_money(changed_components["non_markup_total"] + changed_components["mu"])
+            root_payload = _ticket_payload_from_parts(source_ticket, remaining_passengers, full_segments_bundle["segments"], unaffected_components, "live", pnr=ticket.pnr, parent_ticket_id=ticket.parent_ticket_id, status_note="Remaining passengers after passenger + sector change", leg_structure=full_segments_bundle["legs"])
+            live_split_payload = _ticket_payload_from_parts(source_ticket, selected_passengers, remaining_segments["segments"], live_selected_components, "live", pnr=_default_child_pnr(ticket.pnr, "LIVE"), parent_ticket_id=ticket.id, status_note="Live split for remaining sectors", leg_structure=remaining_segments["legs"])
+            changed_payload = _ticket_payload_from_parts(source_ticket, selected_passengers, selected_segments["segments"], changed_components, "changed", pnr=new_pnr or _default_child_pnr(ticket.pnr, "PSCHG"), parent_ticket_id=ticket.id, status_note="Changed passenger + sector split", leg_structure=selected_segments["legs"])
+            ticket_updates.append({"ticket_id": ticket.id, "label": "Remaining passengers booking", "payload": root_payload})
+            ticket_creates.append({"label": "Live split booking", "payload": live_split_payload})
+            ticket_creates.append({"label": "Changed split booking", "payload": changed_payload})
+
+    selected_routes = []
+    for leg_idx in sector_indices:
+        segment_group = legs[leg_idx]
+        first_seg = segments[segment_group[0]]
+        last_seg = segments[segment_group[-1]]
+        selected_routes.append(f"{(first_seg.get('departure') or {}).get('airport', '---')} → {(last_seg.get('arrival') or {}).get('airport', '---')}")
+
+    summary = {
+        "action_type": action_type,
+        "scenario": scenario,
+        "affected_passengers": [{"name": passengers[idx].get("name", f"Passenger {idx + 1}"), "system_ticket_number": passengers[idx].get("system_ticket_number")} for idx in passenger_indices],
+        "affected_sectors": selected_routes,
+        "affected_fare": affected_components,
+        "fees": {"operation_fee": fee, "extra_fare": extra_components},
+        "financial_impact": {
+            "refund_amount": _round_money(affected_components["total"] - fee) if action_type == "cancel" else 0,
+            "additional_collection": _round_money(extra_components["total"] + fee) if action_type == "change" else 0,
+        },
+        "resulting_bookings": [{
+            "label": item["label"],
+            "pnr": item["payload"]["pnr"],
+            "ticket_status": item["payload"]["ticket_status"],
+            "passenger_count": len(json.loads(item["payload"]["passengers_data"])),
+            "sector_count": len(json.loads(item["payload"]["segments_data"])),
+            "grand_total": item["payload"]["grand_total"],
+        } for item in (ticket_updates + ticket_creates)],
+        "new_ticket_required": action_type == "change",
+        "attachment_token": attachment_token,
+        "remarks": (data.get("remarks") or "").strip(),
+    }
+
+    return {
+        "summary": summary,
+        "ticket_updates": ticket_updates,
+        "ticket_creates": ticket_creates,
+        "scenario": scenario,
+        "agg_id": source_ticket["last_aggregator"],
+        "booking_by": source_ticket["last_booked_by"],
+        "fee": fee,
+        "affected_components": affected_components,
+        "extra_components": extra_components,
+        "attachment_token": attachment_token,
+        "remarks": (data.get("remarks") or "").strip(),
+    }
+
+
+def _execute_operation(ticket, plan, action_type):
+    before_state = []
+    created_tickets = []
+    updated_ticket_ids = []
+    root_ticket_id = ticket.id
+
+    for item in plan["ticket_updates"]:
+        current = Ticket.query.filter_by(id=item["ticket_id"], user_id=session["user_id"]).first()
+        before_state.append(_serialize_ticket_model(current))
+        _apply_ticket_payload(current, item["payload"])
+        updated_ticket_ids.append(current.id)
+
+    for item in plan["ticket_creates"]:
+        new_ticket = Ticket(user_id=session["user_id"])
+        _apply_ticket_payload(new_ticket, item["payload"])
+        db.session.add(new_ticket)
+        db.session.flush()
+        created_tickets.append(new_ticket)
+
+    root_after = Ticket.query.filter_by(id=ticket.id, user_id=session["user_id"]).first()
+    operation = TicketOperation(
+        user_id=session["user_id"],
+        action_type=action_type,
+        scenario=plan["scenario"],
+        aggregator_id=plan["agg_id"],
+        preview_data=json.dumps(plan["summary"]),
+        before_state=json.dumps(before_state),
+        after_state=json.dumps([_serialize_ticket_model(root_after)] + [_serialize_ticket_model(item) for item in created_tickets]),
+        metadata_json=json.dumps({
+            "created_ticket_ids": [item.id for item in created_tickets],
+            "updated_ticket_ids": updated_ticket_ids,
+            "attachment_token": plan["attachment_token"],
+            "remarks": plan["remarks"],
+        }),
+    )
+    operation.ticket_id = root_ticket_id
+    operation.root_ticket_id = root_ticket_id
+    db.session.add(operation)
+    db.session.flush()
+
+    if plan["agg_id"]:
+        order = _next_ledger_order(plan["agg_id"], session["user_id"])
+        ledger_ticket_id = created_tickets[-1].id if created_tickets else ticket.id
+        pnr = created_tickets[-1].pnr if created_tickets else ticket.pnr
+        if action_type == "cancel":
+            ledger_components = {
+                "base": -plan["affected_components"]["base"],
+                "k3": -plan["affected_components"]["k3"],
+                "other": -plan["affected_components"]["other"],
+                "mu": -plan["affected_components"]["mu"],
+            }
+            entry = _create_ledger_entry_from_plan(plan["agg_id"], session["user_id"], order, pnr, plan["booking_by"], _operation_entry_type(action_type, plan["scenario"]), ledger_components, plan["fee"], f"Refund processed for {plan['scenario']} cancellation", ledger_ticket_id)
+        else:
+            entry = _create_ledger_entry_from_plan(plan["agg_id"], session["user_id"], order, pnr, plan["booking_by"], _operation_entry_type(action_type, plan["scenario"]), plan["extra_components"], plan["fee"], f"Change confirmed for {plan['scenario']} scenario", ledger_ticket_id)
+        db.session.add(OperationLedgerLink(user_id=session["user_id"], operation_id=operation.id, ledger_entry_id=entry.id))
+
+    db.session.commit()
+    if plan["agg_id"]:
+        _recalc_running_balance(plan["agg_id"], session["user_id"])
+    return operation, created_tickets
+
+
+@app.route("/api/tickets/<ticket_id>/operations/preview", methods=["POST"])
+@login_required
+def preview_ticket_operation(ticket_id):
+    try:
+        data = request.get_json() or {}
+        action_type = (data.get("action_type") or "").strip().lower()
+        if action_type not in ("cancel", "change"):
+            return jsonify({"error": "action_type must be cancel or change"}), 400
+        ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+        if not ticket:
+            return jsonify({"error": "Ticket not found"}), 404
+        if not ticket.ledger_hash:
+            return jsonify({"error": "Add this booking to the ledger before running cancel/change operations."}), 400
+        plan = _build_operation_plan(ticket, data, action_type)
+        return jsonify(plan["summary"])
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"error": f"Preview failed: {str(exc)}"}), 500
+
+
+@app.route("/api/tickets/<ticket_id>/change-attachment", methods=["POST"])
+@login_required
+def upload_change_attachment(ticket_id):
+    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+    if not ticket:
+        return jsonify({"error": "Ticket not found"}), 404
+    uploaded = request.files.get("file")
+    if not uploaded or not uploaded.filename:
+        return jsonify({"error": "Please upload the new ticket file."}), 400
+    filename = secure_filename(uploaded.filename)
+    token = f"{ticket_id}-{uuid.uuid4().hex[:8]}-{filename}"
+    path = os.path.join(UPLOAD_FOLDER, token)
+    uploaded.save(path)
+    return jsonify({"attachment_token": token, "filename": filename})
+
+
+# ==================== DATABASE INITIALIZATION ====================
+
+def init_db():
+    """Initialize the database"""
+    with app.app_context():
+        ensure_schema_compatibility()
+        # Also initialize v2 tables
+        from extensions_v2 import init_db as init_db_v2
+        init_db_v2()
+        print("Database initialized successfully!")
+
+
+with app.app_context():
+    ensure_schema_compatibility()
+
+if __name__ == "__main__":
+    init_db()
+    app.run(host="0.0.0.0", port=5000, debug=True)

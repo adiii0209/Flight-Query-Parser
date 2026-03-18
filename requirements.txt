@@ -1,0 +1,15 @@
+Flask
+python-dotenv
+Flask-SQLAlchemy
+requests
+pytz
+passporteye
+pytesseract
+opencv-python-headless
+Pillow
+PyMuPDF
+pdf417gen
+playwright
+reportlab
+gspread
+gunicorn

@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Itineraries | Flight Manager</title>
+    <meta name="description"
+        content="Manage your flight itineraries - view, edit, approve, and track all your travel plans.">
+    <link rel="icon" type="image/png" href="/static/ticket-flight.png">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/itineraries.css">
+    <link rel="stylesheet" href="/static/dashboard.css">
+    <style>
+        /* Fix for dashboard.css overlapping the page */
+        .modal-overlay {
+            display: none !important;
+            pointer-events: none;
+        }
+
+        .modal-overlay.show,
+        .modal-overlay.active {
+            display: flex !important;
+            pointer-events: auto;
+        }
+
+        .modal-content {
+            display: none !important;
+        }
+
+        .modal-content.show,
+        .modal-content.active {
+            display: flex !important;
+        }
+
+        #modalOverlay {
+            align-items: flex-start;
+            padding-top: 5vh;
+            padding-bottom: 5vh;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Sidebar Overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- Drawer Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <button class="sidebar-close" id="sidebarClose">✕</button>
+        <div class="sidebar-header">
+            <div class="user-profile-section">
+                <div class="user-avatar" id="sidebarAvatar">?</div>
+                <div>
+                    <div class="user-name" id="sidebarUserName">User</div>
+                    <div class="user-email" id="sidebarUserEmail">member</div>
+                </div>
+            </div>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/" class="sidebar-link">✈️ Flight Parser</a>
+            <a href="/itineraries" class="sidebar-link active">📋 Itineraries</a>
+            <a href="/billing" class="sidebar-link">💰 Billing</a>
+            <a href="/tickets" class="sidebar-link">🎫 Tickets</a>
+            <div class="sidebar-divider"></div>
+            <a href="/passengers" class="sidebar-link">👥 Passengers</a>
+            <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
+        </nav>
+        <div class="sidebar-footer">
+            <button class="sidebar-theme-toggle" id="sidebarThemeToggle">
+                <span class="theme-icon-container">🌙</span>
+                <span id="themeToggleText">Dark Mode</span>
+            </button>
+            <button class="sidebar-theme-toggle" id="sidebarValentineToggle" style="margin-top: 0.5rem;">
+                <span class="theme-icon-container">🎀</span>
+                <span id="sidebarValToggleText">Pookie Mode</span>
+            </button>
+            <button class="sidebar-auth-btn" id="sidebarAuthBtn" onclick="handleAuthClick()">🔑 Login</button>
+        </div>
+    </aside>
+
+    <!-- Top Header -->
+    <header class="top-header">
+        <button class="menu-toggle" id="menuToggle">☰</button>
+        <div class="header-content">
+            <h1>📋 Itineraries</h1>
+            <p>Manage your flight itineraries</p>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- ===== LIST VIEW ===== -->
+        <div id="listView">
+            <div class="list-header-controls">
+                <div class="search-wrapper">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="itinerarySearch" class="search-input" placeholder="Search itineraries..."
+                        oninput="renderItineraryCards()">
+                </div>
+                <div class="filter-bar">
+                    <button class="tab active" onclick="filterByStatus('all', this)">All</button>
+                    <button class="tab" onclick="filterByStatus('draft', this)">📝 Draft</button>
+                    <button class="tab" onclick="filterByStatus('approved', this)">✅ Approved</button>
+                    <button class="tab" onclick="filterByStatus('on_hold', this)">⏸️ On Hold</button>
+                    <button class="tab" onclick="filterByStatus('issued', this)">🎫 Issued</button>
+                </div>
+            </div>
+            <div id="itineraryCards" class="itin-grid">
+                <div class="empty-state" style="grid-column:1/-1">
+                    <div class="icon">✈️</div>
+                    <p>Loading itineraries...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== DETAIL VIEW ===== -->
+        <div id="detailView" style="display:none;">
+            <!-- Back Button -->
+            <button class="btn-action secondary" onclick="showListView()" style="margin-bottom:1rem;">← Back to All
+                Itineraries</button>
+
+            <!-- Detail Header -->
+            <div class="detail-header">
+                <div>
+                    <h1 id="detailTitle">Itinerary Details</h1>
+                    <div class="detail-subtitle" id="detailSubtitle"></div>
+                </div>
+                <div class="detail-actions" id="detailActions"></div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div id="progressBar"></div>
+
+            <!-- Info Cards -->
+            <div class="info-grid" id="infoCards"></div>
+
+            <!-- Flight Options -->
+            <div class="section-card" id="flightOptionsSection" style="display:none;">
+                <div class="section-header-row">
+                    <h2>✈️ Flight Options</h2>
+                    <span class="badge" id="flightOptionsBadge">0</span>
+                </div>
+                <div id="flightOptionsContainer"></div>
+            </div>
+
+            <!-- Passengers -->
+            <div class="section-card">
+                <div class="section-header-row">
+                    <h2>👥 Passengers</h2>
+                    <div style="display:flex;gap:0.5rem;">
+                        <button class="btn-action small primary" id="addPassengerBtn"
+                            onclick="openUnifiedPassengerModal()">👤 Manage Passengers</button>
+                    </div>
+                </div>
+                <div id="passengersContainer"></div>
+            </div>
+
+            <!-- Billing -->
+            <div class="section-card">
+                <div class="section-header-row">
+                    <h2>💳 Billing Details</h2>
+                    <div style="display:flex;gap:0.5rem;">
+                        <button class="btn-action small primary" id="editBillingBtn"
+                            onclick="openUnifiedBillingModal()">💳 Manage Billing</button>
+                    </div>
+                </div>
+                <div id="billingContainer"></div>
+            </div>
+
+            <!-- Supplier -->
+            <div class="section-card" style="margin-top: 1.5rem;">
+                <div class="section-header-row">
+                    <h2>🏢 Supplier Details</h2>
+                    <div style="display:flex;gap:0.5rem;">
+                        <button class="btn-action small primary" id="editSupplierBtn"
+                            onclick="openUnifiedSupplierModal()">🏢 Manage Supplier</button>
+                    </div>
+                </div>
+                <div id="supplierContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Overlay -->
+    <div class="modal-overlay" id="modalOverlay" onclick="closeModal()">
+        <!-- Unified Passenger Modal -->
+        <div class="modal" id="unifiedPassengerModal" onclick="event.stopPropagation()"
+            style="max-width:650px; height:70vh; overflow-y:auto;">
+            <h3>👤 Manage Passengers</h3>
+            <div class="modal-field">
+                <label>Search Passenger</label>
+                <div style="position:relative;">
+                    <input type="text" id="itinPassengerSearch" class="dropdown-input"
+                        placeholder="Type name, email or phone to search..." autocomplete="off"
+                        onkeyup="searchPassengerUnifiedItin()">
+                    <div id="itinPassengerResults" class="dropdown-list"
+                        style="display:none; position:absolute; width:100%; z-index:1000; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; max-height:350px; overflow-y:auto; box-shadow:0 10px 25px rgba(0,0,0,0.1);">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Inline New Passenger Form -->
+            <div id="itinNewPassengerForm"
+                style="display:none; margin-top:1.5rem; padding:1.25rem; border:1px solid var(--border); border-radius:12px; background:var(--bg-main);">
+                <h4 style="margin-top:0; margin-bottom:1rem; font-size:1rem;">✨ Create New Passenger</h4>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                    <div class="modal-field" style="margin:0;"><label>First Name *</label><input type="text"
+                            id="itinPaxFirst" class="dropdown-input"></div>
+                    <div class="modal-field" style="margin:0;"><label>Last Name *</label><input type="text"
+                            id="itinPaxLast" class="dropdown-input"></div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                    <div class="modal-field" style="margin:0;"><label>Email</label><input type="email" id="itinPaxEmail"
+                            class="dropdown-input"></div>
+                    <div class="modal-field" style="margin:0;"><label>Phone</label><input type="tel" id="itinPaxPhone"
+                            class="dropdown-input"></div>
+                </div>
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1.5rem;">
+                    <input type="checkbox" id="itinPaxSaveDB" checked style="width:18px; height:18px;">
+                    <label for="itinPaxSaveDB" style="margin:0; font-size:0.9rem; font-weight:500;">Save to
+                        Database</label>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:0.75rem;">
+                    <button class="btn-action secondary small" onclick="toggleItinNewPaxForm(false)">Cancel</button>
+                    <button class="btn-action primary small" onclick="addNewPassengerItin()">Add to Itinerary</button>
+                </div>
+            </div>
+
+            <div class="modal-actions" style="margin-top:2rem; border-top:1px solid var(--border); padding-top:1rem;">
+                <button class="btn-action secondary" onclick="closeModal()">Close</button>
+            </div>
+        </div>
+
+        <!-- Unified Billing Modal -->
+        <div class="modal" id="unifiedBillingModal" onclick="event.stopPropagation()"
+            style="max-width:650px; height:70vh; overflow-y:auto;">
+            <h3>💳 Manage Billing</h3>
+            <div class="modal-field">
+                <label>Search Billing Account</label>
+                <div style="position:relative;">
+                    <input type="text" id="itinBillingSearch" class="dropdown-input"
+                        placeholder="Search by name, company or GST..." autocomplete="off"
+                        onkeyup="searchBillingUnifiedItin()">
+                    <div id="itinBillingResults" class="dropdown-list"
+                        style="display:none; position:absolute; width:100%; z-index:1000; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; max-height:350px; overflow-y:auto; box-shadow:0 10px 25px rgba(0,0,0,0.1);">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Inline New Billing Form -->
+            <div id="itinNewBillingForm"
+                style="display:none; margin-top:1.5rem; padding:1.25rem; border:1px solid var(--border); border-radius:12px; background:var(--bg-main);">
+                <h4 style="margin-top:0; margin-bottom:1rem; font-size:1rem;">✨ Create New Billing Account</h4>
+                <div class="modal-field"><label>Account Type</label>
+                    <select id="itinBillType" class="dropdown-input" onchange="handleItinBillTypeChange()">
+                        <option value="individual">Individual</option>
+                        <option value="corporate">Corporate</option>
+                    </select>
+                </div>
+                <div class="modal-field"><label>Display Name *</label>
+                    <input type="text" id="itinBillDisplay" class="dropdown-input"
+                        placeholder="e.g. John Doe or Acme Corp">
+                </div>
+                <div id="itinCorpFields" style="display:none;">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                        <div class="modal-field" style="margin:0;"><label>Company Name</label><input type="text"
+                                id="itinBillCompany" class="dropdown-input"></div>
+                        <div class="modal-field" style="margin:0;"><label>GST Number</label><input type="text"
+                                id="itinBillGst" class="dropdown-input"></div>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                    <div class="modal-field" style="margin:0;"><label>Email</label><input type="email"
+                            id="itinBillEmail" class="dropdown-input"></div>
+                    <div class="modal-field" style="margin:0;"><label>Phone</label><input type="tel" id="itinBillPhone"
+                            class="dropdown-input"></div>
+                </div>
+                <div class="modal-field"><label>Address</label><textarea id="itinBillAddress" rows="2"
+                        class="dropdown-input"></textarea></div>
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1.5rem;">
+                    <input type="checkbox" id="itinBillSaveDB" checked style="width:18px; height:18px;">
+                    <label for="itinBillSaveDB" style="margin:0; font-size:0.9rem; font-weight:500;">Save for future
+                        use</label>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:0.75rem;">
+                    <button class="btn-action secondary small" onclick="toggleItinNewBillForm(false)">Cancel</button>
+                    <button class="btn-action primary small" onclick="addNewBillingItin()">Apply Billing</button>
+                </div>
+            </div>
+
+            <div class="modal-actions" style="margin-top:2rem; border-top:1px solid var(--border); padding-top:1rem;">
+                <button class="btn-action secondary" onclick="closeModal()">Close</button>
+            </div>
+        </div>
+
+        <!-- Unified Supplier Modal -->
+        <div class="modal" id="unifiedSupplierModal" onclick="event.stopPropagation()"
+            style="max-width:650px; height:70vh; overflow-y:auto;">
+            <h3>🏢 Manage Supplier</h3>
+            <div class="modal-field">
+                <label>Search Supplier Account</label>
+                <div style="position:relative;">
+                    <input type="text" id="itinSupplierSearch" class="dropdown-input"
+                        placeholder="Search by name, company or GST..." autocomplete="off"
+                        onkeyup="searchSupplierUnifiedItin()">
+                    <div id="itinSupplierResults" class="dropdown-list"
+                        style="display:none; position:absolute; width:100%; z-index:1000; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; max-height:350px; overflow-y:auto; box-shadow:0 10px 25px rgba(0,0,0,0.1);">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Inline New Supplier Form -->
+            <div id="itinNewSupplierForm"
+                style="display:none; margin-top:1.5rem; padding:1.25rem; border:1px solid var(--border); border-radius:12px; background:var(--bg-main);">
+                <h4 style="margin-top:0; margin-bottom:1rem; font-size:1rem;">✨ Create New Supplier Account</h4>
+                <div class="modal-field"><label>Account Type</label>
+                    <select id="itinSupType" class="dropdown-input" onchange="handleItinSupTypeChange()">
+                        <option value="corporate" selected>Corporate</option>
+                        <option value="individual">Individual</option>
+                    </select>
+                </div>
+                <div class="modal-field"><label>Display Name *</label>
+                    <input type="text" id="itinSupDisplay" class="dropdown-input"
+                        placeholder="e.g. Cleartrip or MakeMyTrip">
+                </div>
+                <div id="itinSupCorpFields">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                        <div class="modal-field" style="margin:0;"><label>Company Name</label><input type="text"
+                                id="itinSupCompany" class="dropdown-input"></div>
+                        <div class="modal-field" style="margin:0;"><label>GST Number</label><input type="text"
+                                id="itinSupGst" class="dropdown-input"></div>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                    <div class="modal-field" style="margin:0;"><label>Email</label><input type="email" id="itinSupEmail"
+                            class="dropdown-input"></div>
+                    <div class="modal-field" style="margin:0;"><label>Phone</label><input type="tel" id="itinSupPhone"
+                            class="dropdown-input"></div>
+                </div>
+                <div class="modal-field"><label>Address</label><textarea id="itinSupAddress" rows="2"
+                        class="dropdown-input"></textarea></div>
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1.5rem;">
+                    <input type="checkbox" id="itinSupSaveDB" checked style="width:18px; height:18px;">
+                    <label for="itinSupSaveDB" style="margin:0; font-size:0.9rem; font-weight:500;">Save for future
+                        use</label>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:0.75rem;">
+                    <button class="btn-action secondary small" onclick="toggleItinNewSupForm(false)">Cancel</button>
+                    <button class="btn-action primary small" onclick="addNewSupplierItin()">Apply Supplier</button>
+                </div>
+            </div>
+
+            <div class="modal-actions" style="margin-top:2rem; border-top:1px solid var(--border); padding-top:1rem;">
+                <button class="btn-action secondary" onclick="closeModal()">Close</button>
+            </div>
+        </div>
+
+        <!-- Hold Itinerary Modal -->
+        <div class="modal" id="holdItineraryModal" onclick="event.stopPropagation()">
+            <h3>⏸️ Hold Itinerary</h3>
+            <div class="modal-field">
+                <label>Hold Until (Date & Time)</label>
+                <input type="datetime-local" id="holdDeadline">
+            </div>
+            <div class="modal-actions">
+                <button class="btn-action secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn-action primary" onclick="submitHoldItinerary()">Set Hold</button>
+            </div>
+        </div>
+
+        <!-- Passenger Detail Modal (Full Management) -->
+        <div class="modal-content modal-large" id="paxDetailModal" onclick="event.stopPropagation()" style="padding:0;">
+            <div class="modal-header">
+                <h2 id="paxDetailTitle">Manage Passenger</h2>
+                <button class="modal-close" onclick="closePaxDetailModal()">✕</button>
+            </div>
+            <div class="modal-body" style="padding: 1.5rem; overflow-y: auto; flex: 1;">
+                <div class="detail-tabs">
+                    <button class="tab-btn active" id="btn-tab-profile" onclick="showPaxTab('profile')">Profile</button>
+                    <button class="tab-btn" id="btn-tab-docs" onclick="showPaxTab('docs')">Documents</button>
+                    <button class="tab-btn" id="btn-tab-ff" onclick="showPaxTab('ff')">Frequent Flyer</button>
+                    <button class="tab-btn" id="btn-tab-prefs" onclick="showPaxTab('prefs')">Preferences</button>
+                </div>
+
+                <!-- Profile Tab -->
+                <div class="pax-tab-panel active" id="pax-tab-profile">
+                    <form id="editPaxForm" onsubmit="savePaxProfile(event)">
+                        <input type="hidden" id="editPaxId">
+                        <div class="form-section">
+                            <h3 class="form-section-title">Scan Document</h3>
+                            <div class="form-row" style="align-items: center; gap: 1rem;">
+                                <div class="form-group" style="flex: 1;">
+                                    <label class="form-label">Upload Passport (Image/PDF)</label>
+                                    <input type="file" id="paxDetailPassportUpload" accept="image/*,application/pdf"
+                                        class="form-input" onchange="scanPaxDetailPassport()">
+                                </div>
+                                <div id="paxDetailPassportPreviewContainer" class="passport-preview-container">
+                                    <div class="passport-thumbnail-wrapper"
+                                        onclick="togglePassportSideView(document.getElementById('paxDetailPassportPreviewThumbnail').src)">
+                                        <img id="paxDetailPassportPreviewThumbnail" src="" class="passport-thumbnail">
+                                        <div class="passport-expand-overlay">
+                                            <span class="passport-expand-icon">🔍</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="paxDetailScanStatus"
+                                style="font-size: 0.85rem; margin-top: 0.5rem; min-height: 1.2em;"></div>
+                        </div>
+
+                        <div class="form-section">
+                            <h3 class="form-section-title">Personal Information</h3>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Title</label>
+                                    <select id="editPaxTitle" class="form-select">
+                                        <option value="">Select</option>
+                                        <option value="Mr">Mr</option>
+                                        <option value="Mrs">Mrs</option>
+                                        <option value="Ms">Ms</option>
+                                        <option value="Dr">Dr</option>
+                                        <option value="Master">Master</option>
+                                        <option value="Miss">Miss</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label required">First Name</label>
+                                    <input type="text" id="editPaxFirstName" class="form-input" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Middle Name</label>
+                                    <input type="text" id="editPaxMiddleName" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label required">Last Name</label>
+                                    <input type="text" id="editPaxLastName" class="form-input" required>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Date of Birth</label>
+                                    <input type="date" id="editPaxDOB" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Gender</label>
+                                    <select id="editPaxGender" class="form-select">
+                                        <option value="">Select</option>
+                                        <option value="Male">Male</option>
+                                        <option value="Female">Female</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Nationality</label>
+                                    <input type="text" id="editPaxNationality" class="form-input">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Passport Number</label>
+                                    <input type="text" id="editPaxPassportNumber" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Date of Issue</label>
+                                    <input type="date" id="editPaxIssueDate" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Date of Expiry</label>
+                                    <input type="date" id="editPaxExpiryDate" class="form-input">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-section">
+                            <h3 class="form-section-title">Contact Information</h3>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Email</label>
+                                    <input type="email" id="editPaxEmail" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Phone</label>
+                                    <input type="tel" id="editPaxPhone" class="form-input">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary"
+                                onclick="closePaxDetailModal()">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save Profile</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Documents Tab -->
+                <div class="pax-tab-panel" id="pax-tab-docs">
+                    <div class="items-list" id="paxDocList" style="margin-bottom: 2rem;">
+                        <!-- Documents rendered here -->
+                    </div>
+                    <div class="form-section">
+                        <h3 class="form-section-title">➕ Add New Document</h3>
+                        <form id="paxDocForm" onsubmit="savePaxDoc(event)">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label required">Document Type</label>
+                                    <select id="docType" class="form-select" required>
+                                        <option value="Passport">Passport</option>
+                                        <option value="Visa">Visa</option>
+                                        <option value="National ID">National ID</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label required">Document Number</label>
+                                    <input type="text" id="docNumber" class="form-input" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label required">Expiry Date</label>
+                                    <input type="date" id="docExpiry" class="form-input" required>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary" style="margin-top:1rem;">Add Document</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Frequent Flyer Tab -->
+                <div class="pax-tab-panel" id="pax-tab-ff">
+                    <div class="items-list" id="paxFfList" style="margin-bottom: 2rem;">
+                        <!-- FF accounts rendered here -->
+                    </div>
+                    <div class="form-section">
+                        <h3 class="form-section-title">➕ Add FF Account</h3>
+                        <form id="paxFfForm" onsubmit="savePaxFf(event)">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label required">Airline</label>
+                                    <div class="searchable-dropdown">
+                                        <input type="text" id="ffAirlineSearch" class="form-input"
+                                            placeholder="Search airline..." autocomplete="off" required>
+                                        <div id="ffAirlineList" class="dropdown-list"></div>
+                                        <input type="hidden" id="ffAirline" required>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label required">FF Number</label>
+                                    <input type="text" id="ffNumber" class="form-input" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Tier/Status</label>
+                                    <input type="text" id="ffTier" class="form-input" placeholder="e.g. Gold">
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary" style="margin-top:1rem;">Add Account</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Preferences Tab -->
+                <div class="pax-tab-panel" id="pax-tab-prefs">
+                    <form id="editPrefsForm" onsubmit="savePaxPrefs(event)">
+                        <div class="form-section">
+                            <h3 class="form-section-title">Travel Preferences</h3>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Meal Preference</label>
+                                    <select id="editPrefsMeal" class="form-select">
+                                        <option value="">No Preference</option>
+                                        <option value="Vegetarian">Vegetarian</option>
+                                        <option value="Non-Vegetarian">Non-Vegetarian</option>
+                                        <option value="Vegan">Vegan</option>
+                                        <option value="Jain">Jain</option>
+                                        <option value="Halal">Halal</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Special Meal Request</label>
+                                    <input type="text" id="editPrefsMealReq" class="form-input"
+                                        placeholder="e.g. No nuts">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Seat Preference</label>
+                                    <select id="editPrefsSeat" class="form-select">
+                                        <option value="">No Preference</option>
+                                        <option value="Window">Window</option>
+                                        <option value="Aisle">Aisle</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Assistance Type</label>
+                                    <select id="editPrefsAssistance" class="form-select">
+                                        <option value="">None</option>
+                                        <option value="WCHR">WCHR - Wheelchair</option>
+                                        <option value="WCHS">WCHS - No stairs</option>
+                                        <option value="WCHC">WCHC - Immobile</option>
+                                    </select>
+                                </div>
+                                <div class="form-group"
+                                    style="display:flex; align-items:center; gap:0.5rem; padding-top:1.5rem;">
+                                    <input type="checkbox" id="editPrefsWheelchair" style="width:20px; height:20px;">
+                                    <label for="editPrefsWheelchair" class="form-label"
+                                        style="margin-bottom:0;">Wheelchair Required</label>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Preferred Airlines</label>
+                                    <input type="text" id="editPrefsPrefAir" class="form-input"
+                                        placeholder="e.g. AI, UK">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Avoid Airlines</label>
+                                    <input type="text" id="editPrefsAvoidAir" class="form-input" placeholder="e.g. SG">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary"
+                                onclick="closePaxDetailModal()">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save Preferences</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/itineraries.js"></script>
+    <div id="passportSideViewer" class="passport-side-viewer">
+        <div class="passport-view-header">
+            <h3>Passport View</h3>
+            <button onclick="togglePassportSideView()" class="passport-view-close">&times;</button>
+        </div>
+        <div class="passport-view-body" style="height: calc(100vh - 70px); overflow: hidden;">
+            <img id="passportSideImage" src="" class="passport-view-image">
+            <iframe id="passportSidePdf" src="" class="passport-view-image"
+                style="display:none; width:100%; height:100%; border:none; background:white;"></iframe>
+        </div>
+    </div>
+</body>
+
+</html>

@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flight Cards Render</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --text-primary: #0f172a;
+      --text-secondary: #64748b;
+      --border: #dbe3f1;
+      --bg-card: #ffffff;
+      --bg-main: #f8fafc;
+      --shadow: rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 32px;
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background: #ffffff;
+      color: var(--text-primary);
+    }
+
+    #render-root {
+      width: 1200px;
+      margin: 0 auto;
+    }
+
+    .cards-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .group-title {
+      margin: 0 0 12px;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .group-card {
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: var(--bg-card);
+      box-shadow: 0 18px 45px var(--shadow);
+      overflow: hidden;
+    }
+
+    .flight-block + .flight-block {
+      border-top: 1px solid var(--border);
+    }
+
+    .part-label {
+      display: inline-block;
+      margin: 18px 20px 0;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(37, 99, 235, 0.08);
+      color: var(--primary);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .flight-summary {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding: 20px;
+    }
+
+    .summary-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .airline-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .airline-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .airline-name {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .flight-code {
+      font-size: 15px;
+      color: var(--text-secondary);
+      font-family: "Consolas", "SFMono-Regular", monospace;
+    }
+
+    .date-badge,
+    .cabin-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(37, 99, 235, 0.18);
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
+    .date-badge {
+      background: rgba(37, 99, 235, 0.08);
+      color: #1d4ed8;
+    }
+
+    .cabin-pill.cabin-economy {
+      background: rgba(37, 99, 235, 0.08);
+      border-color: rgba(37, 99, 235, 0.18);
+      color: #1d4ed8;
+    }
+
+    .cabin-pill.cabin-premium_economy {
+      background: rgba(147, 51, 234, 0.08);
+      border-color: rgba(147, 51, 234, 0.18);
+      color: #7e22ce;
+    }
+
+    .cabin-pill.cabin-business {
+      background: rgba(234, 179, 8, 0.14);
+      border-color: rgba(202, 138, 4, 0.28);
+      color: #a16207;
+    }
+
+    .cabin-pill.cabin-first {
+      background: rgba(22, 163, 74, 0.08);
+      border-color: rgba(22, 163, 74, 0.18);
+      color: #15803d;
+    }
+
+    .route-visual {
+      display: grid;
+      grid-template-columns: 180px 1fr 180px;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .time-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .time-group.arrival {
+      text-align: right;
+      align-items: flex-end;
+    }
+
+    .time-big {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .city-line {
+      font-size: 15px;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+
+    .center-line {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .duration {
+      font-size: 14px;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+
+    .line {
+      width: 100%;
+      height: 2px;
+      background: linear-gradient(90deg, rgba(37,99,235,0.15), rgba(37,99,235,0.8), rgba(37,99,235,0.15));
+      border-radius: 999px;
+    }
+
+    .stops {
+      font-size: 13px;
+      font-weight: 700;
+      color: #475569;
+    }
+  </style>
+</head>
+<body>
+  <div id="render-root">
+    <div class="cards-grid">
+      {% for group in groups %}
+      <section>
+        <h2 class="group-title">{{ group.label }}</h2>
+        <div class="group-card">
+          {% for flight in group.flights %}
+          <div class="flight-block">
+            {% if flight.part_label %}
+            <div class="part-label">{{ flight.part_label }}</div>
+            {% endif %}
+            <div class="flight-summary">
+              <div class="summary-head">
+                <div class="airline-stack">
+                  {% for row in flight.airline_rows %}
+                  <div class="airline-row">
+                    <span class="airline-name">{{ row.airline }}</span>
+                    {% if row.flight_number %}
+                    <span class="flight-code">{{ row.flight_number }}</span>
+                    {% endif %}
+                    {% if row.cabin %}
+                    {% set normalized = row.cabin|lower %}
+                    {% if 'premium' in normalized %}
+                    {% set cabin_class = 'cabin-premium_economy' %}
+                    {% elif 'business' in normalized %}
+                    {% set cabin_class = 'cabin-business' %}
+                    {% elif 'first' in normalized %}
+                    {% set cabin_class = 'cabin-first' %}
+                    {% else %}
+                    {% set cabin_class = 'cabin-economy' %}
+                    {% endif %}
+                    <span class="cabin-pill {{ cabin_class }}">{{ row.cabin }}</span>
+                    {% endif %}
+                  </div>
+                  {% endfor %}
+                </div>
+                {% if flight.date %}
+                <div class="date-badge">{{ flight.date }}</div>
+                {% endif %}
+              </div>
+
+              <div class="route-visual">
+                <div class="time-group">
+                  <div class="time-big">{{ flight.departure_time }}</div>
+                  <div class="city-line">{{ flight.departure_city }}{% if flight.departure_airport %} ({{ flight.departure_airport }}){% endif %}</div>
+                </div>
+                <div class="center-line">
+                  <div class="duration">{{ flight.duration }}</div>
+                  <div class="line"></div>
+                  <div class="stops">{{ flight.stops }}</div>
+                </div>
+                <div class="time-group arrival">
+                  <div class="time-big">{{ flight.arrival_time }}{% if flight.days_offset %} +{{ flight.days_offset }}{% endif %}</div>
+                  <div class="city-line">{{ flight.arrival_city }}{% if flight.arrival_airport %} ({{ flight.arrival_airport }}){% endif %}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endfor %}
+    </div>
+  </div>
+</body>
+</html>
