@@ -9,3 +9,4 @@ venv/
 travel_agent.db
 venv311/
 credentials.json
+uploads/

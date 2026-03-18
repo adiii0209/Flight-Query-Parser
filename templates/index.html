@@ -9774,14 +9774,20 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     function launchDownloadFlightAnimation() {
       const sourceButton = document.querySelector('button[onclick="downloadCardsImage()"]');
-      if (!sourceButton) return;
+      if (!sourceButton) {
+        return {
+          complete() { },
+          cancel() { }
+        };
+      }
 
       const rect = sourceButton.getBoundingClientRect();
       const startX = rect.left + rect.width / 2;
       const startY = rect.top + rect.height / 2;
       const endX = Math.max(window.innerWidth - 54, startX + 40);
       const endY = 34;
-      const durationMs = 2400;
+      const loopDurationMs = 3800;
+      const finishDurationMs = 1100;
 
       const overlay = document.createElement('div');
       overlay.className = 'download-flight-overlay';
@@ -9840,56 +9846,110 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         return { point, tangent };
       };
 
-      let boomShown = false;
-      let labelShown = false;
-      const boomTimer = setTimeout(() => {
-        boomShown = true;
+      const getLoopState = (elapsedMs) => {
+        const cycleElapsed = elapsedMs % loopDurationMs;
+        const cyclePhase = clamp(cycleElapsed / loopDurationMs, 0, 1);
+        if (cyclePhase <= 0.5) {
+          return {
+            progress: cyclePhase * 2,
+            direction: 1
+          };
+        }
+        return {
+          progress: (1 - cyclePhase) * 2,
+          direction: -1
+        };
+      };
+
+      let rafId = 0;
+      let stopped = false;
+      let finishRequested = false;
+      let finishStartProgress = 0;
+      let finishStartTime = 0;
+      let completionShown = false;
+
+      const showCompletionState = () => {
+        if (completionShown || !overlay.isConnected) return;
+        completionShown = true;
         const boom = document.createElement('div');
         boom.className = 'download-flight-boom';
         overlay.appendChild(boom);
-      }, durationMs - 520);
-
-      const labelTimer = setTimeout(() => {
-        labelShown = true;
         const label = document.createElement('div');
         label.className = 'download-flight-label';
         label.textContent = 'Downloaded';
         overlay.appendChild(label);
-      }, durationMs - 430);
+      };
+
+      const teardown = (delayMs = 0) => {
+        stopped = true;
+        cancelAnimationFrame(rafId);
+        if (delayMs > 0) {
+          setTimeout(() => overlay.remove(), delayMs);
+        } else {
+          overlay.remove();
+        }
+      };
 
       const animationStart = performance.now();
-      let rafId = 0;
       const animatePlane = (now) => {
-        const elapsed = now - animationStart;
-        const progress = clamp(elapsed / durationMs, 0, 1);
+        if (stopped) return;
+
+        let progress;
+        let finishingProgress = 0;
+        let direction = 1;
+        if (finishRequested) {
+          finishingProgress = clamp((now - finishStartTime) / finishDurationMs, 0, 1);
+          progress = finishStartProgress + ((1 - finishStartProgress) * easeInOutSine(finishingProgress));
+        } else {
+          const loopState = getLoopState(now - animationStart);
+          progress = loopState.progress;
+          direction = loopState.direction;
+        }
+
         const { point, tangent } = getPathState(progress);
-        const facingLeft = tangent.x < 0;
-        const bankAngle = Math.atan2(tangent.y, Math.max(Math.abs(tangent.x), 0.001)) * (180 / Math.PI);
-        const opacity = progress < 0.06 ? progress / 0.06 : (progress > 0.94 ? (1 - progress) / 0.06 : 1);
-        const scale = progress < 0.2 ? 0.9 + progress * 0.35 : 0.97 - (progress * 0.18);
+        const flightVector = {
+          x: tangent.x * direction,
+          y: tangent.y * direction
+        };
+        const facingLeft = flightVector.x < 0;
+        const bankAngle = Math.atan2(flightVector.y, Math.max(Math.abs(flightVector.x), 0.001)) * (180 / Math.PI);
+        const opacity = finishRequested
+          ? clamp((1 - finishingProgress) / 0.18, 0, 1)
+          : (progress < 0.06 ? progress / 0.06 : (progress > 0.94 ? (1 - progress) / 0.06 : 1));
+        const scale = finishRequested
+          ? 0.9
+          : (progress < 0.2 ? 0.9 + progress * 0.35 : 0.97 - (progress * 0.18));
 
         plane.style.opacity = `${clamp(opacity, 0, 1)}`;
         plane.style.transform = `translate(-50%, -50%) translate3d(${point.x - startX}px, ${point.y - startY}px, 0) rotate(${bankAngle}deg) scale(${facingLeft ? -scale : scale}, ${scale})`;
 
-        if (progress < 1) {
+        if (!finishRequested || finishingProgress < 1) {
           rafId = requestAnimationFrame(animatePlane);
         } else {
           plane.remove();
+          showCompletionState();
+          teardown(980);
         }
       };
       rafId = requestAnimationFrame(animatePlane);
 
-      setTimeout(() => {
-        cancelAnimationFrame(rafId);
-        clearTimeout(boomTimer);
-        clearTimeout(labelTimer);
-        setTimeout(() => overlay.remove(), boomShown || labelShown ? 980 : 0);
-      }, durationMs + 10);
+      return {
+        complete() {
+          if (stopped || finishRequested) return;
+          finishRequested = true;
+          finishStartTime = performance.now();
+          finishStartProgress = getLoopState(finishStartTime - animationStart).progress;
+        },
+        cancel() {
+          if (stopped) return;
+          teardown();
+        }
+      };
     }
 
     async function downloadCardsImage() {
       if (document.activeElement) document.activeElement.blur();
-      launchDownloadFlightAnimation();
+      const flightAnimation = launchDownloadFlightAnimation();
       showNotification('Preparing download…', 'info', { id: 'download-status', duration: 7000 });
       try {
         if (imagePreloadPromise) {
@@ -9907,8 +9967,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         }
         showNotification('Download ready…', 'info', { id: 'download-status', duration: 4000 });
         downloadImage(blob);
+        flightAnimation.complete();
         showNotification('Image downloaded!', 'success', { id: 'download-status', duration: 4000 });
       } catch (e) {
+        flightAnimation.cancel();
         const message = e && e.message ? e.message : 'Failed to generate image';
         showNotification(message, 'error', { id: 'download-status', duration: 5000 });
       }

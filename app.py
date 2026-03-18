@@ -1,15 +1,9 @@
 import os
-if os.name == "nt":
-    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "C:\\pw-browsers")
-else:
-    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
 import json
 import uuid
 import requests
 import base64
 import io
-import subprocess
-import sys
 from flask import Flask, request, jsonify, render_template, render_template_string, session, redirect, url_for, send_file, send_from_directory
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
@@ -28,7 +22,7 @@ import re
 import threading
 import queue
 import asyncio
-import hashlib
+from pathlib import Path
 from collections import OrderedDict
 from copy import deepcopy
 from werkzeug.utils import secure_filename
@@ -38,14 +32,12 @@ try:
     import pdf417gen
 except Exception:
     pdf417gen = None
+_playwright_import_error = None
 try:
     from playwright.async_api import async_playwright
-except Exception:
+except Exception as exc:
     async_playwright = None
-try:
-    from playwright.sync_api import sync_playwright
-except Exception:
-    sync_playwright = None
+    _playwright_import_error = exc
 
 load_dotenv()
 app = Flask(__name__)
@@ -67,7 +59,6 @@ _playwright_browser = None
 _playwright_lock = threading.Lock()
 _playwright_task_queue = queue.Queue()
 _playwright_worker_started = False
-_playwright_install_attempted = False
 _render_cache = OrderedDict()
 _render_cache_lock = threading.Lock()
 _render_cache_max = 20
@@ -112,10 +103,51 @@ def serve_icon_file(filename):
     return send_from_directory("icons", filename)
 
 
+def _playwright_launch_options():
+    launch_options = {
+        "headless": True,
+        "chromium_sandbox": False,
+        "args": [
+            "--disable-dev-shm-usage",
+        ],
+    }
+    executable_path = (os.getenv("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH") or "").strip()
+    if executable_path:
+        resolved_path = Path(executable_path)
+        if not resolved_path.exists():
+            raise RuntimeError(
+                "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH does not exist: "
+                + str(resolved_path)
+            )
+        launch_options["executable_path"] = str(resolved_path)
+        print("[INFO] Using explicit Chromium executable:", resolved_path)
+    return launch_options
+
+
+def _build_render_profile(viewport_width, cards_height):
+    estimated_height = max(int(cards_height or 900), 1)
+    estimated_area = max(int(viewport_width), 320) * estimated_height
+    if estimated_area >= 5_000_000 or estimated_height >= 2800:
+        return {"page_timeout_ms": 40000, "job_timeout_seconds": 50}
+    if estimated_area >= 2_500_000 or estimated_height >= 1800:
+        return {"page_timeout_ms": 25000, "job_timeout_seconds": 32}
+    return {"page_timeout_ms": 15000, "job_timeout_seconds": 18}
+
+
 async def _get_playwright_browser():
     global _playwright_runtime, _playwright_browser
     if async_playwright is None:
-        raise RuntimeError("Playwright async API is not installed on the server.")
+        hint = (
+            "Playwright async API is unavailable. Install dependencies with "
+            "'pip install -r requirements.txt' and then install the browser with "
+            "'python -m playwright install chromium' on Windows or "
+            "'python -m playwright install --with-deps chromium' on Linux."
+        )
+        if _playwright_import_error is not None:
+            raise RuntimeError(
+                hint + " Import error: " + repr(_playwright_import_error)
+            ) from _playwright_import_error
+        raise RuntimeError(hint)
 
     if _playwright_browser and _playwright_browser.is_connected():
         return _playwright_browser
@@ -129,35 +161,20 @@ async def _get_playwright_browser():
 
     try:
         _playwright_browser = await _playwright_runtime.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--no-zygote",
-                "--single-process",
-                "--font-render-hinting=medium",
-            ],
+            **_playwright_launch_options()
         )
     except Exception as exc:
         message = str(exc)
-        if "Executable doesn't exist" in message and not _playwright_install_attempted:
-            await _install_playwright_browsers()
-            _playwright_browser = await _playwright_runtime.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                    "--no-zygote",
-                    "--single-process",
-                    "--font-render-hinting=medium",
-                ],
-            )
-        else:
-            raise
+        if "Executable doesn't exist" in message or "executable doesn't exist" in message:
+            raise RuntimeError(
+                "Playwright Chromium was not found in the runtime image. "
+                "Install it at build time with "
+                "'python -m playwright install --with-deps chromium' and keep "
+                "PLAYWRIGHT_BROWSERS_PATH pointed at the installed browser directory. "
+                "If you want to use a system Chromium instead, set "
+                "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH."
+            ) from exc
+        raise
 
     def _handle_disconnect():
         global _playwright_browser
@@ -185,27 +202,6 @@ async def _reset_playwright_browser():
         _playwright_runtime = None
 
 
-async def _install_playwright_browsers():
-    global _playwright_install_attempted
-    if _playwright_install_attempted:
-        return
-    _playwright_install_attempted = True
-    loop = asyncio.get_running_loop()
-    cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
-    print("[INFO] Playwright browsers missing. Installing:", " ".join(cmd))
-
-    def _run():
-        return subprocess.run(cmd, capture_output=True, text=True)
-
-    result = await loop.run_in_executor(None, _run)
-    if result.stdout:
-        print("[INFO] Playwright install stdout:", result.stdout.strip())
-    if result.stderr:
-        print("[WARN] Playwright install stderr:", result.stderr.strip())
-    if result.returncode != 0:
-        raise RuntimeError("Playwright install failed with exit code " + str(result.returncode))
-
-
 async def _playwright_render_loop():
     loop = asyncio.get_running_loop()
     while True:
@@ -222,7 +218,7 @@ async def _playwright_render_loop():
                 try:
                     context = await browser.new_context(
                         viewport={"width": task["viewport_width"], "height": task.get("viewport_height", 960)},
-                        device_scale_factor=2,
+                        device_scale_factor=1,
                         color_scheme="light",
                     )
                 except Exception as exc:
@@ -233,14 +229,18 @@ async def _playwright_render_loop():
                     browser = await _get_playwright_browser()
                     context = await browser.new_context(
                         viewport={"width": task["viewport_width"], "height": task.get("viewport_height", 960)},
-                        device_scale_factor=2,
+                        device_scale_factor=1,
                         color_scheme="light",
                     )
                 try:
                     page = await context.new_page()
-                    page.set_default_timeout(10000)
+                    page.set_default_timeout(task.get("page_timeout_ms", 15000))
+                    page.set_default_navigation_timeout(task.get("page_timeout_ms", 15000))
                     await page.goto(task["page_url"], wait_until="domcontentloaded")
-                    await page.wait_for_function("window.__cardsRenderReady === true", timeout=10000)
+                    await page.wait_for_function(
+                        "window.__cardsRenderReady === true",
+                        timeout=task.get("page_timeout_ms", 15000)
+                    )
                     await page.wait_for_function(
                         """
                         (selector) => {
@@ -251,7 +251,7 @@ async def _playwright_render_loop():
                         }
                         """,
                         arg=task.get("selector", "#cards"),
-                        timeout=5000
+                        timeout=max(5000, min(task.get("page_timeout_ms", 15000), 15000))
                     )
                     await page.evaluate(
                         """
@@ -274,7 +274,9 @@ async def _playwright_render_loop():
                     )
                     image_bytes = await page.locator(task.get("selector", "#cards")).screenshot(
                         type="png",
-                        animations="disabled"
+                        animations="disabled",
+                        scale="css",
+                        timeout=task.get("page_timeout_ms", 15000),
                     )
                     task["result"]["image_bytes"] = image_bytes
                     task["result"].pop("error", None)
@@ -407,6 +409,7 @@ def _build_render_request(payload):
         "viewport_width": cards_width or min(viewport_width, 1400),
         "viewport_height": min(max((cards_height or 900) + 40, 240), 4000),
     }
+    render_profile = _build_render_profile(cache_payload["viewport_width"], cards_height)
     cache_key = hashlib.sha256(json.dumps(cache_payload, sort_keys=True).encode("utf-8")).hexdigest()
     preview_token = _store_render_preview(preview_state)
     return {
@@ -414,6 +417,8 @@ def _build_render_request(payload):
         "page_url": f"{request.host_url}?render_preview_token={preview_token}",
         "viewport_width": cache_payload["viewport_width"],
         "viewport_height": cache_payload["viewport_height"],
+        "page_timeout_ms": render_profile["page_timeout_ms"],
+        "job_timeout_seconds": render_profile["job_timeout_seconds"],
         "selector": "#cards",
     }
 
@@ -440,6 +445,7 @@ def _queue_render_request(render_request):
         "page_url": render_request["page_url"],
         "viewport_width": render_request["viewport_width"],
         "viewport_height": render_request["viewport_height"],
+        "page_timeout_ms": render_request["page_timeout_ms"],
         "selector": render_request["selector"],
         "event": done_event,
         "result": result,
@@ -2105,7 +2111,10 @@ def render_cards_image():
             render_request = _build_render_request(payload)
             cache_key = render_request["cache_key"]
             try:
-                image_bytes = _render_request_bytes(render_request, timeout=15 if attempt == 0 else 22)
+                image_bytes = _render_request_bytes(
+                    render_request,
+                    timeout=render_request["job_timeout_seconds"] + (attempt * 8),
+                )
                 break
             except Exception as exc:
                 last_error = exc
@@ -2148,7 +2157,7 @@ def preload_cards_image():
         cached = _get_cached_render_bytes(cache_key)
         if cached is not None:
             return jsonify({"status": "cached", "cache_key": cache_key, "ready": True})
-        _render_request_bytes(render_request, timeout=22)
+        _render_request_bytes(render_request, timeout=render_request["job_timeout_seconds"])
         return jsonify({"status": "ready", "cache_key": cache_key, "ready": True})
     except Exception as e:
         app.logger.exception("Card image preload failed")
