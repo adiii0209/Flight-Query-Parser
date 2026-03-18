@@ -134,6 +134,20 @@ def _build_render_profile(viewport_width, cards_height):
     return {"page_timeout_ms": 15000, "job_timeout_seconds": 18}
 
 
+def _get_playwright_render_base_url():
+    configured_base_url = (os.getenv("PLAYWRIGHT_RENDER_BASE_URL") or "").strip()
+    if configured_base_url:
+        return configured_base_url.rstrip("/")
+
+    script_root = (request.script_root or "").rstrip("/")
+    internal_port = (
+        os.getenv("PORT")
+        or request.environ.get("SERVER_PORT")
+        or "5000"
+    )
+    return f"http://127.0.0.1:{internal_port}{script_root}"
+
+
 async def _get_playwright_browser():
     global _playwright_runtime, _playwright_browser
     if async_playwright is None:
@@ -412,9 +426,10 @@ def _build_render_request(payload):
     render_profile = _build_render_profile(cache_payload["viewport_width"], cards_height)
     cache_key = hashlib.sha256(json.dumps(cache_payload, sort_keys=True).encode("utf-8")).hexdigest()
     preview_token = _store_render_preview(preview_state)
+    render_base_url = _get_playwright_render_base_url()
     return {
         "cache_key": cache_key,
-        "page_url": f"{request.host_url}?render_preview_token={preview_token}",
+        "page_url": f"{render_base_url}/?render_preview_token={preview_token}",
         "viewport_width": cache_payload["viewport_width"],
         "viewport_height": cache_payload["viewport_height"],
         "page_timeout_ms": render_profile["page_timeout_ms"],
@@ -2157,8 +2172,10 @@ def preload_cards_image():
         cached = _get_cached_render_bytes(cache_key)
         if cached is not None:
             return jsonify({"status": "cached", "cache_key": cache_key, "ready": True})
-        _render_request_bytes(render_request, timeout=render_request["job_timeout_seconds"])
-        return jsonify({"status": "ready", "cache_key": cache_key, "ready": True})
+        job = _queue_render_request(render_request)
+        if job["status"] == "cached":
+            return jsonify({"status": "cached", "cache_key": cache_key, "ready": True})
+        return jsonify({"status": "queued", "cache_key": cache_key, "ready": False})
     except Exception as e:
         app.logger.exception("Card image preload failed")
         return jsonify({"error": f"Failed to preload cards image: {str(e)}"}), 500

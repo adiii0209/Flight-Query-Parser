@@ -9503,12 +9503,20 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       });
 
       if (!response.ok) {
-        let message = 'Failed to render image';
+        let message = `Failed to render image (HTTP ${response.status})`;
+        const errorResponse = response.clone();
         try {
           const error = await response.json();
           message = error.error || message;
         } catch (e) {
-          // Ignore JSON parse failures and keep the default message.
+          try {
+            const bodyText = await errorResponse.text();
+            if (bodyText && bodyText.trim()) {
+              message = `${message}: ${bodyText.trim().slice(0, 200)}`;
+            }
+          } catch (readError) {
+            // Ignore body read failures and keep the default message.
+          }
         }
         throw new Error(message);
       }
@@ -9563,27 +9571,16 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         const currentPayload = buildCardsImagePayload('current');
         const requestKey = getCardsImageRequestKey(currentPayload);
         if (requestKey === lastPreloadKey) return;
-        const payloads = [currentPayload, buildCardsImagePayload('collapsed'), buildCardsImagePayload('expanded')];
-        const uniquePayloads = [];
-        const seenKeys = new Set();
-        payloads.forEach((payload) => {
-          const key = getCardsImageRequestKey(payload);
-          if (seenKeys.has(key)) return;
-          seenKeys.add(key);
-          uniquePayloads.push(payload);
-        });
         imagePreloadPromise = (async () => {
-          for (const payload of uniquePayloads) {
-            const response = await fetch('/api/render/cards-image/preload', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            });
-            if (!response.ok) {
-              throw new Error('Preload request failed');
-            }
-            await response.json();
+          const response = await fetch('/api/render/cards-image/preload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentPayload)
+          });
+          if (!response.ok) {
+            throw new Error(`Preload request failed (HTTP ${response.status})`);
           }
+          await response.json();
           lastPreloadKey = requestKey;
         })();
         await imagePreloadPromise;
