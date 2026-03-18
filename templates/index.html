@@ -9,6 +9,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Syne:wght@700;800&display=swap"
     rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <link rel="stylesheet" href="/static/dashboard.css">
   <style>
     * {
@@ -9496,6 +9497,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (cachedBlob) {
         return cachedBlob;
       }
+      if (useClientSideImageRender) {
+        const fallbackBlob = await generateImageBlobClientSide(mode);
+        cardsImageBlobCache.set(requestKey, fallbackBlob);
+        return fallbackBlob;
+      }
       const response = await fetch('/api/render/cards-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -9518,7 +9524,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             // Ignore body read failures and keep the default message.
           }
         }
-        throw new Error(message);
+        console.warn('Server-side image render failed; switching to client-side fallback.', message);
+        useClientSideImageRender = true;
+        const fallbackBlob = await generateImageBlobClientSide(mode);
+        cardsImageBlobCache.set(requestKey, fallbackBlob);
+        return fallbackBlob;
       }
 
       const blob = await response.blob();
@@ -9554,6 +9564,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     let lastPreloadKey = '';
     let imagePreloadPromise = null;
     const cardsImageBlobCache = new Map();
+    let useClientSideImageRender = false;
 
     function getCardsImageRequestKey(payload) {
       return JSON.stringify([
@@ -9565,8 +9576,61 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       ]);
     }
 
+    async function generateImageBlobClientSide(mode = 'current') {
+      if (typeof window.html2canvas !== 'function') {
+        throw new Error('Client-side image renderer is unavailable');
+      }
+
+      const sandbox = document.createElement('div');
+      sandbox.style.position = 'fixed';
+      sandbox.style.left = '-20000px';
+      sandbox.style.top = '0';
+      sandbox.style.pointerEvents = 'none';
+      sandbox.style.zIndex = '-1';
+      sandbox.style.background = getComputedStyle(document.body).backgroundColor || '#ffffff';
+      sandbox.setAttribute('data-theme', document.documentElement.getAttribute('data-theme') || 'light');
+
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = createCardsSnapshotHtml(mode);
+      const snapshotCards = wrapper.firstElementChild;
+      if (!snapshotCards) {
+        throw new Error('No card snapshot available for client render');
+      }
+
+      sandbox.appendChild(snapshotCards);
+      document.body.appendChild(sandbox);
+
+      try {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        if (document.fonts && document.fonts.ready) {
+          await document.fonts.ready;
+        }
+
+        const canvas = await window.html2canvas(snapshotCards, {
+          backgroundColor: null,
+          scale: Math.min(window.devicePixelRatio || 1, 2),
+          useCORS: true,
+          logging: false,
+          imageTimeout: 15000
+        });
+
+        const blob = await new Promise((resolve, reject) => {
+          canvas.toBlob((result) => {
+            if (result) resolve(result);
+            else reject(new Error('Canvas export failed'));
+          }, 'image/png');
+        });
+
+        return blob;
+      } finally {
+        sandbox.remove();
+      }
+    }
+
     async function preloadCardsImage() {
       if (!currentFlights || currentFlights.length === 0) return;
+      if (useClientSideImageRender) return;
       try {
         const currentPayload = buildCardsImagePayload('current');
         const requestKey = getCardsImageRequestKey(currentPayload);
@@ -9586,6 +9650,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         await imagePreloadPromise;
       } catch (error) {
         lastPreloadKey = '';
+        useClientSideImageRender = true;
         console.warn('Image preload skipped', error);
       } finally {
         imagePreloadPromise = null;
