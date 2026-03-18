@@ -12,3 +12,4 @@ pdf417gen
 playwright
 reportlab
 gspread
+gunicorn
