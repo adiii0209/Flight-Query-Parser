@@ -10,7 +10,7 @@ import base64
 import io
 import subprocess
 import sys
-from flask import Flask, request, jsonify, render_template, render_template_string, session, redirect, url_for, send_file
+from flask import Flask, request, jsonify, render_template, render_template_string, session, redirect, url_for, send_file, send_from_directory
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
@@ -105,6 +105,11 @@ def login_required(f):
 def home():
     """Serve the main HTML page"""
     return render_template('index.html')
+
+
+@app.route("/icons/<path:filename>")
+def serve_icon_file(filename):
+    return send_from_directory("icons", filename)
 
 
 async def _get_playwright_browser():

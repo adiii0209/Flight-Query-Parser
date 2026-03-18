@@ -1317,6 +1317,10 @@
       border-left-color: var(--warning);
     }
 
+    .notification.info {
+      border-left-color: var(--primary);
+    }
+
     /* Modal Styles */
     .modal-overlay {
       position: fixed;
@@ -2481,6 +2485,31 @@
     .info-icon {
       width: 16px;
       text-align: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 16px;
+    }
+
+    .info-icon img {
+      display: block;
+      width: 14px;
+      height: 14px;
+      object-fit: contain;
+    }
+
+    .layover-pill-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+    }
+
+    .layover-pill-icon img {
+      display: block;
+      width: 14px;
+      height: 14px;
+      object-fit: contain;
     }
 
     /* Fares Footer */
@@ -4297,10 +4326,22 @@
       return !!getRenderPreviewToken();
     }
 
-    function createCardsSnapshotHtml() {
+    function createCardsSnapshotHtml(mode = 'current') {
       const cardsContainer = document.getElementById('cards');
       if (!cardsContainer) return '';
-      return inlineFlightAssetMarkup(cardsContainer.outerHTML);
+      const clone = cardsContainer.cloneNode(true);
+      const timelines = Array.from(clone.querySelectorAll('.flight-timeline-container'));
+      const arrows = Array.from(clone.querySelectorAll('.expand-icon'));
+
+      if (mode === 'collapsed') {
+        timelines.forEach((node) => { node.style.display = 'none'; });
+        arrows.forEach((node) => node.classList.remove('rotated'));
+      } else if (mode === 'expanded') {
+        timelines.forEach((node) => { node.style.display = 'block'; });
+        arrows.forEach((node) => node.classList.add('rotated'));
+      }
+
+      return inlineFlightAssetMarkup(clone.outerHTML);
     }
 
     async function applyRenderPreviewState(expandedIndices = []) {
@@ -7458,9 +7499,6 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     }
 
     function generateFlightTimelineHTML(flight, index, uniqueId) {
-      const numFares = Object.keys(flight.fares || {}).length;
-
-      // Helper to safely display values - never show undefined, null, N/A
       const safe = (val, fallback = '') => {
         if (val === undefined || val === null || val === 'N/A' || val === 'Not Specified' || val === 'undefined' || val === 'null') {
           return fallback;
@@ -7477,7 +7515,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const airlineName = safe(flight.airline, 'Airline');
       const flightNumber = safe(flight.flight_number, '');
       const duration = safe(flight.duration, '--');
-      const baggage = safe(flight.baggage, '');
+
+      const timelinePlaneIcon = '/icons/timeline%20plane.png';
+      const expandedPlaneIcon = '/icons/expanded%20plane.png';
+      const watchIcon = '/icons/watch.png';
+      const layoverIcon = '/static/travel.png';
 
       const hasSegments = flight.segments && flight.segments.length > 0;
       const displayStops = safe(flight.stops, 'Direct');
@@ -7581,7 +7623,6 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           const sDA = safe(seg.departure_airport, '');
           const sAA = safe(seg.arrival_airport, '');
           const sDur = safe(segmentDuration, '--');
-          const sBag = safe(flight.baggage, '');
 
           html += `
                         <div class="timeline-segment">
@@ -7593,11 +7634,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
                         </div>
                         <div class="flight-info-block">
                             <div class="info-row">
-                                 <div class="info-icon">✈</div>
+                                 <div class="info-icon"><img src="${expandedPlaneIcon}" alt=""></div>
                                  <span style="font-weight: 600; color: var(--text-primary);">${sAir} ${sNum}</span>
                             </div>
                             <div class="info-row" style="flex-wrap: wrap; gap: 0.5rem 1.25rem;">
-                                 <div class="info-icon">⏱</div>
+                                 <div class="info-icon"><img src="${watchIcon}" alt=""></div>
                                  <span>${sDur}</span>
                             </div>
                         </div>
@@ -7618,14 +7659,13 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
               const dM = dText.match(/(\d+)h\s*(\d+)?m?/);
               if (dM) lText = getLayoverLabel(parseInt(dM[1]) * 60 + (parseInt(dM[2]) || 0)).label;
             }
-            const lDA = safe(nextSeg.departure_airport, '');
-            const lDC = safe(nextSeg.departure_city, lDA);
+            const lDC = safe(nextSeg.departure_city, safe(nextSeg.departure_airport, ''));
             html += `
                         <div class="layover-container">
                             <div class="layover-icon-box" title="Layover">
-                                <img src="/static/travel.png" alt="Airport">
+                                <img src="${layoverIcon}" alt="Airport">
                             </div>
-                            <div class="layover-pill"><span>⏱</span><span>${lText} in ${lDC} • ${dText}</span></div>
+                            <div class="layover-pill"><span class="layover-pill-icon"><img src="${watchIcon}" alt=""></span><span>${lText} in ${lDC} &bull; ${dText}</span></div>
                         </div>
                     `;
           }
@@ -7640,10 +7680,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
                     </div>
                     <div class="flight-info-block">
                         <div class="info-row">
-                             <div class="info-icon">✈</div>
+                             <div class="info-icon"><img src="${timelinePlaneIcon}" alt=""></div>
                              <span style="font-weight: 600; color: var(--text-primary);">${airlineName} ${flightNumber}</span>
                         </div>
-                        ${duration && duration !== '--' ? `<div class="info-row"><div class="info-icon">⏱</div><span>${duration}</span></div>` : ''}
+                        ${duration && duration !== '--' ? `<div class="info-row"><div class="info-icon"><img src="${watchIcon}" alt=""></div><span>${duration}</span></div>` : ''}
                     </div>
 
                     <div class="t-dot arrival"></div>
@@ -7658,7 +7698,6 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       html += '</div></div>';
       return html;
     }
-
     function createFlightCard(flight, index) {
       const card = document.createElement('div');
       card.className = 'flight-card';
@@ -9221,41 +9260,23 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     function inlineFlightAssetMarkup(html) {
       if (!html) return '';
-      const planeSvg = `
-        <span class="info-icon-svg" aria-hidden="true">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M2.75 12L20.5 5.25L21.4 7.65L14.1 11L21.4 14.35L20.5 16.75L2.75 12ZM8.15 12L11.85 9.15V14.85L8.15 12Z" fill="currentColor"/>
-          </svg>
-        </span>
-      `.trim();
-      const clockSvg = `
-        <span class="info-icon-svg" aria-hidden="true">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="2"/>
-            <path d="M12 7.5V12L15 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </span>
-      `.trim();
-      const layoverSvg = `
-        <span class="layover-icon-svg" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M3 11.5L11.5 3L13.5 5L7 11.5H21V14.5H7L13.5 21L11.5 23L3 14.5V11.5Z" fill="#2563eb"/>
-          </svg>
-        </span>
-      `.trim();
+      const expandedPlanePng = '<img src="/icons/expanded%20plane.png" alt="">';
+      const watchPng = '<img src="/icons/watch.png" alt="">';
+      const layoverPng = '<img src="/static/travel.png" alt="Airport">';
 
       return html
         .replace(/<div class="info-icon">[^<]*<\/div>/g, (match) => {
-          if (match.includes('âœˆ') || match.includes('✈')) return `<div class="info-icon">${planeSvg}</div>`;
-          if (match.includes('â±') || match.includes('⏱')) return `<div class="info-icon">${clockSvg}</div>`;
+          if (match.includes('âœˆ') || match.includes('✈') || match.includes('?')) return `<div class="info-icon">${expandedPlanePng}</div>`;
+          if (match.includes('â±') || match.includes('⏱') || match.includes('?')) return `<div class="info-icon">${watchPng}</div>`;
           return match;
         })
-        .replace(/<img src="\/static\/travel\.png" alt="Airport">/g, layoverSvg)
-        .replace(/â€¢/g, '&bull;');
+        .replace(/<img src="\/static\/travel\.png" alt="Airport">/g, layoverPng)
+        .replace(/<div class="layover-pill"><span>[^<]*<\/span>/g, `<div class="layover-pill"><span class="layover-pill-icon">${watchPng}</span>`)
+        .replace(/\u20B9/g, '<span class="currency-symbol">&#8377;</span>');
     }
 
-    async function generateImageBlob() {
-      const payload = buildCardsImagePayload();
+    async function generateImageBlob(mode = 'current') {
+      const payload = buildCardsImagePayload(mode);
       const requestKey = getCardsImageRequestKey(payload);
       const cachedBlob = cardsImageBlobCache.get(requestKey);
       if (cachedBlob) {
@@ -9294,7 +9315,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         .filter(Number.isFinite);
     }
 
-    function buildCardsImagePayload() {
+    function buildCardsImagePayload(mode = 'current') {
       const cardsContainer = document.getElementById('cards');
       const cardsRect = cardsContainer ? cardsContainer.getBoundingClientRect() : null;
       return {
@@ -9302,7 +9323,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         viewport_width: Math.max(Math.ceil((cardsRect ? cardsRect.width : window.innerWidth) + 80), 320),
         cards_width: cardsRect ? Math.ceil(cardsRect.width) : null,
         cards_height: cardsRect ? Math.ceil(cardsRect.height) : null,
-        cards_html: createCardsSnapshotHtml(),
+        cards_html: createCardsSnapshotHtml(mode),
         expanded_indices: getExpandedFlightIndices()
       };
     }
@@ -9325,21 +9346,32 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     async function preloadCardsImage() {
       if (!currentFlights || currentFlights.length === 0) return;
       try {
-        const payload = buildCardsImagePayload();
-        const requestKey = getCardsImageRequestKey(payload);
+        const currentPayload = buildCardsImagePayload('current');
+        const requestKey = getCardsImageRequestKey(currentPayload);
         if (requestKey === lastPreloadKey) return;
-        imagePreloadPromise = fetch('/api/render/cards-image/preload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        }).then(async (response) => {
-          if (!response.ok) {
-            throw new Error('Preload request failed');
-          }
-          const data = await response.json();
-          lastPreloadKey = requestKey;
-          return data;
+        const payloads = [currentPayload, buildCardsImagePayload('collapsed'), buildCardsImagePayload('expanded')];
+        const uniquePayloads = [];
+        const seenKeys = new Set();
+        payloads.forEach((payload) => {
+          const key = getCardsImageRequestKey(payload);
+          if (seenKeys.has(key)) return;
+          seenKeys.add(key);
+          uniquePayloads.push(payload);
         });
+        imagePreloadPromise = (async () => {
+          for (const payload of uniquePayloads) {
+            const response = await fetch('/api/render/cards-image/preload', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+              throw new Error('Preload request failed');
+            }
+            await response.json();
+          }
+          lastPreloadKey = requestKey;
+        })();
         await imagePreloadPromise;
       } catch (error) {
         lastPreloadKey = '';
@@ -9528,17 +9560,27 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     async function downloadCardsImage() {
       if (document.activeElement) document.activeElement.blur();
-      showNotification('Generating image…', 'info');
+      showNotification('Preparing download…', 'info', { id: 'download-status', duration: 7000 });
       try {
         if (imagePreloadPromise) {
           await imagePreloadPromise.catch(() => null);
         }
-        const blob = await generateImageBlob();
+        let blob;
+        try {
+          blob = await generateImageBlob();
+        } catch (error) {
+          console.warn('Image download attempt 1 failed, retrying once', error);
+          cardsImageBlobCache.clear();
+          lastPreloadKey = '';
+          await preloadCardsImage().catch(() => null);
+          blob = await generateImageBlob();
+        }
+        showNotification('Download ready…', 'info', { id: 'download-status', duration: 4000 });
         downloadImage(blob);
-        showNotification('Image downloaded!', 'success');
+        showNotification('Image downloaded!', 'success', { id: 'download-status', duration: 4000 });
       } catch (e) {
         const message = e && e.message ? e.message : 'Failed to generate image';
-        showNotification(message, 'error');
+        showNotification(message, 'error', { id: 'download-status', duration: 5000 });
       }
     }
   </script>
@@ -9819,11 +9861,9 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     function clearDraft() {
       localStorage.removeItem('flight_itinerary_draft');
       showNotification('Draft cleared', 'success');
-      location.reload();
     }
 
-    // --- Notification System ---
-    function showNotification(message, type = 'success') {
+    function showNotification(message, type = 'success', options = {}) {
       let container = document.getElementById('notification-container');
       if (!container) {
         container = document.createElement('div');
@@ -9831,19 +9871,26 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         document.body.appendChild(container);
       }
 
+      const duration = Number.isFinite(options.duration) ? options.duration : 3000;
+      const toastId = options.id || '';
+      if (toastId) {
+        const existing = container.querySelector(`.notification[data-toast-id="${toastId}"]`);
+        if (existing) existing.remove();
+      }
+
       const notif = document.createElement('div');
       notif.className = `notification ${type}`;
+      if (toastId) notif.dataset.toastId = toastId;
 
-      const icon = type === 'error' ? '❌' : type === 'warning' ? '⚠️' : '✅';
+      const icon = type === 'error' ? '❌' : type === 'warning' ? '⚠️' : type === 'info' ? 'ℹ️' : '✅';
       notif.innerHTML = `<span>${icon}</span><span>${message}</span>`;
 
       container.appendChild(notif);
 
-      // Remove after 3s
       setTimeout(() => {
         notif.style.animation = 'slideIn 0.3s ease reverse';
         setTimeout(() => notif.remove(), 300);
-      }, 3000);
+      }, duration);
     }
 
     // --- Global Loader ---
