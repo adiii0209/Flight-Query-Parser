@@ -306,15 +306,25 @@ def _get_persisted_render_cache(cache_key):
     cache_path = os.path.join(RENDER_CACHE_FOLDER, f"{cache_key}.png")
     if not os.path.exists(cache_path):
         return None
+    try:
+        with open(cache_path, "rb") as cache_file:
+            image_bytes = cache_file.read()
+        with _render_cache_lock:
+            _render_cache[cache_key] = image_bytes
+            _render_cache.move_to_end(cache_key)
+            while len(_render_cache) > _render_cache_max:
+                _render_cache.popitem(last=False)
+        return image_bytes
+    except Exception as exc:
+        print(f"[WARN] Failed to load persisted render cache {cache_key}: {exc}")
+        return None
 
 
 def _store_render_preview(payload):
     token = uuid.uuid4().hex
     preview_payload = {
         "theme": (payload.get("theme") or "light").strip(),
-        "trip_type": payload.get("trip_type") or "one_way",
-        "flights": payload.get("flights") or [],
-        "unit_flights": payload.get("unit_flights") or {},
+        "cards_html": payload.get("cards_html") or "",
         "expanded_indices": payload.get("expanded_indices") or [],
         "created_at": datetime.utcnow().timestamp(),
     }
@@ -337,18 +347,6 @@ def _get_render_preview(token):
             _render_preview_store.pop(token, None)
         return None
     return preview_payload
-    try:
-        with open(cache_path, "rb") as cache_file:
-            image_bytes = cache_file.read()
-        with _render_cache_lock:
-            _render_cache[cache_key] = image_bytes
-            _render_cache.move_to_end(cache_key)
-            while len(_render_cache) > _render_cache_max:
-                _render_cache.popitem(last=False)
-        return image_bytes
-    except Exception as exc:
-        print(f"[WARN] Failed to load persisted render cache {cache_key}: {exc}")
-        return None
 
 
 def _build_render_request(payload):
@@ -357,28 +355,28 @@ def _build_render_request(payload):
     cards_width = max(int(requested_cards_width), 1) if requested_cards_width else None
     requested_cards_height = payload.get("cards_height")
     cards_height = max(int(requested_cards_height), 1) if requested_cards_height else None
-    flights = payload.get("flights") or []
-    trip_type = payload.get("trip_type") or "one_way"
-    unit_flights = payload.get("unit_flights") or {}
-    if not flights:
-        raise ValueError("No flight cards to render")
+    cards_html = (payload.get("cards_html") or "").strip()
+    if not cards_html:
+        raise ValueError("No flight card snapshot to render")
 
     preview_state = {
         "theme": (payload.get("theme") or "light").strip(),
-        "trip_type": trip_type,
-        "flights": flights,
-        "unit_flights": unit_flights,
+        "cards_html": cards_html,
         "expanded_indices": payload.get("expanded_indices") or [],
+    }
+    cache_payload = {
+        "theme": preview_state["theme"],
+        "cards_html": cards_html,
         "viewport_width": cards_width or min(viewport_width, 1400),
         "viewport_height": min(max((cards_height or 900) + 40, 240), 4000),
     }
-    cache_key = hashlib.sha256(json.dumps(preview_state, sort_keys=True).encode("utf-8")).hexdigest()
+    cache_key = hashlib.sha256(json.dumps(cache_payload, sort_keys=True).encode("utf-8")).hexdigest()
     preview_token = _store_render_preview(preview_state)
     return {
         "cache_key": cache_key,
         "page_url": f"{request.host_url}?render_preview_token={preview_token}",
-        "viewport_width": preview_state["viewport_width"],
-        "viewport_height": preview_state["viewport_height"],
+        "viewport_width": cache_payload["viewport_width"],
+        "viewport_height": cache_payload["viewport_height"],
         "selector": "#cards",
     }
 
@@ -2066,22 +2064,23 @@ def render_cards_image():
         last_error = None
         image_bytes = None
         cache_key = None
-        for attempt in range(2):
+        for attempt in range(3):
             render_request = _build_render_request(payload)
             cache_key = render_request["cache_key"]
             try:
-                image_bytes = _render_request_bytes(render_request, timeout=15 if attempt == 0 else 20)
+                image_bytes = _render_request_bytes(render_request, timeout=15 if attempt == 0 else 22)
                 break
             except Exception as exc:
                 last_error = exc
                 print(f"[WARN] Card render attempt {attempt + 1} failed: {exc}")
                 with _render_jobs_lock:
                     _render_jobs.pop(cache_key, None)
-                if attempt == 0:
+                if attempt < 2:
                     try:
                         asyncio.run(_reset_playwright_browser())
                     except Exception:
                         pass
+                    threading.Event().wait(0.2 * (attempt + 1))
                     continue
         if image_bytes is None:
             raise last_error or RuntimeError("Failed to render cards image")
@@ -2109,10 +2108,9 @@ def preload_cards_image():
         payload = request.get_json() or {}
         render_request = _build_render_request(payload)
         cache_key = render_request["cache_key"]
-        with _render_cache_lock:
-            if cache_key in _render_cache:
-                _render_cache.move_to_end(cache_key)
-                return jsonify({"status": "cached", "cache_key": cache_key})
+        cached = _get_cached_render_bytes(cache_key)
+        if cached is not None:
+            return jsonify({"status": "cached", "cache_key": cache_key})
         job = _queue_render_request(render_request)
         return jsonify({"status": job["status"], "cache_key": cache_key})
     except Exception as e:

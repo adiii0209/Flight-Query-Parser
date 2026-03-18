@@ -4297,6 +4297,12 @@
       return !!getRenderPreviewToken();
     }
 
+    function createCardsSnapshotHtml() {
+      const cardsContainer = document.getElementById('cards');
+      if (!cardsContainer) return '';
+      return cardsContainer.outerHTML;
+    }
+
     async function applyRenderPreviewState(expandedIndices = []) {
       document.body.classList.add('render-preview-mode');
       const flightInputs = document.getElementById('flightInputsSection');
@@ -4365,10 +4371,25 @@
       if (preview.theme) {
         document.documentElement.setAttribute('data-theme', preview.theme);
       }
-      currentTripType = preview.trip_type || 'one_way';
-      currentFlights = preview.flights || [];
-      unitFlights = preview.unit_flights || {};
-      renderResults(currentFlights);
+      if (preview.cards_html) {
+        const cardsSection = document.getElementById('cardsSection');
+        const cardsContainer = document.getElementById('cards');
+        const template = document.createElement('template');
+        template.innerHTML = preview.cards_html.trim();
+        const previewCards = template.content.firstElementChild;
+        if (!previewCards || previewCards.id !== 'cards') {
+          throw new Error('Invalid preview card markup');
+        }
+        if (cardsSection) cardsSection.style.display = 'block';
+        if (cardsContainer) {
+          cardsContainer.replaceWith(previewCards);
+        }
+      } else {
+        currentTripType = preview.trip_type || 'one_way';
+        currentFlights = preview.flights || [];
+        unitFlights = preview.unit_flights || {};
+        renderResults(currentFlights);
+      }
       await applyRenderPreviewState(preview.expanded_indices || []);
       return true;
     }
@@ -9267,9 +9288,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         viewport_width: Math.max(Math.ceil((cardsRect ? cardsRect.width : window.innerWidth) + 80), 320),
         cards_width: cardsRect ? Math.ceil(cardsRect.width) : null,
         cards_height: cardsRect ? Math.ceil(cardsRect.height) : null,
-        flights: currentFlights,
-        trip_type: currentTripType,
-        unit_flights: unitFlights,
+        cards_html: createCardsSnapshotHtml(),
         expanded_indices: getExpandedFlightIndices()
       };
     }
@@ -9283,10 +9302,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       try {
         const payload = buildCardsImagePayload();
         const requestKey = JSON.stringify([
+          payload.theme,
           payload.cards_width,
           payload.cards_height,
           payload.viewport_width,
-          payload.trip_type,
           payload.cards_html
         ]);
         if (requestKey === lastPreloadKey) return;
