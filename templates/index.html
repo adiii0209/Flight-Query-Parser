@@ -4287,10 +4287,103 @@
     let saveWizardStep = 1;
     let pendingCabinSelections = {};
     let activeCabinEditorFlights = new Set();
+    window.__cardsRenderReady = false;
+
+    function getRenderPreviewToken() {
+      return new URLSearchParams(window.location.search).get('render_preview_token');
+    }
+
+    function isRenderPreviewMode() {
+      return !!getRenderPreviewToken();
+    }
+
+    async function applyRenderPreviewState(expandedIndices = []) {
+      document.body.classList.add('render-preview-mode');
+      const flightInputs = document.getElementById('flightInputsSection');
+      const outputSection = document.getElementById('outputSection');
+      const cardsSection = document.getElementById('cardsSection');
+      const cards = document.getElementById('cards');
+      const header = document.querySelector('.hero-section');
+      const sidebar = document.getElementById('sidebar');
+      const sidebarOverlay = document.getElementById('sidebarOverlay');
+      const menuToggle = document.getElementById('menuToggle');
+      const particles = document.getElementById('tsparticles');
+
+      if (flightInputs) flightInputs.style.display = 'none';
+      if (outputSection) outputSection.style.display = 'none';
+      if (header) header.style.display = 'none';
+      if (sidebar) sidebar.style.display = 'none';
+      if (sidebarOverlay) sidebarOverlay.style.display = 'none';
+      if (menuToggle) menuToggle.style.display = 'none';
+      if (particles) particles.style.display = 'none';
+      if (cardsSection) {
+        cardsSection.style.display = 'block';
+        cardsSection.style.margin = '0';
+        cardsSection.style.padding = '0';
+        cardsSection.style.width = 'fit-content';
+        cardsSection.style.maxWidth = 'none';
+      }
+      if (cards) {
+        cards.style.width = 'fit-content';
+        cards.style.maxWidth = 'none';
+        cards.style.display = 'inline-grid';
+        cards.style.justifyContent = 'start';
+        cards.style.alignItems = 'start';
+        const cardWrappers = Array.from(cards.children || []).filter(Boolean);
+        cardWrappers.forEach((node) => {
+          node.style.width = 'auto';
+          node.style.maxWidth = 'none';
+        });
+        if (cardWrappers.length <= 1) {
+          cards.style.gridTemplateColumns = 'minmax(0, 1fr)';
+        }
+      }
+
+      const expandedSet = new Set((expandedIndices || []).map(Number));
+      document.querySelectorAll('.flight-timeline-container').forEach((node) => {
+        const flightIndex = Number(node.dataset.flightIndex);
+        const shouldExpand = expandedSet.has(flightIndex);
+        node.style.display = shouldExpand ? 'block' : 'none';
+        const summary = node.previousElementSibling;
+        const arrow = summary ? summary.querySelector('.expand-icon') : null;
+        if (arrow) arrow.classList.toggle('rotated', shouldExpand);
+      });
+
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      window.__cardsRenderReady = true;
+    }
+
+    async function initializeRenderPreview() {
+      const token = getRenderPreviewToken();
+      if (!token) return false;
+      const response = await fetch(`/api/render/cards-preview/${token}`);
+      if (!response.ok) {
+        throw new Error('Preview payload unavailable');
+      }
+      const preview = await response.json();
+      if (preview.theme) {
+        document.documentElement.setAttribute('data-theme', preview.theme);
+      }
+      currentTripType = preview.trip_type || 'one_way';
+      currentFlights = preview.flights || [];
+      unitFlights = preview.unit_flights || {};
+      renderResults(currentFlights);
+      await applyRenderPreviewState(preview.expanded_indices || []);
+      return true;
+    }
 
     // Check authentication status on load
     window.addEventListener('DOMContentLoaded', async () => {
       const urlParams = new URLSearchParams(window.location.search);
+      if (isRenderPreviewMode()) {
+        try {
+          await initializeRenderPreview();
+        } catch (error) {
+          console.error('Render preview init failed', error);
+        }
+        return;
+      }
       await checkAuth();
       await loadCustomers();
       initializeTripType();
@@ -7448,7 +7541,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         } catch (e) { return 'N/A'; }
       };
 
-      let html = `<div id="timeline-${uniqueId}" class="flight-timeline-container" style="display: none;">`;
+      let html = `<div id="timeline-${uniqueId}" class="flight-timeline-container" data-flight-index="${index}" style="display: none;">`;
       html += '<div class="flight-timeline">';
 
       if (hasSegments && !isDirect) {
@@ -9107,7 +9200,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const planeSvg = `
         <span class="info-icon-svg" aria-hidden="true">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M21 16.5L13.2 13.4V6.8L16.1 4.7V3.5L12 5L7.9 3.5V4.7L10.8 6.8V13.4L3 16.5V18L10.8 16.2V20L8.7 21.5V22.5L12 21.3L15.3 22.5V21.5L13.2 20V16.2L21 18V16.5Z" fill="currentColor"/>
+            <path d="M2.75 12L20.5 5.25L21.4 7.65L14.1 11L21.4 14.35L20.5 16.75L2.75 12ZM8.15 12L11.85 9.15V14.85L8.15 12Z" fill="currentColor"/>
           </svg>
         </span>
       `.trim();
@@ -9159,26 +9252,31 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       return await response.blob();
     }
 
+    function getExpandedFlightIndices() {
+      return Array.from(document.querySelectorAll('.flight-timeline-container'))
+        .filter(node => node.style.display !== 'none')
+        .map(node => Number(node.dataset.flightIndex))
+        .filter(Number.isFinite);
+    }
+
     function buildCardsImagePayload() {
       const cardsContainer = document.getElementById('cards');
       const cardsRect = cardsContainer ? cardsContainer.getBoundingClientRect() : null;
-      const headMarkup = getExportStyleMarkup();
-      const cardsHTML = cardsContainer ? inlineFlightAssetMarkup(cardsContainer.outerHTML) : '';
       return {
-        cards_html: cardsHTML,
-        head_markup: headMarkup,
         theme: document.documentElement.getAttribute('data-theme') || 'light',
         viewport_width: Math.max(Math.ceil((cardsRect ? cardsRect.width : window.innerWidth) + 80), 320),
         cards_width: cardsRect ? Math.ceil(cardsRect.width) : null,
         cards_height: cardsRect ? Math.ceil(cardsRect.height) : null,
         flights: currentFlights,
         trip_type: currentTripType,
-        unit_flights: unitFlights
+        unit_flights: unitFlights,
+        expanded_indices: getExpandedFlightIndices()
       };
     }
 
     let imagePreloadTimer = null;
     let lastPreloadKey = '';
+    let imagePreloadPromise = null;
 
     async function preloadCardsImage() {
       if (!currentFlights || currentFlights.length === 0) return;
@@ -9193,18 +9291,26 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         ]);
         if (requestKey === lastPreloadKey) return;
         lastPreloadKey = requestKey;
-        fetch('/api/render/cards-image/preload', {
+        imagePreloadPromise = fetch('/api/render/cards-image/preload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          keepalive: true
-        }).catch(() => {});
+          body: JSON.stringify(payload)
+        }).then(async (response) => {
+          if (!response.ok) {
+            throw new Error('Preload request failed');
+          }
+          return response.json();
+        });
+        await imagePreloadPromise;
       } catch (error) {
         console.warn('Image preload skipped', error);
+      } finally {
+        imagePreloadPromise = null;
       }
     }
 
     function scheduleCardsImagePreload() {
+      if (isRenderPreviewMode()) return;
       if (imagePreloadTimer) clearTimeout(imagePreloadTimer);
       imagePreloadTimer = setTimeout(() => {
         preloadCardsImage();
@@ -9384,6 +9490,12 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (document.activeElement) document.activeElement.blur();
       showNotification('Generating image…', 'info');
       try {
+        if (imagePreloadPromise) {
+          await Promise.race([
+            imagePreloadPromise.catch(() => null),
+            new Promise(resolve => setTimeout(resolve, 2500))
+          ]);
+        }
         const blob = await generateImageBlob();
         downloadImage(blob);
         showNotification('Image downloaded!', 'success');
@@ -9450,6 +9562,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
   <script>
     // Sidebar Functionality
     document.addEventListener('DOMContentLoaded', () => {
+      if (isRenderPreviewMode()) return;
       const menuToggle = document.getElementById('menuToggle');
       const sidebarClose = document.getElementById('sidebarClose');
       const sidebarOverlay = document.getElementById('sidebarOverlay');
@@ -9785,6 +9898,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
+      if (isRenderPreviewMode()) return;
       // Particles are loaded inside updateParticleVisibility now for better switching
 
       // --- Sidebar & Theme Logic ---
@@ -9897,6 +10011,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     // 3. Initialize & Attach Listeners
     document.addEventListener('DOMContentLoaded', () => {
+      if (isRenderPreviewMode()) return;
       // Set initial state for billing type
       handleBillTypeChange();
     });

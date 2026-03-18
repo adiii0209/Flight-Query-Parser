@@ -57,6 +57,8 @@ API_KEY ="timetours@1978"
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+RENDER_CACHE_FOLDER = os.path.join(UPLOAD_FOLDER, "render_cache")
+os.makedirs(RENDER_CACHE_FOLDER, exist_ok=True)
 
 db.init_app(app)
 
@@ -69,8 +71,10 @@ _playwright_install_attempted = False
 _render_cache = OrderedDict()
 _render_cache_lock = threading.Lock()
 _render_cache_max = 20
-_render_jobs = set()
+_render_jobs = {}
 _render_jobs_lock = threading.Lock()
+_render_preview_store = {}
+_render_preview_lock = threading.Lock()
 
 # Register API v2 Blueprint
 # Register API v2 Blueprint
@@ -211,7 +215,7 @@ async def _playwright_render_loop():
             try:
                 context = await browser.new_context(
                     viewport={"width": task["viewport_width"], "height": task.get("viewport_height", 960)},
-                    device_scale_factor=1,
+                    device_scale_factor=2,
                     color_scheme="light",
                 )
             except Exception as exc:
@@ -222,57 +226,38 @@ async def _playwright_render_loop():
                 browser = await _get_playwright_browser()
                 context = await browser.new_context(
                     viewport={"width": task["viewport_width"], "height": task.get("viewport_height", 960)},
-                    device_scale_factor=1,
+                    device_scale_factor=2,
                     color_scheme="light",
                 )
             page = await context.new_page()
             page.set_default_timeout(10000)
-            await page.set_content(task["html"], wait_until="domcontentloaded")
-            if task["cards_html"]:
-                bbox = await page.evaluate(
-                    """
-                    () => {
-                      const root = document.querySelector('#cards');
-                      if (!root) return null;
-                      const children = Array.from(root.children).filter((node) => {
-                        const style = window.getComputedStyle(node);
-                        return style.display !== 'none' && style.visibility !== 'hidden';
-                      });
-                      const targets = children.length ? children : [root];
-                      let left = Infinity;
-                      let top = Infinity;
-                      let right = -Infinity;
-                      let bottom = -Infinity;
-                      for (const node of targets) {
-                        const rect = node.getBoundingClientRect();
-                        if (!rect.width || !rect.height) continue;
-                        left = Math.min(left, rect.left);
-                        top = Math.min(top, rect.top);
-                        right = Math.max(right, rect.right);
-                        bottom = Math.max(bottom, rect.bottom);
-                      }
-                      if (!isFinite(left) || !isFinite(top) || !isFinite(right) || !isFinite(bottom)) {
-                        const rect = root.getBoundingClientRect();
-                        return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
-                      }
-                      return { x: left, y: top, width: right - left, height: bottom - top };
-                    }
-                    """
-                )
-                if not bbox:
-                    raise RuntimeError("Could not determine flight card bounds for screenshot")
-                image_bytes = await page.screenshot(
-                    type="png",
-                    animations="disabled",
-                    clip={
-                        "x": max(float(bbox["x"]), 0),
-                        "y": max(float(bbox["y"]), 0),
-                        "width": max(float(bbox["width"]), 1),
-                        "height": max(float(bbox["height"]), 1),
-                    },
-                )
-            else:
-                image_bytes = await page.locator("#render-root").screenshot(type="png", animations="disabled")
+            await page.goto(task["page_url"], wait_until="domcontentloaded")
+            await page.wait_for_function("window.__cardsRenderReady === true", timeout=10000)
+            await page.wait_for_function(
+                """
+                (selector) => {
+                  const el = document.querySelector(selector);
+                  if (!el) return false;
+                  const rect = el.getBoundingClientRect();
+                  return rect.width > 0 && rect.height > 0;
+                }
+                """,
+                arg=task.get("selector", "#cards"),
+                timeout=5000
+            )
+            await page.evaluate(
+                """
+                async () => {
+                  if (document.fonts && document.fonts.ready) {
+                    await document.fonts.ready;
+                  }
+                }
+                """
+            )
+            image_bytes = await page.locator(task.get("selector", "#cards")).screenshot(
+                type="png",
+                animations="disabled"
+            )
             task["result"]["image_bytes"] = image_bytes
         except Exception as exc:
             task["result"]["error"] = exc
@@ -310,74 +295,91 @@ def _store_render_cache(cache_key, image_bytes):
         _render_cache.move_to_end(cache_key)
         while len(_render_cache) > _render_cache_max:
             _render_cache.popitem(last=False)
+    try:
+        with open(os.path.join(RENDER_CACHE_FOLDER, f"{cache_key}.png"), "wb") as cache_file:
+            cache_file.write(image_bytes)
+    except Exception as exc:
+        print(f"[WARN] Failed to persist render cache {cache_key}: {exc}")
+
+
+def _get_persisted_render_cache(cache_key):
+    cache_path = os.path.join(RENDER_CACHE_FOLDER, f"{cache_key}.png")
+    if not os.path.exists(cache_path):
+        return None
+
+
+def _store_render_preview(payload):
+    token = uuid.uuid4().hex
+    preview_payload = {
+        "theme": (payload.get("theme") or "light").strip(),
+        "trip_type": payload.get("trip_type") or "one_way",
+        "flights": payload.get("flights") or [],
+        "unit_flights": payload.get("unit_flights") or {},
+        "expanded_indices": payload.get("expanded_indices") or [],
+        "created_at": datetime.utcnow().timestamp(),
+    }
+    with _render_preview_lock:
+        _render_preview_store[token] = preview_payload
+        cutoff = datetime.utcnow().timestamp() - 900
+        expired_tokens = [key for key, value in _render_preview_store.items() if value.get("created_at", 0) < cutoff]
+        for key in expired_tokens:
+            _render_preview_store.pop(key, None)
+    return token
+
+
+def _get_render_preview(token):
+    with _render_preview_lock:
+        preview_payload = _render_preview_store.get(token)
+    if not preview_payload:
+        return None
+    if preview_payload.get("created_at", 0) < datetime.utcnow().timestamp() - 900:
+        with _render_preview_lock:
+            _render_preview_store.pop(token, None)
+        return None
+    return preview_payload
+    try:
+        with open(cache_path, "rb") as cache_file:
+            image_bytes = cache_file.read()
+        with _render_cache_lock:
+            _render_cache[cache_key] = image_bytes
+            _render_cache.move_to_end(cache_key)
+            while len(_render_cache) > _render_cache_max:
+                _render_cache.popitem(last=False)
+        return image_bytes
+    except Exception as exc:
+        print(f"[WARN] Failed to load persisted render cache {cache_key}: {exc}")
+        return None
 
 
 def _build_render_request(payload):
-    cards_html = (payload.get("cards_html") or "").strip()
-    head_markup = payload.get("head_markup") or ""
-    theme = (payload.get("theme") or "light").strip()
     viewport_width = max(int(payload.get("viewport_width") or 1280), 320)
     requested_cards_width = payload.get("cards_width")
     cards_width = max(int(requested_cards_width), 1) if requested_cards_width else None
     requested_cards_height = payload.get("cards_height")
     cards_height = max(int(requested_cards_height), 1) if requested_cards_height else None
+    flights = payload.get("flights") or []
+    trip_type = payload.get("trip_type") or "one_way"
+    unit_flights = payload.get("unit_flights") or {}
+    if not flights:
+        raise ValueError("No flight cards to render")
 
-    if cards_html:
-        html = render_template_string(
-            """
-            <!DOCTYPE html>
-            <html lang="en" data-theme="{{ theme }}">
-            <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <base href="{{ base_href }}">
-              {{ head_markup|safe }}
-              <style>
-                html, body {
-                  margin: 0;
-                  padding: 0;
-                  background: #ffffff;
-                }
-                body {
-                  padding: 0;
-                }
-                #cards {
-                  margin: 0 !important;
-                  width: {{ cards_width }}px !important;
-                  max-width: {{ cards_width }}px !important;
-                  min-width: 0 !important;
-                }
-              </style>
-            </head>
-            <body>
-              {{ cards_html|safe }}
-            </body>
-            </html>
-            """,
-            cards_html=cards_html,
-            head_markup=head_markup,
-            theme=theme,
-            cards_width=cards_width or viewport_width,
-            base_href=request.host_url,
-        )
-    else:
-        flights = payload.get("flights") or []
-        trip_type = payload.get("trip_type") or "one_way"
-        unit_flights = payload.get("unit_flights") or {}
-        if not flights:
-            raise ValueError("No flight cards to render")
-        groups = _build_cards_render_groups(flights, trip_type, unit_flights)
-        html = render_template("cards_image.html", groups=groups, trip_type=trip_type)
-
-    cache_key = hashlib.sha256(
-        (html + f"|w:{viewport_width}|h:{cards_height}|c:{bool(cards_html)}").encode("utf-8")
-    ).hexdigest()
-    return {
-        "cache_key": cache_key,
-        "html": html,
+    preview_state = {
+        "theme": (payload.get("theme") or "light").strip(),
+        "trip_type": trip_type,
+        "flights": flights,
+        "unit_flights": unit_flights,
+        "expanded_indices": payload.get("expanded_indices") or [],
         "viewport_width": cards_width or min(viewport_width, 1400),
         "viewport_height": min(max((cards_height or 900) + 40, 240), 4000),
-        "cards_html": bool(cards_html),
+    }
+    cache_key = hashlib.sha256(json.dumps(preview_state, sort_keys=True).encode("utf-8")).hexdigest()
+    preview_token = _store_render_preview(preview_state)
+    return {
+        "cache_key": cache_key,
+        "page_url": f"{request.host_url}?render_preview_token={preview_token}",
+        "viewport_width": preview_state["viewport_width"],
+        "viewport_height": preview_state["viewport_height"],
+        "selector": "#cards",
     }
 
 
@@ -385,24 +387,28 @@ def _queue_render_request(render_request):
     cache_key = render_request["cache_key"]
     with _render_cache_lock:
         if cache_key in _render_cache:
-            return "cached"
+            return {"status": "cached", "event": None, "result": {"image_bytes": _render_cache[cache_key]}}
+    persisted_image = _get_persisted_render_cache(cache_key)
+    if persisted_image is not None:
+        return {"status": "cached", "event": None, "result": {"image_bytes": persisted_image}}
     with _render_jobs_lock:
-        if cache_key in _render_jobs:
-            return "queued"
-        _render_jobs.add(cache_key)
+        existing_job = _render_jobs.get(cache_key)
+        if existing_job:
+            return {"status": "queued", "event": existing_job["event"], "result": existing_job["result"]}
+
+        done_event = threading.Event()
+        result = {}
+        _render_jobs[cache_key] = {"event": done_event, "result": result}
 
     _ensure_playwright_worker()
-    done_event = threading.Event()
-    result = {}
-    task = {
-        "html": render_request["html"],
+    _playwright_task_queue.put({
+        "page_url": render_request["page_url"],
         "viewport_width": render_request["viewport_width"],
         "viewport_height": render_request["viewport_height"],
-        "cards_html": render_request["cards_html"],
+        "selector": render_request["selector"],
         "event": done_event,
         "result": result,
-    }
-    _playwright_task_queue.put(task)
+    })
 
     def _finalize():
         done_event.wait()
@@ -411,10 +417,37 @@ def _queue_render_request(render_request):
                 _store_render_cache(cache_key, result["image_bytes"])
         finally:
             with _render_jobs_lock:
-                _render_jobs.discard(cache_key)
+                _render_jobs.pop(cache_key, None)
 
     threading.Thread(target=_finalize, name=f"render-cache-{cache_key[:8]}", daemon=True).start()
-    return "queued"
+    return {"status": "queued", "event": done_event, "result": result}
+
+
+def _get_cached_render_bytes(cache_key):
+    with _render_cache_lock:
+        cached = _render_cache.get(cache_key)
+        if cached:
+            _render_cache.move_to_end(cache_key)
+            return cached
+    return _get_persisted_render_cache(cache_key)
+
+
+def _render_request_bytes(render_request, timeout=15):
+    cache_key = render_request["cache_key"]
+    cached = _get_cached_render_bytes(cache_key)
+    if cached is not None:
+        return cached
+
+    job = _queue_render_request(render_request)
+    if job["status"] == "cached":
+        return job["result"]["image_bytes"]
+
+    job["event"].wait(timeout=timeout)
+    if not job["event"].is_set():
+        raise RuntimeError("Timed out waiting for pre-rendered image")
+    if job["result"].get("error"):
+        raise job["result"]["error"]
+    return job["result"]["image_bytes"]
 
 
 def _render_saved_cabin_value(flight, segment=None):
@@ -2030,35 +2063,29 @@ def recalculate():
 def render_cards_image():
     try:
         payload = request.get_json() or {}
-        render_request = _build_render_request(payload)
-        cache_key = render_request["cache_key"]
-        with _render_cache_lock:
-            cached = _render_cache.get(cache_key)
-            if cached:
-                _render_cache.move_to_end(cache_key)
-                print("[INFO] Render cache hit.")
-                return send_file(
-                    io.BytesIO(cached),
-                    mimetype="image/png",
-                    as_attachment=False,
-                    download_name="flight-cards.png",
-                )
+        last_error = None
+        image_bytes = None
+        cache_key = None
+        for attempt in range(2):
+            render_request = _build_render_request(payload)
+            cache_key = render_request["cache_key"]
+            try:
+                image_bytes = _render_request_bytes(render_request, timeout=15 if attempt == 0 else 20)
+                break
+            except Exception as exc:
+                last_error = exc
+                print(f"[WARN] Card render attempt {attempt + 1} failed: {exc}")
+                with _render_jobs_lock:
+                    _render_jobs.pop(cache_key, None)
+                if attempt == 0:
+                    try:
+                        asyncio.run(_reset_playwright_browser())
+                    except Exception:
+                        pass
+                    continue
+        if image_bytes is None:
+            raise last_error or RuntimeError("Failed to render cards image")
 
-        _ensure_playwright_worker()
-        done_event = threading.Event()
-        result = {}
-        _playwright_task_queue.put({
-            "html": render_request["html"],
-            "viewport_width": render_request["viewport_width"],
-            "viewport_height": render_request["viewport_height"],
-            "cards_html": render_request["cards_html"],
-            "event": done_event,
-            "result": result,
-        })
-        done_event.wait()
-        if result.get("error"):
-            raise result["error"]
-        image_bytes = result["image_bytes"]
         _store_render_cache(cache_key, image_bytes)
         print("[INFO] Server-side card render succeeded.")
 
@@ -2086,11 +2113,19 @@ def preload_cards_image():
             if cache_key in _render_cache:
                 _render_cache.move_to_end(cache_key)
                 return jsonify({"status": "cached", "cache_key": cache_key})
-        status = _queue_render_request(render_request)
-        return jsonify({"status": status, "cache_key": cache_key})
+        job = _queue_render_request(render_request)
+        return jsonify({"status": job["status"], "cache_key": cache_key})
     except Exception as e:
         app.logger.exception("Card image preload failed")
         return jsonify({"error": f"Failed to preload cards image: {str(e)}"}), 500
+
+
+@app.route("/api/render/cards-preview/<token>", methods=["GET"])
+def get_cards_preview_payload(token):
+    preview_payload = _get_render_preview(token)
+    if not preview_payload:
+        return jsonify({"error": "Preview session expired"}), 404
+    return jsonify(preview_payload)
 
 @app.route("/api/itineraries", methods=["POST"])
 @login_required
