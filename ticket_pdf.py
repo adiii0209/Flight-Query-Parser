@@ -225,10 +225,6 @@ def draw_ticket(c, data, include_fare=True):
         cotv = None
 
     compact_single_page = False
-    if n_pax == 1 and trip_type in ("one_way", "round_trip"):
-        estimated_total, default_available = _estimate_page_height(36, compact=False)
-        compact_total, compact_available = _estimate_page_height(22, compact=True)
-        compact_single_page = estimated_total > default_available and estimated_total <= compact_available
 
     M     = 22 if compact_single_page else 36
     IW    = W - 2*M      # inner width ≈ 523
