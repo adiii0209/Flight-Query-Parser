@@ -427,15 +427,16 @@ def draw_ticket(c, data, include_fare=True):
                 lay_text = " ".join(parts)
 
                 tw = c.stringWidth(lay_text, "Times-Roman", 6.5)
+                lay_y = fy - LAY_H / 2
                 c.saveState()
                 c.setStrokeColor(ACCENT)
                 c.setLineWidth(0.5)
                 c.setDash(2, 2)
-                _hline(c, CX - tw/2 - 16, fy - LAY_H/2, 12, ACCENT, 0.5)
-                _hline(c, CX + tw/2 + 4,  fy - LAY_H/2, 12, ACCENT, 0.5)
+                _hline(c, CX - tw/2 - 18, lay_y, 14, ACCENT, 0.5)
+                _hline(c, CX + tw/2 + 4,  lay_y, 14, ACCENT, 0.5)
                 c.restoreState()
 
-                _txt(c, CX, fy - LAY_H/2 - 2.5, lay_text,
+                _txt(c, CX, lay_y - 1.1, lay_text,
                      "Times-Roman", 6.5, ACCENT, "center")
                 fy -= LAY_H
 
@@ -482,7 +483,7 @@ def draw_ticket(c, data, include_fare=True):
                     _txt(c, ax + badge_w / 2, fy - SEG_HEADER_H + 5.15, bkclass,
                          "Times-Bold", 7, badge_text, align="center")
 
-            leg_badge = _leg_tag(li, trip_type) if trip_type in ("round_trip", "multi_city") else ""
+            leg_badge = _leg_tag(li, trip_type) if trip_type in ("round_trip", "multi_city") and si == 0 else ""
             if leg_badge:
                 badge_fill = colors.Color(0.90, 0.97, 0.93) if leg_badge == "OUTBOUND" else colors.Color(1.00, 0.95, 0.84)
                 badge_text = GREEN if leg_badge == "OUTBOUND" else colors.Color(0.72, 0.45, 0.02)
