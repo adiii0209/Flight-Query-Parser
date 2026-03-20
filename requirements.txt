@@ -12,4 +12,4 @@ pdf417gen
 playwright
 reportlab
 gspread
-imgkit
+gunicorn

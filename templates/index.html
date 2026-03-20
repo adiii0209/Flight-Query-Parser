@@ -9,7 +9,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Syne:wght@700;800&display=swap"
     rel="stylesheet">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <link rel="stylesheet" href="/static/dashboard.css">
   <style>
     * {
@@ -8423,147 +8423,22 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     function toggleInlineSplit(flightIndex) {
       const toggle = document.getElementById(`inline-split-toggle-${flightIndex}`);
-      const flight = currentFlights[flightIndex];
-      const returnFlight = currentFlights[flightIndex + 1];
       // Return section is now ALWAYS visible (for Date), but we toggle Fares visibility
       const retFareList = document.getElementById(`inline-fare-list-${flightIndex}_ret`);
       const retControls = document.getElementById(`inline-fare-controls-${flightIndex}_ret`);
       const outHeader = document.querySelector(`#inline-section-${flightIndex}_out h5`);
 
       if (toggle && toggle.checked) {
-        const outboundState = collectInlineFareSectionState(flightIndex, '_out');
-        const returnState = collectInlineFareSectionState(flightIndex, '_ret');
-        persistInlineFareSectionToFlight(flight, outboundState);
-        persistInlineFareSectionToFlight(returnFlight, { ...outboundState, date: returnState.date }, true);
-        if (flight) flight.is_split = true;
-        populateInlineFareEditor(flightIndex);
-        return;
         // Show Return Fares
         if (retFareList) retFareList.style.display = 'block';
         if (retControls) retControls.style.display = 'block';
         if (outHeader) outHeader.textContent = '✈️ Outbound Fares';
       } else {
-        const outboundState = collectInlineFareSectionState(flightIndex, '_out');
-        persistInlineFareSectionToFlight(flight, outboundState);
-        if (flight) flight.is_split = false;
         // Hide Return Fares (Date stays)
         if (retFareList) retFareList.style.display = 'none';
         if (retControls) retControls.style.display = 'none';
         if (outHeader) outHeader.textContent = '📊 Combined Fares';
       }
-    }
-
-    function collectInlineFareSectionState(flightIndex, suffix = '') {
-      const fareCards = document.querySelectorAll(`#inline-fare-list-${flightIndex}${suffix} .fare-card`);
-      const dateInput = document.querySelector(`.inline-date-${flightIndex}${suffix}`);
-      return {
-        date: dateInput ? dateInput.value : '',
-        fares: Array.from(fareCards).map((card) => {
-          const fareKey = card.dataset.fareKey;
-          const uniqueId = `inline-fare-card-${fareKey}-${flightIndex}${suffix}`;
-          return {
-            key: fareKey,
-            label: (card.querySelector('.fare-card-header label')?.textContent || fareKey).trim(),
-            checked: !!card.querySelector('.fare-card-header input[type="checkbox"]')?.checked,
-            fare: document.querySelector(`.inline-fare-${uniqueId}`)?.value || '',
-            mu: document.querySelector(`.inline-mu-${uniqueId}`)?.value || '',
-            svc: document.querySelector(`.inline-svc-${uniqueId}`)?.value || '',
-            extras: {
-              baggage_cabin: document.querySelector(`.inline-cabin-${uniqueId}`)?.value || '',
-              baggage_checkin: document.querySelector(`.inline-checkin-${uniqueId}`)?.value || '',
-              baggage_pcs: document.querySelector(`.inline-pcs-${uniqueId}`)?.value || '',
-              seat: document.querySelector(`.inline-seat-${uniqueId}`)?.value || '',
-              meal: document.querySelector(`.inline-meal-${uniqueId}`)?.value || '',
-              cancellation_charges: document.querySelector(`.inline-cancel-${uniqueId}`)?.value || '',
-              penalty_charges: document.querySelector(`.inline-penalty-${uniqueId}`)?.value || ''
-            }
-          };
-        })
-      };
-    }
-
-    function applyInlineFareSectionState(flightIndex, suffix = '', sectionState = {}) {
-      const list = document.getElementById(`inline-fare-list-${flightIndex}${suffix}`);
-      const dateInput = document.querySelector(`.inline-date-${flightIndex}${suffix}`);
-      if (!list) return;
-
-      list.innerHTML = '';
-      (sectionState.fares || []).forEach((fareItem) => {
-        const wrapper = document.createElement('div');
-        wrapper.innerHTML = createInlineFareCard(
-          flightIndex,
-          fareItem.key,
-          fareItem.label,
-          fareItem.fare,
-          fareItem.mu,
-          fareItem.svc,
-          fareItem.extras || {},
-          fareItem.checked !== false,
-          suffix
-        );
-        const card = wrapper.firstElementChild;
-        if (card) {
-          list.appendChild(card);
-          const checkbox = card.querySelector('.fare-card-header input[type="checkbox"]');
-          if (checkbox && fareItem.checked === false) {
-            checkbox.checked = false;
-            toggleInlineFareCard(checkbox, fareItem.key, flightIndex, suffix);
-          }
-        }
-      });
-
-      if (dateInput && sectionState.date !== undefined) {
-        dateInput.value = sectionState.date;
-      }
-    }
-
-    function persistInlineFareSectionToFlight(targetFlight, sectionState = {}, preserveDate = false) {
-      if (!targetFlight) return;
-      const activeFares = (sectionState.fares || []).filter((fare) => {
-        const hasValues = [fare.fare, fare.mu, fare.svc].some((value) => String(value || '').trim() !== '');
-        const hasExtras = Object.values(fare.extras || {}).some((value) => String(value || '').trim() !== '');
-        return fare.checked || hasValues || hasExtras;
-      });
-
-      targetFlight.fares = {};
-      targetFlight.fare_mu = {};
-      targetFlight.fare_svc = {};
-      targetFlight.fare_extra_details = {};
-      targetFlight.fare_order = [];
-      targetFlight.fare_labels = {};
-
-      activeFares.forEach((fare) => {
-        targetFlight.fares[fare.key] = Number(fare.fare || 0);
-        targetFlight.fare_mu[fare.key] = Number(fare.mu || 0);
-        targetFlight.fare_svc[fare.key] = Number(fare.svc || 0);
-        targetFlight.fare_order.push(fare.key);
-        targetFlight.fare_labels[fare.key] = fare.label;
-        if (Object.values(fare.extras || {}).some((value) => String(value || '').trim() !== '')) {
-          targetFlight.fare_extra_details[fare.key] = { ...(fare.extras || {}) };
-        }
-      });
-
-      if (!preserveDate && sectionState.date) {
-        targetFlight.departure_date = sectionState.date;
-      }
-    }
-
-    function syncInlineReturnSectionFromOutbound(flightIndex) {
-      const outboundState = collectInlineFareSectionState(flightIndex, '_out');
-      const returnState = collectInlineFareSectionState(flightIndex, '_ret');
-      const activeOutboundFares = outboundState.fares.filter((fare) => {
-        const hasValues = [fare.fare, fare.mu, fare.svc].some((value) => String(value || '').trim() !== '');
-        const hasExtras = Object.values(fare.extras || {}).some((value) => String(value || '').trim() !== '');
-        if (fare.checked) return true;
-        return hasValues || hasExtras;
-      });
-      applyInlineFareSectionState(flightIndex, '_ret', {
-        date: returnState.date,
-        fares: activeOutboundFares.map((fare) => ({
-          ...fare,
-          extras: { ...(fare.extras || {}) }
-        }))
-      });
     }
 
     function createInlineFareCard(flightIndex, key, label, baseFare, mu, svc, extras, isChecked, suffix = '') {
@@ -9615,29 +9490,54 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         .replace(/\u20B9/g, '<span class="currency-symbol">&#8377;</span>');
     }
 
-    async function generateImageBlob(mode = 'current', options = {}) {
+    async function generateImageBlob(mode = 'current') {
       const payload = buildCardsImagePayload(mode);
       const requestKey = getCardsImageRequestKey(payload);
       const cachedBlob = cardsImageBlobCache.get(requestKey);
       if (cachedBlob) {
         return cachedBlob;
       }
+      if (useClientSideImageRender) {
+        try {
+          const fallbackBlob = await generateImageBlobClientSide(mode);
+          cardsImageBlobCache.set(requestKey, fallbackBlob);
+          return fallbackBlob;
+        } catch (fallbackError) {
+          console.warn('Client-side image render failed.', fallbackError);
+          if (prefersClientSideImageRender) {
+            useClientSideImageRender = false;
+          } else {
+            throw fallbackError;
+          }
+        }
+      }
       const response = await fetch('/api/render/cards-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: options.signal
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
-        let message = 'Failed to render image';
+        let message = `Failed to render image (HTTP ${response.status})`;
+        const errorResponse = response.clone();
         try {
           const error = await response.json();
           message = error.error || message;
         } catch (e) {
-          // Ignore JSON parse failures and keep the default message.
+          try {
+            const bodyText = await errorResponse.text();
+            if (bodyText && bodyText.trim()) {
+              message = `${message}: ${bodyText.trim().slice(0, 200)}`;
+            }
+          } catch (readError) {
+            // Ignore body read failures and keep the default message.
+          }
         }
-        throw new Error(message);
+        console.warn('Server-side image render failed; switching to client-side fallback.', message);
+        useClientSideImageRender = true;
+        const fallbackBlob = await generateImageBlobClientSide(mode);
+        cardsImageBlobCache.set(requestKey, fallbackBlob);
+        return fallbackBlob;
       }
 
       const blob = await response.blob();
@@ -9647,93 +9547,6 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         if (oldestKey) cardsImageBlobCache.delete(oldestKey);
       }
       return blob;
-    }
-
-    function createDelayTimeout(ms, message = 'Timed out waiting for server render') {
-      return new Promise((_, reject) => {
-        setTimeout(() => reject(new Error(message)), ms);
-      });
-    }
-
-    async function generateImageBlobFallback(mode = 'current') {
-      const cardsContainer = document.getElementById('cards');
-      if (!cardsContainer) {
-        throw new Error('No card area available for fallback capture');
-      }
-
-      const clone = cardsContainer.cloneNode(true);
-      const timelines = Array.from(clone.querySelectorAll('.flight-timeline-container'));
-      const arrows = Array.from(clone.querySelectorAll('.expand-icon'));
-
-      if (mode === 'collapsed') {
-        timelines.forEach((node) => { node.style.display = 'none'; });
-        arrows.forEach((node) => node.classList.remove('rotated'));
-      } else if (mode === 'expanded') {
-        timelines.forEach((node) => { node.style.display = 'block'; });
-        arrows.forEach((node) => node.classList.add('rotated'));
-      }
-
-      clone.style.margin = '0';
-      clone.style.padding = '0';
-      clone.style.width = 'fit-content';
-      clone.style.maxWidth = 'none';
-      clone.style.background = '#ffffff';
-      clone.style.display = 'inline-grid';
-
-      const wrapper = document.createElement('div');
-      wrapper.style.cssText = `
-        position: fixed;
-        left: -100000px;
-        top: 0;
-        margin: 0;
-        padding: 0;
-        background: #ffffff;
-        width: fit-content;
-        max-width: none;
-        overflow: visible;
-        z-index: -1;
-      `;
-      wrapper.appendChild(clone);
-      document.body.appendChild(wrapper);
-
-      try {
-        const canvas = await html2canvas(clone, {
-          backgroundColor: '#ffffff',
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          scale: Math.max(2, window.devicePixelRatio || 1),
-          width: Math.ceil(clone.scrollWidth),
-          height: Math.ceil(clone.scrollHeight),
-          scrollX: 0,
-          scrollY: 0,
-          windowWidth: Math.ceil(clone.scrollWidth),
-          windowHeight: Math.ceil(clone.scrollHeight)
-        });
-        return await new Promise((resolve, reject) => {
-          canvas.toBlob((blob) => {
-            if (blob) resolve(blob);
-            else reject(new Error('Fallback PNG creation failed'));
-          }, 'image/png');
-        });
-      } finally {
-        wrapper.remove();
-      }
-    }
-
-    async function generateImageBlobWithFallback(mode = 'current') {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1000);
-        return await Promise.race([
-          generateImageBlob(mode, { signal: controller.signal }).finally(() => clearTimeout(timeoutId)),
-          createDelayTimeout(1000, 'Server render exceeded 1 second')
-        ]);
-      } catch (error) {
-        console.warn('Server PNG render unavailable, using html2canvas fallback', error);
-        showNotification('Using fast local fallback for download…', 'info', { id: 'download-status', duration: 3500 });
-        return await generateImageBlobFallback(mode);
-      }
     }
 
     function getExpandedFlightIndices() {
@@ -9760,6 +9573,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     let lastPreloadKey = '';
     let imagePreloadPromise = null;
     const cardsImageBlobCache = new Map();
+    const prefersClientSideImageRender = !['localhost', '127.0.0.1'].includes(window.location.hostname);
+    let useClientSideImageRender = prefersClientSideImageRender;
 
     function getCardsImageRequestKey(payload) {
       return JSON.stringify([
@@ -9771,38 +9586,81 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       ]);
     }
 
+    async function generateImageBlobClientSide(mode = 'current') {
+      if (typeof window.html2canvas !== 'function') {
+        throw new Error('Client-side image renderer is unavailable');
+      }
+
+      const sandbox = document.createElement('div');
+      sandbox.style.position = 'fixed';
+      sandbox.style.left = '-20000px';
+      sandbox.style.top = '0';
+      sandbox.style.pointerEvents = 'none';
+      sandbox.style.zIndex = '-1';
+      sandbox.style.background = getComputedStyle(document.body).backgroundColor || '#ffffff';
+      sandbox.setAttribute('data-theme', document.documentElement.getAttribute('data-theme') || 'light');
+
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = createCardsSnapshotHtml(mode);
+      const snapshotCards = wrapper.firstElementChild;
+      if (!snapshotCards) {
+        throw new Error('No card snapshot available for client render');
+      }
+
+      sandbox.appendChild(snapshotCards);
+      document.body.appendChild(sandbox);
+
+      try {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        if (document.fonts && document.fonts.ready) {
+          await document.fonts.ready;
+        }
+
+        const canvas = await window.html2canvas(snapshotCards, {
+          backgroundColor: null,
+          scale: Math.min(window.devicePixelRatio || 1, 2),
+          useCORS: true,
+          logging: false,
+          imageTimeout: 15000
+        });
+
+        const blob = await new Promise((resolve, reject) => {
+          canvas.toBlob((result) => {
+            if (result) resolve(result);
+            else reject(new Error('Canvas export failed'));
+          }, 'image/png');
+        });
+
+        return blob;
+      } finally {
+        sandbox.remove();
+      }
+    }
+
     async function preloadCardsImage() {
       if (!currentFlights || currentFlights.length === 0) return;
+      if (useClientSideImageRender) return;
       try {
         const currentPayload = buildCardsImagePayload('current');
         const requestKey = getCardsImageRequestKey(currentPayload);
         if (requestKey === lastPreloadKey) return;
-        const payloads = [currentPayload, buildCardsImagePayload('collapsed'), buildCardsImagePayload('expanded')];
-        const uniquePayloads = [];
-        const seenKeys = new Set();
-        payloads.forEach((payload) => {
-          const key = getCardsImageRequestKey(payload);
-          if (seenKeys.has(key)) return;
-          seenKeys.add(key);
-          uniquePayloads.push(payload);
-        });
         imagePreloadPromise = (async () => {
-          for (const payload of uniquePayloads) {
-            const response = await fetch('/api/render/cards-image/preload', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            });
-            if (!response.ok) {
-              throw new Error('Preload request failed');
-            }
-            await response.json();
+          const response = await fetch('/api/render/cards-image/preload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentPayload)
+          });
+          if (!response.ok) {
+            throw new Error(`Preload request failed (HTTP ${response.status})`);
           }
+          await response.json();
           lastPreloadKey = requestKey;
         })();
         await imagePreloadPromise;
       } catch (error) {
         lastPreloadKey = '';
+        useClientSideImageRender = true;
         console.warn('Image preload skipped', error);
       } finally {
         imagePreloadPromise = null;
@@ -9988,14 +9846,20 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     function launchDownloadFlightAnimation() {
       const sourceButton = document.querySelector('button[onclick="downloadCardsImage()"]');
-      if (!sourceButton) return;
+      if (!sourceButton) {
+        return {
+          complete() { },
+          cancel() { }
+        };
+      }
 
       const rect = sourceButton.getBoundingClientRect();
       const startX = rect.left + rect.width / 2;
       const startY = rect.top + rect.height / 2;
       const endX = Math.max(window.innerWidth - 54, startX + 40);
       const endY = 34;
-      const durationMs = 2400;
+      const loopDurationMs = 3800;
+      const finishDurationMs = 1100;
 
       const overlay = document.createElement('div');
       overlay.className = 'download-flight-overlay';
@@ -10054,56 +9918,110 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         return { point, tangent };
       };
 
-      let boomShown = false;
-      let labelShown = false;
-      const boomTimer = setTimeout(() => {
-        boomShown = true;
+      const getLoopState = (elapsedMs) => {
+        const cycleElapsed = elapsedMs % loopDurationMs;
+        const cyclePhase = clamp(cycleElapsed / loopDurationMs, 0, 1);
+        if (cyclePhase <= 0.5) {
+          return {
+            progress: cyclePhase * 2,
+            direction: 1
+          };
+        }
+        return {
+          progress: (1 - cyclePhase) * 2,
+          direction: -1
+        };
+      };
+
+      let rafId = 0;
+      let stopped = false;
+      let finishRequested = false;
+      let finishStartProgress = 0;
+      let finishStartTime = 0;
+      let completionShown = false;
+
+      const showCompletionState = () => {
+        if (completionShown || !overlay.isConnected) return;
+        completionShown = true;
         const boom = document.createElement('div');
         boom.className = 'download-flight-boom';
         overlay.appendChild(boom);
-      }, durationMs - 520);
-
-      const labelTimer = setTimeout(() => {
-        labelShown = true;
         const label = document.createElement('div');
         label.className = 'download-flight-label';
         label.textContent = 'Downloaded';
         overlay.appendChild(label);
-      }, durationMs - 430);
+      };
+
+      const teardown = (delayMs = 0) => {
+        stopped = true;
+        cancelAnimationFrame(rafId);
+        if (delayMs > 0) {
+          setTimeout(() => overlay.remove(), delayMs);
+        } else {
+          overlay.remove();
+        }
+      };
 
       const animationStart = performance.now();
-      let rafId = 0;
       const animatePlane = (now) => {
-        const elapsed = now - animationStart;
-        const progress = clamp(elapsed / durationMs, 0, 1);
+        if (stopped) return;
+
+        let progress;
+        let finishingProgress = 0;
+        let direction = 1;
+        if (finishRequested) {
+          finishingProgress = clamp((now - finishStartTime) / finishDurationMs, 0, 1);
+          progress = finishStartProgress + ((1 - finishStartProgress) * easeInOutSine(finishingProgress));
+        } else {
+          const loopState = getLoopState(now - animationStart);
+          progress = loopState.progress;
+          direction = loopState.direction;
+        }
+
         const { point, tangent } = getPathState(progress);
-        const facingLeft = tangent.x < 0;
-        const bankAngle = Math.atan2(tangent.y, Math.max(Math.abs(tangent.x), 0.001)) * (180 / Math.PI);
-        const opacity = progress < 0.06 ? progress / 0.06 : (progress > 0.94 ? (1 - progress) / 0.06 : 1);
-        const scale = progress < 0.2 ? 0.9 + progress * 0.35 : 0.97 - (progress * 0.18);
+        const flightVector = {
+          x: tangent.x * direction,
+          y: tangent.y * direction
+        };
+        const facingLeft = flightVector.x < 0;
+        const bankAngle = Math.atan2(flightVector.y, Math.max(Math.abs(flightVector.x), 0.001)) * (180 / Math.PI);
+        const opacity = finishRequested
+          ? clamp((1 - finishingProgress) / 0.18, 0, 1)
+          : (progress < 0.06 ? progress / 0.06 : (progress > 0.94 ? (1 - progress) / 0.06 : 1));
+        const scale = finishRequested
+          ? 0.9
+          : (progress < 0.2 ? 0.9 + progress * 0.35 : 0.97 - (progress * 0.18));
 
         plane.style.opacity = `${clamp(opacity, 0, 1)}`;
         plane.style.transform = `translate(-50%, -50%) translate3d(${point.x - startX}px, ${point.y - startY}px, 0) rotate(${bankAngle}deg) scale(${facingLeft ? -scale : scale}, ${scale})`;
 
-        if (progress < 1) {
+        if (!finishRequested || finishingProgress < 1) {
           rafId = requestAnimationFrame(animatePlane);
         } else {
           plane.remove();
+          showCompletionState();
+          teardown(980);
         }
       };
       rafId = requestAnimationFrame(animatePlane);
 
-      setTimeout(() => {
-        cancelAnimationFrame(rafId);
-        clearTimeout(boomTimer);
-        clearTimeout(labelTimer);
-        setTimeout(() => overlay.remove(), boomShown || labelShown ? 980 : 0);
-      }, durationMs + 10);
+      return {
+        complete() {
+          if (stopped || finishRequested) return;
+          finishRequested = true;
+          finishStartTime = performance.now();
+          finishStartProgress = getLoopState(finishStartTime - animationStart).progress;
+        },
+        cancel() {
+          if (stopped) return;
+          teardown();
+        }
+      };
     }
 
     async function downloadCardsImage() {
       if (document.activeElement) document.activeElement.blur();
-      launchDownloadFlightAnimation();
+      const flightAnimation = launchDownloadFlightAnimation();
       showNotification('Preparing download…', 'info', { id: 'download-status', duration: 7000 });
       try {
         if (imagePreloadPromise) {
@@ -10111,18 +10029,20 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         }
         let blob;
         try {
-          blob = await generateImageBlobWithFallback();
+          blob = await generateImageBlob();
         } catch (error) {
           console.warn('Image download attempt 1 failed, retrying once', error);
           cardsImageBlobCache.clear();
           lastPreloadKey = '';
           await preloadCardsImage().catch(() => null);
-          blob = await generateImageBlobWithFallback();
+          blob = await generateImageBlob();
         }
         showNotification('Download ready…', 'info', { id: 'download-status', duration: 4000 });
         downloadImage(blob);
+        flightAnimation.complete();
         showNotification('Image downloaded!', 'success', { id: 'download-status', duration: 4000 });
       } catch (e) {
+        flightAnimation.cancel();
         const message = e && e.message ? e.message : 'Failed to generate image';
         showNotification(message, 'error', { id: 'download-status', duration: 5000 });
       }
