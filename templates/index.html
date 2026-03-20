@@ -9597,7 +9597,12 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       sandbox.style.top = '0';
       sandbox.style.pointerEvents = 'none';
       sandbox.style.zIndex = '-1';
-      sandbox.style.background = getComputedStyle(document.body).backgroundColor || '#ffffff';
+      sandbox.style.margin = '0';
+      sandbox.style.padding = '0';
+      sandbox.style.width = 'max-content';
+      sandbox.style.height = 'max-content';
+      sandbox.style.overflow = 'hidden';
+      sandbox.style.background = '#ffffff';
       sandbox.setAttribute('data-theme', document.documentElement.getAttribute('data-theme') || 'light');
 
       const wrapper = document.createElement('div');
@@ -9607,6 +9612,15 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         throw new Error('No card snapshot available for client render');
       }
 
+      snapshotCards.style.margin = '0';
+      snapshotCards.style.padding = '0';
+      snapshotCards.style.width = 'fit-content';
+      snapshotCards.style.maxWidth = 'none';
+      snapshotCards.style.background = '#ffffff';
+      snapshotCards.querySelectorAll('*').forEach((node) => {
+        node.style.backdropFilter = 'none';
+        node.style.webkitBackdropFilter = 'none';
+      });
       sandbox.appendChild(snapshotCards);
       document.body.appendChild(sandbox);
 
@@ -9618,11 +9632,15 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         }
 
         const canvas = await window.html2canvas(snapshotCards, {
-          backgroundColor: null,
-          scale: Math.min(window.devicePixelRatio || 1, 2),
+          backgroundColor: '#ffffff',
+          scale: Math.max(2, Math.min(window.devicePixelRatio || 1, 3)),
           useCORS: true,
           logging: false,
-          imageTimeout: 15000
+          imageTimeout: 15000,
+          width: Math.ceil(snapshotCards.scrollWidth),
+          height: Math.ceil(snapshotCards.scrollHeight),
+          windowWidth: Math.ceil(snapshotCards.scrollWidth),
+          windowHeight: Math.ceil(snapshotCards.scrollHeight)
         });
 
         const blob = await new Promise((resolve, reject) => {
