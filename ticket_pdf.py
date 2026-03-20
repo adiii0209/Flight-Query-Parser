@@ -240,7 +240,7 @@ def draw_ticket(c, data, include_fare=True):
         _hline(c, M, M + FTH, IW, RULE, 0.5)
         _rect(c, M, M, 4, FTH, fill=ACCENT)
         _txt(c, CX, M + 6,
-             "Time Travels Pvt Ltd  |  www.timetours.in  |  +91 33 400 11 333",
+             "Time Tours Tech Pvt Ltd  |  www.timetours.in  |  +91 33 400 11 333",
              "Times-Bold", 6, INK2, align="center")
 
     def _start_continuation_page():
