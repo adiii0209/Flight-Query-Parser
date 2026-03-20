@@ -2307,11 +2307,15 @@ function triggerAutoSave() {
     }, 250);
 }
 
+function getPassengerSortQueryParam() {
+    return passengerSortMode ? `&passenger_sort=${encodeURIComponent(passengerSortMode)}` : '';
+}
+
 async function downloadPDF(includeFare) {
     if (document.activeElement) document.activeElement.blur();
     try {
         await saveTicket();
-        const url = `/api/tickets/${currentTicket.id}/pdf?include_fare=${includeFare}`;
+        const url = `/api/tickets/${currentTicket.id}/pdf?include_fare=${includeFare}${getPassengerSortQueryParam()}`;
         const a = document.createElement('a');
         a.href = url; a.download = '';
         document.body.appendChild(a); a.click(); a.remove();
@@ -2437,7 +2441,7 @@ async function downloadSelectedPaxIndividually() {
         await saveTicket();
         showToast(`Downloading ${indices.length} individual PDF${indices.length > 1 ? 's' : ''}...`, 'info');
         for (const idx of indices) {
-            const url = `/api/tickets/${currentTicket.id}/pdf/selected?include_fare=${_paxDlIncludeFare}&mode=individual&passenger_indices=${idx}`;
+            const url = `/api/tickets/${currentTicket.id}/pdf/selected?include_fare=${_paxDlIncludeFare}&mode=individual&passenger_indices=${idx}${getPassengerSortQueryParam()}`;
             const a = document.createElement('a');
             a.href = url; a.download = '';
             document.body.appendChild(a); a.click(); a.remove();
@@ -2457,7 +2461,7 @@ async function downloadSelectedPaxTogether() {
         await saveTicket();
         showToast(`Downloading combined PDF for ${indices.length} passenger${indices.length > 1 ? 's' : ''}...`, 'info');
         const params = indices.map(i => `passenger_indices=${i}`).join('&');
-        const url = `/api/tickets/${currentTicket.id}/pdf/selected?include_fare=${_paxDlIncludeFare}&mode=together&${params}`;
+        const url = `/api/tickets/${currentTicket.id}/pdf/selected?include_fare=${_paxDlIncludeFare}&mode=together&${params}${getPassengerSortQueryParam()}`;
         const a = document.createElement('a');
         a.href = url; a.download = '';
         document.body.appendChild(a); a.click(); a.remove();

@@ -1069,7 +1069,7 @@
     }
 
     .flight-card::before {
-      content: '';
+      content: none;
       position: absolute;
       top: 0;
       left: 0;
@@ -2350,6 +2350,7 @@
     .combined-flight-card {
       width: 100% !important;
       max-width: 100% !important;
+      padding-top: 0 !important;
     }
 
     .flight-divider {
@@ -2373,9 +2374,9 @@
     }
 
     .option-label {
-      position: absolute;
-      top: 0;
-      right: 0;
+      position: relative;
+      top: auto;
+      right: auto;
       background: var(--bg-main);
       color: var(--text-secondary);
       padding: 0.25rem 0.75rem;
@@ -2385,6 +2386,21 @@
       border-left: 1px solid var(--border);
       border-bottom: 1px solid var(--border);
       z-index: 10;
+      max-width: 92px;
+      white-space: nowrap;
+      display: block;
+      width: fit-content;
+      margin-left: auto;
+      margin-bottom: 0;
+    }
+
+    .card-top-strip {
+      min-height: 25px;
+      display: flex;
+      justify-content: flex-end;
+      align-items: flex-start;
+      padding: 0 0 0.1rem 0;
+      background: transparent;
     }
 
     .duration-text {
@@ -2684,6 +2700,7 @@
       background: var(--bg-card);
       padding: 1rem 1.5rem;
       border-top: 1px solid var(--border);
+      border-left: 4px solid var(--primary);
       display: flex;
       flex-wrap: wrap;
       gap: 1rem;
@@ -2903,6 +2920,8 @@
       padding-right: 2rem;
       /* Make space for arrow */
       position: relative;
+      padding-top: 1rem;
+      min-height: 92px;
     }
 
     .expand-icon {
@@ -2913,6 +2932,10 @@
       transform: rotate(45deg);
       transition: transform 0.25s ease;
       cursor: pointer;
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      margin-top: -5px;
     }
 
     /* when expanded */
@@ -3256,7 +3279,6 @@
       /* Flight Summary: Clean & Structured */
       .flight-summary {
         padding: 1.25rem 1rem 1rem 1rem !important;
-        /* Extra top padding for label */
         position: relative !important;
       }
 
@@ -3271,8 +3293,13 @@
         padding: 0.15rem 0.5rem !important;
         border-bottom-left-radius: 8px !important;
         border-bottom-right-radius: 0 !important;
-        right: 0 !important;
-        top: 0 !important;
+        max-width: 84px !important;
+        margin-bottom: 0.3rem !important;
+      }
+
+      .card-top-strip {
+        min-height: 24px !important;
+        padding-bottom: 0.1rem !important;
       }
 
       /* Top Row: Airline & Date */
@@ -4491,6 +4518,33 @@
 
     function isRenderPreviewMode() {
       return !!getRenderPreviewToken();
+    }
+
+    function getCardsCaptureMetrics(cardsContainer) {
+      if (!cardsContainer) {
+        return { width: null, height: null, childCount: 0 };
+      }
+      const children = Array.from(cardsContainer.children || []).filter(Boolean);
+      if (children.length === 1) {
+        const rect = children[0].getBoundingClientRect();
+        return {
+          width: Math.ceil(rect.width),
+          height: Math.ceil(rect.height),
+          childCount: 1
+        };
+      }
+      const rect = cardsContainer.getBoundingClientRect();
+      return {
+        width: Math.ceil(rect.width),
+        height: Math.ceil(rect.height),
+        childCount: children.length
+      };
+    }
+
+    function getCardsCaptureTarget(cardsContainer) {
+      if (!cardsContainer) return null;
+      const children = Array.from(cardsContainer.children || []).filter(Boolean);
+      return children.length === 1 ? children[0] : cardsContainer;
     }
 
     function createCardsSnapshotHtml(mode = 'current') {
@@ -7898,7 +7952,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const uniqueId = `flight-${index}-${Math.random().toString(36).substr(2, 9)}`;
 
       const isMissingDate = !flight.departure_date || flight.departure_date === 'N/A';
-      const optionLabelHTML = `<div class="option-label">Option ${index + 1}</div>`;
+      const optionLabelHTML = `<div class="card-top-strip"><div class="option-label">Option ${index + 1}</div></div>`;
 
       let dateHeaderHTML = '';
       if (isMissingDate) {
@@ -8006,7 +8060,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const outUniqueId = `flight-${index}-out-${Math.random().toString(36).substr(2, 4)}`;
       const retUniqueId = `flight-${index}-ret-${Math.random().toString(36).substr(2, 4)}`;
 
-      const optionLabelHTML = `<div class="option-label">Option ${unitId}</div>`;
+      const optionLabelHTML = ``;
 
       // Outbound Section
       const outSummary = generateFlightSummaryHTML(outbound, index, outUniqueId);
@@ -8100,7 +8154,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       card.className = 'flight-card combined-flight-card';
       card.setAttribute('data-flight-index', startIndex);
 
-      const optionLabelHTML = `<div class="option-label">Option ${unitId}</div>`;
+      const optionLabelHTML = ``;
       let contentHTML = optionLabelHTML;
 
       flightList.forEach((flight, i) => {
@@ -9477,6 +9531,9 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           #cards .currency-symbol {
             font-family: "Segoe UI Symbol", "Noto Sans", Arial, sans-serif !important;
           }
+          #cards .expand-icon {
+            display: none !important;
+          }
         </style>
       `;
       return styleTags + '\n' + exportOverrides;
@@ -9569,12 +9626,13 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     function buildCardsImagePayload(mode = 'current') {
       const cardsContainer = document.getElementById('cards');
-      const cardsRect = cardsContainer ? cardsContainer.getBoundingClientRect() : null;
+      const metrics = getCardsCaptureMetrics(cardsContainer);
       return {
         theme: document.documentElement.getAttribute('data-theme') || 'light',
-        viewport_width: Math.max(Math.ceil((cardsRect ? cardsRect.width : window.innerWidth) + 80), 320),
-        cards_width: cardsRect ? Math.ceil(cardsRect.width) : null,
-        cards_height: cardsRect ? Math.ceil(cardsRect.height) : null,
+        viewport_width: Math.max((metrics.width || 0) + 12, 320),
+        cards_width: metrics.width,
+        cards_height: metrics.height,
+        cards_child_count: metrics.childCount,
         cards_html: createCardsSnapshotHtml(mode),
         expanded_indices: getExpandedFlightIndices()
       };
@@ -9602,6 +9660,92 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         throw new Error('Client-side image renderer is unavailable');
       }
 
+      if (mode === 'current') {
+        const cardsContainer = document.getElementById('cards');
+        const captureTarget = getCardsCaptureTarget(cardsContainer);
+        if (!captureTarget) {
+          throw new Error('No live card available for client render');
+        }
+        captureTarget.setAttribute('data-export-capture-target', 'true');
+        try {
+          if (document.fonts && document.fonts.ready) {
+            await document.fonts.ready;
+          }
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          await new Promise((resolve) => setTimeout(resolve, 80));
+
+          const rect = captureTarget.getBoundingClientRect();
+          const captureWidth = Math.ceil(rect.width || captureTarget.offsetWidth || 1);
+          const captureHeight = Math.ceil(rect.height || captureTarget.offsetHeight || 1);
+
+          const canvas = await window.html2canvas(captureTarget, {
+            backgroundColor: '#ffffff',
+            scale: Math.max(2, Math.min(window.devicePixelRatio || 1, 3)),
+            useCORS: true,
+            logging: false,
+            imageTimeout: 15000,
+            width: captureWidth,
+            height: captureHeight,
+            windowWidth: Math.ceil(document.documentElement.clientWidth || window.innerWidth || captureWidth),
+            windowHeight: Math.ceil(document.documentElement.clientHeight || window.innerHeight || captureHeight),
+            scrollX: -window.scrollX,
+            scrollY: -window.scrollY,
+            onclone: (clonedDoc) => {
+              const cloneBody = clonedDoc.body;
+              const cloneHtml = clonedDoc.documentElement;
+              if (cloneHtml) cloneHtml.style.background = '#ffffff';
+              if (cloneBody) cloneBody.style.background = '#ffffff';
+              [
+                '.download-flight-overlay',
+                '.loader-overlay',
+                '.modal-overlay',
+                '.sidebar-overlay',
+                '.notification',
+                '.toast',
+                '#sidebar',
+                '#sidebarOverlay',
+                '#menuToggle',
+                '#tsparticles'
+              ].forEach((selector) => {
+                clonedDoc.querySelectorAll(selector).forEach((node) => {
+                  node.style.display = 'none';
+                  node.style.visibility = 'hidden';
+                });
+              });
+              clonedDoc.querySelectorAll('.expand-icon').forEach((node) => {
+                node.style.display = 'none';
+                node.style.visibility = 'hidden';
+              });
+              const clonedTarget = clonedDoc.querySelector('[data-export-capture-target="true"]');
+              if (clonedTarget) {
+                clonedTarget.style.margin = '0';
+                clonedTarget.style.background = '#ffffff';
+                clonedTarget.style.transform = 'none';
+                clonedTarget.style.transition = 'none';
+                clonedTarget.style.animation = 'none';
+              }
+              clonedDoc.querySelectorAll('.flight-timeline-container, .expand-icon, .cards-wrapper, .flight-card, .round-trip-card, .multi-city-card').forEach((node) => {
+                node.style.transition = 'none';
+                node.style.animation = 'none';
+                node.style.transform = 'none';
+              });
+            }
+          });
+
+          const blob = await new Promise((resolve, reject) => {
+            canvas.toBlob((result) => {
+              if (result) resolve(result);
+              else reject(new Error('Canvas export failed'));
+            }, 'image/png');
+          });
+
+          return blob;
+        } finally {
+          captureTarget.removeAttribute('data-export-capture-target');
+        }
+      }
+
       const sandbox = document.createElement('div');
       sandbox.style.position = 'fixed';
       sandbox.style.left = '-20000px';
@@ -9622,6 +9766,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (!snapshotCards) {
         throw new Error('No card snapshot available for client render');
       }
+      const captureNode = snapshotCards.children.length === 1 ? snapshotCards.children[0] : snapshotCards;
 
       snapshotCards.style.margin = '0';
       snapshotCards.style.padding = '0';
@@ -9645,7 +9790,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           await document.fonts.ready;
         }
 
-        const childBounds = Array.from(snapshotCards.children || []).reduce((acc, node) => {
+        const childBounds = Array.from(captureNode.children || []).reduce((acc, node) => {
           const right = node.offsetLeft + node.offsetWidth;
           const bottom = node.offsetTop + node.offsetHeight;
           return {
@@ -9653,10 +9798,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             height: Math.max(acc.height, bottom)
           };
         }, { width: 0, height: 0 });
-        const captureWidth = Math.ceil(childBounds.width || snapshotCards.scrollWidth || snapshotCards.offsetWidth || 1);
-        const captureHeight = Math.ceil(childBounds.height || snapshotCards.scrollHeight || snapshotCards.offsetHeight || 1);
+        const captureWidth = Math.ceil(childBounds.width || captureNode.scrollWidth || captureNode.offsetWidth || 1);
+        const captureHeight = Math.ceil(childBounds.height || captureNode.scrollHeight || captureNode.offsetHeight || 1);
 
-        const canvas = await window.html2canvas(snapshotCards, {
+        const canvas = await window.html2canvas(captureNode, {
           backgroundColor: '#ffffff',
           scale: Math.max(2, Math.min(window.devicePixelRatio || 1, 3)),
           useCORS: true,

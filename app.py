@@ -472,6 +472,7 @@ def _build_render_request(payload):
     cards_width = max(int(requested_cards_width), 1) if requested_cards_width else None
     requested_cards_height = payload.get("cards_height")
     cards_height = max(int(requested_cards_height), 1) if requested_cards_height else None
+    cards_child_count = max(int(payload.get("cards_child_count") or 0), 0)
     cards_html = (payload.get("cards_html") or "").strip()
     if not cards_html:
         raise ValueError("No flight card snapshot to render")
@@ -494,7 +495,7 @@ def _build_render_request(payload):
         "page_url": f"{request.host_url}?render_preview_token={preview_token}",
         "viewport_width": cache_payload["viewport_width"],
         "viewport_height": cache_payload["viewport_height"],
-        "selector": "#cards",
+        "selector": "#cards > :first-child" if cards_child_count == 1 else "#cards",
     }
 
 
@@ -3302,6 +3303,7 @@ def generate_ticket_pdf(ticket_id):
         return jsonify({"error": "Ticket not found"}), 404
     
     include_fare = request.args.get('include_fare', 'true').lower() == 'true'
+    passenger_sort = request.args.get('passenger_sort', '')
     
     passengers = json.loads(ticket.passengers_data) if ticket.passengers_data else []
     segments = json.loads(ticket.segments_data) if ticket.segments_data else []
@@ -3328,6 +3330,8 @@ def generate_ticket_pdf(ticket_id):
                 merged_passengers.append(p_copy)
         passengers = merged_passengers
         grand_total = _round_money(merged_total)
+
+    passengers = _sort_passengers_for_pdf(passengers, passenger_sort)
 
     # Build data dict for PDF generator
     pdf_data = {
@@ -3439,6 +3443,7 @@ def generate_selected_passenger_pdf(ticket_id):
     include_fare = request.args.get('include_fare', 'true').lower() == 'true'
     mode = request.args.get('mode', 'together')  # 'individual' or 'together'
     pax_indices = request.args.getlist('passenger_indices', type=int)
+    passenger_sort = request.args.get('passenger_sort', '')
 
     if not pax_indices:
         return jsonify({"error": "No passenger indices provided"}), 400
@@ -3468,6 +3473,7 @@ def generate_selected_passenger_pdf(ticket_id):
         return jsonify({"error": "No valid passenger indices"}), 400
 
     selected_passengers = [passengers[i] for i in valid_indices]
+    selected_passengers = _sort_passengers_for_pdf(selected_passengers, passenger_sort)
 
     # Recalculate fare for selected passengers if consolidated
     selected_journey = json.loads(json.dumps(journey))  # deep copy
@@ -3624,6 +3630,21 @@ def _build_pdf_filename(pax_name, ticket, segments):
     if not filename.endswith(".pdf"):
         filename += ".pdf"
     return filename
+
+
+def _normalize_passenger_sort_value(value):
+    return (str(value or "").strip()).lower()
+
+
+def _sort_passengers_for_pdf(passengers, sort_mode):
+    mode = (sort_mode or "").strip().lower()
+    if mode not in {"name", "ticket_number"}:
+        return list(passengers or [])
+    key_name = "ticket_number" if mode == "ticket_number" else "name"
+    return sorted(
+        list(passengers or []),
+        key=lambda passenger: _normalize_passenger_sort_value(passenger.get(key_name))
+    )
 
 
 # ==================== TICKET CANCEL / SPLIT / CHANGE ROUTES ====================
