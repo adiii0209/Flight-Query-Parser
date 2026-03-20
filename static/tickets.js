@@ -9,6 +9,10 @@ let passengerSortMode = '';
 let autoSaveTimeout = null;
 let pendingSavePromise = null;
 let isDetailDirty = false;
+let knownTicketIds = new Set();
+let hasInitializedTicketFeed = false;
+let ticketsPollingHandle = null;
+const TICKETS_POLL_INTERVAL_MS = 8000;
 
 // ==================== SIDEBAR & THEME ====================
 function initializeSidebar() {
@@ -100,6 +104,17 @@ function formatCurrency(n, curr) {
     if (!n && n !== 0) return sym + '0';
     return sym + Number(n).toLocaleString('en-IN');
 }
+function parseMoneyValue(value) {
+    if (value === undefined || value === null) return 0;
+    if (typeof value === 'string') {
+        const normalized = value.trim();
+        if (!normalized || normalized.toUpperCase() === 'N/A' || normalized.toLowerCase() === 'not specified') {
+            return 0;
+        }
+    }
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
 function showToast(msg, type = 'info') {
     const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg;
     document.body.appendChild(t); setTimeout(() => t.remove(), 3500);
@@ -150,9 +165,41 @@ async function loadTickets() {
         const r = await fetch('/api/tickets/list');
         if (!r.ok) return;
         const d = await r.json();
-        allTickets = d.tickets || [];
+        const incomingTickets = d.tickets || [];
+        const incomingIds = new Set(incomingTickets.map((ticket) => ticket.id).filter(Boolean));
+        if (hasInitializedTicketFeed) {
+            const newTickets = incomingTickets.filter((ticket) => ticket && ticket.id && !knownTicketIds.has(ticket.id));
+            if (newTickets.length > 0) {
+                const firstTicket = newTickets[0];
+                const title = (firstTicket.passenger_names || []).filter(Boolean).slice(0, 2).join(', ')
+                    || firstTicket.pnr
+                    || 'New ticket';
+                showToast(
+                    newTickets.length === 1
+                        ? `New ticket received: ${title}`
+                        : `${newTickets.length} new tickets received`,
+                    'success'
+                );
+            }
+        }
+        allTickets = incomingTickets;
+        knownTicketIds = incomingIds;
+        hasInitializedTicketFeed = true;
         renderTicketCards();
     } catch (e) { console.error('Load error:', e); }
+}
+
+function startTicketsPolling() {
+    if (ticketsPollingHandle) return;
+    ticketsPollingHandle = setInterval(async () => {
+        if (document.hidden) return;
+        try {
+            await loadTickets();
+            await loadNotifications();
+        } catch (e) {
+            console.error('Tickets polling failed', e);
+        }
+    }, TICKETS_POLL_INTERVAL_MS);
 }
 
 // ==================== FILTER & CARDS ====================
@@ -1685,14 +1732,18 @@ function getNormalizedFareState() {
     const passengers = editedData.passengers || [];
     const journey = editedData.journey || {};
     const passengerCount = passengers.length || 1;
-    const globalMarkup = parseFloat(journey.global_markup) || 0;
+    const globalMarkup = parseMoneyValue(journey.global_markup);
+    if (!editedData.journey) editedData.journey = {};
+    if (!editedData.journey.consolidated_fare) {
+        editedData.journey.consolidated_fare = { base_fare: 0, k3_gst: 0, other_taxes: 0 };
+    }
     const consolidated = journey.consolidated_fare || null;
     const explicitPassengerFareRows = passengers.map((p) => {
         const fare = p.fare || {};
         return {
-            base: parseFloat(fare.base_fare) || 0,
-            k3: parseFloat(fare.k3_gst) || 0,
-            other: parseFloat(fare.other_taxes) || 0
+            base: parseMoneyValue(fare.base_fare),
+            k3: parseMoneyValue(fare.k3_gst),
+            other: parseMoneyValue(fare.other_taxes)
         };
     });
     const hasExplicitPassengerFares = explicitPassengerFareRows.some(row => row.base || row.k3 || row.other);
@@ -1706,9 +1757,9 @@ function getNormalizedFareState() {
 
     const hasConsolidatedFare = !!consolidated;
     const consolidatedTotals = hasConsolidatedFare ? {
-        base: parseFloat(consolidated.base_fare) || 0,
-        k3: parseFloat(consolidated.k3_gst) || 0,
-        other: parseFloat(consolidated.other_taxes) || 0
+        base: parseMoneyValue(consolidated.base_fare),
+        k3: parseMoneyValue(consolidated.k3_gst),
+        other: parseMoneyValue(consolidated.other_taxes)
     } : passengerTotals;
 
     const perPassengerRows = passengers.map((_, index) => {
@@ -3199,6 +3250,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await checkAuth();
     await loadTickets();
     await loadNotifications();
+    startTicketsPolling();
 
     const detailView = document.getElementById('detailView');
     if (detailView) {
