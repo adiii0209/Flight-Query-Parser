@@ -1,9 +1,15 @@
 import os
+if os.name == "nt":
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "C:\\pw-browsers")
+else:
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
 import json
 import uuid
 import requests
 import base64
 import io
+import subprocess
+import sys
 from flask import Flask, request, jsonify, render_template, render_template_string, session, redirect, url_for, send_file, send_from_directory
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
@@ -22,9 +28,10 @@ import re
 import threading
 import queue
 import asyncio
-from pathlib import Path
+import hashlib
 from collections import OrderedDict
 from copy import deepcopy
+from urllib.parse import urlparse
 from werkzeug.utils import secure_filename
 
 import pytesseract
@@ -32,12 +39,14 @@ try:
     import pdf417gen
 except Exception:
     pdf417gen = None
-_playwright_import_error = None
 try:
     from playwright.async_api import async_playwright
-except Exception as exc:
+except Exception:
     async_playwright = None
-    _playwright_import_error = exc
+try:
+    from playwright.sync_api import sync_playwright
+except Exception:
+    sync_playwright = None
 
 load_dotenv()
 app = Flask(__name__)
@@ -57,8 +66,9 @@ db.init_app(app)
 _playwright_runtime = None
 _playwright_browser = None
 _playwright_lock = threading.Lock()
-_playwright_task_queue = queue.Queue()
+_playwright_task_queue = queue.Queue(maxsize=12)
 _playwright_worker_started = False
+_playwright_install_attempted = False
 _render_cache = OrderedDict()
 _render_cache_lock = threading.Lock()
 _render_cache_max = 20
@@ -66,6 +76,41 @@ _render_jobs = {}
 _render_jobs_lock = threading.Lock()
 _render_preview_store = {}
 _render_preview_lock = threading.Lock()
+_PLAYWRIGHT_RENDER_SCALE = 2
+_PLAYWRIGHT_NAV_TIMEOUT_MS = 4500
+_PLAYWRIGHT_READY_TIMEOUT_MS = 3000
+_PLAYWRIGHT_ELEMENT_TIMEOUT_MS = 1800
+_PLAYWRIGHT_QUEUE_WAIT_SECONDS = 6
+_PLAYWRIGHT_RENDER_RETRIES = 2
+_PLAYWRIGHT_EXTERNAL_ALLOWLIST = {"fonts.googleapis.com", "fonts.gstatic.com"}
+_PLAYWRIGHT_ABORT_RESOURCE_TYPES = {"media", "websocket", "eventsource", "manifest"}
+_PLAYWRIGHT_LAUNCH_ARGS = [
+    "--headless=new",
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--no-zygote",
+    "--single-process",
+    "--disable-background-networking",
+    "--disable-background-timer-throttling",
+    "--disable-breakpad",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-extensions",
+    "--disable-features=Translate,BackForwardCache,AcceptCHFrame,MediaRouter,OptimizationHints",
+    "--disable-hang-monitor",
+    "--disable-ipc-flooding-protection",
+    "--disable-popup-blocking",
+    "--disable-renderer-backgrounding",
+    "--force-color-profile=srgb",
+    "--metrics-recording-only",
+    "--mute-audio",
+    "--no-first-run",
+    "--password-store=basic",
+    "--use-mock-keychain",
+    "--font-render-hinting=medium",
+]
 
 # Register API v2 Blueprint
 # Register API v2 Blueprint
@@ -103,65 +148,30 @@ def serve_icon_file(filename):
     return send_from_directory("icons", filename)
 
 
-def _playwright_launch_options():
-    launch_options = {
-        "headless": True,
-        "chromium_sandbox": False,
-        "args": [
-            "--disable-dev-shm-usage",
-        ],
-    }
-    executable_path = (os.getenv("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH") or "").strip()
-    if executable_path:
-        resolved_path = Path(executable_path)
-        if not resolved_path.exists():
-            raise RuntimeError(
-                "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH does not exist: "
-                + str(resolved_path)
-            )
-        launch_options["executable_path"] = str(resolved_path)
-        print("[INFO] Using explicit Chromium executable:", resolved_path)
-    return launch_options
+def _render_log(level, message, **kwargs):
+    details = " ".join(f"{key}={value}" for key, value in kwargs.items() if value is not None)
+    suffix = f" {details}" if details else ""
+    print(f"[{level}] {message}{suffix}")
 
 
-def _build_render_profile(viewport_width, cards_height):
-    estimated_height = max(int(cards_height or 900), 1)
-    estimated_area = max(int(viewport_width), 320) * estimated_height
-    if estimated_area >= 5_000_000 or estimated_height >= 2800:
-        return {"page_timeout_ms": 40000, "job_timeout_seconds": 50}
-    if estimated_area >= 2_500_000 or estimated_height >= 1800:
-        return {"page_timeout_ms": 25000, "job_timeout_seconds": 32}
-    return {"page_timeout_ms": 15000, "job_timeout_seconds": 18}
+def _should_abort_playwright_request(route, allowed_origin):
+    pw_request = route.request
+    if pw_request.resource_type in _PLAYWRIGHT_ABORT_RESOURCE_TYPES:
+        return True
 
-
-def _get_playwright_render_base_url():
-    configured_base_url = (os.getenv("PLAYWRIGHT_RENDER_BASE_URL") or "").strip()
-    if configured_base_url:
-        return configured_base_url.rstrip("/")
-
-    script_root = (request.script_root or "").rstrip("/")
-    internal_port = (
-        os.getenv("PORT")
-        or request.environ.get("SERVER_PORT")
-        or "5000"
-    )
-    return f"http://127.0.0.1:{internal_port}{script_root}"
+    parsed = urlparse(pw_request.url)
+    request_origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
+    if not request_origin or request_origin == allowed_origin:
+        return False
+    if parsed.netloc in _PLAYWRIGHT_EXTERNAL_ALLOWLIST:
+        return False
+    return pw_request.resource_type not in {"document", "stylesheet", "image", "font"}
 
 
 async def _get_playwright_browser():
     global _playwright_runtime, _playwright_browser
     if async_playwright is None:
-        hint = (
-            "Playwright async API is unavailable. Install dependencies with "
-            "'pip install -r requirements.txt' and then install the browser with "
-            "'python -m playwright install chromium' on Windows or "
-            "'python -m playwright install --with-deps chromium' on Linux."
-        )
-        if _playwright_import_error is not None:
-            raise RuntimeError(
-                hint + " Import error: " + repr(_playwright_import_error)
-            ) from _playwright_import_error
-        raise RuntimeError(hint)
+        raise RuntimeError("Playwright async API is not installed on the server.")
 
     if _playwright_browser and _playwright_browser.is_connected():
         return _playwright_browser
@@ -175,24 +185,23 @@ async def _get_playwright_browser():
 
     try:
         _playwright_browser = await _playwright_runtime.chromium.launch(
-            **_playwright_launch_options()
+            headless=True,
+            args=_PLAYWRIGHT_LAUNCH_ARGS,
         )
     except Exception as exc:
         message = str(exc)
-        if "Executable doesn't exist" in message or "executable doesn't exist" in message:
-            raise RuntimeError(
-                "Playwright Chromium was not found in the runtime image. "
-                "Install it at build time with "
-                "'python -m playwright install --with-deps chromium' and keep "
-                "PLAYWRIGHT_BROWSERS_PATH pointed at the installed browser directory. "
-                "If you want to use a system Chromium instead, set "
-                "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH."
-            ) from exc
-        raise
+        if "Executable doesn't exist" in message and not _playwright_install_attempted:
+            await _install_playwright_browsers()
+            _playwright_browser = await _playwright_runtime.chromium.launch(
+                headless=True,
+                args=_PLAYWRIGHT_LAUNCH_ARGS,
+            )
+        else:
+            raise
 
     def _handle_disconnect():
         global _playwright_browser
-        print("[WARN] Playwright browser disconnected. Clearing cached browser instance.")
+        _render_log("WARN", "Playwright browser disconnected. Clearing cached browser instance.")
         _playwright_browser = None
 
     _playwright_browser.on("disconnected", _handle_disconnect)
@@ -216,6 +225,27 @@ async def _reset_playwright_browser():
         _playwright_runtime = None
 
 
+async def _install_playwright_browsers():
+    global _playwright_install_attempted
+    if _playwright_install_attempted:
+        return
+    _playwright_install_attempted = True
+    loop = asyncio.get_running_loop()
+    cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
+    print("[INFO] Playwright browsers missing. Installing:", " ".join(cmd))
+
+    def _run():
+        return subprocess.run(cmd, capture_output=True, text=True)
+
+    result = await loop.run_in_executor(None, _run)
+    if result.stdout:
+        print("[INFO] Playwright install stdout:", result.stdout.strip())
+    if result.stderr:
+        print("[WARN] Playwright install stderr:", result.stderr.strip())
+    if result.returncode != 0:
+        raise RuntimeError("Playwright install failed with exit code " + str(result.returncode))
+
+
 async def _playwright_render_loop():
     loop = asyncio.get_running_loop()
     while True:
@@ -225,36 +255,48 @@ async def _playwright_render_loop():
             break
 
         context = None
+        page = None
         try:
             last_exc = None
-            for render_attempt in range(2):
+            for render_attempt in range(_PLAYWRIGHT_RENDER_RETRIES):
+                task_started_at = datetime.utcnow().timestamp()
                 browser = await _get_playwright_browser()
                 try:
                     context = await browser.new_context(
                         viewport={"width": task["viewport_width"], "height": task.get("viewport_height", 960)},
-                        device_scale_factor=1,
+                        device_scale_factor=_PLAYWRIGHT_RENDER_SCALE,
                         color_scheme="light",
+                        service_workers="block",
+                        reduced_motion="reduce",
                     )
                 except Exception as exc:
                     if "Target page, context or browser has been closed" not in str(exc):
                         raise
-                    print("[WARN] Browser context creation failed. Resetting Playwright browser and retrying once.")
+                    _render_log("WARN", "Browser context creation failed. Resetting Playwright browser and retrying once.")
                     await _reset_playwright_browser()
                     browser = await _get_playwright_browser()
                     context = await browser.new_context(
                         viewport={"width": task["viewport_width"], "height": task.get("viewport_height", 960)},
-                        device_scale_factor=1,
+                        device_scale_factor=_PLAYWRIGHT_RENDER_SCALE,
                         color_scheme="light",
+                        service_workers="block",
+                        reduced_motion="reduce",
                     )
                 try:
                     page = await context.new_page()
-                    page.set_default_timeout(task.get("page_timeout_ms", 15000))
-                    page.set_default_navigation_timeout(task.get("page_timeout_ms", 15000))
-                    await page.goto(task["page_url"], wait_until="domcontentloaded")
-                    await page.wait_for_function(
-                        "window.__cardsRenderReady === true",
-                        timeout=task.get("page_timeout_ms", 15000)
-                    )
+                    page.set_default_timeout(_PLAYWRIGHT_NAV_TIMEOUT_MS)
+                    allowed_origin = "{uri.scheme}://{uri.netloc}".format(uri=urlparse(task["page_url"]))
+
+                    async def _route_handler(route):
+                        if _should_abort_playwright_request(route, allowed_origin):
+                            await route.abort()
+                        else:
+                            await route.continue_()
+
+                    await page.route("**/*", _route_handler)
+                    await page.goto(task["page_url"], wait_until="domcontentloaded", timeout=_PLAYWRIGHT_NAV_TIMEOUT_MS)
+                    await page.wait_for_function("window.__cardsRenderReady === true", timeout=_PLAYWRIGHT_READY_TIMEOUT_MS)
+                    await page.locator(task.get("selector", "#cards")).wait_for(state="visible", timeout=_PLAYWRIGHT_ELEMENT_TIMEOUT_MS)
                     await page.wait_for_function(
                         """
                         (selector) => {
@@ -265,7 +307,7 @@ async def _playwright_render_loop():
                         }
                         """,
                         arg=task.get("selector", "#cards"),
-                        timeout=max(5000, min(task.get("page_timeout_ms", 15000), 15000))
+                        timeout=_PLAYWRIGHT_ELEMENT_TIMEOUT_MS
                     )
                     await page.evaluate(
                         """
@@ -273,7 +315,6 @@ async def _playwright_render_loop():
                           if (document.fonts && document.fonts.ready) {
                             await document.fonts.ready;
                           }
-                          await new Promise((resolve) => requestAnimationFrame(resolve));
                           await new Promise((resolve) => requestAnimationFrame(resolve));
                           const images = Array.from(document.images || []);
                           await Promise.all(images.map((img) => {
@@ -288,22 +329,34 @@ async def _playwright_render_loop():
                     )
                     image_bytes = await page.locator(task.get("selector", "#cards")).screenshot(
                         type="png",
-                        animations="disabled",
-                        scale="css",
-                        timeout=task.get("page_timeout_ms", 15000),
+                        animations="disabled"
                     )
                     task["result"]["image_bytes"] = image_bytes
                     task["result"].pop("error", None)
+                    _render_log(
+                        "INFO",
+                        "Playwright card render succeeded",
+                        cache_key=task.get("cache_key", "")[:8],
+                        ms=int((datetime.utcnow().timestamp() - task_started_at) * 1000),
+                        width=task["viewport_width"],
+                        height=task.get("viewport_height", 960),
+                    )
                     last_exc = None
                     break
                 except Exception as exc:
                     last_exc = exc
-                    if render_attempt == 0:
-                        print(f"[WARN] Playwright render pass failed, retrying once: {exc}")
+                    if render_attempt < (_PLAYWRIGHT_RENDER_RETRIES - 1):
+                        _render_log("WARN", "Playwright render pass failed, retrying once", error=exc)
                         await _reset_playwright_browser()
                         continue
                     raise
                 finally:
+                    if page:
+                        try:
+                            await page.close()
+                        except Exception:
+                            pass
+                        page = None
                     if context:
                         try:
                             await context.close()
@@ -316,8 +369,16 @@ async def _playwright_render_loop():
             task["result"]["error"] = exc
         finally:
             try:
+                if page:
+                    try:
+                        await page.close()
+                    except Exception:
+                        pass
                 if context:
-                    await context.close()
+                    try:
+                        await context.close()
+                    except Exception:
+                        pass
             finally:
                 task["event"].set()
                 _playwright_task_queue.task_done()
@@ -349,10 +410,13 @@ def _store_render_cache(cache_key, image_bytes):
         while len(_render_cache) > _render_cache_max:
             _render_cache.popitem(last=False)
     try:
-        with open(os.path.join(RENDER_CACHE_FOLDER, f"{cache_key}.png"), "wb") as cache_file:
+        cache_path = os.path.join(RENDER_CACHE_FOLDER, f"{cache_key}.png")
+        temp_path = f"{cache_path}.tmp"
+        with open(temp_path, "wb") as cache_file:
             cache_file.write(image_bytes)
+        os.replace(temp_path, cache_path)
     except Exception as exc:
-        print(f"[WARN] Failed to persist render cache {cache_key}: {exc}")
+        _render_log("WARN", "Failed to persist render cache", cache_key=cache_key[:8], error=exc)
 
 
 def _get_persisted_render_cache(cache_key):
@@ -369,7 +433,7 @@ def _get_persisted_render_cache(cache_key):
                 _render_cache.popitem(last=False)
         return image_bytes
     except Exception as exc:
-        print(f"[WARN] Failed to load persisted render cache {cache_key}: {exc}")
+        _render_log("WARN", "Failed to load persisted render cache", cache_key=cache_key[:8], error=exc)
         return None
 
 
@@ -423,17 +487,13 @@ def _build_render_request(payload):
         "viewport_width": cards_width or min(viewport_width, 1400),
         "viewport_height": min(max((cards_height or 900) + 40, 240), 4000),
     }
-    render_profile = _build_render_profile(cache_payload["viewport_width"], cards_height)
     cache_key = hashlib.sha256(json.dumps(cache_payload, sort_keys=True).encode("utf-8")).hexdigest()
     preview_token = _store_render_preview(preview_state)
-    render_base_url = _get_playwright_render_base_url()
     return {
         "cache_key": cache_key,
-        "page_url": f"{render_base_url}/?render_preview_token={preview_token}",
+        "page_url": f"{request.host_url}?render_preview_token={preview_token}",
         "viewport_width": cache_payload["viewport_width"],
         "viewport_height": cache_payload["viewport_height"],
-        "page_timeout_ms": render_profile["page_timeout_ms"],
-        "job_timeout_seconds": render_profile["job_timeout_seconds"],
         "selector": "#cards",
     }
 
@@ -456,15 +516,20 @@ def _queue_render_request(render_request):
         _render_jobs[cache_key] = {"event": done_event, "result": result}
 
     _ensure_playwright_worker()
-    _playwright_task_queue.put({
-        "page_url": render_request["page_url"],
-        "viewport_width": render_request["viewport_width"],
-        "viewport_height": render_request["viewport_height"],
-        "page_timeout_ms": render_request["page_timeout_ms"],
-        "selector": render_request["selector"],
-        "event": done_event,
-        "result": result,
-    })
+    try:
+        _playwright_task_queue.put_nowait({
+            "cache_key": cache_key,
+            "page_url": render_request["page_url"],
+            "viewport_width": render_request["viewport_width"],
+            "viewport_height": render_request["viewport_height"],
+            "selector": render_request["selector"],
+            "event": done_event,
+            "result": result,
+        })
+    except queue.Full:
+        with _render_jobs_lock:
+            _render_jobs.pop(cache_key, None)
+        raise RuntimeError("Render queue is busy. Please retry in a moment.")
 
     def _finalize():
         done_event.wait()
@@ -488,7 +553,7 @@ def _get_cached_render_bytes(cache_key):
     return _get_persisted_render_cache(cache_key)
 
 
-def _render_request_bytes(render_request, timeout=15):
+def _render_request_bytes(render_request, timeout=_PLAYWRIGHT_QUEUE_WAIT_SECONDS):
     cache_key = render_request["cache_key"]
     cached = _get_cached_render_bytes(cache_key)
     if cached is not None:
@@ -1198,6 +1263,19 @@ def _normalize_passenger_name(name):
     return normalized
 
 
+def _find_duplicate_normalized_passenger_names(signatures):
+    seen = {}
+    duplicates = set()
+    for sig in signatures:
+        for passenger_name in sig.get("normalized_passenger_names", []):
+            if not passenger_name:
+                continue
+            seen[passenger_name] = seen.get(passenger_name, 0) + 1
+            if seen[passenger_name] > 1:
+                duplicates.add(passenger_name)
+    return sorted(duplicates)
+
+
 def _sector_fare_map(sector_indices, sector_fares):
     result = {}
     for item in sector_fares or []:
@@ -1416,6 +1494,8 @@ def _ticket_dict_with_children(ticket):
         "ledger_hash": ticket.ledger_hash,
         "parent_ticket_id": ticket.parent_ticket_id,
         "booking_group_id": ticket.booking_group_id,
+        "duplicate_status": ticket.duplicate_status,
+        "duplicate_of_id": ticket.duplicate_of_id,
         "cancellation_charge": ticket.cancellation_charge or 0,
         "last_aggregator": ticket.last_aggregator,
         "last_booked_by": ticket.last_booked_by,
@@ -1466,6 +1546,50 @@ def _merged_ticket_dict(booking_group, lead_ticket):
         "status": booking_group.status,
     }
     return lead_payload
+
+
+def _collect_ticket_delete_side_effects(ticket, user_id):
+    ledger_entries = LedgerEntry.query.filter_by(ticket_id=ticket.id, user_id=user_id).all()
+    mapped_entry = None
+    if ticket.ledger_hash and ticket.ledger_hash.startswith("MAPPED_"):
+        mapped_id = ticket.ledger_hash.replace("MAPPED_", "").strip()
+        if mapped_id:
+            mapped_entry = LedgerEntry.query.filter_by(id=mapped_id, user_id=user_id).first()
+
+    agg_ids = set()
+    for entry in ledger_entries:
+        agg_id = _delete_ledger_entry_with_reverse(entry, user_id)
+        if agg_id:
+            agg_ids.add(agg_id)
+    if mapped_entry and mapped_entry not in ledger_entries:
+        agg_id = _delete_ledger_entry_with_reverse(mapped_entry, user_id)
+        if agg_id:
+            agg_ids.add(agg_id)
+    return agg_ids
+
+
+def _delete_ticket_record(ticket, user_id):
+    agg_ids = _collect_ticket_delete_side_effects(ticket, user_id)
+    db.session.delete(ticket)
+    return agg_ids
+
+
+def _delete_booking_group_records(booking_group, user_id, ticket_ids=None):
+    selected_ids = set(ticket_ids or [])
+    grouped_tickets = _booking_group_sorted_tickets(booking_group)
+    if selected_ids:
+        grouped_tickets = [ticket for ticket in grouped_tickets if ticket.id in selected_ids]
+    agg_ids = set()
+    for grouped_ticket in grouped_tickets:
+        agg_ids.update(_delete_ticket_record(grouped_ticket, user_id))
+    deleted_ids = {t.id for t in grouped_tickets}
+    remaining = [ticket for ticket in _booking_group_sorted_tickets(booking_group) if ticket.id not in deleted_ids]
+    if len(remaining) == 1:
+        remaining[0].booking_group_id = None
+        db.session.delete(booking_group)
+    elif not remaining:
+        db.session.delete(booking_group)
+    return agg_ids, len(grouped_tickets)
 
 
 def _create_ledger_entry_from_plan(agg_id, user_id, row_order, pnr, booking_by, entry_type, components, fee, remarks, ticket_id):
@@ -1622,6 +1746,8 @@ def ensure_schema_compatibility():
     _sqlite_add_column_if_missing("ticket_operation", "after_state", "TEXT")
     _sqlite_add_column_if_missing("ticket_operation", "metadata_json", "TEXT")
     _sqlite_add_column_if_missing("ticket", "booking_group_id", "VARCHAR")
+    _sqlite_add_column_if_missing("ticket", "duplicate_status", "VARCHAR(20)")
+    _sqlite_add_column_if_missing("ticket", "duplicate_of_id", "VARCHAR")
 
     _sqlite_add_column_if_missing("operation_ledger_link", "created_at", "DATETIME")
     _sqlite_add_column_if_missing("operation_ledger_link", "user_id", "VARCHAR")
@@ -2126,14 +2252,11 @@ def render_cards_image():
             render_request = _build_render_request(payload)
             cache_key = render_request["cache_key"]
             try:
-                image_bytes = _render_request_bytes(
-                    render_request,
-                    timeout=render_request["job_timeout_seconds"] + (attempt * 8),
-                )
+                image_bytes = _render_request_bytes(render_request, timeout=_PLAYWRIGHT_QUEUE_WAIT_SECONDS if attempt == 0 else (_PLAYWRIGHT_QUEUE_WAIT_SECONDS + 2))
                 break
             except Exception as exc:
                 last_error = exc
-                print(f"[WARN] Card render attempt {attempt + 1} failed: {exc}")
+                _render_log("WARN", "Card render attempt failed", attempt=attempt + 1, cache_key=(cache_key or "")[:8], error=exc)
                 with _render_jobs_lock:
                     _render_jobs.pop(cache_key, None)
                 if attempt < 2:
@@ -2147,7 +2270,7 @@ def render_cards_image():
             raise last_error or RuntimeError("Failed to render cards image")
 
         _store_render_cache(cache_key, image_bytes)
-        print("[INFO] Server-side card render succeeded.")
+        _render_log("INFO", "Server-side card render succeeded", cache_key=(cache_key or "")[:8], bytes=len(image_bytes))
 
         return send_file(
             io.BytesIO(image_bytes),
@@ -2157,7 +2280,7 @@ def render_cards_image():
         )
     except Exception as e:
         app.logger.exception("Server-side card render failed")
-        print("[ERROR] Server-side card render failed:", str(e))
+        _render_log("ERROR", "Server-side card render failed", error=e)
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"Failed to render cards image: {str(e)}"}), 500
@@ -2172,10 +2295,8 @@ def preload_cards_image():
         cached = _get_cached_render_bytes(cache_key)
         if cached is not None:
             return jsonify({"status": "cached", "cache_key": cache_key, "ready": True})
-        job = _queue_render_request(render_request)
-        if job["status"] == "cached":
-            return jsonify({"status": "cached", "cache_key": cache_key, "ready": True})
-        return jsonify({"status": "queued", "cache_key": cache_key, "ready": False})
+        _render_request_bytes(render_request, timeout=_PLAYWRIGHT_QUEUE_WAIT_SECONDS + 2)
+        return jsonify({"status": "ready", "cache_key": cache_key, "ready": True})
     except Exception as e:
         app.logger.exception("Card image preload failed")
         return jsonify({"error": f"Failed to preload cards image: {str(e)}"}), 500
@@ -2511,6 +2632,61 @@ def receive_ticket():
             parser_version=metadata.get("parser_version")
         )
 
+        # ── Duplicate Detection ────────────────────────────────────────────
+        is_duplicate = False
+        duplicate_of = None
+        new_pnr = (booking.get("pnr") or "").strip().upper()
+
+        if new_pnr:
+            new_sectors = []
+            for seg in segments:
+                dep_ap = (seg.get("departure") or {}).get("airport", "").strip().upper()
+                arr_ap = (seg.get("arrival") or {}).get("airport", "").strip().upper()
+                if dep_ap and arr_ap:
+                    new_sectors.append(f"{dep_ap}-{arr_ap}")
+            new_sectors_key = "|".join(new_sectors)
+
+            new_pax_names = sorted([
+                _normalize_passenger_name(p.get("name", ""))
+                for p in passengers if p.get("name")
+            ])
+            new_pax_key = "|".join(new_pax_names)
+
+            from sqlalchemy import or_
+            existing_tickets = Ticket.query.filter(
+                Ticket.pnr == new_pnr,
+                Ticket.user_id == user.id,
+                or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status.in_(["approved"])),
+            ).order_by(Ticket.created_at.asc()).all()
+
+            for existing in existing_tickets:
+                ex_segments = json.loads(existing.segments_data or "[]")
+                ex_passengers = json.loads(existing.passengers_data or "[]")
+
+                ex_sectors = []
+                for s in ex_segments:
+                    dep_ap = (s.get("departure") or {}).get("airport", "").strip().upper()
+                    arr_ap = (s.get("arrival") or {}).get("airport", "").strip().upper()
+                    if dep_ap and arr_ap:
+                        ex_sectors.append(f"{dep_ap}-{arr_ap}")
+                ex_sectors_key = "|".join(ex_sectors)
+
+                ex_pax_names = sorted([
+                    _normalize_passenger_name(p.get("name", ""))
+                    for p in ex_passengers if p.get("name")
+                ])
+                ex_pax_key = "|".join(ex_pax_names)
+
+                if new_sectors_key and new_sectors_key == ex_sectors_key and new_pax_key == ex_pax_key:
+                    is_duplicate = True
+                    duplicate_of = existing.id
+                    break
+
+        if is_duplicate:
+            ticket.duplicate_status = "pending"
+            ticket.duplicate_of_id = duplicate_of
+            print(f"[DUPLICATE] Ticket quarantined - PNR {new_pnr} is a suspected duplicate of {duplicate_of}")
+
         # Try to match against issued itineraries
         matched = False
         pnr = booking.get("pnr", "").strip().upper()
@@ -2533,7 +2709,9 @@ def receive_ticket():
             "status": "accepted",
             "ticket_id": ticket.id,
             "matched": matched,
-            "matched_itinerary_id": ticket.matched_itinerary_id
+            "matched_itinerary_id": ticket.matched_itinerary_id,
+            "is_duplicate": is_duplicate,
+            "duplicate_of_id": duplicate_of,
         }), 201
 
     except Exception as e:
@@ -2550,6 +2728,153 @@ def receive_ticket():
 def tickets_page():
     """Serve the tickets dashboard page"""
     return render_template('tickets.html')
+
+
+
+
+# ==================== NOTIFICATION PANEL APIs ====================
+
+@app.route("/api/tickets/notifications", methods=["GET"])
+@login_required
+def get_ticket_notifications():
+    """Return notification counts for PNR merge groups and pending duplicates."""
+    user_id = session["user_id"]
+
+    # PNR merge groups (existing logic)
+    merge_groups = _build_pnr_merge_groups(user_id)
+    # Only count groups that have NOT been fully merged yet
+    pending_merges = [g for g in merge_groups if g["merged_ticket_count"] < g["ticket_count"]]
+
+    # Pending duplicates
+    dup_count = Ticket.query.filter_by(
+        user_id=user_id,
+        duplicate_status="pending"
+    ).count()
+
+    return jsonify({
+        "merge_count": len(pending_merges),
+        "merge_groups": pending_merges,
+        "duplicate_count": dup_count,
+    })
+
+
+@app.route("/api/tickets/duplicates", methods=["GET"])
+@login_required
+def get_pending_duplicates():
+    """List all pending duplicate tickets with their original ticket info."""
+    user_id = session["user_id"]
+    pending = Ticket.query.filter_by(
+        user_id=user_id,
+        duplicate_status="pending"
+    ).order_by(Ticket.created_at.desc()).all()
+
+    result = []
+    for dup_ticket in pending:
+        dup_data = _ticket_dict_with_children(dup_ticket)
+        dup_data["duplicate_status"] = dup_ticket.duplicate_status
+        dup_data["duplicate_of_id"] = dup_ticket.duplicate_of_id
+
+        # Include info about the original ticket
+        original_summary = None
+        if dup_ticket.duplicate_of_id:
+            original = Ticket.query.filter_by(id=dup_ticket.duplicate_of_id).first()
+            if original:
+                orig_passengers = json.loads(original.passengers_data or "[]")
+                orig_segments = json.loads(original.segments_data or "[]")
+                route_parts = []
+                for seg in orig_segments:
+                    dep = (seg.get("departure") or {}).get("airport", "")
+                    arr = (seg.get("arrival") or {}).get("airport", "")
+                    if dep and not route_parts:
+                        route_parts.append(dep)
+                    if arr:
+                        route_parts.append(arr)
+                original_summary = {
+                    "id": original.id,
+                    "pnr": original.pnr,
+                    "passenger_names": [p.get("name", "") for p in orig_passengers],
+                    "route": " \u2192 ".join(route_parts),
+                    "created_at": original.created_at.isoformat(),
+                    "grand_total": original.grand_total,
+                    "ticket_status": original.ticket_status or "live",
+                }
+
+        dup_data["original_ticket"] = original_summary
+
+        # Add route info for the duplicate
+        segments = dup_data["segments"]
+        route_parts = []
+        for seg in segments:
+            dep = (seg.get("departure") or {}).get("airport", "")
+            arr = (seg.get("arrival") or {}).get("airport", "")
+            if dep and not route_parts:
+                route_parts.append(dep)
+            if arr:
+                route_parts.append(arr)
+        dup_data["route"] = " \u2192 ".join(route_parts)
+        dup_data["passenger_names"] = [p.get("name", "") for p in dup_data["passengers"]]
+
+        result.append(dup_data)
+
+    return jsonify({"duplicates": result})
+
+
+@app.route("/api/tickets/<ticket_id>/approve-duplicate", methods=["POST"])
+@login_required
+def approve_duplicate(ticket_id):
+    """Approve a pending duplicate - it will appear on the main dashboard."""
+    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session["user_id"]).first()
+    if not ticket:
+        return jsonify({"error": "Ticket not found"}), 404
+    if ticket.duplicate_status != "pending":
+        return jsonify({"error": "Ticket is not a pending duplicate"}), 400
+
+    ticket.duplicate_status = "approved"
+    db.session.commit()
+    return jsonify({"message": "Duplicate approved. Ticket is now on the dashboard.", "ticket_id": ticket.id})
+
+
+@app.route("/api/tickets/<ticket_id>/reject-duplicate", methods=["POST"])
+@login_required
+def reject_duplicate(ticket_id):
+    """Reject a pending duplicate - it will be hidden permanently."""
+    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session["user_id"]).first()
+    if not ticket:
+        return jsonify({"error": "Ticket not found"}), 404
+    if ticket.duplicate_status != "pending":
+        return jsonify({"error": "Ticket is not a pending duplicate"}), 400
+
+    ticket.duplicate_status = "rejected"
+    db.session.commit()
+    return jsonify({"message": "Duplicate rejected and hidden.", "ticket_id": ticket.id})
+
+
+@app.route("/api/tickets/merged-history", methods=["GET"])
+@login_required
+def get_merged_history():
+    """Return completed booking groups (merged tickets history)."""
+    user_id = session["user_id"]
+    groups = BookingGroup.query.filter_by(user_id=user_id, status="merged").order_by(BookingGroup.updated_at.desc()).all()
+
+    result = []
+    for bg in groups:
+        sorted_tickets = _booking_group_sorted_tickets(bg)
+        if not sorted_tickets:
+            continue
+        lead = sorted_tickets[0]
+        merged = _merged_ticket_dict(bg, lead)
+        result.append({
+            "group_id": bg.id,
+            "pnr": bg.pnr,
+            "merged_at": bg.updated_at.isoformat() if bg.updated_at else bg.created_at.isoformat(),
+            "ticket_count": len(sorted_tickets),
+            "passenger_names": merged.get("passenger_names", []),
+            "route": merged.get("route", ""),
+            "grand_total": merged.get("grand_total", 0),
+            "lead_ticket_id": lead.id,
+        })
+
+    return jsonify({"merged_groups": result})
 
 
 # ==================== TICKET CRUD ROUTES ====================
@@ -2596,10 +2921,13 @@ def _ticket_signature(ticket):
 
 
 def _build_pnr_merge_groups(user_id):
+    from sqlalchemy import or_
     tickets = Ticket.query.filter(
         Ticket.user_id == user_id,
         Ticket.pnr.isnot(None),
-        Ticket.pnr != ""
+        Ticket.pnr != "",
+        Ticket.booking_group_id.is_(None),
+        or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status == "approved"),
     ).order_by(Ticket.created_at.desc()).all()
 
     groups = {}
@@ -2618,6 +2946,7 @@ def _build_pnr_merge_groups(user_id):
     for pnr, pnr_tickets in groups.items():
         if len(pnr_tickets) < 2:
             continue
+        merged_ticket_count = 0
         signatures = [_ticket_signature(ticket) for ticket in pnr_tickets]
         unique_passengers = sorted({
             passenger_name
@@ -2626,6 +2955,7 @@ def _build_pnr_merge_groups(user_id):
             if passenger_name
         })
         has_different_passengers = len(unique_passengers) > 1
+        duplicate_passenger_names = _find_duplicate_normalized_passenger_names(signatures)
         field_values = {}
         discrepancies = {}
         for field in compare_fields:
@@ -2636,14 +2966,16 @@ def _build_pnr_merge_groups(user_id):
             field_values[field] = values
             if len([value for value in values if value]) > 1:
                 discrepancies[field] = values
+        if duplicate_passenger_names:
+            discrepancies["passenger_names"] = duplicate_passenger_names
 
         result.append({
             "pnr": pnr,
             "ticket_count": len(pnr_tickets),
-            "merged_ticket_count": len([ticket for ticket in pnr_tickets if ticket.booking_group_id]),
+            "merged_ticket_count": merged_ticket_count,
             "can_auto_merge": has_different_passengers and not discrepancies,
             "has_different_passengers": has_different_passengers,
-            "passenger_conflict": not has_different_passengers,
+            "passenger_conflict": (not has_different_passengers) or bool(duplicate_passenger_names),
             "normalized_passengers": unique_passengers,
             "discrepancies": discrepancies,
             "tickets": signatures,
@@ -2707,11 +3039,51 @@ def merge_pnr_group(pnr):
         "booking_group_id": booking_group.id,
     })
 
+
+@app.route("/api/tickets/pnr-groups/<pnr>/delete", methods=["POST"])
+@login_required
+def delete_pnr_group_tickets(pnr):
+    data = request.get_json() or {}
+    requested_ticket_ids = set(data.get("ticket_ids") or [])
+    normalized_pnr = (pnr or "").strip().upper()
+    selected_tickets = Ticket.query.filter_by(user_id=session["user_id"], pnr=normalized_pnr).all()
+    if requested_ticket_ids:
+        selected_tickets = [ticket for ticket in selected_tickets if ticket.id in requested_ticket_ids]
+    if not selected_tickets:
+        return jsonify({"error": "No tickets selected for deletion."}), 400
+
+    try:
+        agg_ids = set()
+        deleted_count = 0
+        processed_groups = set()
+        for ticket in selected_tickets:
+            if ticket.booking_group_id and ticket.booking_group_id not in processed_groups:
+                processed_groups.add(ticket.booking_group_id)
+                group_ids = requested_ticket_ids or {t.id for t in selected_tickets if t.booking_group_id == ticket.booking_group_id}
+                group_agg_ids, group_deleted = _delete_booking_group_records(ticket.booking_group, session["user_id"], ticket_ids=group_ids)
+                agg_ids.update(group_agg_ids)
+                deleted_count += group_deleted
+            elif not ticket.booking_group_id:
+                agg_ids.update(_delete_ticket_record(ticket, session["user_id"]))
+                deleted_count += 1
+
+        db.session.commit()
+        for agg_id in agg_ids:
+            _recalc_running_balance(agg_id, session["user_id"])
+        return jsonify({"message": f"Deleted {deleted_count} ticket{'' if deleted_count == 1 else 's'} from PNR {normalized_pnr}."})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Failed to delete selected tickets: {str(e)}"}), 500
+
 @app.route("/api/tickets/list", methods=["GET"])
 @login_required
 def get_tickets():
     """Get all tickets for the logged-in user"""
-    tickets = Ticket.query.filter_by(user_id=session['user_id']).order_by(Ticket.created_at.desc()).all()
+    from sqlalchemy import or_
+    tickets = Ticket.query.filter(
+        Ticket.user_id == session['user_id'],
+        or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status == 'approved'),
+    ).order_by(Ticket.created_at.desc()).all()
     
     result = []
     seen_booking_groups = set()
@@ -2795,6 +3167,69 @@ def update_ticket(ticket_id):
             return jsonify({"error": "Ticket not found"}), 404
         
         data = request.get_json()
+        if data.get("is_merged_view") and ticket.booking_group_id and ticket.booking_group:
+            grouped_tickets = _booking_group_sorted_tickets(ticket.booking_group)
+            passengers_by_ticket = {}
+            if 'passengers' in data:
+                for passenger in data.get('passengers') or []:
+                    source_ticket_id = passenger.get("source_ticket_id") or ticket.id
+                    passenger_copy = _clone_json(passenger)
+                    passenger_copy.pop("source_ticket_id", None)
+                    passengers_by_ticket.setdefault(source_ticket_id, []).append(passenger_copy)
+
+            for grouped_ticket in grouped_tickets:
+                if 'pnr' in data:
+                    grouped_ticket.pnr = data['pnr']
+                if 'booking_date' in data:
+                    grouped_ticket.booking_date = data['booking_date']
+                if 'phone' in data:
+                    grouped_ticket.phone = data['phone']
+                if 'currency' in data:
+                    grouped_ticket.currency = data['currency']
+                if 'class_of_travel' in data:
+                    grouped_ticket.class_of_travel = data['class_of_travel']
+                if 'trip_type' in data:
+                    grouped_ticket.trip_type = data['trip_type']
+                if 'segments' in data:
+                    grouped_ticket.segments_data = json.dumps(data['segments'])
+                if 'raw_data' in data:
+                    grouped_ticket.raw_data = json.dumps(data['raw_data'])
+                if 'status' in data:
+                    grouped_ticket.status = data['status']
+
+                grouped_passengers = passengers_by_ticket.get(grouped_ticket.id)
+                if grouped_passengers is not None:
+                    _ensure_passenger_internal_ids(grouped_passengers)
+                    grouped_ticket.passengers_data = json.dumps(grouped_passengers)
+                else:
+                    grouped_passengers = json.loads(grouped_ticket.passengers_data or "[]")
+                    _ensure_passenger_internal_ids(grouped_passengers)
+                    grouped_ticket.passengers_data = json.dumps(grouped_passengers)
+
+                if 'journey' in data:
+                    grouped_journey = _clone_json(data['journey'] or {})
+                    base_total = 0.0
+                    k3_total = 0.0
+                    other_total = 0.0
+                    for passenger in grouped_passengers:
+                        fare = passenger.get("fare") or {}
+                        base_total += parseFloat(fare.get("base_fare", 0))
+                        k3_total += parseFloat(fare.get("k3_gst", 0))
+                        other_total += parseFloat(fare.get("other_taxes", 0))
+                    grouped_journey["consolidated_fare"] = {
+                        "base_fare": _round_money(base_total),
+                        "k3_gst": _round_money(k3_total),
+                        "other_taxes": _round_money(other_total),
+                    }
+                    grouped_ticket.journey_data = json.dumps(grouped_journey)
+                else:
+                    grouped_journey = json.loads(grouped_ticket.journey_data or "{}")
+
+                grouped_ticket.grand_total = _ticket_financials(grouped_passengers, grouped_journey)["total"]
+                grouped_ticket.updated_at = datetime.utcnow()
+
+            db.session.commit()
+            return jsonify({"message": "Merged booking updated successfully"})
         
         if 'pnr' in data:
             ticket.pnr = data['pnr']
@@ -2843,28 +3278,16 @@ def delete_ticket(ticket_id):
         if not ticket:
             return jsonify({"error": "Ticket not found"}), 404
 
-        ledger_entries = LedgerEntry.query.filter_by(ticket_id=ticket.id, user_id=session['user_id']).all()
-        mapped_entry = None
-        if ticket.ledger_hash and ticket.ledger_hash.startswith("MAPPED_"):
-            mapped_id = ticket.ledger_hash.replace("MAPPED_", "").strip()
-            if mapped_id:
-                mapped_entry = LedgerEntry.query.filter_by(id=mapped_id, user_id=session['user_id']).first()
-
-        agg_ids = set()
-        for entry in ledger_entries:
-            agg_id = _delete_ledger_entry_with_reverse(entry, session['user_id'])
-            if agg_id:
-                agg_ids.add(agg_id)
-        if mapped_entry and mapped_entry not in ledger_entries:
-            agg_id = _delete_ledger_entry_with_reverse(mapped_entry, session['user_id'])
-            if agg_id:
-                agg_ids.add(agg_id)
-
-        db.session.delete(ticket)
+        if ticket.booking_group_id and ticket.booking_group:
+            agg_ids, deleted_count = _delete_booking_group_records(ticket.booking_group, session['user_id'])
+            message = f"Merged booking deleted successfully ({deleted_count} tickets removed)"
+        else:
+            agg_ids = _delete_ticket_record(ticket, session['user_id'])
+            message = "Ticket deleted successfully"
         db.session.commit()
         for agg_id in agg_ids:
             _recalc_running_balance(agg_id, session['user_id'])
-        return jsonify({"message": "Ticket deleted successfully"})
+        return jsonify({"message": message})
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Failed to delete ticket: {str(e)}"}), 500
@@ -2888,14 +3311,31 @@ def generate_ticket_pdf(ticket_id):
     raw = json.loads(ticket.raw_data) if ticket.raw_data else {}
     segments = _segments_with_barcodes(ticket, passengers, segments, raw)
     gst_details = raw.get("gst_details") or {}
-    
+
+    grand_total = ticket.grand_total
+
+    # If this is a merged booking, combine passengers from all tickets in the group
+    if ticket.booking_group_id and ticket.booking_group:
+        merged_passengers = []
+        merged_total = 0.0
+        for grouped_ticket in _booking_group_sorted_tickets(ticket.booking_group):
+            merged_total += parseFloat(grouped_ticket.grand_total or 0)
+            ticket_passengers = json.loads(grouped_ticket.passengers_data or "[]")
+            _ensure_passenger_internal_ids(ticket_passengers)
+            for p in ticket_passengers:
+                p_copy = _clone_json(p)
+                p_copy["source_ticket_id"] = grouped_ticket.id
+                merged_passengers.append(p_copy)
+        passengers = merged_passengers
+        grand_total = _round_money(merged_total)
+
     # Build data dict for PDF generator
     pdf_data = {
         "booking_date": ticket.booking_date,
         "phone": ticket.phone,
         "pnr": ticket.pnr,
         "currency": ticket.currency,
-        "grand_total": ticket.grand_total,
+        "grand_total": grand_total,
         "class_of_travel": ticket.class_of_travel,
         "passengers": passengers,
         "segments": segments,
@@ -2986,6 +3426,204 @@ def generate_ticket_pdf(ticket_id):
         download_name=filename
     )
 
+
+
+@app.route("/api/tickets/<ticket_id>/pdf/selected", methods=["GET"])
+@login_required
+def generate_selected_passenger_pdf(ticket_id):
+    """Generate PDF for selected passengers - individual or combined."""
+    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+    if not ticket:
+        return jsonify({"error": "Ticket not found"}), 404
+
+    include_fare = request.args.get('include_fare', 'true').lower() == 'true'
+    mode = request.args.get('mode', 'together')  # 'individual' or 'together'
+    pax_indices = request.args.getlist('passenger_indices', type=int)
+
+    if not pax_indices:
+        return jsonify({"error": "No passenger indices provided"}), 400
+
+    passengers = json.loads(ticket.passengers_data) if ticket.passengers_data else []
+    segments = json.loads(ticket.segments_data) if ticket.segments_data else []
+    journey = json.loads(ticket.journey_data) if ticket.journey_data else {}
+    raw = json.loads(ticket.raw_data) if ticket.raw_data else {}
+    segments = _segments_with_barcodes(ticket, passengers, segments, raw)
+    gst_details = raw.get("gst_details") or {}
+
+    # If this is a merged booking, combine passengers from all tickets in the group
+    if ticket.booking_group_id and ticket.booking_group:
+        merged_passengers = []
+        for grouped_ticket in _booking_group_sorted_tickets(ticket.booking_group):
+            ticket_passengers = json.loads(grouped_ticket.passengers_data or "[]")
+            _ensure_passenger_internal_ids(ticket_passengers)
+            for p in ticket_passengers:
+                p_copy = _clone_json(p)
+                p_copy["source_ticket_id"] = grouped_ticket.id
+                merged_passengers.append(p_copy)
+        passengers = merged_passengers
+
+    # Validate indices
+    valid_indices = [i for i in pax_indices if 0 <= i < len(passengers)]
+    if not valid_indices:
+        return jsonify({"error": "No valid passenger indices"}), 400
+
+    selected_passengers = [passengers[i] for i in valid_indices]
+
+    # Recalculate fare for selected passengers if consolidated
+    selected_journey = json.loads(json.dumps(journey))  # deep copy
+    fare_display = selected_journey.get("fare_display")
+    if not fare_display:
+        fare_display = "per_passenger" if len(passengers) <= 1 else "consolidated"
+
+    if fare_display == "consolidated" and len(valid_indices) < len(passengers):
+        # Switch to per_passenger view for partial selection
+        selected_journey["fare_display"] = "per_passenger"
+
+    # Compute grand total for selected passengers
+    global_markup = 0
+    try:
+        global_markup = float(selected_journey.get("global_markup") or 0)
+    except (ValueError, TypeError):
+        pass
+
+    grand_total = 0
+    for p in selected_passengers:
+        f = p.get("fare") or {}
+        grand_total += (float(f.get("base_fare") or 0) +
+                        float(f.get("k3_gst") or 0) +
+                        float(f.get("other_taxes") or 0) +
+                        global_markup)
+
+    import io as _io
+    from reportlab.pdfgen import canvas as pdf_canvas
+    from reportlab.lib.pagesizes import A4
+    from ticket_pdf import draw_ticket
+
+    if mode == 'individual':
+        # Generate single PDF for one passenger
+        pax = selected_passengers[0]
+        pdf_data = {
+            "booking_date": ticket.booking_date,
+            "phone": ticket.phone,
+            "pnr": ticket.pnr,
+            "currency": ticket.currency,
+            "grand_total": grand_total,
+            "class_of_travel": ticket.class_of_travel,
+            "passengers": [pax],
+            "segments": segments,
+            "journey": selected_journey,
+            "reference_number": raw.get("booking", {}).get("reference_number"),
+            "gst_company_name": gst_details.get("company_name"),
+            "gst_number": gst_details.get("gst_number"),
+            "trip_type": ticket.trip_type,
+        }
+
+        buffer = _io.BytesIO()
+        c = pdf_canvas.Canvas(buffer, pagesize=A4)
+        draw_ticket(c, pdf_data, include_fare=include_fare)
+        c.save()
+        buffer.seek(0)
+
+        pax_name = (pax.get("name") or "Passenger").strip()
+        filename = _build_pdf_filename(pax_name, ticket, segments)
+
+        return send_file(
+            buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+    else:
+        # 'together' mode – single PDF with all selected passengers
+        pdf_data = {
+            "booking_date": ticket.booking_date,
+            "phone": ticket.phone,
+            "pnr": ticket.pnr,
+            "currency": ticket.currency,
+            "grand_total": grand_total,
+            "class_of_travel": ticket.class_of_travel,
+            "passengers": selected_passengers,
+            "segments": segments,
+            "journey": selected_journey,
+            "reference_number": raw.get("booking", {}).get("reference_number"),
+            "gst_company_name": gst_details.get("company_name"),
+            "gst_number": gst_details.get("gst_number"),
+            "trip_type": ticket.trip_type,
+        }
+
+        buffer = _io.BytesIO()
+        c = pdf_canvas.Canvas(buffer, pagesize=A4)
+        draw_ticket(c, pdf_data, include_fare=include_fare)
+        c.save()
+        buffer.seek(0)
+
+        if len(selected_passengers) == 1:
+            pax_name = (selected_passengers[0].get("name") or "Passenger").strip()
+        else:
+            pax_name = (selected_passengers[0].get("name") or "Passenger").strip()
+            pax_name += f" x{len(selected_passengers)}"
+        filename = _build_pdf_filename(pax_name, ticket, segments)
+
+        return send_file(
+            buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+
+
+def _build_pdf_filename(pax_name, ticket, segments):
+    """Build a descriptive PDF download filename."""
+    import re as _re
+
+    date_str = ""
+    if segments and len(segments) > 0:
+        dep = segments[0].get("departure", {})
+        o_date = dep.get("date", "")
+        try:
+            import dateutil.parser
+            d_obj = dateutil.parser.parse(o_date)
+            d_short = d_obj.strftime("%d %b %y")
+            if d_short.startswith("0"):
+                d_short = d_short[1:]
+            date_str = d_short
+        except Exception:
+            date_str = o_date.replace("/", "-").replace("\\", "-")
+
+    route_str = ""
+    trip = (ticket.trip_type or "one_way").lower()
+    trip_txt = "ONE WAY"
+    if trip == "round_trip": trip_txt = "ROUND TRIP"
+    elif trip == "multi_city": trip_txt = "MULTI CITY"
+
+    if segments and len(segments) > 0:
+        if trip == "one_way":
+            dap = segments[0].get("departure", {}).get("airport", "DEP")
+            aap = segments[-1].get("arrival", {}).get("airport", "ARR")
+            route_str = f"{dap} → {aap}"
+        elif trip == "round_trip":
+            dap = segments[0].get("departure", {}).get("airport", "DEP")
+            mid_idx = max(0, len(segments) // 2 - 1) if len(segments) % 2 == 0 else len(segments) // 2
+            aap = segments[mid_idx].get("arrival", {}).get("airport", "ARR")
+            route_str = f"{dap} ↔ {aap}"
+        else:
+            dests = [segments[0].get("departure", {}).get("airport", "DEP")]
+            for seg in segments:
+                arr = seg.get("arrival", {}).get("airport", "ARR")
+                if arr and arr != dests[-1]:
+                    dests.append(arr)
+            route_str = " → ".join(dests)
+
+    if trip == "one_way":
+        raw_fname = f"{pax_name} {route_str} {date_str}.pdf"
+    else:
+        raw_fname = f"{pax_name} {route_str} ({trip_txt}) {date_str}.pdf"
+
+    filename = _re.sub(r'[\\/*?:"<>|]', "", raw_fname).strip()
+    filename = _re.sub(r'\s+', " ", filename)
+    if not filename.endswith(".pdf"):
+        filename += ".pdf"
+    return filename
 
 
 # ==================== TICKET CANCEL / SPLIT / CHANGE ROUTES ====================

@@ -23,6 +23,8 @@ BRAND_PALE   = colors.Color(0.93, 0.95, 1.00)   # near-white blue tint
 ACCENT       = colors.Color(0.95, 0.50, 0.05)   # amber
 ACCENT_PALE  = colors.Color(1.00, 0.96, 0.90)   # amber tint
 GREEN        = colors.Color(0.07, 0.48, 0.28)
+PURPLE       = colors.Color(0.46, 0.20, 0.67)
+GOLD         = colors.Color(0.79, 0.58, 0.08)
 INK          = colors.Color(0.10, 0.11, 0.15)   # near-black
 INK2         = colors.Color(0.30, 0.33, 0.40)   # secondary
 INK3         = colors.Color(0.55, 0.57, 0.63)   # labels
@@ -139,6 +141,19 @@ def _barcode_image_reader(data_uri):
         return None
 
 
+def _cabin_badge_style(cabin_class):
+    name = _t(cabin_class).lower()
+    if not name:
+        return None
+    if "premium" in name:
+        return ("Premium Economy", colors.Color(0.89, 0.82, 0.98), PURPLE)
+    if "business" in name:
+        return ("Business", colors.Color(0.99, 0.90, 0.64), GOLD)
+    if "first" in name:
+        return ("First", colors.Color(0.83, 0.94, 0.87), GREEN)
+    return ("Economy", colors.Color(0.76, 0.86, 0.99), BRAND)
+
+
 def _fit_font_size(c, text, font, max_size, max_width, min_size=7):
     value = _t(text)
     if not value:
@@ -225,7 +240,7 @@ def draw_ticket(c, data, include_fare=True):
         _hline(c, M, M + FTH, IW, RULE, 0.5)
         _rect(c, M, M, 4, FTH, fill=ACCENT)
         _txt(c, CX, M + 6,
-             "Time Travels Pvt Ltd  |  www.timetours.in  |  +91 33 400 11 333",
+             "Time Tours Tech Pvt Ltd  |  www.timetours.in  |  +91 33 400 11 333",
              "Times-Bold", 6, INK2, align="center")
 
     def _start_continuation_page():
@@ -460,13 +475,20 @@ def draw_ticket(c, data, include_fare=True):
                      "Times-Bold", 7, INK2)
                 ax += c.stringWidth(fnum, "Times-Bold", 7) + 12
             if bkclass:
-                _txt(c, ax, fy - SEG_HEADER_H + 5, f"Class: {bkclass}",
-                     size=6, col=INK3)
+                cabin_badge = _cabin_badge_style(bkclass)
+                if cabin_badge:
+                    cabin_label, cabin_fill, cabin_text = cabin_badge
+                    cabin_w = c.stringWidth(cabin_label, "Times-Bold", 6) + 12
+                    _rect(c, ax, fy - SEG_HEADER_H + 2.2, cabin_w, 10.8,
+                          fill=cabin_fill, stroke=None, radius=4)
+                    _txt(c, ax + cabin_w / 2, fy - SEG_HEADER_H + 5.4, cabin_label,
+                         "Times-Bold", 6, cabin_text, align="center")
+                    ax += cabin_w + 8
 
             leg_badge = _leg_tag(li, trip_type) if trip_type in ("round_trip", "multi_city") else ""
             if leg_badge:
-                badge_fill = colors.Color(0.90, 0.97, 0.93) if leg_badge == "OUTBOUND" else colors.Color(0.95, 0.91, 0.99)
-                badge_text = GREEN if leg_badge == "OUTBOUND" else colors.Color(0.46, 0.20, 0.67)
+                badge_fill = colors.Color(0.90, 0.97, 0.93) if leg_badge == "OUTBOUND" else colors.Color(1.00, 0.97, 0.91)
+                badge_text = GREEN if leg_badge == "OUTBOUND" else ACCENT
                 badge_w = c.stringWidth(leg_badge, "Times-Bold", 6) + 14
                 badge_x = RIGHT - 10 - badge_w
                 _rect(c, badge_x, fy - SEG_HEADER_H + 2.5, badge_w, 10.5,
@@ -664,7 +686,7 @@ def draw_ticket(c, data, include_fare=True):
             aap = _t(seg.get("arrival", {}).get("airport"))
             airline_name = _t(seg.get("airline"))
             fnum = _t(seg.get("flight_number"))
-            route = f"{dap} -> {aap}" if dap and aap else f"Seg {si+1}"
+            route = f"{dap} \u2192 {aap}" if dap and aap else f"Seg {si+1}"
             if airline_name or fnum:
                 route = f"{route}  |  {airline_name} {fnum}".strip()
             parts = []
@@ -707,9 +729,9 @@ def draw_ticket(c, data, include_fare=True):
             _txt(c, name_x, ty - 17, name_line, "Times-Bold", 9, INK)
             right_x = RIGHT - 16
             if traveller["ticket_number"]:
-                _txt(c, right_x, ty - 14, f"Ticket: {traveller['ticket_number']}", "Times-Bold", 7.5, INK, align="right")
+                _txt(c, right_x, ty - 14, f"Ticket Number: {traveller['ticket_number']}", "Times-Bold", 7.5, INK, align="right")
             if traveller["ff_no"]:
-                _txt(c, right_x, ty - 24, f"FF: {traveller['ff_no']}", "Times-Bold", 7.0, INK, align="right")
+                _txt(c, right_x, ty - 24, f"FFN: {traveller['ff_no']}", "Times-Bold", 7.0, INK, align="right")
             if traveller["baggage"]:
                 _txt(c, name_x, ty - 29, f"Baggage: {traveller['baggage']}", size=7, col=INK)
 

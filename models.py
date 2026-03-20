@@ -89,6 +89,9 @@ class Ticket(db.Model):
     cancellation_charge = db.Column(db.Float, default=0)
     last_aggregator = db.Column(db.String(100), nullable=True)
     last_booked_by = db.Column(db.String(100), nullable=True)
+    # ===== Duplicate Detection =====
+    duplicate_status = db.Column(db.String(20), nullable=True)  # null=normal, 'pending', 'approved', 'rejected'
+    duplicate_of_id = db.Column(db.String, nullable=True)  # ID of the original ticket this is a duplicate of
 
     # Relationship for split tickets
     children = db.relationship('Ticket', backref=db.backref('parent', remote_side='Ticket.id'), lazy=True)
