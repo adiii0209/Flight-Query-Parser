@@ -4497,6 +4497,17 @@
       const cardsContainer = document.getElementById('cards');
       if (!cardsContainer) return '';
       const clone = cardsContainer.cloneNode(true);
+      clone.style.width = 'fit-content';
+      clone.style.maxWidth = 'none';
+      clone.style.display = 'inline-grid';
+      clone.style.justifyContent = 'start';
+      clone.style.alignItems = 'start';
+      clone.style.margin = '0';
+      clone.style.padding = '0';
+      Array.from(clone.children || []).forEach((node) => {
+        node.style.width = 'auto';
+        node.style.maxWidth = 'none';
+      });
       const timelines = Array.from(clone.querySelectorAll('.flight-timeline-container'));
       const arrows = Array.from(clone.querySelectorAll('.expand-icon'));
 
@@ -9616,6 +9627,9 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       snapshotCards.style.padding = '0';
       snapshotCards.style.width = 'fit-content';
       snapshotCards.style.maxWidth = 'none';
+      snapshotCards.style.display = 'inline-grid';
+      snapshotCards.style.justifyContent = 'start';
+      snapshotCards.style.alignItems = 'start';
       snapshotCards.style.background = '#ffffff';
       snapshotCards.querySelectorAll('*').forEach((node) => {
         node.style.backdropFilter = 'none';
@@ -9631,16 +9645,27 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           await document.fonts.ready;
         }
 
+        const childBounds = Array.from(snapshotCards.children || []).reduce((acc, node) => {
+          const right = node.offsetLeft + node.offsetWidth;
+          const bottom = node.offsetTop + node.offsetHeight;
+          return {
+            width: Math.max(acc.width, right),
+            height: Math.max(acc.height, bottom)
+          };
+        }, { width: 0, height: 0 });
+        const captureWidth = Math.ceil(childBounds.width || snapshotCards.scrollWidth || snapshotCards.offsetWidth || 1);
+        const captureHeight = Math.ceil(childBounds.height || snapshotCards.scrollHeight || snapshotCards.offsetHeight || 1);
+
         const canvas = await window.html2canvas(snapshotCards, {
           backgroundColor: '#ffffff',
           scale: Math.max(2, Math.min(window.devicePixelRatio || 1, 3)),
           useCORS: true,
           logging: false,
           imageTimeout: 15000,
-          width: Math.ceil(snapshotCards.scrollWidth),
-          height: Math.ceil(snapshotCards.scrollHeight),
-          windowWidth: Math.ceil(snapshotCards.scrollWidth),
-          windowHeight: Math.ceil(snapshotCards.scrollHeight)
+          width: captureWidth,
+          height: captureHeight,
+          windowWidth: captureWidth,
+          windowHeight: captureHeight
         });
 
         const blob = await new Promise((resolve, reject) => {

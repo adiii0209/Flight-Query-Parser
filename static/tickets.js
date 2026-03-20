@@ -4,6 +4,11 @@ let currentTicket = null;
 let currentFilter = 'all';
 let editedData = {};
 let changeAttachmentState = { token: '', filename: '' };
+let selectedPaxIndices = new Set();
+let passengerSortMode = '';
+let autoSaveTimeout = null;
+let pendingSavePromise = null;
+let isDetailDirty = false;
 
 // ==================== SIDEBAR & THEME ====================
 function initializeSidebar() {
@@ -80,6 +85,21 @@ function formatCurrency(n, curr) {
     return sym + Number(n).toLocaleString('en-IN');
 }
 function formatDate(d) { if (!d) return '-'; return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
+function formatCurrency(n, curr) {
+    const currencyCode = curr || 'INR';
+    const currencySymbols = {
+        INR: '₹',
+        USD: '$',
+        EUR: '€',
+        GBP: '£',
+        AED: 'AED ',
+        SGD: 'S$',
+        THB: '฿'
+    };
+    const sym = currencySymbols[currencyCode] || `${currencyCode} `;
+    if (!n && n !== 0) return sym + '0';
+    return sym + Number(n).toLocaleString('en-IN');
+}
 function showToast(msg, type = 'info') {
     const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg;
     document.body.appendChild(t); setTimeout(() => t.remove(), 3500);
@@ -138,6 +158,7 @@ async function loadTickets() {
 // ==================== FILTER & CARDS ====================
 function filterTickets(status, btn) {
     currentFilter = status;
+    _mergedViewActive = false;
     document.querySelectorAll('.filter-bar .tab').forEach(t => t.classList.remove('active'));
     if (btn) btn.classList.add('active');
     renderTicketCards();
@@ -156,13 +177,18 @@ function renderTicketCards() {
             return pnr.includes(q) || route.includes(q) || names.includes(q);
         });
     }
-    if (currentFilter !== 'all') {
+    if (_mergedViewActive) {
+        items = items.filter(t => t.booking_group_id);
+    } else if (currentFilter !== 'all') {
         items = items.filter(t => t.status === currentFilter);
     }
     if (items.length === 0) {
+        const emptyMsg = _mergedViewActive
+            ? 'No merged bookings yet. Merge PNR groups to see combined bookings here.'
+            : (searchInput && searchInput.value ? 'No tickets matched your search.' : 'No tickets found. Tickets will appear here when received from the parser.');
         container.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
-            <div class="icon">🎫</div>
-            <p>${searchInput && searchInput.value ? 'No tickets matched your search.' : 'No tickets found. Tickets will appear here when received from the parser.'}</p>
+            <div class="icon">${_mergedViewActive ? '📦' : '🎫'}</div>
+            <p>${emptyMsg}</p>
         </div>`;
         return;
     }
@@ -315,61 +341,456 @@ async function openTicket(id) {
     } catch (e) { console.error(e); showToast('Error loading ticket', 'error'); }
 }
 
-function showListView() {
+async function showListView() {
+    if (currentTicket && editedData) {
+        clearTimeout(autoSaveTimeout);
+        isDetailDirty = true;
+        await queueSave(true);
+    }
     document.getElementById('detailView').style.display = 'none';
     document.getElementById('listView').style.display = 'block';
     currentTicket = null;
     editedData = {};
     changeAttachmentState = { token: '', filename: '' };
-    loadTickets();
+    selectedPaxIndices.clear();
+    _removePaxActionBar();
+    await loadTickets();
 }
 
-async function openPnrMergeModal() {
+// ==================== NOTIFICATION PANEL SYSTEM ====================
+let _notifData = { merge_count: 0, merge_groups: [], duplicate_count: 0 };
+let _activeNotifPanel = null;
+let _mergedViewActive = false;
+
+async function loadNotifications() {
     try {
-        const r = await fetch('/api/tickets/pnr-groups');
-        const data = await r.json();
-        if (!r.ok) {
-            showToast(data.error || 'Failed to load PNR groups', 'error');
-            return;
+        const r = await fetch('/api/tickets/notifications');
+        if (!r.ok) return;
+        _notifData = await r.json();
+        _updateNotifBadges();
+    } catch (e) { console.error('Failed to load notifications', e); }
+}
+
+function _updateNotifBadges() {
+    const mergeBadge = document.getElementById('mergeBadge');
+    const dupBadge = document.getElementById('dupBadge');
+    const mergeBtn = document.getElementById('mergeNotifBtn');
+    const dupBtn = document.getElementById('dupNotifBtn');
+
+    if (mergeBadge) {
+        if (_notifData.merge_count > 0) {
+            mergeBadge.textContent = _notifData.merge_count;
+            mergeBadge.style.display = 'flex';
+            if (mergeBtn) mergeBtn.classList.add('has-items');
+        } else {
+            mergeBadge.style.display = 'none';
+            if (mergeBtn) mergeBtn.classList.remove('has-items');
         }
-        const groups = data.groups || [];
-        if (!groups.length) {
-            showToast('No multi-passenger PNR groups detected right now', 'info');
+    }
+    if (dupBadge) {
+        if (_notifData.duplicate_count > 0) {
+            dupBadge.textContent = _notifData.duplicate_count;
+            dupBadge.style.display = 'flex';
+            if (dupBtn) dupBtn.classList.add('has-items');
+        } else {
+            dupBadge.style.display = 'none';
+            if (dupBtn) dupBtn.classList.remove('has-items');
+        }
+    }
+}
+
+function toggleNotifPanel(type) {
+    const panel = document.getElementById('notifPanel');
+    if (!panel) return;
+
+    if (_activeNotifPanel === type) {
+        // Close if same panel
+        panel.style.display = 'none';
+        _activeNotifPanel = null;
+        return;
+    }
+
+    _activeNotifPanel = type;
+    panel.style.display = 'block';
+
+    if (type === 'merge') {
+        _renderMergePanel(panel);
+    } else if (type === 'duplicate') {
+        _renderDuplicatePanel(panel);
+    }
+}
+
+function _closeNotifPanel() {
+    const panel = document.getElementById('notifPanel');
+    if (panel) panel.style.display = 'none';
+    _activeNotifPanel = null;
+}
+
+function _renderMergePanel(panel) {
+    const groups = _notifData.merge_groups || [];
+    const pendingGroups = groups.filter(g => g.merged_ticket_count < g.ticket_count);
+
+    if (!pendingGroups.length) {
+        panel.innerHTML = `<div class="notif-panel">
+            <div class="notif-panel-header">
+                <h3>🔔 PNR Merge Requests</h3>
+                <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
+            </div>
+            <div class="empty-notif">
+                <div style="font-size:2rem;margin-bottom:0.5rem;">✅</div>
+                No pending merge requests
+            </div>
+        </div>`;
+        return;
+    }
+
+    const cardsHtml = pendingGroups.map(group => {
+        const discCount = Object.keys(group.discrepancies || {}).length;
+        const statusBadge = group.can_auto_merge
+            ? '<span style="background:rgba(16,185,129,0.12);color:#10b981;padding:0.15rem 0.45rem;border-radius:999px;font-size:0.7rem;font-weight:700;">Ready</span>'
+            : `<span style="background:rgba(245,158,11,0.12);color:#f59e0b;padding:0.15rem 0.45rem;border-radius:999px;font-size:0.7rem;font-weight:700;">${discCount} issues</span>`;
+        const paxBadge = group.has_different_passengers
+            ? '<span style="background:rgba(16,185,129,0.12);color:#10b981;padding:0.15rem 0.45rem;border-radius:999px;font-size:0.7rem;font-weight:700;">Different pax</span>'
+            : '<span style="background:rgba(239,68,68,0.12);color:#ef4444;padding:0.15rem 0.45rem;border-radius:999px;font-size:0.7rem;font-weight:700;">Same pax</span>';
+        const paxNames = (group.normalized_passengers || []).join(', ') || 'Unknown';
+
+        return `<div class="notif-card">
+            <div class="notif-card-header">
+                <div>
+                    <div style="font-weight:800;font-size:0.95rem;">PNR ${group.pnr}</div>
+                    <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.15rem;">${group.ticket_count} tickets · ${paxNames}</div>
+                </div>
+                <div style="display:flex;gap:0.35rem;flex-wrap:wrap;">${statusBadge}${paxBadge}</div>
+            </div>
+            <div class="notif-card-actions">
+                <button class="notif-btn review" onclick='openPnrGroupDetail(${JSON.stringify(group).replace(/"/g, "&quot;")})'>🔍 Review</button>
+                ${group.has_different_passengers ? (group.can_auto_merge
+                    ? `<button class="notif-btn merge" onclick='mergePnrGroup("${group.pnr}", false, ${JSON.stringify(group.tickets.map(t => t.ticket_id)).replace(/"/g, "&quot;")})'>📦 Merge</button>`
+                    : `<button class="notif-btn merge" style="background:linear-gradient(135deg,#d97706,#f59e0b);" onclick='mergePnrGroup("${group.pnr}", true, ${JSON.stringify(group.tickets.map(t => t.ticket_id)).replace(/"/g, "&quot;")})'>⚠️ Force Merge</button>`)
+                : ''}
+            </div>
+        </div>`;
+    }).join('');
+
+    panel.innerHTML = `<div class="notif-panel">
+        <div class="notif-panel-header">
+            <h3>🔔 PNR Merge Requests <span style="font-size:0.8rem;font-weight:600;color:var(--text-secondary);">(${pendingGroups.length})</span></h3>
+            <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
+        </div>
+        <div style="max-height:50vh;overflow-y:auto;">${cardsHtml}</div>
+    </div>`;
+}
+
+async function _renderDuplicatePanel(panel) {
+    panel.innerHTML = `<div class="notif-panel">
+        <div class="notif-panel-header">
+            <h3>⚠️ Duplicate Tickets</h3>
+            <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
+        </div>
+        <div class="empty-notif">Loading duplicates...</div>
+    </div>`;
+
+    try {
+        const r = await fetch('/api/tickets/duplicates');
+        if (!r.ok) throw new Error('Failed to load');
+        const data = await r.json();
+        const dups = data.duplicates || [];
+
+        if (!dups.length) {
+            panel.innerHTML = `<div class="notif-panel">
+                <div class="notif-panel-header">
+                    <h3>⚠️ Duplicate Tickets</h3>
+                    <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
+                </div>
+                <div class="empty-notif">
+                    <div style="font-size:2rem;margin-bottom:0.5rem;">✅</div>
+                    No pending duplicate tickets
+                </div>
+            </div>`;
             return;
         }
 
-        const groupsHtml = groups.map(group => {
-            const discrepancyCount = Object.keys(group.discrepancies || {}).length;
-            const passengerBadge = group.has_different_passengers
-                ? '<span style="background:rgba(16,185,129,0.12);color:#10b981;padding:0.2rem 0.55rem;border-radius:999px;font-size:0.72rem;font-weight:700;">Different passengers</span>'
-                : '<span style="background:rgba(239,68,68,0.12);color:#ef4444;padding:0.2rem 0.55rem;border-radius:999px;font-size:0.72rem;font-weight:700;">Same passenger</span>';
-            return `<div style="padding:1rem;border:1px solid var(--border);border-radius:14px;background:var(--bg-main);cursor:pointer;" onclick='openPnrGroupDetail(${JSON.stringify(group).replace(/"/g, '&quot;')})'>
-                <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:flex-start;flex-wrap:wrap;">
+        const cardsHtml = dups.map(dup => {
+            const orig = dup.original_ticket;
+            const dupNames = (dup.passenger_names || []).join(', ') || 'Unknown';
+            const origNames = orig ? (orig.passenger_names || []).join(', ') || 'Unknown' : '—';
+            const dupRoute = dup.route || '—';
+            const origRoute = orig ? (orig.route || '—') : '—';
+
+            const timeAgo = _timeAgo(dup.created_at);
+
+            return `<div class="notif-card" id="dup-card-${dup.id}">
+                <div class="notif-card-header">
                     <div>
-                        <div style="font-weight:800;font-size:1rem;">PNR ${group.pnr}</div>
-                        <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:0.2rem;">${group.ticket_count} tickets detected</div>
+                        <div style="font-weight:800;font-size:0.95rem;">PNR ${dup.pnr || '—'} <span style="font-size:0.76rem;font-weight:500;color:var(--text-secondary);">· ${timeAgo}</span></div>
+                        <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.15rem;">${dupRoute} · ${dupNames}</div>
                     </div>
-                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                        ${group.can_auto_merge
-                            ? '<span style="background:rgba(16,185,129,0.12);color:#10b981;padding:0.2rem 0.55rem;border-radius:999px;font-size:0.72rem;font-weight:700;">Ready to merge</span>'
-                            : `<span style="background:rgba(245,158,11,0.12);color:#f59e0b;padding:0.2rem 0.55rem;border-radius:999px;font-size:0.72rem;font-weight:700;">${discrepancyCount} discrepancy fields</span>`}
-                        ${passengerBadge}
-                        ${group.merged_ticket_count ? `<span style="background:rgba(37,99,235,0.12);color:var(--primary);padding:0.2rem 0.55rem;border-radius:999px;font-size:0.72rem;font-weight:700;">${group.merged_ticket_count} already merged</span>` : ''}
+                    <span style="background:rgba(245,158,11,0.12);color:#d97706;padding:0.15rem 0.45rem;border-radius:999px;font-size:0.7rem;font-weight:700;">Suspected Duplicate</span>
+                </div>
+                ${orig ? `<div class="dup-compare">
+                    <div class="dup-side">
+                        <div class="label">Original Ticket</div>
+                        <div style="font-weight:700;">${origNames}</div>
+                        <div style="color:var(--text-secondary);font-size:0.78rem;">${origRoute}</div>
+                        <div style="color:var(--text-secondary);font-size:0.75rem;">₹${parseFloat(orig.grand_total || 0).toLocaleString()}</div>
                     </div>
+                    <div class="vs">VS</div>
+                    <div class="dup-side">
+                        <div class="label">New (Duplicate)</div>
+                        <div style="font-weight:700;">${dupNames}</div>
+                        <div style="color:var(--text-secondary);font-size:0.78rem;">${dupRoute}</div>
+                        <div style="color:var(--text-secondary);font-size:0.75rem;">₹${parseFloat(dup.grand_total || 0).toLocaleString()}</div>
+                    </div>
+                </div>` : ''}
+                <div class="notif-card-actions">
+                    <button class="notif-btn approve" onclick="approveDuplicate('${dup.id}')">✅ Approve & Add</button>
+                    <button class="notif-btn reject" onclick="rejectDuplicate('${dup.id}')">🗑️ Reject</button>
                 </div>
             </div>`;
         }).join('');
 
-        const html = `<h3 style="margin-top:0;">PNR Booking Merge Detection</h3>
-            <p style="color:var(--text-secondary);font-size:0.88rem;">Review detected passenger tickets that share the same PNR, inspect mismatches, and merge them under one booking object when safe.</p>
-            <div style="display:grid;gap:0.85rem;max-height:60vh;overflow:auto;">${groupsHtml}</div>
-            <div style="display:flex;justify-content:flex-end;margin-top:1.25rem;">
-                <button class="btn-action secondary" onclick="_closeModal()">Close</button>
-            </div>`;
-        _createModalOverlay(html);
+        panel.innerHTML = `<div class="notif-panel">
+            <div class="notif-panel-header">
+                <h3>⚠️ Duplicate Tickets <span style="font-size:0.8rem;font-weight:600;color:var(--text-secondary);">(${dups.length})</span></h3>
+                <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
+            </div>
+            <div style="max-height:50vh;overflow-y:auto;">${cardsHtml}</div>
+        </div>`;
     } catch (e) {
         console.error(e);
-        showToast('Failed to load PNR groups', 'error');
+        panel.innerHTML = `<div class="notif-panel">
+            <div class="notif-panel-header">
+                <h3>⚠️ Duplicate Tickets</h3>
+                <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
+            </div>
+            <div class="empty-notif">Failed to load duplicates</div>
+        </div>`;
+    }
+}
+
+function _timeAgo(isoDate) {
+    if (!isoDate) return '';
+    const diff = Date.now() - new Date(isoDate).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ago`;
+}
+
+function _getSelectedPnrReviewTicketIds(pnr) {
+    const checked = Array.from(document.querySelectorAll(`.pnr-review-checkbox[data-pnr="${pnr}"]:checked`));
+    return checked.map(node => node.value).filter(Boolean);
+}
+
+function togglePnrReviewSelection(pnr, checked) {
+    document.querySelectorAll(`.pnr-review-checkbox[data-pnr="${pnr}"]`).forEach(node => {
+        node.checked = !!checked;
+    });
+}
+
+async function approveDuplicate(ticketId) {
+    try {
+        const r = await fetch(`/api/tickets/${ticketId}/approve-duplicate`, { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) { showToast(data.error || 'Failed', 'error'); return; }
+        showToast('Ticket approved and added to dashboard', 'success');
+        // Remove the card with animation
+        const card = document.getElementById('dup-card-' + ticketId);
+        if (card) {
+            card.style.transition = 'all 0.3s ease';
+            card.style.opacity = '0';
+            card.style.transform = 'translateX(30px)';
+            setTimeout(() => card.remove(), 300);
+        }
+        await loadNotifications();
+        await loadTickets();
+    } catch (e) { showToast('Network error', 'error'); }
+}
+
+async function rejectDuplicate(ticketId) {
+    if (!confirm('Reject this duplicate? It will be hidden permanently.')) return;
+    try {
+        const r = await fetch(`/api/tickets/${ticketId}/reject-duplicate`, { method: 'POST' });
+        const data = await r.json();
+        if (!r.ok) { showToast(data.error || 'Failed', 'error'); return; }
+        showToast('Duplicate rejected and hidden', 'info');
+        const card = document.getElementById('dup-card-' + ticketId);
+        if (card) {
+            card.style.transition = 'all 0.3s ease';
+            card.style.opacity = '0';
+            card.style.transform = 'translateX(30px)';
+            setTimeout(() => card.remove(), 300);
+        }
+        await loadNotifications();
+    } catch (e) { showToast('Network error', 'error'); }
+}
+
+function _getSelectedDuplicateIds() {
+    return Array.from(document.querySelectorAll('.duplicate-review-checkbox:checked'))
+        .map(node => node.value)
+        .filter(Boolean);
+}
+
+function toggleDuplicateSelection(checked) {
+    document.querySelectorAll('.duplicate-review-checkbox').forEach(node => {
+        node.checked = !!checked;
+    });
+}
+
+async function approveSelectedDuplicates() {
+    const ticketIds = _getSelectedDuplicateIds();
+    if (ticketIds.length === 0) {
+        showToast('Select at least one duplicate ticket', 'error');
+        return;
+    }
+    try {
+        for (const ticketId of ticketIds) {
+            const r = await fetch(`/api/tickets/${ticketId}/approve-duplicate`, { method: 'POST' });
+            const data = await r.json();
+            if (!r.ok) {
+                showToast(data.error || 'Failed to approve duplicates', 'error');
+                return;
+            }
+        }
+        showToast(`Approved ${ticketIds.length} duplicate ticket${ticketIds.length > 1 ? 's' : ''}`, 'success');
+        await loadNotifications();
+        await loadTickets();
+        if (_activeNotifPanel === 'duplicate') {
+            _renderDuplicatePanel(document.getElementById('notifPanel'));
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('Network error', 'error');
+    }
+}
+
+async function rejectSelectedDuplicates() {
+    const ticketIds = _getSelectedDuplicateIds();
+    if (ticketIds.length === 0) {
+        showToast('Select at least one duplicate ticket', 'error');
+        return;
+    }
+    if (!confirm(`Reject ${ticketIds.length} selected duplicate ticket${ticketIds.length > 1 ? 's' : ''}?`)) return;
+    try {
+        for (const ticketId of ticketIds) {
+            const r = await fetch(`/api/tickets/${ticketId}/reject-duplicate`, { method: 'POST' });
+            const data = await r.json();
+            if (!r.ok) {
+                showToast(data.error || 'Failed to reject duplicates', 'error');
+                return;
+            }
+        }
+        showToast(`Rejected ${ticketIds.length} duplicate ticket${ticketIds.length > 1 ? 's' : ''}`, 'info');
+        await loadNotifications();
+        if (_activeNotifPanel === 'duplicate') {
+            _renderDuplicatePanel(document.getElementById('notifPanel'));
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('Network error', 'error');
+    }
+}
+
+async function _renderDuplicatePanel(panel) {
+    panel.innerHTML = `<div class="notif-panel">
+        <div class="notif-panel-header">
+            <h3>⚠️ Duplicate Tickets</h3>
+            <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
+        </div>
+        <div class="empty-notif">Loading duplicates...</div>
+    </div>`;
+
+    try {
+        const r = await fetch('/api/tickets/duplicates');
+        if (!r.ok) throw new Error('Failed to load');
+        const data = await r.json();
+        const dups = data.duplicates || [];
+
+        if (!dups.length) {
+            panel.innerHTML = `<div class="notif-panel">
+                <div class="notif-panel-header">
+                    <h3>⚠️ Duplicate Tickets</h3>
+                    <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
+                </div>
+                <div class="empty-notif">
+                    <div style="font-size:2rem;margin-bottom:0.5rem;">✅</div>
+                    No pending duplicate tickets
+                </div>
+            </div>`;
+            return;
+        }
+
+        const cardsHtml = dups.map(dup => {
+            const orig = dup.original_ticket;
+            const dupNames = (dup.passenger_names || []).join(', ') || 'Unknown';
+            const origNames = orig ? (orig.passenger_names || []).join(', ') || 'Unknown' : '—';
+            const dupRoute = dup.route || '—';
+            const origRoute = orig ? (orig.route || '—') : '—';
+            const timeAgo = _timeAgo(dup.created_at);
+
+            return `<div class="notif-card" id="dup-card-${dup.id}">
+                <div class="notif-card-header">
+                    <div style="display:flex;gap:0.8rem;align-items:flex-start;">
+                        <label style="display:flex;align-items:center;margin-top:0.2rem;">
+                            <input type="checkbox" class="duplicate-review-checkbox" value="${dup.id}" checked>
+                        </label>
+                        <div>
+                            <div style="font-weight:800;font-size:0.95rem;">PNR ${dup.pnr || '—'} <span style="font-size:0.76rem;font-weight:500;color:var(--text-secondary);">· ${timeAgo}</span></div>
+                            <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.15rem;">${dupRoute} · ${dupNames}</div>
+                        </div>
+                    </div>
+                    <span style="background:rgba(245,158,11,0.12);color:#d97706;padding:0.15rem 0.45rem;border-radius:999px;font-size:0.7rem;font-weight:700;">Suspected Duplicate</span>
+                </div>
+                ${orig ? `<div class="dup-compare">
+                    <div class="dup-side">
+                        <div class="label">Original Ticket</div>
+                        <div style="font-weight:700;">${origNames}</div>
+                        <div style="color:var(--text-secondary);font-size:0.78rem;">${origRoute}</div>
+                        <div style="color:var(--text-secondary);font-size:0.75rem;">₹${parseFloat(orig.grand_total || 0).toLocaleString()}</div>
+                    </div>
+                    <div class="vs">VS</div>
+                    <div class="dup-side">
+                        <div class="label">New (Duplicate)</div>
+                        <div style="font-weight:700;">${dupNames}</div>
+                        <div style="color:var(--text-secondary);font-size:0.78rem;">${dupRoute}</div>
+                        <div style="color:var(--text-secondary);font-size:0.75rem;">₹${parseFloat(dup.grand_total || 0).toLocaleString()}</div>
+                    </div>
+                </div>` : ''}
+                <div class="notif-card-actions">
+                    <button class="notif-btn approve" onclick="approveDuplicate('${dup.id}')">✅ Approve & Add</button>
+                    <button class="notif-btn reject" onclick="rejectDuplicate('${dup.id}')">🗑️ Reject</button>
+                </div>
+            </div>`;
+        }).join('');
+
+        panel.innerHTML = `<div class="notif-panel">
+            <div class="notif-panel-header">
+                <h3>⚠️ Duplicate Tickets <span style="font-size:0.8rem;font-weight:600;color:var(--text-secondary);">(${dups.length})</span></h3>
+                <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;align-items:center;margin-bottom:0.85rem;padding:0.85rem 1rem;border-radius:12px;border:1px solid var(--border);background:var(--bg-main);">
+                <div style="font-size:0.84rem;color:var(--text-secondary);font-weight:600;">Select duplicate tickets to approve into the dashboard or reject.</div>
+                <div style="display:flex;gap:0.55rem;flex-wrap:wrap;">
+                    <button class="btn-action secondary" onclick="toggleDuplicateSelection(true)">Select All</button>
+                    <button class="btn-action secondary" onclick="toggleDuplicateSelection(false)">Clear</button>
+                    <button class="btn-action secondary" style="border-color:rgba(239,68,68,0.35);color:#dc2626;" onclick="rejectSelectedDuplicates()">Reject Selected</button>
+                    <button class="btn-action primary" onclick="approveSelectedDuplicates()">Approve Selected</button>
+                </div>
+            </div>
+            <div style="max-height:50vh;overflow-y:auto;">${cardsHtml}</div>
+        </div>`;
+    } catch (e) {
+        console.error(e);
+        panel.innerHTML = `<div class="notif-panel">
+            <div class="notif-panel-header">
+                <h3>⚠️ Duplicate Tickets</h3>
+                <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
+            </div>
+            <div class="empty-notif">Failed to load duplicates</div>
+        </div>`;
     }
 }
 
@@ -424,7 +845,7 @@ function openPnrGroupDetail(group) {
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;margin-top:1rem;">${fieldSummaryHtml}</div>
         <div style="display:grid;gap:0.85rem;max-height:45vh;overflow:auto;margin-top:1rem;">${ticketsHtml}</div>
         <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1.25rem;">
-            <button class="btn-action secondary" onclick="openPnrMergeModal()">Back</button>
+            <button class="btn-action secondary" onclick="_closeModal()">Close</button>
             ${group.has_different_passengers
                 ? (group.can_auto_merge
                     ? `<button class="btn-action primary" onclick='mergePnrGroup("${group.pnr}", false, ${JSON.stringify(group.tickets.map(t => t.ticket_id)).replace(/"/g, '&quot;')})'>Merge Booking</button>`
@@ -448,6 +869,8 @@ async function mergePnrGroup(pnr, forceMerge, ticketIds) {
         }
         showToast(result.message || 'Booking merged', 'success');
         _closeModal();
+        _closeNotifPanel();
+        await loadNotifications();
         await loadTickets();
     } catch (e) {
         console.error(e);
@@ -455,10 +878,226 @@ async function mergePnrGroup(pnr, forceMerge, ticketIds) {
     }
 }
 
+function mergeSelectedPnrTickets(pnr, forceMerge, fallbackTicketIds) {
+    const ticketIds = _getSelectedPnrReviewTicketIds(pnr);
+    mergePnrGroup(pnr, forceMerge, ticketIds.length ? ticketIds : (fallbackTicketIds || []));
+}
+
+async function deleteSelectedPnrTickets(pnr) {
+    const ticketIds = _getSelectedPnrReviewTicketIds(pnr);
+    if (ticketIds.length === 0) {
+        showToast('Select at least one ticket to delete', 'error');
+        return;
+    }
+    if (!confirm(`Delete ${ticketIds.length} selected ticket${ticketIds.length > 1 ? 's' : ''} from PNR ${pnr}?`)) return;
+    try {
+        const r = await fetch(`/api/tickets/pnr-groups/${encodeURIComponent(pnr)}/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticket_ids: ticketIds })
+        });
+        const result = await r.json();
+        if (!r.ok) {
+            showToast(result.error || 'Delete failed', 'error');
+            return;
+        }
+        showToast(result.message || 'Selected tickets deleted', 'success');
+        _closeModal();
+        _closeNotifPanel();
+        await loadNotifications();
+        await loadTickets();
+    } catch (e) {
+        console.error(e);
+        showToast('Delete failed', 'error');
+    }
+}
+
+function openPnrGroupDetail(group) {
+    const compareFields = [
+        ['airline', 'Airline'],
+        ['route', 'Route'],
+        ['flight_numbers', 'Flight Numbers'],
+        ['departure_airport', 'Departure Airport'],
+        ['arrival_airport', 'Arrival Airport'],
+        ['departure_datetime', 'Departure Time'],
+        ['arrival_datetime', 'Arrival Time']
+    ];
+
+    const discrepancyKeys = new Set(Object.keys(group.discrepancies || {}));
+    const allTicketIds = (group.tickets || []).map(t => t.ticket_id);
+    const encodedAllTicketIds = JSON.stringify(allTicketIds).replace(/"/g, '&quot;');
+
+    const fieldSummaryHtml = compareFields.map(([key, label]) => {
+        const mismatched = discrepancyKeys.has(key);
+        return `<div style="padding:0.75rem;border-radius:12px;border:1px solid ${mismatched ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.25)'};background:${mismatched ? 'rgba(245,158,11,0.06)' : 'rgba(16,185,129,0.06)'};">
+            <div style="font-size:0.76rem;color:var(--text-secondary);text-transform:uppercase;font-weight:700;">${label}</div>
+            <div style="margin-top:0.3rem;font-weight:700;color:${mismatched ? '#d97706' : '#059669'};">${mismatched ? 'Mismatch detected' : 'All tickets match'}</div>
+        </div>`;
+    }).join('');
+
+    const ticketsHtml = (group.tickets || []).map(ticket => {
+        const rows = compareFields.map(([key, label]) => {
+            const mismatched = discrepancyKeys.has(key);
+            return `<tr>
+                <td style="padding:0.45rem 0.5rem;font-size:0.82rem;color:var(--text-secondary);">${label}</td>
+                <td style="padding:0.45rem 0.5rem;font-size:0.82rem;font-weight:600;color:${mismatched ? '#d97706' : 'var(--text-primary)'};">${ticket[key] || '—'}</td>
+            </tr>`;
+        }).join('');
+        return `<div style="padding:1rem;border:1px solid var(--border);border-radius:14px;background:var(--bg-main);">
+            <div style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;align-items:flex-start;">
+                <div style="display:flex;gap:0.8rem;align-items:flex-start;">
+                    <label style="display:flex;align-items:center;margin-top:0.15rem;">
+                        <input type="checkbox" class="pnr-review-checkbox" data-pnr="${group.pnr}" value="${ticket.ticket_id}" checked>
+                    </label>
+                    <div>
+                        <div style="font-weight:800;">${(ticket.passenger_names || []).join(', ') || 'Passenger'}</div>
+                        <div style="font-size:0.76rem;color:var(--text-secondary);margin-top:0.2rem;">${(ticket.system_ticket_numbers || []).join(', ') || 'No system ID'} | Ticket ${ticket.ticket_id}</div>
+                    </div>
+                </div>
+                ${ticket.booking_group_id ? '<span style="background:rgba(37,99,235,0.12);color:var(--primary);padding:0.2rem 0.55rem;border-radius:999px;font-size:0.72rem;font-weight:700;">Already linked</span>' : ''}
+            </div>
+            <table style="width:100%;margin-top:0.85rem;border-collapse:collapse;">${rows}</table>
+        </div>`;
+    }).join('');
+
+    const warningHtml = group.can_auto_merge
+        ? '<div style="padding:0.85rem 1rem;border-radius:12px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);color:#059669;font-weight:700;">All compared booking fields match. This group can be merged safely.</div>'
+        : group.has_different_passengers
+            ? '<div style="padding:0.85rem 1rem;border-radius:12px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);color:#b45309;font-weight:700;">Discrepancies were detected. Review carefully before forcing a merge.</div>'
+            : '<div style="padding:0.85rem 1rem;border-radius:12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);color:#b91c1c;font-weight:700;">These tickets appear to belong to the same passenger after ignoring title prefixes and letter case, so they should not be merged.</div>';
+
+    const html = `<h3 style="margin-top:0;">PNR ${group.pnr}</h3>
+        ${warningHtml}
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;margin-top:1rem;">${fieldSummaryHtml}</div>
+        <div style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;align-items:center;margin-top:1rem;padding:0.85rem 1rem;border-radius:12px;border:1px solid var(--border);background:var(--bg-main);">
+            <div style="font-size:0.84rem;color:var(--text-secondary);font-weight:600;">Select the tickets you want to merge or delete from this PNR group.</div>
+            <div style="display:flex;gap:0.55rem;flex-wrap:wrap;">
+                <button class="btn-action secondary" onclick="togglePnrReviewSelection('${group.pnr}', true)">Select All</button>
+                <button class="btn-action secondary" onclick="togglePnrReviewSelection('${group.pnr}', false)">Clear</button>
+            </div>
+        </div>
+        <div style="display:grid;gap:0.85rem;max-height:45vh;overflow:auto;margin-top:1rem;">${ticketsHtml}</div>
+        <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1.25rem;">
+            <button class="btn-action secondary" onclick="_closeModal()">Close</button>
+            <button class="btn-action secondary" style="border-color:rgba(239,68,68,0.35);color:#dc2626;" onclick='deleteSelectedPnrTickets("${group.pnr}")'>Delete Selected</button>
+            ${group.has_different_passengers
+                ? (group.can_auto_merge
+                    ? `<button class="btn-action primary" onclick='mergeSelectedPnrTickets("${group.pnr}", false, ${encodedAllTicketIds})'>Merge Selected</button>`
+                    : `<button class="btn-action primary" style="background:linear-gradient(135deg,#d97706,#f59e0b);" onclick='mergeSelectedPnrTickets("${group.pnr}", true, ${encodedAllTicketIds})'>Merge Selected Anyway</button>`)
+                : ''}
+        </div>`;
+    _createModalOverlay(html);
+}
+
+function renderActionsSection() {
+    const tStatus = editedData.ticket_status || 'live';
+    const isCancelled = tStatus === 'cancelled';
+    const isMergedView = !!editedData.is_merged_view;
+
+    document.getElementById('actionsSection').innerHTML = `
+        <div class="section-header-row"><h2>⚡ Actions</h2></div>
+                <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
+                    <div class="pdf-btn-group">
+                        <button class="pdf-btn with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
+                        <button class="pdf-btn without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
+                        <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">Sheet Export:</span>
+                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('AB')">📊 AB</button>
+                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('CK')">📊 CK</button>
+                    </div>
+                    ${!editedData.ledger_hash ? `
+                    <div id="ledgerBtnGroup" style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
+                        <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">Add to Ledger:</span>
+                        <select id="ledgerAggSelect" style="padding:0.35rem 0.5rem; border-radius:8px; border:1px solid var(--border); font-family:inherit; font-size:0.82rem; background:var(--bg-card); color:var(--text-primary);">
+                            <option value="">Loading...</option>
+                        </select>
+                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('AB')">📒 AB</button>
+                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('CK')">📒 CK</button>
+                    </div>` : `
+                    <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(16,185,129,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(16,185,129,0.2);">
+                        <span style="font-weight:700; color:#10b981;">✅ In Ledger</span>
+                    </div>`}
+                    ${!isCancelled ? `
+                    <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(239,68,68,0.05); padding:0.5rem 1rem; border-radius:12px; border:1px solid rgba(239,68,68,0.2);">
+                        <button class="pdf-btn" style="background:linear-gradient(135deg,#dc2626,#ef4444); color:white; padding:0.5rem 1rem;" onclick="openCancelModal()">❌ Cancel / Split</button>
+                        <button class="pdf-btn" style="background:linear-gradient(135deg,#d97706,#f59e0b); color:white; padding:0.5rem 1rem;" onclick="openChangeModal()">🔄 Change</button>
+                    </div>` : `
+                    <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(239,68,68,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px dashed rgba(239,68,68,0.3);">
+                        <span style="font-weight:700; color:#ef4444;">🔴 This ticket is cancelled</span>
+                    </div>`}
+                    ${isMergedView ? `
+                    <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(5,150,105,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(5,150,105,0.2);">
+                        <span style="font-weight:700; color:#059669;">Merged booking view. These actions apply to the grouped booking shown here.</span>
+                    </div>` : ''}
+                </div>`;
+    loadLedgerAggregators();
+}
+
+// ==================== MERGED HISTORY TAB ====================
+function switchToMergedView(btn) {
+    document.querySelectorAll('.filter-bar .tab').forEach(t => t.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    _mergedViewActive = true;
+    currentFilter = 'all';
+    renderTicketCards();
+}
+
+// Keep openPnrMergeModal as backward-compatible alias
+async function openPnrMergeModal() {
+    toggleNotifPanel('merge');
+}
+
+function renderActionsSection() {
+    const tStatus = editedData.ticket_status || 'live';
+    const isCancelled = tStatus === 'cancelled';
+    const isMergedView = !!editedData.is_merged_view;
+
+    document.getElementById('actionsSection').innerHTML = `
+        <div class="section-header-row"><h2>⚡ Actions</h2></div>
+                <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
+                    <div class="pdf-btn-group">
+                        <button class="pdf-btn with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
+                        <button class="pdf-btn without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
+                        <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">Sheet Export:</span>
+                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('AB')">📊 AB</button>
+                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('CK')">📊 CK</button>
+                    </div>
+                    ${!editedData.ledger_hash ? `
+                    <div id="ledgerBtnGroup" style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
+                        <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">Add to Ledger:</span>
+                        <select id="ledgerAggSelect" style="padding:0.35rem 0.5rem; border-radius:8px; border:1px solid var(--border); font-family:inherit; font-size:0.82rem; background:var(--bg-card); color:var(--text-primary);">
+                            <option value="">Loading...</option>
+                        </select>
+                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('AB')">📒 AB</button>
+                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('CK')">📒 CK</button>
+                    </div>` : `
+                    <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(16,185,129,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(16,185,129,0.2);">
+                        <span style="font-weight:700; color:#10b981;">✅ In Ledger</span>
+                    </div>`}
+                    ${!isCancelled ? `
+                    <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(239,68,68,0.05); padding:0.5rem 1rem; border-radius:12px; border:1px solid rgba(239,68,68,0.2);">
+                        <button class="pdf-btn" style="background:linear-gradient(135deg,#dc2626,#ef4444); color:white; padding:0.5rem 1rem;" onclick="openCancelModal()">❌ Cancel / Split</button>
+                        <button class="pdf-btn" style="background:linear-gradient(135deg,#d97706,#f59e0b); color:white; padding:0.5rem 1rem;" onclick="openChangeModal()">🔄 Change</button>
+                    </div>` : `
+                    <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(239,68,68,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px dashed rgba(239,68,68,0.3);">
+                        <span style="font-weight:700; color:#ef4444;">🔴 This ticket is cancelled</span>
+                    </div>`}
+                    ${isMergedView ? `
+                    <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(5,150,105,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(5,150,105,0.2);">
+                        <span style="font-weight:700; color:#059669;">Merged booking view. These actions apply to the grouped booking shown here.</span>
+                    </div>` : ''}
+                </div>`;
+    loadLedgerAggregators();
+}
+
 // ==================== RENDER DETAIL ====================
 function renderDetailView() {
     const t = editedData;
     if (!t) return;
+    if (!t.currency) t.currency = 'INR';
     const segments = t.segments || [];
     const journey = t.journey || {};
 
@@ -550,11 +1189,11 @@ function renderBookingSection() {
             <div class="field-grid">
                 <div class="field-item">
                     <label>Company Name</label>
-                    <input type="text" value="${safe(gst.company_name)}" placeholder="Enter company name" onchange="editedData.raw_data.gst_details.company_name=this.value">
+                    <input type="text" value="${safe(gst.company_name)}" placeholder="Enter company name" oninput="editedData.raw_data.gst_details.company_name=this.value; triggerAutoSave()" onchange="editedData.raw_data.gst_details.company_name=this.value">
                 </div>
                 <div class="field-item">
                     <label>GSTIN</label>
-                    <input type="text" value="${safe(gst.gst_number)}" placeholder="Enter full GST number" style="font-family:monospace;" onchange="editedData.raw_data.gst_details.gst_number=this.value">
+                    <input type="text" value="${safe(gst.gst_number)}" placeholder="Enter full GST number" style="font-family:monospace;" oninput="editedData.raw_data.gst_details.gst_number=this.value; triggerAutoSave()" onchange="editedData.raw_data.gst_details.gst_number=this.value">
                 </div>
             </div>
         </div>`;
@@ -562,12 +1201,22 @@ function renderBookingSection() {
     document.getElementById('bookingSection').innerHTML = `
         <div class="section-header-row"><h2>📋 Booking Information</h2></div>
         <div class="field-grid">
-            <div class="field-item"><label>PNR</label><input type="text" value="${safe(t.pnr)}" onchange="editedData.pnr=this.value"></div>
-            <div class="field-item"><label>Booking Date</label><input type="text" value="${safe(t.booking_date)}" onchange="editedData.booking_date=this.value"></div>
-            <div class="field-item"><label>Phone</label><input type="text" value="${safe(t.phone)}" onchange="editedData.phone=this.value"></div>
-            <div class="field-item"><label>Currency</label><input type="text" value="${safe(t.currency, 'INR')}" onchange="editedData.currency=this.value"></div>
+            <div class="field-item"><label>PNR</label><input type="text" value="${safe(t.pnr)}" oninput="editedData.pnr=this.value; triggerAutoSave()" onchange="editedData.pnr=this.value"></div>
+            <div class="field-item"><label>Booking Date</label><input type="text" value="${safe(t.booking_date)}" oninput="editedData.booking_date=this.value; triggerAutoSave()" onchange="editedData.booking_date=this.value"></div>
+            <div class="field-item"><label>Phone</label><input type="text" value="${safe(t.phone)}" oninput="editedData.phone=this.value; triggerAutoSave()" onchange="editedData.phone=this.value"></div>
+            <div class="field-item"><label>Currency</label>
+                <select onchange="setTicketCurrency(this.value)">
+                    <option value="INR" ${(t.currency || 'INR') === 'INR' ? 'selected' : ''}>INR</option>
+                    <option value="USD" ${t.currency === 'USD' ? 'selected' : ''}>USD</option>
+                    <option value="EUR" ${t.currency === 'EUR' ? 'selected' : ''}>EUR</option>
+                    <option value="GBP" ${t.currency === 'GBP' ? 'selected' : ''}>GBP</option>
+                    <option value="AED" ${t.currency === 'AED' ? 'selected' : ''}>AED</option>
+                    <option value="SGD" ${t.currency === 'SGD' ? 'selected' : ''}>SGD</option>
+                    <option value="THB" ${t.currency === 'THB' ? 'selected' : ''}>THB</option>
+                </select>
+            </div>
             <div class="field-item"><label>Class of Travel</label>
-                <select onchange="editedData.class_of_travel=this.value">
+                <select onchange="editedData.class_of_travel=this.value; triggerAutoSave()">
                     <option value="None" ${!t.class_of_travel || t.class_of_travel === 'None' ? 'selected' : ''}>None (Mixed / Hidden)</option>
                     <option value="Economy" ${t.class_of_travel === 'Economy' ? 'selected' : ''}>Economy</option>
                     <option value="Premium Economy" ${t.class_of_travel === 'Premium Economy' ? 'selected' : ''}>Premium Economy</option>
@@ -575,7 +1224,7 @@ function renderBookingSection() {
                     <option value="First" ${t.class_of_travel === 'First' ? 'selected' : ''}>First</option>
                 </select></div>
             <div class="field-item"><label>Trip Type</label>
-                <select onchange="editedData.trip_type=this.value; renderDetailView()">
+                <select onchange="editedData.trip_type=this.value; renderDetailView(); triggerAutoSave()">
                     <option value="one_way" ${t.trip_type === 'one_way' ? 'selected' : ''}>One Way</option>
                     <option value="round_trip" ${t.trip_type === 'round_trip' ? 'selected' : ''}>Round Trip</option>
                     <option value="multi_city" ${t.trip_type === 'multi_city' ? 'selected' : ''}>Multi-City</option>
@@ -835,6 +1484,26 @@ function toggleLeg(legId) {
     if (icon) icon.textContent = el.classList.contains('collapsed') ? '▼' : '▲';
 }
 
+function setPassengerSortMode(mode) {
+    passengerSortMode = mode || '';
+    renderPassengersSection();
+}
+
+function setTicketCurrency(currency) {
+    editedData.currency = currency || 'INR';
+    isDetailDirty = true;
+    if (currentTicket && currentTicket.id === editedData.id) {
+        currentTicket.currency = editedData.currency;
+    }
+    const ticketIndex = allTickets.findIndex(ticket => ticket.id === editedData.id);
+    if (ticketIndex !== -1) {
+        allTickets[ticketIndex].currency = editedData.currency;
+    }
+    renderTicketCards();
+    renderDetailView();
+    triggerAutoSave();
+}
+
 function renderPassengersSection() {
     const passengers = editedData.passengers || [];
     const segments = editedData.segments || [];
@@ -842,19 +1511,67 @@ function renderPassengersSection() {
     const tripType = editedData.trip_type || 'one_way';
     const hasMultipleSegments = segments.length > 1;
 
+    const totalPax = passengers.length;
+    const allSelected = totalPax > 0 && selectedPaxIndices.size === totalPax;
+    const someSelected = selectedPaxIndices.size > 0;
+    const normalizePassengerSortValue = (value) => safe(value, '').toString().trim();
+    const passengerRows = passengers.map((passenger, originalIndex) => ({ passenger, originalIndex }));
+
+    if (passengerSortMode === 'name') {
+        passengerRows.sort((a, b) => normalizePassengerSortValue(a.passenger.name).localeCompare(
+            normalizePassengerSortValue(b.passenger.name),
+            undefined,
+            { sensitivity: 'base', numeric: true }
+        ));
+    } else if (passengerSortMode === 'ticket_number') {
+        passengerRows.sort((a, b) => normalizePassengerSortValue(a.passenger.ticket_number).localeCompare(
+            normalizePassengerSortValue(b.passenger.ticket_number),
+            undefined,
+            { sensitivity: 'base', numeric: true }
+        ));
+    }
+
     let html = `<div class="section-header-row">
         <h2>👥 Passengers</h2>
-        <button class="btn-action small primary" onclick="addPassenger()">+ Add Passenger</button>
+        <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+            <label style="display:flex; align-items:center; gap:0.45rem; font-size:0.9rem; color:var(--text-secondary);">
+                <span>Sort</span>
+                <select onchange="setPassengerSortMode(this.value)" style="min-width:160px;">
+                    <option value="" ${passengerSortMode === '' ? 'selected' : ''}>No Sort</option>
+                    <option value="name" ${passengerSortMode === 'name' ? 'selected' : ''}>Name</option>
+                    <option value="ticket_number" ${passengerSortMode === 'ticket_number' ? 'selected' : ''}>Ticket Number</option>
+                </select>
+            </label>
+            <button class="btn-action small primary" onclick="addPassenger()">+ Add Passenger</button>
+        </div>
     </div>`;
 
-    passengers.forEach((p, i) => {
+    if (totalPax > 0) {
+        html += `<div class="pax-select-bar">
+            <label>
+                <input type="checkbox" class="pax-checkbox" id="paxSelectAll"
+                    ${allSelected ? 'checked' : ''}
+                    onchange="toggleSelectAllPax(this.checked)">
+                Select All
+            </label>
+            <span class="pax-select-count" id="paxSelectCount">${someSelected ? selectedPaxIndices.size + ' of ' + totalPax + ' selected' : 'Select passengers to download tickets'}</span>
+        </div>`;
+    }
+
+    passengerRows.forEach(({ passenger: p, originalIndex: i }) => {
         const paxType = getPaxLabel(p.pax_type || p.type);
         const typeClass = paxType.toLowerCase();
         const seats = p.seats || [];
 
-        html += `<div class="pax-edit-card">
+        const isChecked = selectedPaxIndices.has(i);
+        html += `<div class="pax-edit-card ${isChecked ? 'pax-selected' : ''}" id="pax-card-${i}">
             <div class="pax-edit-header">
-                <h4>👤 ${safe(p.name, 'Passenger ' + (i + 1))}</h4>
+                <div style="display:flex;align-items:center;gap:0.6rem;">
+                    <input type="checkbox" class="pax-checkbox" id="paxCheck-${i}"
+                        ${isChecked ? 'checked' : ''}
+                        onchange="togglePaxSelection(${i}, this.checked)">
+                    <h4 style="margin:0;">👤 ${safe(p.name, 'Passenger ' + (i + 1))}</h4>
+                </div>
                 <div style="display:flex;align-items:center;gap:0.5rem;">
                     <span class="pax-type-badge ${typeClass}">${paxType}</span>
                     <button class="btn-action small danger" onclick="removePassenger(${i})" style="padding:0.3rem 0.5rem;">✕</button>
@@ -964,6 +1681,55 @@ function renderPassengersSection() {
     document.getElementById('passengersSection').innerHTML = html;
 }
 
+function getNormalizedFareState() {
+    const passengers = editedData.passengers || [];
+    const journey = editedData.journey || {};
+    const passengerCount = passengers.length || 1;
+    const globalMarkup = parseFloat(journey.global_markup) || 0;
+    const consolidated = journey.consolidated_fare || null;
+    const explicitPassengerFareRows = passengers.map((p) => {
+        const fare = p.fare || {};
+        return {
+            base: parseFloat(fare.base_fare) || 0,
+            k3: parseFloat(fare.k3_gst) || 0,
+            other: parseFloat(fare.other_taxes) || 0
+        };
+    });
+    const hasExplicitPassengerFares = explicitPassengerFareRows.some(row => row.base || row.k3 || row.other);
+
+    const passengerTotals = explicitPassengerFareRows.reduce((acc, row) => {
+        acc.base += row.base;
+        acc.k3 += row.k3;
+        acc.other += row.other;
+        return acc;
+    }, { base: 0, k3: 0, other: 0 });
+
+    const hasConsolidatedFare = !!consolidated;
+    const consolidatedTotals = hasConsolidatedFare ? {
+        base: parseFloat(consolidated.base_fare) || 0,
+        k3: parseFloat(consolidated.k3_gst) || 0,
+        other: parseFloat(consolidated.other_taxes) || 0
+    } : passengerTotals;
+
+    const perPassengerRows = passengers.map((_, index) => {
+        if (hasConsolidatedFare) {
+            return {
+                base: consolidatedTotals.base / passengerCount,
+                k3: consolidatedTotals.k3 / passengerCount,
+                other: consolidatedTotals.other / passengerCount
+            };
+        }
+        return explicitPassengerFareRows[index] || { base: 0, k3: 0, other: 0 };
+    });
+
+    return {
+        passengerRows: perPassengerRows,
+        consolidatedTotals,
+        globalMarkup,
+        hasExplicitPassengerFares: hasConsolidatedFare ? false : hasExplicitPassengerFares
+    };
+}
+
 function renderFareSection() {
     const passengers = editedData.passengers || [];
     const curr = editedData.currency || 'INR';
@@ -972,7 +1738,8 @@ function renderFareSection() {
         editedData.journey.fare_display = passengers.length <= 1 ? 'per_passenger' : 'consolidated';
     }
     const isConsolidated = editedData.journey.fare_display === 'consolidated';
-    const globalMarkup = parseFloat(editedData.journey.global_markup) || 0;
+    const fareState = getNormalizedFareState();
+    const globalMarkup = fareState.globalMarkup;
 
     let html = `<div class="section-header-row">
         <h2>💰 Fare Details</h2>
@@ -982,20 +1749,9 @@ function renderFareSection() {
     </div>`;
 
     if (isConsolidated) {
-        if (!editedData.journey.consolidated_fare) {
-            let totalBase = 0, totalK3 = 0, totalOther = 0;
-            passengers.forEach(p => {
-                const f = p.fare || {};
-                totalBase += parseFloat(f.base_fare) || 0;
-                totalK3 += parseFloat(f.k3_gst) || 0;
-                totalOther += parseFloat(f.other_taxes) || 0;
-            });
-            editedData.journey.consolidated_fare = { base_fare: totalBase, k3_gst: totalK3, other_taxes: totalOther };
-        }
-        const cf = editedData.journey.consolidated_fare;
-        const base = parseFloat(cf.base_fare) || 0;
-        const k3 = parseFloat(cf.k3_gst) || 0;
-        const other = parseFloat(cf.other_taxes) || 0;
+        const base = fareState.consolidatedTotals.base;
+        const k3 = fareState.consolidatedTotals.k3;
+        const other = fareState.consolidatedTotals.other;
         const markupTotal = globalMarkup * passengers.length;
         const bothAddition = other + markupTotal;
         const total = base + k3 + bothAddition;
@@ -1036,15 +1792,21 @@ function renderFareSection() {
             </tr></thead><tbody>`;
 
         passengers.forEach((p, i) => {
-            const fare = p.fare || {};
+            const fare = fareState.passengerRows[i] || { base: 0, k3: 0, other: 0 };
             const paxType = getPaxLabel(p.pax_type || p.type);
-            const base = parseFloat(fare.base_fare) || 0;
-            const k3 = parseFloat(fare.k3_gst) || 0;
-            const other = parseFloat(fare.other_taxes) || 0;
+            const base = parseFloat(fare.base) || 0;
+            const k3 = parseFloat(fare.k3) || 0;
+            const other = parseFloat(fare.other) || 0;
             const bothAddition = other + globalMarkup;
             const total = base + k3 + bothAddition;
 
-            if (!fare.total_fare || parseFloat(fare.total_fare) !== total) {
+            if (!editedData.passengers[i].fare) editedData.passengers[i].fare = {};
+            if (!fareState.hasExplicitPassengerFares) {
+                editedData.passengers[i].fare.base_fare = base;
+                editedData.passengers[i].fare.k3_gst = k3;
+                editedData.passengers[i].fare.other_taxes = other;
+            }
+            if (!editedData.passengers[i].fare.total_fare || parseFloat(editedData.passengers[i].fare.total_fare) !== total) {
                 if (!editedData.passengers[i].fare) editedData.passengers[i].fare = {};
                 editedData.passengers[i].fare.total_fare = total;
             }
@@ -1227,18 +1989,26 @@ function recalcFareGlobal(redraw = true) {
         editedData.journey.fare_display = (editedData.passengers || []).length <= 1 ? 'per_passenger' : 'consolidated';
     }
     const isConsolidated = editedData.journey.fare_display === 'consolidated';
-    const globalMarkup = parseFloat(editedData.journey.global_markup) || 0;
+    const fareState = getNormalizedFareState();
+    const globalMarkup = fareState.globalMarkup;
     const curr = editedData.currency || 'INR';
     let gt = 0;
 
     if (isConsolidated) {
-        const cf = editedData.journey.consolidated_fare || {};
         const passengersCount = (editedData.passengers || []).length;
-        const other = parseFloat(cf.other_taxes) || 0;
+        const base = fareState.consolidatedTotals.base;
+        const k3 = fareState.consolidatedTotals.k3;
+        const other = fareState.consolidatedTotals.other;
         const markupTotal = globalMarkup * passengersCount;
         const bothAddition = other + markupTotal;
-        const total = (parseFloat(cf.base_fare) || 0) + (parseFloat(cf.k3_gst) || 0) + bothAddition;
+        const total = base + k3 + bothAddition;
         gt = total;
+
+        const baseEl = document.querySelector('input[onchange*="consolidated_fare.base_fare"]');
+        if (baseEl && redraw) baseEl.value = base;
+
+        const k3El = document.querySelector('input[onchange*="consolidated_fare.k3_gst"]');
+        if (k3El && redraw) k3El.value = k3;
 
         const otherEl = document.getElementById('cons-other');
         if (otherEl && redraw) otherEl.value = other;
@@ -1256,13 +2026,19 @@ function recalcFareGlobal(redraw = true) {
         if (ct && redraw) ct.textContent = formatCurrency(total, curr);
     } else {
         editedData.passengers.forEach((p, i) => {
-            const f = p.fare || {};
-            const base = parseFloat(f.base_fare) || 0;
-            const k3 = parseFloat(f.k3_gst) || 0;
-            const other = parseFloat(f.other_taxes) || 0;
+            const f = fareState.passengerRows[i] || { base: 0, k3: 0, other: 0 };
+            const base = parseFloat(f.base) || 0;
+            const k3 = parseFloat(f.k3) || 0;
+            const other = parseFloat(f.other) || 0;
             const bothAddition = other + globalMarkup;
             const total = base + k3 + bothAddition;
-            f.total_fare = total;
+            if (!editedData.passengers[i].fare) editedData.passengers[i].fare = {};
+            if (!fareState.hasExplicitPassengerFares) {
+                editedData.passengers[i].fare.base_fare = base;
+                editedData.passengers[i].fare.k3_gst = k3;
+                editedData.passengers[i].fare.other_taxes = other;
+            }
+            editedData.passengers[i].fare.total_fare = total;
             gt += total;
 
             const otherEl = document.getElementById('pax-other-' + i);
@@ -1466,12 +2242,9 @@ function saveSegmentEdit(idx) {
 // ==================== SAVE & PDF ====================
 async function saveTicket(silent = false) {
     if (!currentTicket || !editedData) return;
-    if (editedData.is_merged_view) {
-        if (!silent) showToast('Merged booking views are read-only', 'info');
-        return;
-    }
     try {
         const payload = {
+            is_merged_view: !!editedData.is_merged_view,
             pnr: editedData.pnr,
             booking_date: editedData.booking_date,
             phone: editedData.phone,
@@ -1495,6 +2268,7 @@ async function saveTicket(silent = false) {
             if (!silent) showToast(e.error || 'Save failed', 'error');
             return;
         }
+        isDetailDirty = false;
         if (!silent) showToast('Ticket saved successfully!', 'success');
 
         const idx = allTickets.findIndex(t => t.id === currentTicket.id);
@@ -1508,12 +2282,29 @@ async function saveTicket(silent = false) {
     }
 }
 
-let autoSaveTimeout = null;
+function queueSave(silent = true) {
+    if (!isDetailDirty && silent) return pendingSavePromise || Promise.resolve();
+    const runSave = async () => {
+        await saveTicket(silent);
+    };
+    const nextSavePromise = (pendingSavePromise || Promise.resolve())
+        .catch(() => {})
+        .then(runSave)
+        .finally(() => {
+            if (pendingSavePromise === nextSavePromise) {
+                pendingSavePromise = null;
+            }
+        });
+    pendingSavePromise = nextSavePromise;
+    return pendingSavePromise;
+}
+
 function triggerAutoSave() {
+    isDetailDirty = true;
     clearTimeout(autoSaveTimeout);
     autoSaveTimeout = setTimeout(() => {
-        saveTicket(true); // silent auto-save
-    }, 800);
+        queueSave(true);
+    }, 250);
 }
 
 async function downloadPDF(includeFare) {
@@ -1526,6 +2317,152 @@ async function downloadPDF(includeFare) {
         document.body.appendChild(a); a.click(); a.remove();
         showToast(`PDF download started (${includeFare ? 'with fare' : 'without fare'})`, 'success');
     } catch (e) { showToast('PDF generation failed', 'error'); }
+}
+
+// ==================== PASSENGER SELECTION ====================
+function togglePaxSelection(idx, checked) {
+    if (checked) {
+        selectedPaxIndices.add(idx);
+    } else {
+        selectedPaxIndices.delete(idx);
+    }
+    _updatePaxSelectionUI();
+}
+
+function toggleSelectAllPax(checked) {
+    const passengers = editedData.passengers || [];
+    selectedPaxIndices.clear();
+    if (checked) {
+        passengers.forEach((_, i) => selectedPaxIndices.add(i));
+    }
+    _updatePaxSelectionUI();
+}
+
+function _updatePaxSelectionUI() {
+    const passengers = editedData.passengers || [];
+    const totalPax = passengers.length;
+    const selectedCount = selectedPaxIndices.size;
+
+    // Update individual checkboxes & card highlight
+    for (let i = 0; i < totalPax; i++) {
+        const cb = document.getElementById('paxCheck-' + i);
+        const card = document.getElementById('pax-card-' + i);
+        const isSelected = selectedPaxIndices.has(i);
+        if (cb) cb.checked = isSelected;
+        if (card) {
+            if (isSelected) card.classList.add('pax-selected');
+            else card.classList.remove('pax-selected');
+        }
+    }
+
+    // Update select-all checkbox
+    const selectAll = document.getElementById('paxSelectAll');
+    if (selectAll) {
+        selectAll.checked = totalPax > 0 && selectedCount === totalPax;
+    }
+
+    // Update count text
+    const countEl = document.getElementById('paxSelectCount');
+    if (countEl) {
+        countEl.textContent = selectedCount > 0
+            ? selectedCount + ' of ' + totalPax + ' selected'
+            : 'Select passengers to download tickets';
+    }
+
+    // Show/hide floating action bar
+    if (selectedCount > 0) {
+        _showPaxActionBar(selectedCount);
+    } else {
+        _removePaxActionBar();
+    }
+}
+
+function _showPaxActionBar(count) {
+    let bar = document.getElementById('paxActionBar');
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'paxActionBar';
+        bar.className = 'pax-action-bar';
+        document.body.appendChild(bar);
+    }
+    const plural = count > 1 ? 's' : '';
+    bar.innerHTML = `
+        <div class="bar-info">
+            <span class="count-badge">${count}</span>
+            passenger${plural} selected
+        </div>
+        <div class="bar-actions">
+            <div class="fare-type-tabs" id="paxDlFareToggle">
+                <button class="active" onclick="_setPaxDlFare(true, this)">With Fare</button>
+                <button onclick="_setPaxDlFare(false, this)">Without Fare</button>
+            </div>
+            <button class="pax-dl-btn dl-individual" id="paxDlIndividual" onclick="downloadSelectedPaxIndividually()">
+                📥 Download Individually
+            </button>
+            <button class="pax-dl-btn dl-together" id="paxDlTogether" onclick="downloadSelectedPaxTogether()">
+                📦 Download Together
+            </button>
+        </div>
+        <button class="bar-close" onclick="clearPaxSelection()">✕ Clear</button>
+    `;
+}
+
+let _paxDlIncludeFare = true;
+
+function _setPaxDlFare(includeFare, btn) {
+    _paxDlIncludeFare = includeFare;
+    const tabs = document.querySelectorAll('#paxDlFareToggle button');
+    tabs.forEach(t => t.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+}
+
+function clearPaxSelection() {
+    selectedPaxIndices.clear();
+    _updatePaxSelectionUI();
+}
+
+function _removePaxActionBar() {
+    const bar = document.getElementById('paxActionBar');
+    if (bar) bar.remove();
+}
+
+function _getSelectedIndices() {
+    return Array.from(selectedPaxIndices).sort((a, b) => a - b);
+}
+
+async function downloadSelectedPaxIndividually() {
+    const indices = _getSelectedIndices();
+    if (indices.length === 0) { showToast('No passengers selected', 'error'); return; }
+    try {
+        await saveTicket();
+        showToast(`Downloading ${indices.length} individual PDF${indices.length > 1 ? 's' : ''}...`, 'info');
+        for (const idx of indices) {
+            const url = `/api/tickets/${currentTicket.id}/pdf/selected?include_fare=${_paxDlIncludeFare}&mode=individual&passenger_indices=${idx}`;
+            const a = document.createElement('a');
+            a.href = url; a.download = '';
+            document.body.appendChild(a); a.click(); a.remove();
+            // Small delay between downloads to avoid browser blocking
+            if (indices.length > 1) {
+                await new Promise(r => setTimeout(r, 500));
+            }
+        }
+        showToast('Individual PDFs downloaded', 'success');
+    } catch (e) { console.error(e); showToast('PDF generation failed', 'error'); }
+}
+
+async function downloadSelectedPaxTogether() {
+    const indices = _getSelectedIndices();
+    if (indices.length === 0) { showToast('No passengers selected', 'error'); return; }
+    try {
+        await saveTicket();
+        showToast(`Downloading combined PDF for ${indices.length} passenger${indices.length > 1 ? 's' : ''}...`, 'info');
+        const params = indices.map(i => `passenger_indices=${i}`).join('&');
+        const url = `/api/tickets/${currentTicket.id}/pdf/selected?include_fare=${_paxDlIncludeFare}&mode=together&${params}`;
+        const a = document.createElement('a');
+        a.href = url; a.download = '';
+        document.body.appendChild(a); a.click(); a.remove();
+        showToast('Combined PDF downloaded', 'success');
+    } catch (e) { console.error(e); showToast('PDF generation failed', 'error'); }
 }
 
 async function deleteTicket() {
@@ -1752,21 +2689,10 @@ function _onPaxNext(mode, sectorIndices) {
 
 function _workflowStep_FareSplit(sectorIndices, selectedPax, mode, sectorFares) {
     const passengers = editedData.passengers || [];
-    const journey = editedData.journey || {};
-    let totalBase = 0, totalK3 = 0, totalOther = 0;
-    
-    if (journey.consolidated_fare) {
-        totalBase = parseFloat(journey.consolidated_fare.base_fare) || 0;
-        totalK3 = parseFloat(journey.consolidated_fare.k3_gst) || 0;
-        totalOther = parseFloat(journey.consolidated_fare.other_taxes) || 0;
-    } else {
-        passengers.forEach(p => {
-            const f = p.fare || {};
-            totalBase += parseFloat(f.base_fare) || 0;
-            totalK3 += parseFloat(f.k3_gst) || 0;
-            totalOther += parseFloat(f.other_taxes) || 0;
-        });
-    }
+    const fareState = getNormalizedFareState();
+    const totalBase = fareState.consolidatedTotals.base;
+    const totalK3 = fareState.consolidatedTotals.k3;
+    const totalOther = fareState.consolidatedTotals.other;
 
     let html = `<h3 style="margin-top:0;">\ud83d\udcb0 Fare Split (Unequal)</h3>
     <p style="color:var(--text-secondary);font-size:0.88rem;margin-bottom:1rem;">
@@ -1905,20 +2831,10 @@ function _cancelStep_ConfirmPartial(sectorIndices, selectedPax, perPersonFares, 
 function _workflowStep_SectorFareSplit(sectorIndices, selectedPax, mode) {
     const segments = editedData.segments || [];
     const journey = editedData.journey || {};
-    let totalBase = 0, totalK3 = 0, totalOther = 0;
-    
-    if (journey.consolidated_fare) {
-        totalBase = parseFloat(journey.consolidated_fare.base_fare) || 0;
-        totalK3 = parseFloat(journey.consolidated_fare.k3_gst) || 0;
-        totalOther = parseFloat(journey.consolidated_fare.other_taxes) || 0;
-    } else {
-        (editedData.passengers || []).forEach(p => {
-            const f = p.fare || {};
-            totalBase += parseFloat(f.base_fare) || 0;
-            totalK3 += parseFloat(f.k3_gst) || 0;
-            totalOther += parseFloat(f.other_taxes) || 0;
-        });
-    }
+    const fareState = getNormalizedFareState();
+    const totalBase = fareState.consolidatedTotals.base;
+    const totalK3 = fareState.consolidatedTotals.k3;
+    const totalOther = fareState.consolidatedTotals.other;
 
     let html = `<h3 style="margin-top:0;">🛑 Sector-wise Refund Details</h3>
     <p style="color:var(--text-secondary);font-size:0.88rem;margin-bottom:1rem;">
@@ -2278,13 +3194,60 @@ document.addEventListener('DOMContentLoaded', async () => {
     initializeSidebar();
     await checkAuth();
     await loadTickets();
+    await loadNotifications();
 
     const detailView = document.getElementById('detailView');
     if (detailView) {
         detailView.addEventListener('change', (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
+                isDetailDirty = true;
                 triggerAutoSave();
             }
         });
     }
 });
+
+function renderActionsSection() {
+    const tStatus = editedData.ticket_status || 'live';
+    const isCancelled = tStatus === 'cancelled';
+    const isMergedView = !!editedData.is_merged_view;
+
+    document.getElementById('actionsSection').innerHTML = `
+        <div class="section-header-row"><h2>⚡ Actions</h2></div>
+        <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
+            <div class="pdf-btn-group">
+                <button class="pdf-btn with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
+                <button class="pdf-btn without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
+            </div>
+            <div style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
+                <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">Sheet Export:</span>
+                <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('AB')">📊 AB</button>
+                <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('CK')">📊 CK</button>
+            </div>
+            ${!editedData.ledger_hash ? `
+            <div id="ledgerBtnGroup" style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
+                <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">Add to Ledger:</span>
+                <select id="ledgerAggSelect" style="padding:0.35rem 0.5rem; border-radius:8px; border:1px solid var(--border); font-family:inherit; font-size:0.82rem; background:var(--bg-card); color:var(--text-primary);">
+                    <option value="">Loading...</option>
+                </select>
+                <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('AB')">📒 AB</button>
+                <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('CK')">📒 CK</button>
+            </div>` : `
+            <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(16,185,129,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(16,185,129,0.2);">
+                <span style="font-weight:700; color:#10b981;">✅ In Ledger</span>
+            </div>`}
+            ${!isCancelled ? `
+            <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(239,68,68,0.05); padding:0.5rem 1rem; border-radius:12px; border:1px solid rgba(239,68,68,0.2);">
+                <button class="pdf-btn" style="background:linear-gradient(135deg,#dc2626,#ef4444); color:white; padding:0.5rem 1rem;" onclick="openCancelModal()">❌ Cancel / Split</button>
+                <button class="pdf-btn" style="background:linear-gradient(135deg,#d97706,#f59e0b); color:white; padding:0.5rem 1rem;" onclick="openChangeModal()">🔄 Change</button>
+            </div>` : `
+            <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(239,68,68,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px dashed rgba(239,68,68,0.3);">
+                <span style="font-weight:700; color:#ef4444;">🔴 This ticket is cancelled</span>
+            </div>`}
+            ${isMergedView ? `
+            <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(5,150,105,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(5,150,105,0.2);">
+                <span style="font-weight:700; color:#059669;">Merged booking view. These actions apply to the grouped booking shown here.</span>
+            </div>` : ''}
+        </div>`;
+    loadLedgerAggregators();
+}
