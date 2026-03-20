@@ -9,6 +9,7 @@ let passengerSortMode = '';
 let autoSaveTimeout = null;
 let pendingSavePromise = null;
 let isDetailDirty = false;
+let fareFieldsTouched = false;
 let knownTicketIds = new Set();
 let hasInitializedTicketFeed = false;
 let ticketsPollingHandle = null;
@@ -115,6 +116,62 @@ function parseMoneyValue(value) {
     const parsed = Number.parseFloat(value);
     return Number.isFinite(parsed) ? parsed : 0;
 }
+function formatCurrency(n, curr) {
+    const currencyCode = curr || 'INR';
+    const currencySymbols = {
+        INR: 'â‚¹',
+        USD: '$',
+        EUR: 'â‚¬',
+        GBP: 'Â£',
+        AED: 'AED ',
+        SGD: 'S$',
+        THB: 'à¸¿'
+    };
+    const sym = currencySymbols[currencyCode] || `${currencyCode} `;
+    return sym + parseMoneyValue(n).toLocaleString('en-IN');
+}
+function normalizeTicketFareData(ticket) {
+    if (!ticket || typeof ticket !== 'object') return ticket;
+    const normalized = JSON.parse(JSON.stringify(ticket));
+    normalized.currency = normalized.currency || 'INR';
+    normalized.grand_total = parseMoneyValue(normalized.grand_total);
+    if (normalized.journey) {
+        normalized.journey.global_markup = parseMoneyValue(normalized.journey.global_markup);
+        if (normalized.journey.consolidated_fare) {
+            normalized.journey.consolidated_fare.base_fare = parseMoneyValue(normalized.journey.consolidated_fare.base_fare);
+            normalized.journey.consolidated_fare.k3_gst = parseMoneyValue(normalized.journey.consolidated_fare.k3_gst);
+            normalized.journey.consolidated_fare.other_taxes = parseMoneyValue(normalized.journey.consolidated_fare.other_taxes);
+        }
+    }
+    normalized.passengers = (normalized.passengers || []).map((passenger) => {
+        const fare = passenger.fare || {};
+        return {
+            ...passenger,
+            fare: {
+                ...fare,
+                base_fare: parseMoneyValue(fare.base_fare),
+                k3_gst: parseMoneyValue(fare.k3_gst),
+                other_taxes: parseMoneyValue(fare.other_taxes),
+                total_fare: parseMoneyValue(fare.total_fare)
+            }
+        };
+    });
+    return normalized;
+}
+function formatCurrency(n, curr) {
+    const currencyCode = curr || 'INR';
+    const currencySymbols = {
+        INR: '\u20B9',
+        USD: '$',
+        EUR: '\u20AC',
+        GBP: '\u00A3',
+        AED: 'AED ',
+        SGD: 'S$',
+        THB: '\u0E3F'
+    };
+    const sym = currencySymbols[currencyCode] || `${currencyCode} `;
+    return sym + parseMoneyValue(n).toLocaleString('en-IN');
+}
 function showToast(msg, type = 'info') {
     const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg;
     document.body.appendChild(t); setTimeout(() => t.remove(), 3500);
@@ -165,7 +222,7 @@ async function loadTickets() {
         const r = await fetch('/api/tickets/list');
         if (!r.ok) return;
         const d = await r.json();
-        const incomingTickets = d.tickets || [];
+        const incomingTickets = (d.tickets || []).map(normalizeTicketFareData);
         const incomingIds = new Set(incomingTickets.map((ticket) => ticket.id).filter(Boolean));
         if (hasInitializedTicketFeed) {
             const newTickets = incomingTickets.filter((ticket) => ticket && ticket.id && !knownTicketIds.has(ticket.id));
@@ -322,18 +379,19 @@ function renderTicketCards() {
 
         // Calculate actual total for display on card
         let calculatedTotal = 0;
-        const globalMarkup = parseFloat(journey.global_markup) || 0;
+        const globalMarkup = parseMoneyValue(journey.global_markup);
 
         passengers.forEach(p => {
             const f = p.fare || {};
-            calculatedTotal += (parseFloat(f.base_fare) || 0) +
-                (parseFloat(f.k3_gst) || 0) +
-                (parseFloat(f.other_taxes) || 0) +
+            calculatedTotal += parseMoneyValue(f.base_fare) +
+                parseMoneyValue(f.k3_gst) +
+                parseMoneyValue(f.other_taxes) +
                 globalMarkup;
         });
 
         // Use override if present, otherwise use calculated total
-        const displayTotal = (t.grand_total && parseFloat(t.grand_total) > 0) ? parseFloat(t.grand_total) : calculatedTotal;
+        const grandTotal = parseMoneyValue(t.grand_total);
+        const displayTotal = grandTotal > 0 ? grandTotal : calculatedTotal;
 
         return `<div class="itin-card" onclick="openTicket('${t.id}')">
             <div class="itin-card-top ${statusClass}"></div>
@@ -379,7 +437,8 @@ async function openTicket(id) {
     try {
         const r = await fetch('/api/tickets/' + id);
         if (!r.ok) { showToast('Failed to load ticket', 'error'); return; }
-        currentTicket = await r.json();
+        currentTicket = normalizeTicketFareData(await r.json());
+        fareFieldsTouched = false;
         editedData = JSON.parse(JSON.stringify(currentTicket));
         renderDetailView();
         document.getElementById('listView').style.display = 'none';
@@ -579,14 +638,14 @@ async function _renderDuplicatePanel(panel) {
                         <div class="label">Original Ticket</div>
                         <div style="font-weight:700;">${origNames}</div>
                         <div style="color:var(--text-secondary);font-size:0.78rem;">${origRoute}</div>
-                        <div style="color:var(--text-secondary);font-size:0.75rem;">₹${parseFloat(orig.grand_total || 0).toLocaleString()}</div>
+                        <div style="color:var(--text-secondary);font-size:0.75rem;">${formatCurrency(orig.grand_total, orig.currency || 'INR')}</div>
                     </div>
                     <div class="vs">VS</div>
                     <div class="dup-side">
                         <div class="label">New (Duplicate)</div>
                         <div style="font-weight:700;">${dupNames}</div>
                         <div style="color:var(--text-secondary);font-size:0.78rem;">${dupRoute}</div>
-                        <div style="color:var(--text-secondary);font-size:0.75rem;">₹${parseFloat(dup.grand_total || 0).toLocaleString()}</div>
+                        <div style="color:var(--text-secondary);font-size:0.75rem;">${formatCurrency(dup.grand_total, dup.currency || 'INR')}</div>
                     </div>
                 </div>` : ''}
                 <div class="notif-card-actions">
@@ -796,14 +855,14 @@ async function _renderDuplicatePanel(panel) {
                         <div class="label">Original Ticket</div>
                         <div style="font-weight:700;">${origNames}</div>
                         <div style="color:var(--text-secondary);font-size:0.78rem;">${origRoute}</div>
-                        <div style="color:var(--text-secondary);font-size:0.75rem;">₹${parseFloat(orig.grand_total || 0).toLocaleString()}</div>
+                        <div style="color:var(--text-secondary);font-size:0.75rem;">${formatCurrency(orig.grand_total, orig.currency || 'INR')}</div>
                     </div>
                     <div class="vs">VS</div>
                     <div class="dup-side">
                         <div class="label">New (Duplicate)</div>
                         <div style="font-weight:700;">${dupNames}</div>
                         <div style="color:var(--text-secondary);font-size:0.78rem;">${dupRoute}</div>
-                        <div style="color:var(--text-secondary);font-size:0.75rem;">₹${parseFloat(dup.grand_total || 0).toLocaleString()}</div>
+                        <div style="color:var(--text-secondary);font-size:0.75rem;">${formatCurrency(dup.grand_total, dup.currency || 'INR')}</div>
                     </div>
                 </div>` : ''}
                 <div class="notif-card-actions">
@@ -1731,8 +1790,10 @@ function renderPassengersSection() {
 function getNormalizedFareState() {
     const passengers = editedData.passengers || [];
     const journey = editedData.journey || {};
+    const fareDisplayMode = journey.fare_display || (passengers.length <= 1 ? 'per_passenger' : 'consolidated');
     const passengerCount = passengers.length || 1;
     const globalMarkup = parseMoneyValue(journey.global_markup);
+    const fallbackGrandTotal = parseMoneyValue(editedData.grand_total);
     if (!editedData.journey) editedData.journey = {};
     if (!editedData.journey.consolidated_fare) {
         editedData.journey.consolidated_fare = { base_fare: 0, k3_gst: 0, other_taxes: 0 };
@@ -1755,15 +1816,43 @@ function getNormalizedFareState() {
         return acc;
     }, { base: 0, k3: 0, other: 0 });
 
-    const hasConsolidatedFare = !!consolidated;
-    const consolidatedTotals = hasConsolidatedFare ? {
+    const rawConsolidatedTotals = consolidated ? {
         base: parseMoneyValue(consolidated.base_fare),
         k3: parseMoneyValue(consolidated.k3_gst),
         other: parseMoneyValue(consolidated.other_taxes)
-    } : passengerTotals;
+    } : { base: 0, k3: 0, other: 0 };
+    const hasRawConsolidatedFare = !!(rawConsolidatedTotals.base || rawConsolidatedTotals.k3 || rawConsolidatedTotals.other);
+    const useConsolidatedSource = fareDisplayMode === 'consolidated'
+        ? (fareFieldsTouched || hasRawConsolidatedFare)
+        : (!fareFieldsTouched && hasRawConsolidatedFare);
+    let hasConsolidatedFare = useConsolidatedSource;
+    let consolidatedTotals = useConsolidatedSource ? rawConsolidatedTotals : passengerTotals;
+
+    const hasAnyFareBreakup = (
+        consolidatedTotals.base ||
+        consolidatedTotals.k3 ||
+        consolidatedTotals.other ||
+        passengerTotals.base ||
+        passengerTotals.k3 ||
+        passengerTotals.other
+    );
+
+    if (!hasAnyFareBreakup && fallbackGrandTotal > 0 && !fareFieldsTouched) {
+        hasConsolidatedFare = true;
+        consolidatedTotals = {
+            base: fallbackGrandTotal,
+            k3: 0,
+            other: 0
+        };
+        editedData.journey.consolidated_fare = {
+            base_fare: fallbackGrandTotal,
+            k3_gst: 0,
+            other_taxes: 0
+        };
+    }
 
     const perPassengerRows = passengers.map((_, index) => {
-        if (hasConsolidatedFare) {
+        if (useConsolidatedSource) {
             return {
                 base: consolidatedTotals.base / passengerCount,
                 k3: consolidatedTotals.k3 / passengerCount,
@@ -1781,6 +1870,113 @@ function getNormalizedFareState() {
     };
 }
 
+function updateConsolidatedFareField(field, value) {
+    fareFieldsTouched = true;
+    if (!editedData.journey) editedData.journey = {};
+    if (!editedData.journey.consolidated_fare) {
+        editedData.journey.consolidated_fare = { base_fare: 0, k3_gst: 0, other_taxes: 0 };
+    }
+    editedData.journey.consolidated_fare[field] = parseMoneyValue(value);
+    recalcFareGlobal();
+    triggerAutoSave();
+}
+
+function updatePassengerFareField(index, field, value) {
+    fareFieldsTouched = true;
+    if (!editedData.passengers) editedData.passengers = [];
+    if (!editedData.passengers[index]) return;
+    if (!editedData.passengers[index].fare) editedData.passengers[index].fare = {};
+    editedData.passengers[index].fare[field] = parseMoneyValue(value);
+    if (!editedData.journey) editedData.journey = {};
+    if (!editedData.journey.consolidated_fare) {
+        editedData.journey.consolidated_fare = { base_fare: 0, k3_gst: 0, other_taxes: 0 };
+    }
+    let totalBase = 0;
+    let totalK3 = 0;
+    let totalOther = 0;
+    (editedData.passengers || []).forEach((passenger) => {
+        const fare = passenger.fare || {};
+        totalBase += parseMoneyValue(fare.base_fare);
+        totalK3 += parseMoneyValue(fare.k3_gst);
+        totalOther += parseMoneyValue(fare.other_taxes);
+    });
+    editedData.journey.consolidated_fare.base_fare = totalBase;
+    editedData.journey.consolidated_fare.k3_gst = totalK3;
+    editedData.journey.consolidated_fare.other_taxes = totalOther;
+    recalcFareGlobal();
+    triggerAutoSave();
+}
+
+function updateGlobalMarkupTotal(value, passengerCount) {
+    fareFieldsTouched = true;
+    const safePassengerCount = passengerCount || (editedData.passengers || []).length || 1;
+    if (!editedData.journey) editedData.journey = {};
+    editedData.journey.global_markup = parseMoneyValue(value) / safePassengerCount;
+    recalcFareGlobal();
+    triggerAutoSave();
+}
+
+function updateGlobalMarkupPerPassenger(value) {
+    fareFieldsTouched = true;
+    if (!editedData.journey) editedData.journey = {};
+    editedData.journey.global_markup = parseMoneyValue(value);
+    recalcFareGlobal();
+    triggerAutoSave();
+}
+
+function updateOverrideGrandTotal(value, currencyCode) {
+    fareFieldsTouched = true;
+    editedData.grand_total = parseMoneyValue(value);
+    const grandTotalEl = document.getElementById('grand-total-val');
+    if (grandTotalEl) {
+        grandTotalEl.textContent = formatCurrency(editedData.grand_total, currencyCode || editedData.currency || 'INR');
+    }
+    triggerAutoSave();
+}
+
+function switchFareDisplay(nextMode) {
+    if (!editedData.journey) editedData.journey = {};
+    const passengers = editedData.passengers || [];
+    const passengerCount = passengers.length || 1;
+    const fareState = getNormalizedFareState();
+    const globalMarkup = fareState.globalMarkup;
+
+    if (nextMode === 'per_passenger') {
+        const splitBase = fareState.consolidatedTotals.base / passengerCount;
+        const splitK3 = fareState.consolidatedTotals.k3 / passengerCount;
+        const splitOther = fareState.consolidatedTotals.other / passengerCount;
+        passengers.forEach((passenger) => {
+            if (!passenger.fare) passenger.fare = {};
+            passenger.fare.base_fare = splitBase;
+            passenger.fare.k3_gst = splitK3;
+            passenger.fare.other_taxes = splitOther;
+            passenger.fare.total_fare = splitBase + splitK3 + splitOther + globalMarkup;
+        });
+    } else {
+        let totalBase = 0;
+        let totalK3 = 0;
+        let totalOther = 0;
+        passengers.forEach((passenger) => {
+            const fare = passenger.fare || {};
+            totalBase += parseMoneyValue(fare.base_fare);
+            totalK3 += parseMoneyValue(fare.k3_gst);
+            totalOther += parseMoneyValue(fare.other_taxes);
+        });
+        if (!editedData.journey.consolidated_fare) {
+            editedData.journey.consolidated_fare = { base_fare: 0, k3_gst: 0, other_taxes: 0 };
+        }
+        editedData.journey.consolidated_fare.base_fare = totalBase;
+        editedData.journey.consolidated_fare.k3_gst = totalK3;
+        editedData.journey.consolidated_fare.other_taxes = totalOther;
+    }
+
+    editedData.journey.fare_display = nextMode;
+    fareFieldsTouched = true;
+    recalcFareGlobal(false);
+    renderFareSection();
+    triggerAutoSave();
+}
+
 function renderFareSection() {
     const passengers = editedData.passengers || [];
     const curr = editedData.currency || 'INR';
@@ -1794,7 +1990,7 @@ function renderFareSection() {
 
     let html = `<div class="section-header-row">
         <h2>💰 Fare Details</h2>
-        <button class="btn-action small secondary" onclick="editedData.journey.fare_display = '${isConsolidated ? 'per_passenger' : 'consolidated'}'; renderFareSection();">
+        <button class="btn-action small secondary" onclick="switchFareDisplay('${isConsolidated ? 'per_passenger' : 'consolidated'}')">
             🔄 Show ${isConsolidated ? 'Per Passenger' : 'Consolidated'}
         </button>
     </div>`;
@@ -1817,13 +2013,13 @@ function renderFareSection() {
             </tr></thead><tbody>
             <tr>
                 <td>${passengers.length}</td>
-                <td><input type="number" value="${base}" onchange="editedData.journey.consolidated_fare.base_fare=parseFloat(this.value)||0; recalcFareGlobal()"></td>
-                <td><input type="number" value="${k3}" onchange="editedData.journey.consolidated_fare.k3_gst=parseFloat(this.value)||0; recalcFareGlobal()"></td>
+                <td><input type="number" value="${base}" oninput="updateConsolidatedFareField('base_fare', this.value)" onchange="updateConsolidatedFareField('base_fare', this.value)"></td>
+                <td><input type="number" value="${k3}" oninput="updateConsolidatedFareField('k3_gst', this.value)" onchange="updateConsolidatedFareField('k3_gst', this.value)"></td>
                 <td>
-                    <input type="number" id="cons-other" value="${other}" onchange="editedData.journey.consolidated_fare.other_taxes=parseFloat(this.value)||0; recalcFareGlobal()">
+                    <input type="number" id="cons-other" value="${other}" oninput="updateConsolidatedFareField('other_taxes', this.value)" onchange="updateConsolidatedFareField('other_taxes', this.value)">
                 </td>
                 <td>
-                    <input type="number" id="cons-markup" value="${markupTotal}" onchange="editedData.journey.global_markup=(parseFloat(this.value)||0)/${passengers.length || 1}; recalcFareGlobal()">
+                    <input type="number" id="cons-markup" value="${markupTotal}" oninput="updateGlobalMarkupTotal(this.value, ${passengers.length || 1})" onchange="updateGlobalMarkupTotal(this.value, ${passengers.length || 1})">
                     <div id="cons-markup-hint" style="font-size:0.7rem; color:var(--text-secondary); margin-top:4px;">
                         ${globalMarkup} / pax
                     </div>
@@ -1845,9 +2041,9 @@ function renderFareSection() {
         passengers.forEach((p, i) => {
             const fare = fareState.passengerRows[i] || { base: 0, k3: 0, other: 0 };
             const paxType = getPaxLabel(p.pax_type || p.type);
-            const base = parseFloat(fare.base) || 0;
-            const k3 = parseFloat(fare.k3) || 0;
-            const other = parseFloat(fare.other) || 0;
+            const base = parseMoneyValue(fare.base);
+            const k3 = parseMoneyValue(fare.k3);
+            const other = parseMoneyValue(fare.other);
             const bothAddition = other + globalMarkup;
             const total = base + k3 + bothAddition;
 
@@ -1857,7 +2053,7 @@ function renderFareSection() {
                 editedData.passengers[i].fare.k3_gst = k3;
                 editedData.passengers[i].fare.other_taxes = other;
             }
-            if (!editedData.passengers[i].fare.total_fare || parseFloat(editedData.passengers[i].fare.total_fare) !== total) {
+            if (parseMoneyValue(editedData.passengers[i].fare.total_fare) !== total) {
                 if (!editedData.passengers[i].fare) editedData.passengers[i].fare = {};
                 editedData.passengers[i].fare.total_fare = total;
             }
@@ -1865,13 +2061,13 @@ function renderFareSection() {
             html += `<tr>
                 <td>${i + 1}</td>
                 <td><strong>${safe(p.name, paxType)}</strong><br><small style="color:var(--text-secondary)">${paxType}</small></td>
-                <td><input type="number" value="${base}" onchange="editedData.passengers[${i}].fare.base_fare=parseFloat(this.value)||0; recalcFareGlobal()"></td>
-                <td><input type="number" value="${k3}" onchange="editedData.passengers[${i}].fare.k3_gst=parseFloat(this.value)||0; recalcFareGlobal()"></td>
+                <td><input type="number" value="${base}" oninput="updatePassengerFareField(${i}, 'base_fare', this.value)" onchange="updatePassengerFareField(${i}, 'base_fare', this.value)"></td>
+                <td><input type="number" value="${k3}" oninput="updatePassengerFareField(${i}, 'k3_gst', this.value)" onchange="updatePassengerFareField(${i}, 'k3_gst', this.value)"></td>
                 <td>
-                    <input type="number" id="pax-other-${i}" value="${other}" onchange="editedData.passengers[${i}].fare.other_taxes=parseFloat(this.value)||0; recalcFareGlobal()">
+                    <input type="number" id="pax-other-${i}" value="${other}" oninput="updatePassengerFareField(${i}, 'other_taxes', this.value)" onchange="updatePassengerFareField(${i}, 'other_taxes', this.value)">
                 </td>
                 <td>
-                    <input type="number" id="pax-markup-${i}" value="${globalMarkup}" onchange="editedData.journey.global_markup=parseFloat(this.value)||0; recalcFareGlobal()">
+                    <input type="number" id="pax-markup-${i}" value="${globalMarkup}" oninput="updateGlobalMarkupPerPassenger(this.value)" onchange="updateGlobalMarkupPerPassenger(this.value)">
                 </td>
                 <td style="color:var(--accent-primary); font-weight:600;" id="pax-both-${i}">${formatCurrency(bothAddition, curr)}</td>
                 <td><strong id="pax-total-${i}">${formatCurrency(total, curr)}</strong></td>
@@ -1886,11 +2082,11 @@ function renderFareSection() {
     html += `<div style="margin-top:1.5rem; display:flex; gap:1.5rem; flex-wrap:wrap; align-items:flex-end;">
         <div class="field-item">
             <label style="color:var(--primary);font-weight:700;">Global Markup <small>(per passenger)</small></label>
-            <input type="number" value="${globalMarkup}" onchange="editedData.journey.global_markup=parseFloat(this.value)||0; recalcFareGlobal()">
+            <input type="number" value="${globalMarkup}" oninput="updateGlobalMarkupPerPassenger(this.value)" onchange="updateGlobalMarkupPerPassenger(this.value)">
         </div>
         <div class="field-item">
             <label>Override Grand Total</label>
-            <input type="number" id="override-grand-total" value="${editedData.grand_total}" onchange="editedData.grand_total=parseFloat(this.value)||0; document.getElementById('grand-total-val').textContent=formatCurrency(this.value, '${curr}')">
+            <input type="number" id="override-grand-total" value="${parseMoneyValue(editedData.grand_total)}" oninput="updateOverrideGrandTotal(this.value, '${curr}')" onchange="updateOverrideGrandTotal(this.value, '${curr}')">
         </div>
         <div style="flex:1; display:flex; justify-content:flex-end; font-size:1.15rem; font-weight:700;">
             Grand Total : &nbsp;<span id="grand-total-val" style="color:var(--primary);">${formatCurrency(editedData.grand_total, curr)}</span>
@@ -2036,6 +2232,9 @@ function _showLowBalanceModal(data) {
 
 function recalcFareGlobal(redraw = true) {
     if (!editedData.journey) editedData.journey = {};
+    if (!editedData.journey.consolidated_fare) {
+        editedData.journey.consolidated_fare = { base_fare: 0, k3_gst: 0, other_taxes: 0 };
+    }
     if (!editedData.journey.fare_display) {
         editedData.journey.fare_display = (editedData.passengers || []).length <= 1 ? 'per_passenger' : 'consolidated';
     }
@@ -2054,6 +2253,20 @@ function recalcFareGlobal(redraw = true) {
         const bothAddition = other + markupTotal;
         const total = base + k3 + bothAddition;
         gt = total;
+        editedData.journey.consolidated_fare.base_fare = base;
+        editedData.journey.consolidated_fare.k3_gst = k3;
+        editedData.journey.consolidated_fare.other_taxes = other;
+        const perPassengerBase = passengersCount ? (base / passengersCount) : 0;
+        const perPassengerK3 = passengersCount ? (k3 / passengersCount) : 0;
+        const perPassengerOther = passengersCount ? (other / passengersCount) : 0;
+        const perPassengerMarkup = passengersCount ? globalMarkup : 0;
+        (editedData.passengers || []).forEach((passenger) => {
+            if (!passenger.fare) passenger.fare = {};
+            passenger.fare.base_fare = perPassengerBase;
+            passenger.fare.k3_gst = perPassengerK3;
+            passenger.fare.other_taxes = perPassengerOther;
+            passenger.fare.total_fare = perPassengerBase + perPassengerK3 + perPassengerOther + perPassengerMarkup;
+        });
 
         const baseEl = document.querySelector('input[onchange*="consolidated_fare.base_fare"]');
         if (baseEl && redraw) baseEl.value = base;
@@ -2076,13 +2289,19 @@ function recalcFareGlobal(redraw = true) {
         const ct = document.getElementById('cons-total');
         if (ct && redraw) ct.textContent = formatCurrency(total, curr);
     } else {
+        let totalBase = 0;
+        let totalK3 = 0;
+        let totalOther = 0;
         editedData.passengers.forEach((p, i) => {
             const f = fareState.passengerRows[i] || { base: 0, k3: 0, other: 0 };
-            const base = parseFloat(f.base) || 0;
-            const k3 = parseFloat(f.k3) || 0;
-            const other = parseFloat(f.other) || 0;
+            const base = parseMoneyValue(f.base);
+            const k3 = parseMoneyValue(f.k3);
+            const other = parseMoneyValue(f.other);
             const bothAddition = other + globalMarkup;
             const total = base + k3 + bothAddition;
+            totalBase += base;
+            totalK3 += k3;
+            totalOther += other;
             if (!editedData.passengers[i].fare) editedData.passengers[i].fare = {};
             if (!fareState.hasExplicitPassengerFares) {
                 editedData.passengers[i].fare.base_fare = base;
@@ -2107,6 +2326,9 @@ function recalcFareGlobal(redraw = true) {
             const pt = document.getElementById('pax-total-' + i);
             if (pt && redraw) pt.textContent = formatCurrency(total, curr);
         });
+        editedData.journey.consolidated_fare.base_fare = totalBase;
+        editedData.journey.consolidated_fare.k3_gst = totalK3;
+        editedData.journey.consolidated_fare.other_taxes = totalOther;
     }
 
     editedData.grand_total = gt;
@@ -3056,7 +3278,7 @@ async function _uploadChangeAttachment() {
 }
 
 function _buildPreviewHtml(summary, actionType) {
-    const money = (value) => formatCurrency(value || 0, editedData.currency || 'INR');
+    const money = (value) => formatCurrency(parseMoneyValue(value), editedData.currency || 'INR');
     const paxHtml = (summary.affected_passengers || []).map(p => `<div style="padding:0.55rem 0.7rem;border:1px solid var(--border);border-radius:10px;background:var(--bg-main);">
         <div style="font-weight:700;">${p.name}</div>
         <div style="font-size:0.75rem;color:var(--text-secondary);">${p.system_ticket_number || 'No system ID'}</div>

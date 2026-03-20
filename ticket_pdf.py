@@ -203,13 +203,6 @@ def _draw_traveler_icon(c, x, y, col=BRAND):
 # ══════════════════════════════════════════════════════════════════════════════
 def draw_ticket(c, data, include_fare=True):
     W, H  = A4           # 595.3 × 841.9
-    M     = 36           # left/right margin
-    IW    = W - 2*M      # inner width ≈ 523
-    RIGHT = M + IW
-    CX    = W / 2
-    G     = 10           # gap between sections
-    T     = H - M        # top cursor (descends)
-
     passengers = data.get("passengers") or []
     segments   = data.get("segments")   or []
     journey    = data.get("journey")    or {}
@@ -231,8 +224,21 @@ def draw_ticket(c, data, include_fare=True):
     else:
         cotv = None
 
-    FTH = 28
-    PAGE_BOTTOM_LIMIT = M + 14
+    compact_single_page = False
+    if n_pax == 1 and trip_type in ("one_way", "round_trip"):
+        estimated_total, default_available = _estimate_page_height(36, compact=False)
+        compact_total, compact_available = _estimate_page_height(22, compact=True)
+        compact_single_page = estimated_total > default_available and estimated_total <= compact_available
+
+    M     = 22 if compact_single_page else 36
+    IW    = W - 2*M      # inner width ≈ 523
+    RIGHT = M + IW
+    CX    = W / 2
+    G     = 8 if compact_single_page else 10           # gap between sections
+    T     = H - M        # top cursor (descends)
+
+    FTH = 24 if compact_single_page else 28
+    PAGE_BOTTOM_LIMIT = M + (8 if compact_single_page else 14)
 
     def _draw_footer():
         _hline(c, M, M + FTH, IW, RULE, 0.5)
@@ -262,7 +268,7 @@ def draw_ticket(c, data, include_fare=True):
     # ══════════════════════════════════════════════════════════════════════════
     #  HEADER  – white background, bottom accent stripe
     # ══════════════════════════════════════════════════════════════════════════
-    HDR_H = 62
+    HDR_H = 56 if compact_single_page else 62
     HDR_Y = T - HDR_H
 
     logo = os.path.join(_DIR, "logo.png")
@@ -337,7 +343,7 @@ def draw_ticket(c, data, include_fare=True):
     # ══════════════════════════════════════════════════════════════════════════
     #  PNR / TRIP INFO ROW  – three clean info cells
     # ══════════════════════════════════════════════════════════════════════════
-    INFO_H = 38
+    INFO_H = 34 if compact_single_page else 38
     _rect(c, M, T - INFO_H, IW, INFO_H, stroke=RULE, lw=0.5, radius=6)
 
     # Cell renderer
@@ -368,11 +374,11 @@ def draw_ticket(c, data, include_fare=True):
     num_legs = len(legs)
 
     SEG_HEADER_H = 16   # airline strip height
-    SEG_BODY_H   = 72   # tighter flight block while preserving text spacing
+    SEG_BODY_H   = 66 if compact_single_page else 72   # tighter flight block while preserving text spacing
     SEG_H        = SEG_HEADER_H + SEG_BODY_H
-    LAY_H        = 16
+    LAY_H        = 14 if compact_single_page else 16
     LLEG_H       = 16
-    LEG_G        = 4
+    LEG_G        = 2 if compact_single_page else 4
 
     has_lbls    = trip_type in ("round_trip", "multi_city")
     total_segs  = sum(len(l) for l in legs)
@@ -707,10 +713,15 @@ def draw_ticket(c, data, include_fare=True):
 
     # Travellers
     if traveller_blocks:
+        first_seg_count = max(1, len(traveller_blocks[0]["segments"])) if traveller_blocks else 1
+        first_card_h = 44 + (first_seg_count * 42)
+        if T - (24 + first_card_h) < PAGE_BOTTOM_LIMIT:
+            _start_continuation_page()
         ty = _start_section("Travellers", BRAND)
         for traveller in traveller_blocks:
             seg_count = max(1, len(traveller["segments"]))
-            card_h = 44 + (seg_count * 42)
+            row_step = 38 if compact_single_page else 42
+            card_h = (40 if compact_single_page else 44) + (seg_count * row_step)
             if ty - card_h < PAGE_BOTTOM_LIMIT:
                 T = ty
                 _start_continuation_page()
@@ -729,20 +740,20 @@ def draw_ticket(c, data, include_fare=True):
             if traveller["baggage"]:
                 _txt(c, name_x, ty - 29, f"Baggage: {traveller['baggage']}", size=7, col=INK)
 
-            row_y = ty - 43
+            row_y = ty - (39 if compact_single_page else 43)
             detail_x = name_x
             for seg_info in traveller["segments"]:
-                _rect(c, M + 12, row_y - 30, IW - 24, 34, fill=colors.Color(0.985, 0.988, 0.998), stroke=None, radius=4)
+                _rect(c, M + 12, row_y - (28 if compact_single_page else 30), IW - 24, 32 if compact_single_page else 34, fill=colors.Color(0.985, 0.988, 0.998), stroke=None, radius=4)
                 _txt(c, detail_x, row_y - 2, seg_info["route"], "Times-Bold", 7.5, INK)
                 if seg_info["details"]:
                     _txt(c, detail_x, row_y - 14, seg_info["details"], size=7, col=INK2)
                 barcode = _barcode_image_reader(seg_info.get("barcode_image"))
                 if barcode:
                     try:
-                        c.drawImage(barcode, RIGHT - 148, row_y - 24, width=120, height=24, mask="auto")
+                        c.drawImage(barcode, RIGHT - 148, row_y - (22 if compact_single_page else 24), width=120, height=22 if compact_single_page else 24, mask="auto")
                     except Exception:
                         pass
-                row_y -= 42
+                row_y -= row_step
 
             ty -= card_h + 4
 
