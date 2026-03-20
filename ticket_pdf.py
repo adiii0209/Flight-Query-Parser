@@ -139,6 +139,19 @@ def _barcode_image_reader(data_uri):
         return None
 
 
+def _cabin_badge_style(label):
+    normalized = _t(label).strip().lower()
+    if not normalized:
+        return None
+    if "premium" in normalized:
+        return (colors.Color(0.93, 0.90, 0.99), colors.Color(0.46, 0.20, 0.67))
+    if "business" in normalized:
+        return (colors.Color(1.00, 0.95, 0.84), colors.Color(0.72, 0.45, 0.02))
+    if "first" in normalized:
+        return (colors.Color(0.90, 0.97, 0.93), GREEN)
+    return (colors.Color(0.82, 0.90, 1.00), BRAND)
+
+
 def _fit_font_size(c, text, font, max_size, max_width, min_size=7):
     value = _t(text)
     if not value:
@@ -460,13 +473,19 @@ def draw_ticket(c, data, include_fare=True):
                      "Times-Bold", 7, INK2)
                 ax += c.stringWidth(fnum, "Times-Bold", 7) + 12
             if bkclass:
-                _txt(c, ax, fy - SEG_HEADER_H + 5, f"Class: {bkclass}",
-                     size=6, col=INK3)
+                badge_style = _cabin_badge_style(bkclass)
+                if badge_style:
+                    badge_fill, badge_text = badge_style
+                    badge_w = c.stringWidth(bkclass, "Times-Bold", 7) + 10
+                    _rect(c, ax, fy - SEG_HEADER_H + 2.6, badge_w, 10.4,
+                          fill=badge_fill, stroke=None, radius=5)
+                    _txt(c, ax + badge_w / 2, fy - SEG_HEADER_H + 5.15, bkclass,
+                         "Times-Bold", 7, badge_text, align="center")
 
             leg_badge = _leg_tag(li, trip_type) if trip_type in ("round_trip", "multi_city") else ""
             if leg_badge:
-                badge_fill = colors.Color(0.90, 0.97, 0.93) if leg_badge == "OUTBOUND" else colors.Color(0.95, 0.91, 0.99)
-                badge_text = GREEN if leg_badge == "OUTBOUND" else colors.Color(0.46, 0.20, 0.67)
+                badge_fill = colors.Color(0.90, 0.97, 0.93) if leg_badge == "OUTBOUND" else colors.Color(1.00, 0.95, 0.84)
+                badge_text = GREEN if leg_badge == "OUTBOUND" else colors.Color(0.72, 0.45, 0.02)
                 badge_w = c.stringWidth(leg_badge, "Times-Bold", 6) + 14
                 badge_x = RIGHT - 10 - badge_w
                 _rect(c, badge_x, fy - SEG_HEADER_H + 2.5, badge_w, 10.5,
@@ -490,10 +509,6 @@ def draw_ticket(c, data, include_fare=True):
             a_terminal_text = f"Terminal {a_terminal}" if a_terminal else ""
             a_time = _t(arr.get("time")) or "--:--"
             a_date = _t(arr.get("date")) or ""
-
-            # thin top divider for subsequent segments
-            if si > 0:
-                _hline(c, M + 1, fy, IW - 2, RULE, 0.3)
 
             city_y = fy - 10
             time_y = city_y - 12
@@ -664,7 +679,7 @@ def draw_ticket(c, data, include_fare=True):
             aap = _t(seg.get("arrival", {}).get("airport"))
             airline_name = _t(seg.get("airline"))
             fnum = _t(seg.get("flight_number"))
-            route = f"{dap} -> {aap}" if dap and aap else f"Seg {si+1}"
+            route = f"{dap} → {aap}" if dap and aap else f"Seg {si+1}"
             if airline_name or fnum:
                 route = f"{route}  |  {airline_name} {fnum}".strip()
             parts = []
