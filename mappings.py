@@ -302,6 +302,228 @@ AIRLINE_CODES = {
     "B2": "Belavia", "A9": "Georgian Airways", "J2": "Azerbaijan Airlines",
 }
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MEAL / SSR SERVICE CODES
+# ══════════════════════════════════════════════════════════════════════════════
+
+MEAL_CODES = {
+    # ── Standard IATA Meal Codes ────────────────────────────────────────────
+    "VGML": "Veg Meal",
+    "VCSW": "Veg Sandwich + Beverage",
+    "NVML": "Non-Veg Meal",
+    "CPML": "Complimentary Meal",
+    "AVML": "Asian Vegetarian Meal",
+    "HNML": "Hindu Non-Vegetarian Meal",
+    "VLML": "Vegetarian Lacto-Ovo Meal",
+    "VJML": "Vegetarian Jain Meal",
+    "DBML": "Diabetic Meal",
+    "LFML": "Low Fat/Low Cholesterol Meal",
+    "GFML": "Gluten Free Meal",
+    "LSML": "Low Salt Meal",
+    "BBML": "Baby Meal",
+    "CHML": "Child Meal",
+    "FPML": "Fruit Platter Meal",
+    "SFML": "Seafood Meal",
+    "MOML": "Muslim Meal",
+    "KSML": "Kosher Meal",
+    "LCML": "Low Calorie Meal",
+    "BLML": "Bland Meal",
+    "SPML": "Special Meal",
+    "VOML": "Vegetarian Oriental Meal",
+    "RVML": "Raw Vegetarian Meal",
+    "ORML": "Oriental Meal",
+    "PRML": "Low Purine Meal",
+    "LPML": "Low Protein Meal",
+    "HFML": "High Fibre Meal",
+    "NFML": "No Fish Meal",
+    "NSML": "No Salt Meal",
+    "PFML": "Peanut Free Meal",
+    # ── Airline-Specific Combo / Snack Codes ────────────────────────────────
+    "TCSW": "Tomato Cucumber Cheese Lettuce Sandwich Combo",
+    "PTSW": "Paneer Tikka Sandwich Combo",
+    "MASP": "Makhana Salt and Pepper",
+    "SMAL": "Smoked Almonds",
+    "TCSI": "Veggie Tomato Cucumber Sandwich",
+    "CLAT": "Cucumber Cheese Lettuce Sandwich",
+    "VGTR": "Veg Trio Sandwich (New)",
+    "VGTI": "Veg Trio Sandwich",
+    "VSUB": "Feta Cheese and Veg Sub with Dried Fruits",
+    "VSUI": "Cheese and Veg Sub",
+    "CNKR": "Chana Kulcha Roll",
+    "BHPS": "Bhatti Paneer Salad",
+    "CNWT": "Cashew (Salted)",
+    "CCWT": "Unibic Chocolate Chips Cookies – 50gms",
+    "SAMS": "Samosa",
+    "BCCS": "Banana Chips",
+    "PITA": "2 Dips with Baked Pita (New)",
+    "PITI": "2 Dips with Baked Pita",
+    "COMI": "Cornflakes with Milk",
+    "MUYO": "Muesli with Yogurt",
+    "CTSW": "Chicken Tikka Sandwich Combo",
+    "CJSW": "Chicken Junglee Sandwich Combo",
+    "CTAT": "Chicken Tikka Sandwich – 90gms",
+    "CHSS": "Chicken Supreme Salad",
+    "CHCT": "Chicken Cucumber Tomato Sandwich (New)",
+    "CHCI": "Chicken Cucumber Tomato Sandwich",
+}
+
+ANCILLARY_CODES = {
+    # ── Baggage ──
+    "XBAG": "Extra Baggage",
+    "PBAG": "Prepaid Baggage",
+    "BAGP": "Baggage Priority",
+    # ── Seating ──
+    "SEAT": "Advance Seat Selection",
+    "RQST": "Seat Request",
+    "EXST": "Extra Seat",
+    # ── Assistance ──
+    "WCHR": "Wheelchair (Ramp)",
+    "WCHS": "Wheelchair (Steps)",
+    "WCHC": "Wheelchair (Carry)",
+    "MAAS": "Meet and Assist",
+    "UMNR": "Unaccompanied Minor",
+    "BLND": "Blind Passenger",
+    "DEAF": "Deaf Passenger",
+    "DPNA": "Disabled Passenger Needing Assistance",
+    # ── Priority / Lounge ──
+    "PRIO": "Priority Boarding",
+    "FAST": "Fast Pass",
+    "LOUG": "Lounge Access",
+    # ── Pets ──
+    "PETC": "Pet in Cabin",
+    "AVIH": "Animal in Hold",
+    # ── Other ──
+    "CPTR": "Corporate Traveller",
+    "STCR": "Stretcher Passenger",
+    "OXYG": "Oxygen",
+    "BIKE": "Bicycle",
+    "SPEQ": "Sports Equipment",
+    "GOLF": "Golf Equipment",
+    "FRAG": "Fragile Baggage",
+    "BULK": "Bulky Baggage",
+    "WBAG": "Cabin Baggage Excess",
+}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BOOKING CLASS (RBD) CODES
+# ══════════════════════════════════════════════════════════════════════════════
+# Generic IATA fare-class mapping — most airlines follow this broadly.
+# Airline-specific overrides are in _AIRLINE_CLASS_OVERRIDES.
+
+BOOKING_CLASS_GENERIC = {
+    # ── First Class ──
+    "F": ("First", "First Class"),
+    "A": ("First", "First Class"),
+    "P": ("First", "First Class Premium"),
+    # ── Business Class ──
+    "C": ("Business", "Business Class"),
+    "J": ("Business", "Business Class (Premium)"),
+    "D": ("Business", "Business Class"),
+    "I": ("Business", "Business Class"),
+    "Z": ("Business", "Business Class"),
+    # ── Premium Economy ──
+    "W": ("Premium Economy", "Premium Economy"),
+    "R": ("Premium Economy", "Premium Economy"),
+    # ── Economy Class ──
+    "Y": ("Economy", "Economy Class"),
+    "B": ("Economy", "Economy Class"),
+    "H": ("Economy", "Economy Class"),
+    "K": ("Economy", "Economy Class"),
+    "M": ("Economy", "Economy Class"),
+    "L": ("Economy", "Economy Class"),
+    "V": ("Economy", "Economy Class"),
+    "S": ("Economy", "Economy Class"),
+    "N": ("Economy", "Economy Class"),
+    "Q": ("Economy", "Economy Class"),
+    "T": ("Economy", "Economy Class"),
+    "E": ("Economy", "Economy Class"),
+    "U": ("Economy", "Economy Class"),
+    "G": ("Economy", "Economy Class"),
+    "O": ("Economy", "Economy Class"),
+    "X": ("Economy", "Economy Class"),
+}
+
+# Airline-specific overrides: {airline_code: {letter: (cabin, full_form)}}
+_AIRLINE_CLASS_OVERRIDES = {
+    # IndiGo (6E)
+    "6E": {
+        "O": ("Economy", "Economy Flexi Fare"),
+        "R": ("Economy", "Economy Super Saver"),
+        "S": ("Economy", "Economy Saver"),
+        "L": ("Economy", "Economy Lite Fare"),
+        "V": ("Economy", "Economy Corporate Fare"),
+    },
+    # Air India (AI)
+    "AI": {
+        "O": ("Economy", "Economy"),
+        "J": ("Business", "Business Class (Maharaja)"),
+    },
+    # Vistara / Air India (UK)
+    "UK": {
+        "Z": ("Premium Economy", "Premium Economy"),
+        "O": ("Premium Economy", "Premium Economy Lite"),
+    },
+    # Emirates (EK)
+    "EK": {
+        "O": ("Business", "Business Class Saver"),
+        "Z": ("First", "First Class"),
+    },
+    # Qatar Airways (QR)
+    "QR": {
+        "O": ("Business", "Business Class"),
+    },
+    # Singapore Airlines (SQ)
+    "SQ": {
+        "R": ("Premium Economy", "Premium Economy "),
+        "O": ("Economy", "Economy"),
+    },
+    # Lufthansa (LH)
+    "LH": {
+        "O": ("Economy", "Economy Light"),
+    },
+    # SpiceJet (SG)
+    "SG": {
+        "O": ("Economy", "Economy Value"),
+        "R": ("Economy", "Economy Flexi"),
+    },
+    # AirAsia India (I5)
+    "I5": {
+        "O": ("Economy", "Economy Value Pack"),
+    },
+    # Go First (G8)
+    "G8": {
+        "O": ("Economy", "Economy Base"),
+    },
+}
+
+
+def resolve_booking_class(letter: str, airline_code: str = None) -> dict:
+    """
+    Resolve a single-letter booking class to its cabin and full form.
+    Returns {"letter": "Q", "cabin": "Economy", "full_form": "Economy Class (Discounted)"}
+    Uses airline-specific override if available, else falls back to generic.
+    """
+    letter = letter.upper().strip() if letter else ""
+    if not letter or letter == "N/A":
+        return {"letter": "N/A", "cabin": "N/A", "full_form": "N/A"}
+
+    # Try airline-specific first
+    if airline_code:
+        ac = airline_code.upper().strip()
+        overrides = _AIRLINE_CLASS_OVERRIDES.get(ac, {})
+        if letter in overrides:
+            cabin, full = overrides[letter]
+            return {"letter": letter, "cabin": cabin, "full_form": full}
+
+    # Generic fallback
+    if letter in BOOKING_CLASS_GENERIC:
+        cabin, full = BOOKING_CLASS_GENERIC[letter]
+        return {"letter": letter, "cabin": cabin, "full_form": full}
+
+    return {"letter": letter, "cabin": "Economy", "full_form": f"Economy ({letter})"}
+
+
 # IANA Timezone Mapping for DST Support
 AIRPORT_TZ_MAP = {
     # ===== INDIA (No DST - All UTC+5:30) =====
@@ -322,7 +544,7 @@ AIRPORT_TZ_MAP = {
     "KUU": "Asia/Kolkata", "SHL": "Asia/Kolkata", "IXS": "Asia/Kolkata", "AJL": "Asia/Kolkata",
     "IXA": "Asia/Kolkata", "DMU": "Asia/Kolkata", "CBD": "Asia/Kolkata", "IXV": "Asia/Kolkata",
     "IXW": "Asia/Kolkata", "IXI": "Asia/Kolkata", "TEZ": "Asia/Kolkata", "RGH": "Asia/Kolkata",
-    "COH": "Asia/Kolkata",
+    "COH": "Asia/Kolkata", "VTZ": "Asia/Kolkata",
     
     # ===== UNITED STATES (With DST) =====
     "ATL": "America/New_York", "JFK": "America/New_York", "EWR": "America/New_York",

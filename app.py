@@ -111,6 +111,10 @@ _PLAYWRIGHT_LAUNCH_ARGS = [
     "--use-mock-keychain",
     "--font-render-hinting=medium",
 ]
+_ticket_processing_batches = {}
+_ticket_processing_lock = threading.Lock()
+_TICKET_PROCESSING_TTL_SECONDS = 60 * 45
+_TICKET_PROCESSING_MIN_VISIBLE_SECONDS = 6
 
 # Register API v2 Blueprint
 # Register API v2 Blueprint
@@ -464,6 +468,116 @@ def _get_render_preview(token):
             _render_preview_store.pop(token, None)
         return None
     return preview_payload
+
+
+def _resolve_processing_user_id(payload=None):
+    payload = payload or {}
+    requested_user_id = (payload.get("user_id") or "").strip() if isinstance(payload.get("user_id"), str) else payload.get("user_id")
+    if requested_user_id:
+        user = User.query.filter_by(id=requested_user_id).first()
+        if user:
+            return user.id
+
+    username = (payload.get("username") or "").strip()
+    if username:
+        user = User.query.filter_by(username=username).first()
+        if user:
+            return user.id
+
+    user = User.query.order_by(User.created_at.asc()).first()
+    return user.id if user else None
+
+
+def _cleanup_ticket_processing_batches():
+    now_ts = datetime.utcnow().timestamp()
+    with _ticket_processing_lock:
+        stale_keys = [
+            key for key, batch in _ticket_processing_batches.items()
+            if (now_ts - float(batch.get("updated_at_ts", batch.get("created_at_ts", now_ts)))) > _TICKET_PROCESSING_TTL_SECONDS
+        ]
+        for key in stale_keys:
+            _ticket_processing_batches.pop(key, None)
+
+
+def _register_ticket_processing_batch(payload):
+    user_id = _resolve_processing_user_id(payload)
+    if not user_id:
+        raise ValueError("No target user found for processing notification.")
+
+    batch_id = str((payload.get("batch_id") or "").strip())
+    if not batch_id:
+        raise ValueError("batch_id is required.")
+
+    raw_count = payload.get("ticket_count", 0)
+    try:
+        ticket_count = int(raw_count)
+    except (TypeError, ValueError):
+        raise ValueError("ticket_count must be an integer.")
+    if ticket_count <= 0:
+        raise ValueError("ticket_count must be greater than 0.")
+
+    now_iso = datetime.utcnow().isoformat()
+    now_ts = datetime.utcnow().timestamp()
+    with _ticket_processing_lock:
+        _ticket_processing_batches[(str(user_id), batch_id)] = {
+            "user_id": str(user_id),
+            "batch_id": batch_id,
+            "ticket_count": ticket_count,
+            "pending_count": ticket_count,
+            "display_count": ticket_count,
+            "received_count": 0,
+            "source": (payload.get("source") or "email").strip() if isinstance(payload.get("source"), str) else "email",
+            "label": (payload.get("label") or "").strip() if isinstance(payload.get("label"), str) else "",
+            "created_at": now_iso,
+            "updated_at": now_iso,
+            "created_at_ts": now_ts,
+            "updated_at_ts": now_ts,
+            "visible_until_ts": now_ts + _TICKET_PROCESSING_MIN_VISIBLE_SECONDS,
+        }
+    return user_id, batch_id
+
+
+def _mark_ticket_processing_received(user_id, batch_id):
+    if not user_id or not batch_id:
+        return
+
+    key = (str(user_id), str(batch_id))
+    now_iso = datetime.utcnow().isoformat()
+    now_ts = datetime.utcnow().timestamp()
+    with _ticket_processing_lock:
+        batch = _ticket_processing_batches.get(key)
+        if not batch:
+            return
+        batch["received_count"] = int(batch.get("received_count", 0)) + 1
+        batch["pending_count"] = max(0, int(batch.get("pending_count", 0)) - 1)
+        batch["updated_at"] = now_iso
+        batch["updated_at_ts"] = now_ts
+        batch["display_count"] = batch["pending_count"]
+        batch["visible_until_ts"] = max(float(batch.get("visible_until_ts", now_ts)), now_ts + _TICKET_PROCESSING_MIN_VISIBLE_SECONDS)
+        if batch["pending_count"] <= 0 and now_ts >= float(batch.get("visible_until_ts", now_ts)):
+            _ticket_processing_batches.pop(key, None)
+
+
+def _get_user_ticket_processing_batches(user_id):
+    _cleanup_ticket_processing_batches()
+    now_ts = datetime.utcnow().timestamp()
+    with _ticket_processing_lock:
+        batches = []
+        for key, batch in list(_ticket_processing_batches.items()):
+            batch_user_id, _ = key
+            if str(batch_user_id) != str(user_id):
+                continue
+            if int(batch.get("pending_count", 0)) <= 0 and now_ts >= float(batch.get("visible_until_ts", now_ts)):
+                _ticket_processing_batches.pop(key, None)
+                continue
+            batch_copy = dict(batch)
+            if int(batch_copy.get("pending_count", 0)) <= 0 and now_ts < float(batch_copy.get("visible_until_ts", now_ts)):
+                batch_copy["display_count"] = max(1, int(batch_copy.get("ticket_count", 1)))
+            else:
+                batch_copy["display_count"] = int(batch_copy.get("pending_count", 0))
+            batches.append(batch_copy)
+    batches.sort(key=lambda item: item.get("created_at_ts", 0), reverse=True)
+    return batches
 
 
 def _build_render_request(payload):
@@ -2529,6 +2643,10 @@ def receive_ticket():
         segments = data.get("segments") or []
         journey = data.get("journey") or {}
         metadata = data.get("metadata") or {}
+        processing_batch_id = (
+            (metadata.get("processing_batch_id") or metadata.get("batch_id") or data.get("processing_batch_id") or data.get("batch_id") or "").strip()
+            if isinstance(metadata, dict) else str(data.get("processing_batch_id") or data.get("batch_id") or "").strip()
+        )
 
         # Determine trip type - properly handle layovers
         # A layover exists when consecutive segments share airports
@@ -2705,6 +2823,7 @@ def receive_ticket():
 
         db.session.add(ticket)
         db.session.commit()
+        _mark_ticket_processing_received(user.id, processing_batch_id)
 
         return jsonify({
             "status": "accepted",
@@ -2713,6 +2832,7 @@ def receive_ticket():
             "matched_itinerary_id": ticket.matched_itinerary_id,
             "is_duplicate": is_duplicate,
             "duplicate_of_id": duplicate_of,
+            "processing_batch_id": processing_batch_id or None,
         }), 201
 
     except Exception as e:
@@ -2735,6 +2855,29 @@ def tickets_page():
 
 # ==================== NOTIFICATION PANEL APIs ====================
 
+@app.route("/api/tickets/processing", methods=["POST"])
+def notify_ticket_processing():
+    """Register a parser-side processing batch before parsed ticket JSONs arrive."""
+    auth_header = request.headers.get("Authorization")
+    if auth_header != f"Bearer {API_KEY}":
+        return jsonify({"error": "Unauthorized"}), 401
+
+    payload = request.get_json() or {}
+    try:
+        user_id, batch_id = _register_ticket_processing_batch(payload)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    batches = _get_user_ticket_processing_batches(user_id)
+    processing_count = sum(int(batch.get("display_count", batch.get("pending_count", 0))) for batch in batches)
+    return jsonify({
+        "status": "accepted",
+        "user_id": user_id,
+        "batch_id": batch_id,
+        "processing_count": processing_count,
+        "processing_batches": batches,
+    }), 202
+
 @app.route("/api/tickets/notifications", methods=["GET"])
 @login_required
 def get_ticket_notifications():
@@ -2751,11 +2894,14 @@ def get_ticket_notifications():
         user_id=user_id,
         duplicate_status="pending"
     ).count()
+    processing_batches = _get_user_ticket_processing_batches(user_id)
 
     return jsonify({
         "merge_count": len(pending_merges),
         "merge_groups": pending_merges,
         "duplicate_count": dup_count,
+        "processing_count": sum(int(batch.get("display_count", batch.get("pending_count", 0))) for batch in processing_batches),
+        "processing_batches": processing_batches,
     })
 
 

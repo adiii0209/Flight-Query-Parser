@@ -730,9 +730,9 @@ def draw_ticket(c, data, include_fare=True):
             _txt(c, name_x, ty - 17, name_line, "Times-Bold", 9, INK)
             right_x = RIGHT - 16
             if traveller["ticket_number"]:
-                _txt(c, right_x, ty - 14, f"Ticket: {traveller['ticket_number']}", "Times-Bold", 7.5, INK, align="right")
+                _txt(c, right_x, ty - 14, f"Ticket Number: {traveller['ticket_number']}", "Times-Bold", 7.5, INK, align="right")
             if traveller["ff_no"]:
-                _txt(c, right_x, ty - 24, f"FF: {traveller['ff_no']}", "Times-Bold", 7.0, INK, align="right")
+                _txt(c, right_x, ty - 24, f"FFN: {traveller['ff_no']}", "Times-Bold", 7.0, INK, align="right")
             if traveller["baggage"]:
                 _txt(c, name_x, ty - 29, f"Baggage: {traveller['baggage']}", size=7, col=INK)
 

@@ -13,7 +13,10 @@ let fareFieldsTouched = false;
 let knownTicketIds = new Set();
 let hasInitializedTicketFeed = false;
 let ticketsPollingHandle = null;
-const TICKETS_POLL_INTERVAL_MS = 8000;
+let _lastProcessingCount = 0;
+let _processingIndicatorMode = 'idle';
+let _processingDoneTimeout = null;
+const TICKETS_POLL_INTERVAL_MS = 2000;
 
 // ==================== SIDEBAR & THEME ====================
 function initializeSidebar() {
@@ -84,27 +87,7 @@ const safe = (val, fallback = '') => {
     if (val === undefined || val === null || val === 'N/A' || val === 'Not Specified') return fallback;
     return val;
 };
-function formatCurrency(n, curr) {
-    if (!n && n !== 0) return '₹0';
-    const sym = (curr === 'USD') ? '$' : (curr === 'EUR') ? '€' : '₹';
-    return sym + Number(n).toLocaleString('en-IN');
-}
 function formatDate(d) { if (!d) return '-'; return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
-function formatCurrency(n, curr) {
-    const currencyCode = curr || 'INR';
-    const currencySymbols = {
-        INR: '₹',
-        USD: '$',
-        EUR: '€',
-        GBP: '£',
-        AED: 'AED ',
-        SGD: 'S$',
-        THB: '฿'
-    };
-    const sym = currencySymbols[currencyCode] || `${currencyCode} `;
-    if (!n && n !== 0) return sym + '0';
-    return sym + Number(n).toLocaleString('en-IN');
-}
 function parseMoneyValue(value) {
     if (value === undefined || value === null) return 0;
     if (typeof value === 'string') {
@@ -116,24 +99,10 @@ function parseMoneyValue(value) {
     const parsed = Number.parseFloat(value);
     return Number.isFinite(parsed) ? parsed : 0;
 }
-function formatCurrency(n, curr) {
-    const currencyCode = curr || 'INR';
-    const currencySymbols = {
-        INR: 'â‚¹',
-        USD: '$',
-        EUR: 'â‚¬',
-        GBP: 'Â£',
-        AED: 'AED ',
-        SGD: 'S$',
-        THB: 'à¸¿'
-    };
-    const sym = currencySymbols[currencyCode] || `${currencyCode} `;
-    return sym + parseMoneyValue(n).toLocaleString('en-IN');
-}
 function normalizeTicketFareData(ticket) {
     if (!ticket || typeof ticket !== 'object') return ticket;
     const normalized = JSON.parse(JSON.stringify(ticket));
-    normalized.currency = normalized.currency || 'INR';
+    normalized.currency = safe(normalized.currency, 'INR');
     normalized.grand_total = parseMoneyValue(normalized.grand_total);
     if (normalized.journey) {
         normalized.journey.global_markup = parseMoneyValue(normalized.journey.global_markup);
@@ -159,7 +128,8 @@ function normalizeTicketFareData(ticket) {
     return normalized;
 }
 function formatCurrency(n, curr) {
-    const currencyCode = curr || 'INR';
+    let currencyCode = curr || 'INR';
+    if (currencyCode === 'N/A' || currencyCode === 'Not Specified') currencyCode = 'INR';
     const currencySymbols = {
         INR: '\u20B9',
         USD: '$',
@@ -185,6 +155,54 @@ function getPaxLabel(type) {
     if (t === 'CHD' || t === 'CNN' || t === 'CHILD') return 'Child';
     if (t === 'INF' || t === 'INFANT') return 'Infant';
     return 'Adult';
+}
+
+function getSegmentDurationValue(segment) {
+    if (!segment || typeof segment !== 'object') return '';
+    if (segment.duration_calculated && segment.duration_calculated !== 'N/A') {
+        return segment.duration_calculated;
+    }
+    if (segment.duration_extracted && segment.duration_extracted !== 'N/A') {
+        return segment.duration_extracted;
+    }
+    return safe(segment.duration);
+}
+
+function parseDurationToMinutes(value) {
+    if (!value || value === 'N/A' || value === 'Not Specified') return 0;
+    const text = String(value).trim().toLowerCase();
+    const hoursMatch = text.match(/(\d+)\s*h/);
+    const minutesMatch = text.match(/(\d+)\s*m/);
+    const hours = hoursMatch ? Number.parseInt(hoursMatch[1], 10) : 0;
+    const minutes = minutesMatch ? Number.parseInt(minutesMatch[1], 10) : 0;
+    return (Number.isFinite(hours) ? hours : 0) * 60 + (Number.isFinite(minutes) ? minutes : 0);
+}
+
+function formatDurationFromMinutes(totalMinutes) {
+    if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) return '';
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
+    if (hours > 0) return `${hours}h`;
+    return `${minutes}m`;
+}
+
+function getLegDurationValue(legIndices, segments, journey, legIdx) {
+    let totalMinutes = 0;
+    (legIndices || []).forEach((segIdx) => {
+        totalMinutes += parseDurationToMinutes(getSegmentDurationValue((segments || [])[segIdx]));
+        const seg = (segments || [])[segIdx] || {};
+        totalMinutes += parseDurationToMinutes(seg.layover_duration);
+    });
+    return formatDurationFromMinutes(totalMinutes);
+}
+
+function getJourneyDurationValue(legs, segments, journey) {
+    let totalMinutes = 0;
+    (legs || []).forEach((legIndices, legIdx) => {
+        totalMinutes += parseDurationToMinutes(getLegDurationValue(legIndices, segments, journey, legIdx));
+    });
+    return formatDurationFromMinutes(totalMinutes);
 }
 
 // ==================== LEG GROUPING ====================
@@ -214,6 +232,29 @@ function getLegLabel(legIdx, totalLegs, tripType) {
         return 'Flight ' + (legIdx + 1);
     }
     return 'Flight';
+}
+
+function getTicketSearchText(ticket) {
+    const segments = ticket.segments || [];
+    const cityText = segments.map((seg) => {
+        const dep = seg.departure || {};
+        const arr = seg.arrival || {};
+        return [
+            dep.city,
+            dep.airport,
+            arr.city,
+            arr.airport,
+            seg.airline,
+            seg.flight_number
+        ].filter(Boolean).join(' ');
+    }).join(' ');
+
+    return [
+        ticket.pnr || '',
+        ticket.route || '',
+        (ticket.passenger_names || []).join(' '),
+        cityText
+    ].join(' ').toLowerCase();
 }
 
 // ==================== LOAD DATA ====================
@@ -251,8 +292,8 @@ function startTicketsPolling() {
     ticketsPollingHandle = setInterval(async () => {
         if (document.hidden) return;
         try {
-            await loadTickets();
             await loadNotifications();
+            await loadTickets();
         } catch (e) {
             console.error('Tickets polling failed', e);
         }
@@ -275,10 +316,7 @@ function renderTicketCards() {
     if (searchInput && searchInput.value.trim()) {
         const q = searchInput.value.toLowerCase().trim();
         items = items.filter(t => {
-            const pnr = (t.pnr || '').toLowerCase();
-            const route = (t.route || '').toLowerCase();
-            const names = (t.passenger_names || []).join(' ').toLowerCase();
-            return pnr.includes(q) || route.includes(q) || names.includes(q);
+            return getTicketSearchText(t).includes(q);
         });
     }
     if (_mergedViewActive) {
@@ -464,7 +502,7 @@ async function showListView() {
 }
 
 // ==================== NOTIFICATION PANEL SYSTEM ====================
-let _notifData = { merge_count: 0, merge_groups: [], duplicate_count: 0 };
+let _notifData = { merge_count: 0, merge_groups: [], duplicate_count: 0, processing_count: 0, processing_batches: [] };
 let _activeNotifPanel = null;
 let _mergedViewActive = false;
 
@@ -472,7 +510,25 @@ async function loadNotifications() {
     try {
         const r = await fetch('/api/tickets/notifications');
         if (!r.ok) return;
+        const previousProcessingCount = parseMoneyValue(_notifData.processing_count);
         _notifData = await r.json();
+        const nextProcessingCount = parseMoneyValue(_notifData.processing_count);
+        if (nextProcessingCount > 0) {
+            _processingIndicatorMode = 'processing';
+            if (_processingDoneTimeout) {
+                clearTimeout(_processingDoneTimeout);
+                _processingDoneTimeout = null;
+            }
+        } else if (previousProcessingCount > 0 && nextProcessingCount === 0) {
+            _processingIndicatorMode = 'done';
+            if (_processingDoneTimeout) clearTimeout(_processingDoneTimeout);
+            _processingDoneTimeout = setTimeout(() => {
+                _processingIndicatorMode = 'idle';
+                _processingDoneTimeout = null;
+                _updateNotifBadges();
+            }, 3000);
+        }
+        _lastProcessingCount = nextProcessingCount;
         _updateNotifBadges();
     } catch (e) { console.error('Failed to load notifications', e); }
 }
@@ -482,6 +538,9 @@ function _updateNotifBadges() {
     const dupBadge = document.getElementById('dupBadge');
     const mergeBtn = document.getElementById('mergeNotifBtn');
     const dupBtn = document.getElementById('dupNotifBtn');
+    const processingIndicator = document.getElementById('processingIndicator');
+    const processingCount = document.getElementById('processingCount');
+    const processingLabel = document.getElementById('processingLabel');
 
     if (mergeBadge) {
         if (_notifData.merge_count > 0) {
@@ -501,6 +560,32 @@ function _updateNotifBadges() {
         } else {
             dupBadge.style.display = 'none';
             if (dupBtn) dupBtn.classList.remove('has-items');
+        }
+    }
+
+    if (processingIndicator && processingCount && processingLabel) {
+        const processingTotal = parseMoneyValue(_notifData.processing_count);
+        if (processingTotal > 0) {
+            processingIndicator.classList.remove('done');
+            processingCount.textContent = processingTotal;
+            const activeBatchCount = (_notifData.processing_batches || []).length;
+            processingLabel.textContent = processingTotal === 1
+                ? 'ticket processing'
+                : 'tickets processing';
+            processingIndicator.style.display = 'inline-flex';
+            processingIndicator.title = activeBatchCount > 1
+                ? `${processingTotal} tickets are being parsed across ${activeBatchCount} batches`
+                : `${processingTotal} tickets are being parsed`;
+        } else if (_processingIndicatorMode === 'done') {
+            processingIndicator.classList.add('done');
+            processingCount.textContent = '';
+            processingLabel.textContent = 'Done processing';
+            processingIndicator.style.display = 'inline-flex';
+            processingIndicator.title = 'Done processing';
+        } else {
+            processingIndicator.classList.remove('done');
+            processingIndicator.style.display = 'none';
+            processingIndicator.title = '';
         }
     }
 }
@@ -1229,6 +1314,10 @@ function renderDetailView() {
     const depCode = (firstSeg.departure || {}).airport || '';
 
     const tripDisplay = journey.trip_type_display || getTripLabel(t.trip_type);
+    const summaryDuration = getJourneyDurationValue(legs, segments, journey);
+    const summaryDurationHtml = summaryDuration
+        ? `&nbsp;<span style="font-weight:700;color:var(--primary);">⏱ ${summaryDuration}</span>`
+        : '';
 
     let headerRouteHtml = '';
     if (t.trip_type === 'multi_city') {
@@ -1267,6 +1356,7 @@ function renderDetailView() {
                 &nbsp;${t.status === 'matched' ? '<span class="match-badge matched">✅ Matched</span>' : '<span class="match-badge unmatched">Unmatched</span>'}
                 &nbsp;${detailTStatusBadge}
                 &nbsp;${chargeHtml}
+                ${summaryDurationHtml}
                 &nbsp;•&nbsp; ${tripDisplay}
             </div>
         </div>
@@ -1389,10 +1479,7 @@ function renderSegmentsSection() {
         const arrDate = (lastSeg.arrival || {}).date || '';
 
         // Get total duration from journey leg data if available
-        let legDuration = '';
-        if (journey.legs && journey.legs[legIdx]) {
-            legDuration = journey.legs[legIdx].total_duration || '';
-        }
+        const legDuration = getLegDurationValue(legIndices, segments, journey, legIdx);
 
         // Collect layover airport codes for summary
         const layoverAirports = [];
@@ -1486,12 +1573,7 @@ function renderSegmentsSection() {
             const seg = segments[segIdx];
             const dep = seg.departure || {};
             const arr = seg.arrival || {};
-            let duration = '';
-            if (seg.duration_calculated && seg.duration_calculated !== 'N/A') {
-                duration = seg.duration_calculated;
-            } else if (seg.duration_extracted && seg.duration_extracted !== 'N/A') {
-                duration = seg.duration_extracted;
-            }
+            const duration = getSegmentDurationValue(seg);
 
             // Layover indicator between segments in same leg
             if (posInLeg > 0) {
@@ -2440,7 +2522,7 @@ function editSegment(idx) {
                 <div class="field-item"><label>Airline</label><input type="text" id="seg-airline" value="${safe(seg.airline)}"></div>
                 <div class="field-item"><label>Flight Number</label><input type="text" id="seg-fltnum" value="${safe(seg.flight_number)}"></div>
                 <div class="field-item"><label>Cabin Class</label><select id="seg-class">${cabinOptions.map(option => `<option value="${option}" ${selectedCabinClass === option ? 'selected' : ''}>${option || 'Hidden by default'}</option>`).join('')}</select></div>
-                <div class="field-item" style="grid-column: 1 / -1;"><label>Duration</label><input type="text" id="seg-duration" value="${safe(seg.duration_extracted || seg.duration_calculated)}"></div>
+                <div class="field-item" style="grid-column: 1 / -1;"><label>Duration</label><input type="text" id="seg-duration" value="${safe(getSegmentDurationValue(seg))}"></div>
             </div>
 
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 0.5rem;">
@@ -2502,7 +2584,26 @@ function saveSegmentEdit(idx) {
     seg.arrival.date = document.getElementById('seg-arr-date').value;
     seg.arrival.time = document.getElementById('seg-arr-time').value;
     seg.arrival.terminal = document.getElementById('seg-arr-term').value;
-    seg.duration_extracted = document.getElementById('seg-duration').value;
+    const editedDuration = document.getElementById('seg-duration').value;
+    seg.duration_calculated = editedDuration;
+    seg.duration = editedDuration;
+    seg.duration_extracted = editedDuration;
+
+    const journey = editedData.journey || {};
+    const segments = editedData.segments || [];
+    if (journey.legs && journey.legs.length > 0) {
+        journey.legs.forEach((leg, legIdx) => {
+            const legSegments = Array.isArray(leg?.segments) ? leg.segments : [];
+            journey.legs[legIdx].total_duration = getLegDurationValue(legSegments, segments, journey, legIdx);
+        });
+    }
+    journey.total_journey_duration = getJourneyDurationValue(
+        journey.legs && journey.legs.length > 0
+            ? journey.legs.map((leg) => Array.isArray(leg?.segments) ? leg.segments : [])
+            : groupSegmentsIntoLegs(segments),
+        segments,
+        journey
+    );
 
     const modal = document.getElementById('segment-edit-modal');
     if (modal) modal.remove();
@@ -3470,8 +3571,8 @@ async function _executeCancel(selectedPax, isFullCancel, perPersonFares, sectorI
 document.addEventListener('DOMContentLoaded', async () => {
     initializeSidebar();
     await checkAuth();
-    await loadTickets();
     await loadNotifications();
+    await loadTickets();
     startTicketsPolling();
 
     const detailView = document.getElementById('detailView');
