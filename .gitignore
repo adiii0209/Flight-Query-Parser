@@ -6,6 +6,7 @@ __pycache__/
 .idea/
 venv/
 *.db
+instance/app.db
 travel_agent.db
 venv311/
 credentials.json

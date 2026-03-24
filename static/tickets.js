@@ -13,6 +13,7 @@ let fareFieldsTouched = false;
 let knownTicketIds = new Set();
 let hasInitializedTicketFeed = false;
 let ticketsPollingHandle = null;
+let ticketDetailCache = new Map();
 let _lastProcessingCount = 0;
 let _processingIndicatorMode = 'idle';
 let _processingDoneTimeout = null;
@@ -24,10 +25,12 @@ let realtimeRefreshHandle = null;
 let duplicatePanelTickets = [];
 let duplicatePanelTotalCount = 0;
 let duplicatePanelIsLoadingMore = false;
-const INITIAL_TICKETS_BATCH_SIZE = 10;
-const DUPLICATES_BATCH_SIZE = 10;
+const INITIAL_TICKETS_BATCH_SIZE = 6;
+const DUPLICATES_BATCH_SIZE = 6;
 const TICKETS_POLL_INTERVAL_MS = 5000;
 const TICKETS_FULL_SYNC_INTERVAL_MS = 30000;
+const TICKETS_CACHE_KEY = 'ticketsDashboard.topCache.v1';
+const DUPLICATES_CACHE_KEY = 'ticketsDashboard.duplicatesCache.v1';
 
 // ==================== SIDEBAR & THEME ====================
 function initializeSidebar() {
@@ -75,7 +78,7 @@ function updateTheme(theme) {
 async function checkAuth() {
     try {
         const r = await fetch('/api/user');
-        if (!r.ok) { window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname); return false; }
+        if (!r.ok) { return false; }
         const u = await r.json();
         const nameEl = document.getElementById('sidebarUserName');
         if (nameEl) nameEl.textContent = u.full_name || u.username;
@@ -89,9 +92,17 @@ async function checkAuth() {
             authBtn.classList.add('logout');
             authBtn.onclick = async () => { if (confirm('Logout?')) { await fetch('/api/logout', { method: 'POST' }); window.location.href = '/login'; } };
         }
+        try {
+            localStorage.setItem('ticketsDashboard.userCache.v1', JSON.stringify({
+                full_name: u.full_name || u.username,
+                username: u.username,
+                email: u.email || 'Member'
+            }));
+        } catch (e) {
+            console.warn('Failed to cache user info', e);
+        }
         return true;
     } catch (e) {
-        window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
         return false;
     }
 }
@@ -105,6 +116,66 @@ function setTicketsLoadingState(message = 'Loading recent tickets...') {
         <div class="icon">🎫</div>
         <p>${message}</p>
     </div>`;
+}
+
+function renderTicketSkeletons(count = INITIAL_TICKETS_BATCH_SIZE) {
+    const container = document.getElementById('ticketCards');
+    if (!container) return;
+    container.innerHTML = Array.from({ length: count }).map(() => `
+        <div class="itin-card" style="pointer-events:none;opacity:0.92;">
+            <div class="itin-card-top draft"></div>
+            <div class="itin-card-body">
+                <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;margin-bottom:0.8rem;">
+                    <div style="flex:1;">
+                        <div style="height:12px;width:120px;border-radius:999px;background:rgba(148,163,184,0.18);margin-bottom:0.7rem;"></div>
+                        <div style="height:18px;width:180px;border-radius:999px;background:rgba(148,163,184,0.16);margin-bottom:0.7rem;"></div>
+                    </div>
+                    <div style="height:28px;width:74px;border-radius:8px;background:rgba(148,163,184,0.18);"></div>
+                </div>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.8rem;">
+                    <div style="height:12px;width:72px;border-radius:999px;background:rgba(148,163,184,0.14);"></div>
+                    <div style="height:12px;width:90px;border-radius:999px;background:rgba(148,163,184,0.14);"></div>
+                </div>
+                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:1rem;">
+                    <div style="height:26px;width:110px;border-radius:8px;background:rgba(148,163,184,0.12);"></div>
+                    <div style="height:26px;width:120px;border-radius:8px;background:rgba(148,163,184,0.12);"></div>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div style="height:18px;width:90px;border-radius:999px;background:rgba(148,163,184,0.18);"></div>
+                    <div style="height:12px;width:72px;border-radius:999px;background:rgba(148,163,184,0.14);"></div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function readCachedJson(key) {
+    try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function writeCachedJson(key, value) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+        console.warn('Failed to cache data', e);
+    }
+}
+
+function hydrateUserFromCache() {
+    const cachedUser = readCachedJson('ticketsDashboard.userCache.v1');
+    if (!cachedUser) return;
+    const nameEl = document.getElementById('sidebarUserName');
+    if (nameEl) nameEl.textContent = cachedUser.full_name || cachedUser.username || '';
+    const emailEl = document.getElementById('sidebarUserEmail');
+    if (emailEl) emailEl.textContent = cachedUser.email || 'Member';
+    const avatarEl = document.getElementById('sidebarAvatar');
+    const avatarSource = cachedUser.full_name || cachedUser.username || '';
+    if (avatarEl && avatarSource) avatarEl.textContent = avatarSource.charAt(0).toUpperCase();
 }
 
 const safe = (val, fallback = '') => {
@@ -361,6 +432,33 @@ function mergeTicketLists(primaryTickets, secondaryTickets) {
     return merged;
 }
 
+function cacheTicketDetail(ticket) {
+    if (!ticket || !ticket.id) return;
+    const normalized = normalizeTicketFareData(ticket);
+    ticketDetailCache.set(normalized.id, normalized);
+}
+
+function getCachedTicketDetail(id) {
+    if (!id) return null;
+    const fromMemory = ticketDetailCache.get(id);
+    if (fromMemory) return normalizeTicketFareData(fromMemory);
+    const fromList = allTickets.find((ticket) => ticket && ticket.id === id);
+    return fromList ? normalizeTicketFareData(fromList) : null;
+}
+
+function hydrateTicketsFromCache() {
+    const cached = readCachedJson(TICKETS_CACHE_KEY);
+    const cachedTickets = Array.isArray(cached?.tickets) ? cached.tickets.map(normalizeTicketFareData) : [];
+    if (!cachedTickets.length) {
+        renderTicketSkeletons();
+        return false;
+    }
+    allTickets = cachedTickets;
+    knownTicketIds = new Set(cachedTickets.map((ticket) => ticket.id).filter(Boolean));
+    renderTicketCards();
+    return true;
+}
+
 // ==================== LOAD DATA ====================
 async function loadTickets(options = {}) {
     const {
@@ -414,6 +512,13 @@ async function loadTickets(options = {}) {
             lastFullTicketsSyncAt = Date.now();
         }
         knownTicketIds = new Set(allTickets.map((ticket) => ticket.id).filter(Boolean));
+        allTickets.forEach(cacheTicketDetail);
+        if (allTickets.length > 0) {
+            writeCachedJson(TICKETS_CACHE_KEY, {
+                cached_at: Date.now(),
+                tickets: allTickets.slice(0, INITIAL_TICKETS_BATCH_SIZE)
+            });
+        }
         hasInitializedTicketFeed = true;
         if (render) {
             renderTicketCards();
@@ -443,6 +548,7 @@ async function syncCurrentTicketFromServer() {
         const r = await fetch('/api/tickets/' + currentTicket.id);
         if (!r.ok) return;
         currentTicket = normalizeTicketFareData(await r.json());
+        cacheTicketDetail(currentTicket);
         editedData = JSON.parse(JSON.stringify(currentTicket));
         fareFieldsTouched = false;
         renderDetailView();
@@ -697,24 +803,45 @@ function renderTicketCards() {
 
 // ==================== OPEN TICKET DETAIL ====================
 async function openTicket(id) {
-    try {
-        const r = await fetch('/api/tickets/' + id);
-        if (!r.ok) { showToast('Failed to load ticket', 'error'); return; }
-        currentTicket = normalizeTicketFareData(await r.json());
-        fareFieldsTouched = false;
-        editedData = JSON.parse(JSON.stringify(currentTicket));
-        renderDetailView();
+    const showDetailView = () => {
         document.getElementById('listView').style.display = 'none';
         document.getElementById('detailView').style.display = 'block';
         window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    try {
+        const cachedTicket = getCachedTicketDetail(id);
+        if (cachedTicket) {
+            currentTicket = cachedTicket;
+            fareFieldsTouched = false;
+            editedData = JSON.parse(JSON.stringify(currentTicket));
+            renderDetailView();
+            showDetailView();
+            void syncCurrentTicketFromServer();
+            return;
+        }
+
+        document.getElementById('listView').style.display = 'none';
+        document.getElementById('detailView').style.display = 'block';
+        document.getElementById('ticketDetailHeader').innerHTML = `<div><h1>Loading ticket...</h1></div>`;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        const r = await fetch('/api/tickets/' + id);
+        if (!r.ok) { showToast('Failed to load ticket', 'error'); showListView(); return; }
+        currentTicket = normalizeTicketFareData(await r.json());
+        cacheTicketDetail(currentTicket);
+        fareFieldsTouched = false;
+        editedData = JSON.parse(JSON.stringify(currentTicket));
+        renderDetailView();
+        showDetailView();
     } catch (e) { console.error(e); showToast('Error loading ticket', 'error'); }
 }
 
 async function showListView() {
     if (currentTicket && editedData) {
         clearTimeout(autoSaveTimeout);
-        isDetailDirty = true;
-        await queueSave(true);
+        if (isDetailDirty) {
+            await queueSave(true);
+        }
     }
     document.getElementById('detailView').style.display = 'none';
     document.getElementById('listView').style.display = 'block';
@@ -723,7 +850,6 @@ async function showListView() {
     changeAttachmentState = { token: '', filename: '' };
     selectedPaxIndices.clear();
     _removePaxActionBar();
-    await loadTickets();
 }
 
 // ==================== NOTIFICATION PANEL SYSTEM ====================
@@ -1330,6 +1456,11 @@ async function loadMoreDuplicateTickets() {
             const data = await loadDuplicateTicketsPage(duplicatePanelTickets.length);
             duplicatePanelTickets = mergeTicketLists(duplicatePanelTickets, data.duplicates || []);
             duplicatePanelTotalCount = Number(data.total_count || duplicatePanelTickets.length);
+            writeCachedJson(DUPLICATES_CACHE_KEY, {
+                cached_at: Date.now(),
+                total_count: duplicatePanelTotalCount,
+                duplicates: duplicatePanelTickets.slice(0, DUPLICATES_BATCH_SIZE)
+            });
             const panel = document.getElementById('notifPanel');
             if (panel && _activeNotifPanel === 'duplicate') {
                 const body = document.getElementById('duplicateListBody');
@@ -1355,21 +1486,33 @@ async function loadMoreDuplicateTickets() {
 }
 
 async function _renderDuplicatePanel(panel) {
-    duplicatePanelTickets = [];
-    duplicatePanelTotalCount = 0;
+    const cachedDuplicates = readCachedJson(DUPLICATES_CACHE_KEY);
+    duplicatePanelTickets = Array.isArray(cachedDuplicates?.duplicates)
+        ? cachedDuplicates.duplicates.map(normalizeTicketFareData)
+        : [];
+    duplicatePanelTotalCount = Number(cachedDuplicates?.total_count || duplicatePanelTickets.length || 0);
     duplicatePanelIsLoadingMore = false;
-    panel.innerHTML = `<div class="notif-panel">
-        <div class="notif-panel-header">
-            <h3>Duplicate Tickets</h3>
-            <button class="close-btn" onclick="_closeNotifPanel()">×</button>
-        </div>
-        <div class="empty-notif">Loading recent duplicates...</div>
-    </div>`;
+    if (duplicatePanelTickets.length) {
+        _renderDuplicatePanelLayout(panel);
+    } else {
+        panel.innerHTML = `<div class="notif-panel">
+            <div class="notif-panel-header">
+                <h3>Duplicate Tickets</h3>
+                <button class="close-btn" onclick="_closeNotifPanel()">×</button>
+            </div>
+            <div class="empty-notif">Loading recent duplicates...</div>
+        </div>`;
+    }
 
     try {
         const data = await loadDuplicateTicketsPage(0);
         duplicatePanelTickets = data.duplicates || [];
         duplicatePanelTotalCount = Number(data.total_count || duplicatePanelTickets.length);
+        writeCachedJson(DUPLICATES_CACHE_KEY, {
+            cached_at: Date.now(),
+            total_count: duplicatePanelTotalCount,
+            duplicates: duplicatePanelTickets.slice(0, DUPLICATES_BATCH_SIZE)
+        });
         _renderDuplicatePanelLayout(panel);
         if (data.has_more) {
             void loadMoreDuplicateTickets();
@@ -3033,10 +3176,12 @@ async function saveTicket(silent = false) {
         }
         isDetailDirty = false;
         if (!silent) showToast('Ticket saved successfully!', 'success');
+        currentTicket = normalizeTicketFareData(JSON.parse(JSON.stringify(editedData)));
+        cacheTicketDetail(currentTicket);
 
         const idx = allTickets.findIndex(t => t.id === currentTicket.id);
         if (idx > -1) {
-            allTickets[idx] = JSON.parse(JSON.stringify(editedData));
+            allTickets[idx] = JSON.parse(JSON.stringify(currentTicket));
             renderTicketCards();
         }
     } catch (e) {
@@ -3237,8 +3382,12 @@ async function deleteTicket() {
     try {
         const r = await fetch('/api/tickets/' + currentTicket.id, { method: 'DELETE' });
         if (!r.ok) { showToast('Delete failed', 'error'); return; }
+        ticketDetailCache.delete(currentTicket.id);
+        allTickets = allTickets.filter((ticket) => ticket.id !== currentTicket.id);
+        knownTicketIds = new Set(allTickets.map((ticket) => ticket.id).filter(Boolean));
         showToast('Ticket deleted', 'success');
-        showListView();
+        await showListView();
+        renderTicketCards();
     } catch (e) { showToast('Delete failed', 'error'); }
 }
 
@@ -3959,11 +4108,11 @@ async function _executeCancel(selectedPax, isFullCancel, perPersonFares, sectorI
 // ==================== INIT ====================
 document.addEventListener('DOMContentLoaded', async () => {
     initializeSidebar();
-    const isAuthenticated = await checkAuth();
-    if (!isAuthenticated) return;
-    setTicketsLoadingState('Loading recent tickets...');
+    hydrateUserFromCache();
+    hydrateTicketsFromCache();
+    void checkAuth();
     await loadNotifications();
-    await loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, showLoading: true });
+    await loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, showLoading: allTickets.length === 0 });
     if (!startTicketsRealtime()) {
         startTicketsPolling();
     }

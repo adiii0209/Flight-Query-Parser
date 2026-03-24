@@ -50,7 +50,24 @@ except Exception:
 
 load_dotenv()
 app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"
+
+def _resolve_database_uri():
+    database_url = (os.getenv("DATABASE_URL") or "").strip()
+    if database_url:
+        if database_url.startswith("postgres://"):
+            database_url = "postgresql://" + database_url[len("postgres://"):]
+        return database_url
+
+    railway_volume_path = (os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or os.getenv("DB_STORAGE_PATH") or "").strip()
+    if railway_volume_path:
+        os.makedirs(railway_volume_path, exist_ok=True)
+        return f"sqlite:///{os.path.join(railway_volume_path, 'app.db').replace(os.sep, '/')}"
+
+    instance_db_path = os.path.join(app.instance_path, "app.db")
+    os.makedirs(app.instance_path, exist_ok=True)
+    return f"sqlite:///{instance_db_path.replace(os.sep, '/')}"
+
+app.config["SQLALCHEMY_DATABASE_URI"] = _resolve_database_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 # 🔐 Shared secret for ticket parser
@@ -2921,7 +2938,6 @@ def receive_ticket():
             event_type="ticket_created",
             ticket_id=ticket.id,
             batch_id=processing_batch_id or None,
-            notifications=_ticket_notifications_payload(user.id),
         )
 
         return jsonify({
@@ -2945,6 +2961,7 @@ def receive_ticket():
 # ==================== TICKETS PAGE ====================
 
 @app.route("/tickets")
+@login_required
 def tickets_page():
     """Serve the tickets dashboard page"""
     return render_template('tickets.html')
@@ -2973,7 +2990,6 @@ def notify_ticket_processing():
         user_id,
         event_type="processing_batch_started",
         batch_id=batch_id,
-        notifications=_ticket_notifications_payload(user_id),
     )
     return jsonify({
         "status": "accepted",
@@ -3128,7 +3144,6 @@ def approve_duplicate(ticket_id):
         session["user_id"],
         event_type="duplicate_approved",
         ticket_id=ticket.id,
-        notifications=_ticket_notifications_payload(session["user_id"]),
     )
     return jsonify({"message": "Duplicate approved. Ticket is now on the dashboard.", "ticket_id": ticket.id})
 
@@ -3149,7 +3164,6 @@ def reject_duplicate(ticket_id):
         session["user_id"],
         event_type="duplicate_rejected",
         ticket_id=ticket.id,
-        notifications=_ticket_notifications_payload(session["user_id"]),
     )
     return jsonify({"message": "Duplicate rejected and hidden.", "ticket_id": ticket.id})
 
@@ -3344,7 +3358,6 @@ def merge_pnr_group(pnr):
         event_type="booking_group_merged",
         pnr=normalized_pnr,
         booking_group_id=booking_group.id,
-        notifications=_ticket_notifications_payload(session["user_id"]),
     )
     return jsonify({
         "message": f"Merged {len(selected_tickets)} tickets under PNR {normalized_pnr}.",
@@ -3386,7 +3399,6 @@ def delete_pnr_group_tickets(pnr):
             session["user_id"],
             event_type="booking_group_deleted",
             pnr=normalized_pnr,
-            notifications=_ticket_notifications_payload(session["user_id"]),
         )
         return jsonify({"message": f"Deleted {deleted_count} ticket{'' if deleted_count == 1 else 's'} from PNR {normalized_pnr}."})
     except Exception as e:
@@ -3574,7 +3586,6 @@ def update_ticket(ticket_id):
                 event_type="ticket_updated",
                 ticket_id=ticket.id,
                 booking_group_id=ticket.booking_group_id,
-                notifications=_ticket_notifications_payload(session["user_id"]),
             )
             return jsonify({"message": "Merged booking updated successfully"})
         
@@ -3611,7 +3622,6 @@ def update_ticket(ticket_id):
             session["user_id"],
             event_type="ticket_updated",
             ticket_id=ticket.id,
-            notifications=_ticket_notifications_payload(session["user_id"]),
         )
         
         return jsonify({"message": "Ticket updated successfully"})
@@ -3644,7 +3654,6 @@ def delete_ticket(ticket_id):
             session["user_id"],
             event_type="ticket_deleted",
             ticket_id=ticket_id,
-            notifications=_ticket_notifications_payload(session["user_id"]),
         )
         return jsonify({"message": message})
     except Exception as e:
