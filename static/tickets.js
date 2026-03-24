@@ -149,6 +149,12 @@ function renderTicketSkeletons(count = INITIAL_TICKETS_BATCH_SIZE) {
     `).join('');
 }
 
+function setTicketsLoadingState() {
+    const container = document.getElementById('ticketCards');
+    if (!container || container.querySelector('[data-ticket-id]')) return;
+    renderTicketSkeletons();
+}
+
 function readCachedJson(key) {
     try {
         const raw = localStorage.getItem(key);
@@ -799,6 +805,332 @@ function renderTicketCards() {
             </div>
         </div>`;
     }).join('');
+}
+
+function getVisibleTicketItems() {
+    let items = allTickets;
+    const searchInput = document.getElementById('ticketSearch');
+    if (searchInput && searchInput.value.trim()) {
+        const q = searchInput.value.toLowerCase().trim();
+        items = items.filter(t => getTicketSearchText(t).includes(q));
+    }
+    if (_mergedViewActive) {
+        items = items.filter(t => t.booking_group_id);
+    } else if (currentFilter !== 'all') {
+        items = items.filter(t => t.status === currentFilter);
+    }
+    return items;
+}
+
+function buildEmptyTicketsStateHtml() {
+    const searchInput = document.getElementById('ticketSearch');
+    const emptyMsg = _mergedViewActive
+        ? 'No merged bookings yet. Merge PNR groups to see combined bookings here.'
+        : (searchInput && searchInput.value ? 'No tickets matched your search.' : 'No tickets found. Tickets will appear here when received from the parser.');
+    return `<div class="empty-state" style="grid-column:1/-1">
+        <div class="icon">${_mergedViewActive ? 'ðŸ“¦' : 'ðŸŽ«'}</div>
+        <p>${emptyMsg}</p>
+    </div>`;
+}
+
+function buildTicketCardHtml(t) {
+    const segments = t.segments || [];
+    const passengers = t.passengers || [];
+    const journey = t.journey || {};
+
+    let legs;
+    if (journey.legs && journey.legs.length > 0) {
+        legs = journey.legs.map(leg => leg.segments || []);
+    } else if (t.legs) {
+        legs = t.legs;
+    } else {
+        legs = groupSegmentsIntoLegs(segments);
+    }
+
+    const firstLegIndices = legs[0] || [];
+    const lastLegIndices = legs[legs.length - 1] || [];
+    const firstSeg = segments[firstLegIndices[0]] || segments[0] || {};
+    let arrCode = '';
+    if (t.trip_type === 'round_trip' && legs.length >= 2) {
+        const outboundLastSeg = segments[legs[0][legs[0].length - 1]] || {};
+        arrCode = (outboundLastSeg.arrival || {}).airport || '';
+    } else {
+        const lastSeg = segments[lastLegIndices[lastLegIndices.length - 1] || 0] || segments[segments.length - 1] || {};
+        arrCode = (lastSeg.arrival || {}).airport || '';
+    }
+    const depCode = (firstSeg.departure || {}).airport || '';
+    const airline = firstSeg.airline || '';
+    const flightNum = firstSeg.flight_number || '';
+    const depDate = (firstSeg.departure || {}).date || '';
+
+    let routeHtml = '';
+    if (t.trip_type === 'multi_city') {
+        const dests = [];
+        legs.forEach(l => {
+            const fs = segments[l[0]] || {};
+            const apt = (fs.departure || {}).airport;
+            if (apt) dests.push(apt);
+        });
+        const ls = segments[lastLegIndices[lastLegIndices.length - 1] || 0] || segments[segments.length - 1] || {};
+        const finalApt = (ls.arrival || {}).airport;
+        if (finalApt) dests.push(finalApt);
+        routeHtml = dests.filter(Boolean).map(d => `<span class="route-code">${d}</span>`).join('<span class="route-arrow"> â†’ </span>');
+    } else {
+        const arrow = t.trip_type === 'round_trip' ? ' â†” ' : ' â†’ ';
+        routeHtml = `<span class="route-code">${depCode}</span><span class="route-arrow">${arrow}</span><span class="route-code">${arrCode}</span>`;
+    }
+
+    const layoverCount = segments.length - legs.length;
+    const layoverLabel = layoverCount > 0
+        ? `<span class="layover-chip">${layoverCount} stop${layoverCount > 1 ? 's' : ''}</span>`
+        : '';
+
+    const tripDisplay = journey.trip_type_display || getTripLabel(t.trip_type);
+    const statusClass = t.status === 'matched' ? 'confirmed' : 'draft';
+    const statusBadge = t.status === 'matched'
+        ? '<span class="match-badge matched">âœ… Matched</span>'
+        : '<span class="match-badge unmatched">Unmatched</span>';
+    const tStatus = t.ticket_status || 'live';
+    const tStatusBadge = tStatus === 'cancelled'
+        ? '<span style="background:rgba(239,68,68,0.12);color:#ef4444;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">ðŸ”´ Cancelled</span>'
+        : tStatus === 'changed'
+        ? '<span style="background:rgba(245,158,11,0.12);color:#f59e0b;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">ðŸŸ¡ Changed</span>'
+        : '<span style="background:rgba(16,185,129,0.12);color:#10b981;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">ðŸŸ¢ Live</span>';
+    const splitBadge = t.parent_ticket_id
+        ? '<span style="background:rgba(15,23,42,0.08);color:var(--text-secondary);padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Split Booking</span>'
+        : (t.children && t.children.length ? '<span style="background:rgba(37,99,235,0.08);color:var(--primary);padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Has Splits</span>' : '');
+    const mergedBadge = t.booking_group_id
+        ? '<span style="background:rgba(5,150,105,0.12);color:#059669;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Merged Booking</span>'
+        : '';
+
+    let calculatedTotal = 0;
+    const globalMarkup = parseMoneyValue(journey.global_markup);
+    passengers.forEach(p => {
+        const f = p.fare || {};
+        calculatedTotal += parseMoneyValue(f.base_fare) +
+            parseMoneyValue(f.k3_gst) +
+            parseMoneyValue(f.other_taxes) +
+            globalMarkup;
+    });
+    const grandTotal = parseMoneyValue(t.grand_total);
+    const displayTotal = grandTotal > 0 ? grandTotal : calculatedTotal;
+
+    return `<div class="itin-card" data-ticket-id="${safe(t.id)}" onclick="openTicket('${t.id}')">
+        <div class="itin-card-top ${statusClass}"></div>
+        <div class="itin-card-body">
+            <div class="itin-card-header">
+                <div>
+                    <div class="ticket-card-airline">
+                        <span class="airline-tag">${safe(airline, 'Airline')}</span>
+                        <span>${safe(flightNum)}</span>
+                    </div>
+                    <div class="ticket-card-route">
+                        ${routeHtml}
+                        ${layoverLabel}
+                    </div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.4rem;">
+                    <span class="pnr-label">${safe(t.pnr, '---')}</span>
+                    ${statusBadge}
+                    ${tStatusBadge}
+                    ${splitBadge}
+                    ${mergedBadge}
+                </div>
+            </div>
+            <div class="itin-card-meta">
+                <span class="meta-item"><b>Type:</b> ${tripDisplay}</span>
+                <span class="meta-item"><b>Date:</b> ${safe(depDate, '-')}</span>
+                ${t.class_of_travel && t.class_of_travel !== 'None' ? `<span class="meta-item"><b>Class:</b> ${safe(t.class_of_travel, 'Economy')}</span>` : ''}
+            </div>
+            <div class="ticket-card-pax">
+                ${passengers.map(p => `<span class="pax-chip">ðŸ‘¤ ${safe(p.name, 'Passenger')}<br><span style="font-size:0.68rem;color:var(--text-secondary);">${safe(p.system_ticket_number, '')}</span></span>`).join('')}
+            </div>
+            <div class="itin-card-footer">
+                <span class="itin-amount">${formatCurrency(displayTotal, t.currency || 'INR')}</span>
+                <span class="itin-date">${formatDate(t.created_at)}</span>
+            </div>
+        </div>
+    </div>`;
+}
+
+function patchTicketCards(items) {
+    const container = document.getElementById('ticketCards');
+    if (!container) return;
+
+    if (items.length === 0) {
+        container.innerHTML = buildEmptyTicketsStateHtml();
+        return;
+    }
+
+    const itemIds = new Set(items.map(ticket => String(ticket.id || '')).filter(Boolean));
+    const existingMap = new Map(
+        Array.from(container.querySelectorAll('[data-ticket-id]')).map(node => [node.dataset.ticketId, node])
+    );
+
+    items.forEach((ticket, index) => {
+        const ticketId = String(ticket.id || '');
+        if (!ticketId) return;
+
+        const nextHtml = buildTicketCardHtml(ticket);
+        let currentNode = existingMap.get(ticketId);
+
+        if (currentNode) {
+            if (currentNode.outerHTML !== nextHtml) {
+                const wrapper = document.createElement('div');
+                wrapper.innerHTML = nextHtml;
+                const replacementNode = wrapper.firstElementChild;
+                currentNode.replaceWith(replacementNode);
+                currentNode = replacementNode;
+                existingMap.set(ticketId, currentNode);
+            }
+        } else {
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = nextHtml;
+            currentNode = wrapper.firstElementChild;
+            existingMap.set(ticketId, currentNode);
+        }
+
+        const anchorNode = container.children[index];
+        if (anchorNode !== currentNode) {
+            container.insertBefore(currentNode, anchorNode || null);
+        }
+    });
+
+    Array.from(container.querySelectorAll('[data-ticket-id]')).forEach(node => {
+        if (!itemIds.has(node.dataset.ticketId)) {
+            node.remove();
+        }
+    });
+
+    Array.from(container.children).forEach(node => {
+        if (!node.dataset || !node.dataset.ticketId) {
+            node.remove();
+        }
+    });
+}
+
+function buildTicketCardHtml(t) {
+    const segments = t.segments || [];
+    const passengers = t.passengers || [];
+    const journey = t.journey || {};
+
+    let legs;
+    if (journey.legs && journey.legs.length > 0) {
+        legs = journey.legs.map(leg => leg.segments || []);
+    } else if (t.legs) {
+        legs = t.legs;
+    } else {
+        legs = groupSegmentsIntoLegs(segments);
+    }
+
+    const firstLegIndices = legs[0] || [];
+    const lastLegIndices = legs[legs.length - 1] || [];
+    const firstSeg = segments[firstLegIndices[0]] || segments[0] || {};
+    let arrCode = '';
+    if (t.trip_type === 'round_trip' && legs.length >= 2) {
+        const outboundLastSeg = segments[legs[0][legs[0].length - 1]] || {};
+        arrCode = (outboundLastSeg.arrival || {}).airport || '';
+    } else {
+        const lastSeg = segments[lastLegIndices[lastLegIndices.length - 1] || 0] || segments[segments.length - 1] || {};
+        arrCode = (lastSeg.arrival || {}).airport || '';
+    }
+    const depCode = (firstSeg.departure || {}).airport || '';
+    const airline = firstSeg.airline || '';
+    const flightNum = firstSeg.flight_number || '';
+    const depDate = (firstSeg.departure || {}).date || '';
+
+    let routeHtml = '';
+    if (t.trip_type === 'multi_city') {
+        const dests = [];
+        legs.forEach(l => {
+            const fs = segments[l[0]] || {};
+            const apt = (fs.departure || {}).airport;
+            if (apt) dests.push(apt);
+        });
+        const ls = segments[lastLegIndices[lastLegIndices.length - 1] || 0] || segments[segments.length - 1] || {};
+        const finalApt = (ls.arrival || {}).airport;
+        if (finalApt) dests.push(finalApt);
+        routeHtml = dests.filter(Boolean).map(d => `<span class="route-code">${d}</span>`).join('<span class="route-arrow">&rarr;</span>');
+    } else {
+        const arrow = t.trip_type === 'round_trip' ? '&harr;' : '&rarr;';
+        routeHtml = `<span class="route-code">${depCode}</span><span class="route-arrow">${arrow}</span><span class="route-code">${arrCode}</span>`;
+    }
+
+    const layoverCount = segments.length - legs.length;
+    const layoverLabel = layoverCount > 0
+        ? `<span class="layover-chip">${layoverCount} stop${layoverCount > 1 ? 's' : ''}</span>`
+        : '';
+
+    const tripDisplay = journey.trip_type_display || getTripLabel(t.trip_type);
+    const statusClass = t.status === 'matched' ? 'confirmed' : 'draft';
+    const statusBadge = t.status === 'matched'
+        ? '<span class="match-badge matched">&#10004; Matched</span>'
+        : '<span class="match-badge unmatched">Unmatched</span>';
+    const tStatus = t.ticket_status || 'live';
+    const tStatusBadge = tStatus === 'cancelled'
+        ? '<span style="background:rgba(239,68,68,0.12);color:#ef4444;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Cancelled</span>'
+        : tStatus === 'changed'
+        ? '<span style="background:rgba(245,158,11,0.12);color:#f59e0b;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Changed</span>'
+        : '<span style="background:rgba(16,185,129,0.12);color:#10b981;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Live</span>';
+    const splitBadge = t.parent_ticket_id
+        ? '<span style="background:rgba(15,23,42,0.08);color:var(--text-secondary);padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Split Booking</span>'
+        : (t.children && t.children.length ? '<span style="background:rgba(37,99,235,0.08);color:var(--primary);padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Has Splits</span>' : '');
+    const mergedBadge = t.booking_group_id
+        ? '<span style="background:rgba(5,150,105,0.12);color:#059669;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Merged Booking</span>'
+        : '';
+
+    let calculatedTotal = 0;
+    const globalMarkup = parseMoneyValue(journey.global_markup);
+    passengers.forEach(p => {
+        const f = p.fare || {};
+        calculatedTotal += parseMoneyValue(f.base_fare) +
+            parseMoneyValue(f.k3_gst) +
+            parseMoneyValue(f.other_taxes) +
+            globalMarkup;
+    });
+    const grandTotal = parseMoneyValue(t.grand_total);
+    const displayTotal = grandTotal > 0 ? grandTotal : calculatedTotal;
+
+    return `<div class="itin-card" data-ticket-id="${safe(t.id)}" onclick="openTicket('${t.id}')">
+        <div class="itin-card-top ${statusClass}"></div>
+        <div class="itin-card-body">
+            <div class="itin-card-header">
+                <div>
+                    <div class="ticket-card-airline">
+                        <span class="airline-tag">${safe(airline, 'Airline')}</span>
+                        <span>${safe(flightNum)}</span>
+                    </div>
+                    <div class="ticket-card-route">
+                        ${routeHtml}
+                        ${layoverLabel}
+                    </div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.4rem;">
+                    <span class="pnr-label">${safe(t.pnr, '---')}</span>
+                    ${statusBadge}
+                    ${tStatusBadge}
+                    ${splitBadge}
+                    ${mergedBadge}
+                </div>
+            </div>
+            <div class="itin-card-meta">
+                <span class="meta-item"><b>Type:</b> ${tripDisplay}</span>
+                <span class="meta-item"><b>Date:</b> ${safe(depDate, '-')}</span>
+                ${t.class_of_travel && t.class_of_travel !== 'None' ? `<span class="meta-item"><b>Class:</b> ${safe(t.class_of_travel, 'Economy')}</span>` : ''}
+            </div>
+            <div class="ticket-card-pax">
+                ${passengers.map(p => `<span class="pax-chip">👤 ${safe(p.name, 'Passenger')}<br><span style="font-size:0.68rem;color:var(--text-secondary);">${safe(p.system_ticket_number, '')}</span></span>`).join('')}
+            </div>
+            <div class="itin-card-footer">
+                <span class="itin-amount">${formatCurrency(displayTotal, t.currency || 'INR')}</span>
+                <span class="itin-date">${formatDate(t.created_at)}</span>
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderTicketCards() {
+    patchTicketCards(getVisibleTicketItems());
 }
 
 // ==================== OPEN TICKET DETAIL ====================
@@ -4107,6 +4439,10 @@ async function _executeCancel(selectedPax, isFullCancel, perPersonFares, sectorI
 
 // ==================== INIT ====================
 document.addEventListener('DOMContentLoaded', async () => {
+    const initialTicketCards = document.getElementById('ticketCards');
+    if (initialTicketCards && !initialTicketCards.querySelector('[data-ticket-id]')) {
+        initialTicketCards.innerHTML = '';
+    }
     initializeSidebar();
     hydrateUserFromCache();
     hydrateTicketsFromCache();
