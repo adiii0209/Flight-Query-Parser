@@ -460,8 +460,8 @@ def draw_ticket(c, data, include_fare=True):
             if bkclass.lower() in ("n/a", "none"):
                 bkclass = ""
 
-            dur      = _t(seg.get("duration_extracted") or
-                         seg.get("duration_calculated") or
+            dur      = _t(seg.get("duration_calculated") or
+                         seg.get("duration_extracted") or
                          seg.get("duration"))
 
             # ── FIX 2: Airline name and flight number on separate x positions

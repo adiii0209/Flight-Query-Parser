@@ -16,7 +16,18 @@ let ticketsPollingHandle = null;
 let _lastProcessingCount = 0;
 let _processingIndicatorMode = 'idle';
 let _processingDoneTimeout = null;
-const TICKETS_POLL_INTERVAL_MS = 2000;
+let totalAvailableTickets = 0;
+let lastFullTicketsSyncAt = 0;
+let fullTicketsSyncPromise = null;
+let ticketsEventSource = null;
+let realtimeRefreshHandle = null;
+let duplicatePanelTickets = [];
+let duplicatePanelTotalCount = 0;
+let duplicatePanelIsLoadingMore = false;
+const INITIAL_TICKETS_BATCH_SIZE = 10;
+const DUPLICATES_BATCH_SIZE = 10;
+const TICKETS_POLL_INTERVAL_MS = 5000;
+const TICKETS_FULL_SYNC_INTERVAL_MS = 30000;
 
 // ==================== SIDEBAR & THEME ====================
 function initializeSidebar() {
@@ -64,7 +75,7 @@ function updateTheme(theme) {
 async function checkAuth() {
     try {
         const r = await fetch('/api/user');
-        if (!r.ok) { window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname); return; }
+        if (!r.ok) { window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname); return false; }
         const u = await r.json();
         const nameEl = document.getElementById('sidebarUserName');
         if (nameEl) nameEl.textContent = u.full_name || u.username;
@@ -78,11 +89,24 @@ async function checkAuth() {
             authBtn.classList.add('logout');
             authBtn.onclick = async () => { if (confirm('Logout?')) { await fetch('/api/logout', { method: 'POST' }); window.location.href = '/login'; } };
         }
-    } catch (e) { window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname); }
+        return true;
+    } catch (e) {
+        window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+        return false;
+    }
 }
 function handleAuthClick() { window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname); }
 
 // ==================== HELPERS ====================
+function setTicketsLoadingState(message = 'Loading recent tickets...') {
+    const container = document.getElementById('ticketCards');
+    if (!container) return;
+    container.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+        <div class="icon">🎫</div>
+        <p>${message}</p>
+    </div>`;
+}
+
 const safe = (val, fallback = '') => {
     if (val === undefined || val === null || val === 'N/A' || val === 'Not Specified') return fallback;
     return val;
@@ -99,17 +123,63 @@ function parseMoneyValue(value) {
     const parsed = Number.parseFloat(value);
     return Number.isFinite(parsed) ? parsed : 0;
 }
+
+function inferDuplicatedConsolidatedFareFromPassengers(passengers) {
+    const rows = (passengers || []).map((passenger) => {
+        const fare = passenger?.fare || {};
+        return {
+            base_fare: parseMoneyValue(fare.base_fare),
+            k3_gst: parseMoneyValue(fare.k3_gst),
+            other_taxes: parseMoneyValue(fare.other_taxes),
+            total_fare: parseMoneyValue(fare.total_fare)
+        };
+    }).filter((row) => row.base_fare || row.k3_gst || row.other_taxes || row.total_fare);
+
+    if (rows.length <= 1) return null;
+    const first = rows[0];
+    const allIdentical = rows.every((row) =>
+        row.base_fare === first.base_fare &&
+        row.k3_gst === first.k3_gst &&
+        row.other_taxes === first.other_taxes &&
+        row.total_fare === first.total_fare
+    );
+    if (!allIdentical) return null;
+    return {
+        base_fare: first.base_fare,
+        k3_gst: first.k3_gst,
+        other_taxes: first.other_taxes
+    };
+}
+
 function normalizeTicketFareData(ticket) {
     if (!ticket || typeof ticket !== 'object') return ticket;
     const normalized = JSON.parse(JSON.stringify(ticket));
     normalized.currency = safe(normalized.currency, 'INR');
     normalized.grand_total = parseMoneyValue(normalized.grand_total);
+    const rawBookingGrandTotal = parseMoneyValue((((normalized.raw_data || {}).booking || {}).grand_total));
+    if (rawBookingGrandTotal > 0) {
+        normalized.grand_total = rawBookingGrandTotal;
+    }
     if (normalized.journey) {
         normalized.journey.global_markup = parseMoneyValue(normalized.journey.global_markup);
+        if (!normalized.journey.consolidated_fare) {
+            const inferredConsolidated = inferDuplicatedConsolidatedFareFromPassengers(normalized.passengers || []);
+            if (inferredConsolidated) {
+                normalized.journey.consolidated_fare = inferredConsolidated;
+            }
+        }
         if (normalized.journey.consolidated_fare) {
             normalized.journey.consolidated_fare.base_fare = parseMoneyValue(normalized.journey.consolidated_fare.base_fare);
             normalized.journey.consolidated_fare.k3_gst = parseMoneyValue(normalized.journey.consolidated_fare.k3_gst);
             normalized.journey.consolidated_fare.other_taxes = parseMoneyValue(normalized.journey.consolidated_fare.other_taxes);
+            if (normalized.grand_total > 0) {
+                const consolidatedSubtotal =
+                    normalized.journey.consolidated_fare.base_fare +
+                    normalized.journey.consolidated_fare.k3_gst +
+                    normalized.journey.consolidated_fare.other_taxes;
+                const passengerCount = (normalized.passengers || []).length || 1;
+                normalized.journey.global_markup = Math.max(normalized.grand_total - consolidatedSubtotal, 0) / passengerCount;
+            }
         }
     }
     normalized.passengers = (normalized.passengers || []).map((passenger) => {
@@ -205,6 +275,23 @@ function getJourneyDurationValue(legs, segments, journey) {
     return formatDurationFromMinutes(totalMinutes);
 }
 
+function getSegmentBookingClassValue(segment) {
+    if (!segment || typeof segment !== 'object') return '';
+    const bookingClass = segment.booking_class;
+    let value = '';
+    if (bookingClass && typeof bookingClass === 'object') {
+        value = bookingClass.full_form || bookingClass.cabin || bookingClass.letter || bookingClass.code || '';
+    } else if (typeof bookingClass === 'string') {
+        value = bookingClass.trim();
+    }
+    if (!value) return '';
+    const normalized = value.trim();
+    if (!normalized || ['N/A', 'NONE', 'NULL', '-'].includes(normalized.toUpperCase())) {
+        return '';
+    }
+    return normalized;
+}
+
 // ==================== LEG GROUPING ====================
 function groupSegmentsIntoLegs(segments) {
     if (!segments || segments.length === 0) return [];
@@ -257,15 +344,50 @@ function getTicketSearchText(ticket) {
     ].join(' ').toLowerCase();
 }
 
+function mergeTicketLists(primaryTickets, secondaryTickets) {
+    const merged = [];
+    const seenIds = new Set();
+    const pushTicket = (ticket) => {
+        if (!ticket) return;
+        const ticketId = ticket.id;
+        if (ticketId) {
+            if (seenIds.has(ticketId)) return;
+            seenIds.add(ticketId);
+        }
+        merged.push(ticket);
+    };
+    (primaryTickets || []).forEach(pushTicket);
+    (secondaryTickets || []).forEach(pushTicket);
+    return merged;
+}
+
 // ==================== LOAD DATA ====================
-async function loadTickets() {
+async function loadTickets(options = {}) {
+    const {
+        limit = 0,
+        offset = 0,
+        showLoading = false,
+        render = true,
+        notifyNewTickets = true
+    } = options;
     try {
-        const r = await fetch('/api/tickets/list');
-        if (!r.ok) return;
+        if (showLoading && allTickets.length === 0) {
+            setTicketsLoadingState(offset > 0 ? 'Loading more tickets...' : 'Loading recent tickets...');
+        }
+        const params = new URLSearchParams();
+        if (limit > 0) params.set('limit', String(limit));
+        if (offset > 0) params.set('offset', String(offset));
+        const query = params.toString();
+        const r = await fetch(`/api/tickets/list${query ? `?${query}` : ''}`);
+        if (r.status === 401) {
+            window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+            return null;
+        }
+        if (!r.ok) return null;
         const d = await r.json();
         const incomingTickets = (d.tickets || []).map(normalizeTicketFareData);
-        const incomingIds = new Set(incomingTickets.map((ticket) => ticket.id).filter(Boolean));
-        if (hasInitializedTicketFeed) {
+        totalAvailableTickets = Number.isFinite(Number(d.total_count)) ? Number(d.total_count) : incomingTickets.length;
+        if (notifyNewTickets && hasInitializedTicketFeed && offset === 0) {
             const newTickets = incomingTickets.filter((ticket) => ticket && ticket.id && !knownTicketIds.has(ticket.id));
             if (newTickets.length > 0) {
                 const firstTicket = newTickets[0];
@@ -280,11 +402,106 @@ async function loadTickets() {
                 );
             }
         }
-        allTickets = incomingTickets;
-        knownTicketIds = incomingIds;
+        if (limit > 0 || offset > 0) {
+            allTickets = offset === 0
+                ? mergeTicketLists(incomingTickets, allTickets)
+                : mergeTicketLists(allTickets, incomingTickets);
+        } else {
+            allTickets = incomingTickets;
+            lastFullTicketsSyncAt = Date.now();
+        }
+        if (!d.has_more && allTickets.length >= totalAvailableTickets) {
+            lastFullTicketsSyncAt = Date.now();
+        }
+        knownTicketIds = new Set(allTickets.map((ticket) => ticket.id).filter(Boolean));
         hasInitializedTicketFeed = true;
-        renderTicketCards();
+        if (render) {
+            renderTicketCards();
+        }
+        return {
+            totalCount: totalAvailableTickets,
+            returnedCount: incomingTickets.length,
+            hasMore: Boolean(d.has_more)
+        };
     } catch (e) { console.error('Load error:', e); }
+    return null;
+}
+
+async function syncAllTicketsInBackground() {
+    if (fullTicketsSyncPromise) return fullTicketsSyncPromise;
+    fullTicketsSyncPromise = (async () => {
+        await loadTickets({ render: true, notifyNewTickets: false });
+    })().finally(() => {
+        fullTicketsSyncPromise = null;
+    });
+    return fullTicketsSyncPromise;
+}
+
+async function syncCurrentTicketFromServer() {
+    if (!currentTicket || isDetailDirty) return;
+    try {
+        const r = await fetch('/api/tickets/' + currentTicket.id);
+        if (!r.ok) return;
+        currentTicket = normalizeTicketFareData(await r.json());
+        editedData = JSON.parse(JSON.stringify(currentTicket));
+        fareFieldsTouched = false;
+        renderDetailView();
+    } catch (e) {
+        console.error('Failed to refresh current ticket', e);
+    }
+}
+
+function scheduleRealtimeRefresh(payload = {}) {
+    if (payload.notifications) {
+        _notifData = payload.notifications;
+        _updateNotifBadges();
+    }
+    if (payload.ticket_id && currentTicket && currentTicket.id === payload.ticket_id) {
+        if (!isDetailDirty) {
+            void syncCurrentTicketFromServer();
+        }
+    }
+    clearTimeout(realtimeRefreshHandle);
+    realtimeRefreshHandle = setTimeout(async () => {
+        try {
+            await loadNotifications();
+            const snapshot = await loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, render: true });
+            if (snapshot && (allTickets.length < totalAvailableTickets || payload.event === 'ticket_created')) {
+                void syncAllTicketsInBackground();
+            }
+        } catch (e) {
+            console.error('Realtime refresh failed', e);
+        }
+    }, 120);
+}
+
+function startTicketsRealtime() {
+    if (!('EventSource' in window) || ticketsEventSource) return false;
+    try {
+        const stream = new EventSource('/api/tickets/stream');
+        stream.onmessage = (event) => {
+            try {
+                const payload = JSON.parse(event.data || '{}');
+                scheduleRealtimeRefresh(payload);
+            } catch (e) {
+                console.error('Invalid realtime payload', e);
+            }
+        };
+        stream.onerror = () => {
+            try {
+                stream.close();
+            } catch (e) {
+                console.error('Failed to close realtime stream', e);
+            }
+            ticketsEventSource = null;
+            startTicketsPolling();
+        };
+        ticketsEventSource = stream;
+        return true;
+    } catch (e) {
+        console.error('Realtime stream unavailable', e);
+        return false;
+    }
 }
 
 function startTicketsPolling() {
@@ -293,7 +510,15 @@ function startTicketsPolling() {
         if (document.hidden) return;
         try {
             await loadNotifications();
-            await loadTickets();
+            const snapshot = await loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, render: true });
+            const needsFullSync = (
+                allTickets.length < totalAvailableTickets
+                || !lastFullTicketsSyncAt
+                || (Date.now() - lastFullTicketsSyncAt) >= TICKETS_FULL_SYNC_INTERVAL_MS
+            );
+            if (snapshot && needsFullSync) {
+                void syncAllTicketsInBackground();
+            }
         } catch (e) {
             console.error('Tickets polling failed', e);
         }
@@ -788,6 +1013,8 @@ async function approveDuplicate(ticketId) {
         const data = await r.json();
         if (!r.ok) { showToast(data.error || 'Failed', 'error'); return; }
         showToast('Ticket approved and added to dashboard', 'success');
+        duplicatePanelTickets = duplicatePanelTickets.filter((dup) => dup.id !== ticketId);
+        duplicatePanelTotalCount = Math.max(0, duplicatePanelTotalCount - 1);
         // Remove the card with animation
         const card = document.getElementById('dup-card-' + ticketId);
         if (card) {
@@ -797,7 +1024,13 @@ async function approveDuplicate(ticketId) {
             setTimeout(() => card.remove(), 300);
         }
         await loadNotifications();
-        await loadTickets();
+        await loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE });
+        if (_activeNotifPanel === 'duplicate') {
+            _renderDuplicatePanelLayout(document.getElementById('notifPanel'));
+            if (duplicatePanelTickets.length < duplicatePanelTotalCount) {
+                void loadMoreDuplicateTickets();
+            }
+        }
     } catch (e) { showToast('Network error', 'error'); }
 }
 
@@ -808,6 +1041,8 @@ async function rejectDuplicate(ticketId) {
         const data = await r.json();
         if (!r.ok) { showToast(data.error || 'Failed', 'error'); return; }
         showToast('Duplicate rejected and hidden', 'info');
+        duplicatePanelTickets = duplicatePanelTickets.filter((dup) => dup.id !== ticketId);
+        duplicatePanelTotalCount = Math.max(0, duplicatePanelTotalCount - 1);
         const card = document.getElementById('dup-card-' + ticketId);
         if (card) {
             card.style.transition = 'all 0.3s ease';
@@ -816,6 +1051,12 @@ async function rejectDuplicate(ticketId) {
             setTimeout(() => card.remove(), 300);
         }
         await loadNotifications();
+        if (_activeNotifPanel === 'duplicate') {
+            _renderDuplicatePanelLayout(document.getElementById('notifPanel'));
+            if (duplicatePanelTickets.length < duplicatePanelTotalCount) {
+                void loadMoreDuplicateTickets();
+            }
+        }
     } catch (e) { showToast('Network error', 'error'); }
 }
 
@@ -979,6 +1220,166 @@ async function _renderDuplicatePanel(panel) {
             <div class="notif-panel-header">
                 <h3>⚠️ Duplicate Tickets</h3>
                 <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
+            </div>
+            <div class="empty-notif">Failed to load duplicates</div>
+        </div>`;
+    }
+}
+
+function _renderDuplicateCardsHtmlV2(dups) {
+    return dups.map((dup) => {
+        const orig = dup.original_ticket;
+        const dupNames = (dup.passenger_names || []).join(', ') || 'Unknown';
+        const origNames = orig ? (orig.passenger_names || []).join(', ') || 'Unknown' : '-';
+        const dupRoute = dup.route || '-';
+        const origRoute = orig ? (orig.route || '-') : '-';
+        const timeAgo = _timeAgo(dup.created_at);
+
+        return `<div class="notif-card" id="dup-card-${dup.id}">
+            <div class="notif-card-header">
+                <div style="display:flex;gap:0.8rem;align-items:flex-start;">
+                    <label style="display:flex;align-items:center;margin-top:0.2rem;">
+                        <input type="checkbox" class="duplicate-review-checkbox" value="${dup.id}" checked>
+                    </label>
+                    <div>
+                        <div style="font-weight:800;font-size:0.95rem;">PNR ${dup.pnr || '-'} <span style="font-size:0.76rem;font-weight:500;color:var(--text-secondary);">· ${timeAgo}</span></div>
+                        <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.15rem;">${dupRoute} · ${dupNames}</div>
+                    </div>
+                </div>
+                <span style="background:rgba(245,158,11,0.12);color:#d97706;padding:0.15rem 0.45rem;border-radius:999px;font-size:0.7rem;font-weight:700;">Suspected Duplicate</span>
+            </div>
+            ${orig ? `<div class="dup-compare">
+                <div class="dup-side">
+                    <div class="label">Original Ticket</div>
+                    <div style="font-weight:700;">${origNames}</div>
+                    <div style="color:var(--text-secondary);font-size:0.78rem;">${origRoute}</div>
+                    <div style="color:var(--text-secondary);font-size:0.75rem;">${formatCurrency(orig.grand_total, orig.currency || 'INR')}</div>
+                </div>
+                <div class="vs">VS</div>
+                <div class="dup-side">
+                    <div class="label">New (Duplicate)</div>
+                    <div style="font-weight:700;">${dupNames}</div>
+                    <div style="color:var(--text-secondary);font-size:0.78rem;">${dupRoute}</div>
+                    <div style="color:var(--text-secondary);font-size:0.75rem;">${formatCurrency(dup.grand_total, dup.currency || 'INR')}</div>
+                </div>
+            </div>` : ''}
+            <div class="notif-card-actions">
+                <button class="notif-btn approve" onclick="approveDuplicate('${dup.id}')">Approve & Add</button>
+                <button class="notif-btn reject" onclick="rejectDuplicate('${dup.id}')">Reject</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function _renderDuplicatePanelLayout(panel) {
+    if (!duplicatePanelTickets.length) {
+        panel.innerHTML = `<div class="notif-panel">
+            <div class="notif-panel-header">
+                <h3>Duplicate Tickets</h3>
+                <button class="close-btn" onclick="_closeNotifPanel()">×</button>
+            </div>
+            <div class="empty-notif">
+                <div style="font-size:2rem;margin-bottom:0.5rem;">✓</div>
+                No pending duplicate tickets
+            </div>
+        </div>`;
+        return;
+    }
+
+    panel.innerHTML = `<div class="notif-panel">
+        <div class="notif-panel-header">
+            <h3>Duplicate Tickets <span id="duplicatePanelTotal" style="font-size:0.8rem;font-weight:600;color:var(--text-secondary);">(${duplicatePanelTotalCount})</span></h3>
+            <button class="close-btn" onclick="_closeNotifPanel()">×</button>
+        </div>
+        <div style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;align-items:center;margin-bottom:0.85rem;padding:0.85rem 1rem;border-radius:12px;border:1px solid var(--border);background:var(--bg-main);">
+            <div id="duplicatePanelSummary" style="font-size:0.84rem;color:var(--text-secondary);font-weight:600;">Showing ${duplicatePanelTickets.length} of ${duplicatePanelTotalCount} duplicate tickets.</div>
+            <div style="display:flex;gap:0.55rem;flex-wrap:wrap;">
+                <button class="btn-action secondary" onclick="toggleDuplicateSelection(true)">Select All</button>
+                <button class="btn-action secondary" onclick="toggleDuplicateSelection(false)">Clear</button>
+                <button class="btn-action secondary" style="border-color:rgba(239,68,68,0.35);color:#dc2626;" onclick="rejectSelectedDuplicates()">Reject Selected</button>
+                <button class="btn-action primary" onclick="approveSelectedDuplicates()">Approve Selected</button>
+            </div>
+        </div>
+        <div id="duplicateListBody" style="max-height:50vh;overflow-y:auto;">${_renderDuplicateCardsHtmlV2(duplicatePanelTickets)}</div>
+    </div>`;
+}
+
+function _updateDuplicatePanelMeta() {
+    const totalEl = document.getElementById('duplicatePanelTotal');
+    if (totalEl) totalEl.textContent = `(${duplicatePanelTotalCount})`;
+    const summaryEl = document.getElementById('duplicatePanelSummary');
+    if (summaryEl) summaryEl.textContent = `Showing ${duplicatePanelTickets.length} of ${duplicatePanelTotalCount} duplicate tickets.`;
+}
+
+async function loadDuplicateTicketsPage(offset = 0) {
+    const params = new URLSearchParams({
+        limit: String(DUPLICATES_BATCH_SIZE),
+        offset: String(offset)
+    });
+    const r = await fetch(`/api/tickets/duplicates?${params.toString()}`);
+    if (!r.ok) throw new Error('Failed to load duplicates');
+    return r.json();
+}
+
+async function loadMoreDuplicateTickets() {
+    if (duplicatePanelIsLoadingMore || duplicatePanelTickets.length >= duplicatePanelTotalCount) return;
+    duplicatePanelIsLoadingMore = true;
+    try {
+        while (_activeNotifPanel === 'duplicate' && duplicatePanelTickets.length < duplicatePanelTotalCount) {
+            const previousCount = duplicatePanelTickets.length;
+            const data = await loadDuplicateTicketsPage(duplicatePanelTickets.length);
+            duplicatePanelTickets = mergeTicketLists(duplicatePanelTickets, data.duplicates || []);
+            duplicatePanelTotalCount = Number(data.total_count || duplicatePanelTickets.length);
+            const panel = document.getElementById('notifPanel');
+            if (panel && _activeNotifPanel === 'duplicate') {
+                const body = document.getElementById('duplicateListBody');
+                if (body && previousCount > 0) {
+                    const newItems = duplicatePanelTickets.slice(previousCount);
+                    if (newItems.length) {
+                        body.insertAdjacentHTML('beforeend', _renderDuplicateCardsHtmlV2(newItems));
+                    }
+                    _updateDuplicatePanelMeta();
+                } else {
+                    _renderDuplicatePanelLayout(panel);
+                }
+            } else {
+                break;
+            }
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('Failed to load more duplicates', 'error');
+    } finally {
+        duplicatePanelIsLoadingMore = false;
+    }
+}
+
+async function _renderDuplicatePanel(panel) {
+    duplicatePanelTickets = [];
+    duplicatePanelTotalCount = 0;
+    duplicatePanelIsLoadingMore = false;
+    panel.innerHTML = `<div class="notif-panel">
+        <div class="notif-panel-header">
+            <h3>Duplicate Tickets</h3>
+            <button class="close-btn" onclick="_closeNotifPanel()">×</button>
+        </div>
+        <div class="empty-notif">Loading recent duplicates...</div>
+    </div>`;
+
+    try {
+        const data = await loadDuplicateTicketsPage(0);
+        duplicatePanelTickets = data.duplicates || [];
+        duplicatePanelTotalCount = Number(data.total_count || duplicatePanelTickets.length);
+        _renderDuplicatePanelLayout(panel);
+        if (data.has_more) {
+            void loadMoreDuplicateTickets();
+        }
+    } catch (e) {
+        console.error(e);
+        panel.innerHTML = `<div class="notif-panel">
+            <div class="notif-panel-header">
+                <h3>Duplicate Tickets</h3>
+                <button class="close-btn" onclick="_closeNotifPanel()">×</button>
             </div>
             <div class="empty-notif">Failed to load duplicates</div>
         </div>`;
@@ -1590,17 +1991,8 @@ function renderSegmentsSection() {
                 </div>`;
             }
 
-            let bkClassStr = '';
-            const bc = seg.booking_class;
-            if (typeof bc === 'object' && bc !== null) {
-                bkClassStr = bc.full_form || bc.cabin || '';
-            } else if (typeof bc === 'string' && bc.trim() !== '') {
-                bkClassStr = bc.trim();
-            }
-            if (bkClassStr.toUpperCase() === 'N/A') {
-                bkClassStr = '';
-            }
-            const showCabinClass = !!seg.show_booking_class && !!bkClassStr;
+            const bkClassStr = getSegmentBookingClassValue(seg);
+            const showCabinClass = !!bkClassStr;
             const segmentCardClass = showCabinClass ? 'segment-card-v2 has-cabin-class' : 'segment-card-v2';
             const depDateTimeClass = showCabinClass ? 'tl-datetime has-cabin-class' : 'tl-datetime';
             const arrDateTimeClass = showCabinClass ? 'tl-datetime has-cabin-class' : 'tl-datetime';
@@ -1874,7 +2266,6 @@ function getNormalizedFareState() {
     const journey = editedData.journey || {};
     const fareDisplayMode = journey.fare_display || (passengers.length <= 1 ? 'per_passenger' : 'consolidated');
     const passengerCount = passengers.length || 1;
-    const globalMarkup = parseMoneyValue(journey.global_markup);
     const fallbackGrandTotal = parseMoneyValue(editedData.grand_total);
     if (!editedData.journey) editedData.journey = {};
     if (!editedData.journey.consolidated_fare) {
@@ -1907,6 +2298,13 @@ function getNormalizedFareState() {
     const useConsolidatedSource = fareDisplayMode === 'consolidated'
         ? (fareFieldsTouched || hasRawConsolidatedFare)
         : (!fareFieldsTouched && hasRawConsolidatedFare);
+    const canInferMarkupFromGrandTotal = hasRawConsolidatedFare && fallbackGrandTotal > 0;
+    const inferredMarkupTotal = canInferMarkupFromGrandTotal
+        ? Math.max(fallbackGrandTotal - (rawConsolidatedTotals.base + rawConsolidatedTotals.k3 + rawConsolidatedTotals.other), 0)
+        : 0;
+    const globalMarkup = (!fareFieldsTouched && canInferMarkupFromGrandTotal)
+        ? inferredMarkupTotal / passengerCount
+        : parseMoneyValue(journey.global_markup);
     let hasConsolidatedFare = useConsolidatedSource;
     let consolidatedTotals = useConsolidatedSource ? rawConsolidatedTotals : passengerTotals;
 
@@ -2501,16 +2899,7 @@ function editSegment(idx) {
     const seg = editedData.segments[idx];
     const dep = seg.departure || {};
     const arr = seg.arrival || {};
-    let selectedCabinClass = '';
-    const bc = seg.booking_class;
-    if (typeof bc === 'object' && bc !== null) {
-        selectedCabinClass = bc.full_form || bc.cabin || bc.letter || '';
-    } else if (typeof bc === 'string') {
-        selectedCabinClass = bc.trim();
-    }
-    if (!seg.show_booking_class) {
-        selectedCabinClass = '';
-    }
+    let selectedCabinClass = getSegmentBookingClassValue(seg);
     const cabinOptions = ['', 'Economy', 'Premium Economy', 'Business', 'First'];
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
@@ -3570,10 +3959,15 @@ async function _executeCancel(selectedPax, isFullCancel, perPersonFares, sectorI
 // ==================== INIT ====================
 document.addEventListener('DOMContentLoaded', async () => {
     initializeSidebar();
-    await checkAuth();
+    const isAuthenticated = await checkAuth();
+    if (!isAuthenticated) return;
+    setTicketsLoadingState('Loading recent tickets...');
     await loadNotifications();
-    await loadTickets();
-    startTicketsPolling();
+    await loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, showLoading: true });
+    if (!startTicketsRealtime()) {
+        startTicketsPolling();
+    }
+    void syncAllTicketsInBackground();
 
     const detailView = document.getElementById('detailView');
     if (detailView) {
@@ -3583,6 +3977,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 triggerAutoSave();
             }
         });
+    }
+});
+
+window.addEventListener('beforeunload', () => {
+    if (ticketsEventSource) {
+        ticketsEventSource.close();
+        ticketsEventSource = null;
     }
 });
 

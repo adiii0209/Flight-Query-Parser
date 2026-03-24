@@ -10,7 +10,7 @@ import base64
 import io
 import subprocess
 import sys
-from flask import Flask, request, jsonify, render_template, render_template_string, session, redirect, url_for, send_file, send_from_directory
+from flask import Flask, request, jsonify, render_template, render_template_string, session, redirect, url_for, send_file, send_from_directory, Response, stream_with_context
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
@@ -115,6 +115,8 @@ _ticket_processing_batches = {}
 _ticket_processing_lock = threading.Lock()
 _TICKET_PROCESSING_TTL_SECONDS = 60 * 45
 _TICKET_PROCESSING_MIN_VISIBLE_SECONDS = 6
+_ticket_dashboard_streams = {}
+_ticket_dashboard_streams_lock = threading.Lock()
 
 # Register API v2 Blueprint
 # Register API v2 Blueprint
@@ -578,6 +580,40 @@ def _get_user_ticket_processing_batches(user_id):
             batches.append(batch_copy)
     batches.sort(key=lambda item: item.get("created_at_ts", 0), reverse=True)
     return batches
+
+
+def _ticket_notifications_payload(user_id):
+    merge_groups = _build_pnr_merge_groups(user_id)
+    pending_merges = [g for g in merge_groups if g["merged_ticket_count"] < g["ticket_count"]]
+    dup_count = Ticket.query.filter_by(
+        user_id=user_id,
+        duplicate_status="pending"
+    ).count()
+    processing_batches = _get_user_ticket_processing_batches(user_id)
+    return {
+        "merge_count": len(pending_merges),
+        "merge_groups": pending_merges,
+        "duplicate_count": dup_count,
+        "processing_count": sum(int(batch.get("display_count", batch.get("pending_count", 0))) for batch in processing_batches),
+        "processing_batches": processing_batches,
+    }
+
+
+def _publish_ticket_dashboard_event(user_id, event_type="dashboard_refresh", **payload):
+    if not user_id:
+        return
+    event_payload = {
+        "event": event_type,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        **payload,
+    }
+    with _ticket_dashboard_streams_lock:
+        listeners = list(_ticket_dashboard_streams.get(user_id) or [])
+    for listener in listeners:
+        try:
+            listener.put_nowait(event_payload)
+        except queue.Full:
+            continue
 
 
 def _build_render_request(payload):
@@ -1257,6 +1293,14 @@ def _segments_with_barcodes(ticket, passengers, segments, raw):
     enriched_segments = []
     for segment_index, segment in enumerate(segments or []):
         segment_copy = _clone_json(segment)
+        preferred_duration = (
+            segment_copy.get("duration_calculated")
+            or segment_copy.get("duration_extracted")
+            or segment_copy.get("duration")
+        )
+        if preferred_duration:
+            segment_copy["duration_calculated"] = preferred_duration
+            segment_copy["duration"] = preferred_duration
         barcode_data = _build_segment_bcbp_data(ticket, passengers or [], raw or {}, segment_copy, segment_index)
         if barcode_data:
             segment_copy["barcode_data"] = barcode_data
@@ -2697,20 +2741,67 @@ def receive_ticket():
         if not user:
             return jsonify({"error": "No users found in system"}), 400
 
-        # Calculate grand_total from passengers if available to ensure it's not just basic fare
-        calculated_grand_total = 0
-        pax_fares_found = False
-        for p in passengers:
-            f = p.get("fare") or {}
-            total = f.get("total_fare")
-            if total:
-                try:
-                    calculated_grand_total += float(str(total).replace(',', ''))
-                    pax_fares_found = True
-                except ValueError:
-                    pass
-        
-        final_grand_total = calculated_grand_total if pax_fares_found else booking.get("grand_total", 0)
+        passenger_count = len(passengers) or 1
+        consolidated_fare = journey.get("consolidated_fare") if isinstance(journey, dict) else None
+        if not isinstance(consolidated_fare, dict):
+            duplicated_consolidated_candidate = None
+            duplicated_rows = []
+            for passenger in passengers:
+                fare = passenger.get("fare") or {}
+                duplicated_rows.append({
+                    "base_fare": _round_money(parseFloat(fare.get("base_fare", 0))),
+                    "k3_gst": _round_money(parseFloat(fare.get("k3_gst", 0))),
+                    "other_taxes": _round_money(parseFloat(fare.get("other_taxes", 0))),
+                    "total_fare": _round_money(parseFloat(fare.get("total_fare", 0))),
+                })
+            non_zero_rows = [
+                row for row in duplicated_rows
+                if row["base_fare"] or row["k3_gst"] or row["other_taxes"] or row["total_fare"]
+            ]
+            if len(non_zero_rows) > 1:
+                first_row = non_zero_rows[0]
+                all_identical = all(row == first_row for row in non_zero_rows[1:])
+                if all_identical:
+                    duplicated_consolidated_candidate = {
+                        "base_fare": first_row["base_fare"],
+                        "k3_gst": first_row["k3_gst"],
+                        "other_taxes": first_row["other_taxes"],
+                    }
+            if duplicated_consolidated_candidate:
+                journey["consolidated_fare"] = duplicated_consolidated_candidate
+                consolidated_fare = duplicated_consolidated_candidate
+
+        consolidated_components_total = 0.0
+        if isinstance(consolidated_fare, dict):
+            consolidated_components_total = (
+                parseFloat(consolidated_fare.get("base_fare", 0)) +
+                parseFloat(consolidated_fare.get("k3_gst", 0)) +
+                parseFloat(consolidated_fare.get("other_taxes", 0))
+            )
+
+        received_grand_total = parseFloat(booking.get("grand_total", 0))
+        if received_grand_total <= 0 and consolidated_components_total > 0:
+            received_grand_total = consolidated_components_total + parseFloat(journey.get("global_markup", 0))
+
+        if received_grand_total > 0:
+            final_grand_total = received_grand_total
+        else:
+            calculated_grand_total = 0
+            pax_fares_found = False
+            for p in passengers:
+                f = p.get("fare") or {}
+                total = f.get("total_fare")
+                if total:
+                    try:
+                        calculated_grand_total += float(str(total).replace(',', ''))
+                        pax_fares_found = True
+                    except ValueError:
+                        pass
+            final_grand_total = calculated_grand_total if pax_fares_found else 0
+
+        if consolidated_components_total > 0 and final_grand_total > 0:
+            inferred_markup_total = max(final_grand_total - consolidated_components_total, 0.0)
+            journey["global_markup"] = _round_money(inferred_markup_total / passenger_count) if passenger_count else 0.0
 
         # Compute uniform class
         uni_c = set()
@@ -2823,7 +2914,15 @@ def receive_ticket():
 
         db.session.add(ticket)
         db.session.commit()
-        _mark_ticket_processing_received(user.id, processing_batch_id)
+        if processing_batch_id:
+            _mark_ticket_processing_received(user.id, processing_batch_id)
+        _publish_ticket_dashboard_event(
+            user.id,
+            event_type="ticket_created",
+            ticket_id=ticket.id,
+            batch_id=processing_batch_id or None,
+            notifications=_ticket_notifications_payload(user.id),
+        )
 
         return jsonify({
             "status": "accepted",
@@ -2870,6 +2969,12 @@ def notify_ticket_processing():
 
     batches = _get_user_ticket_processing_batches(user_id)
     processing_count = sum(int(batch.get("display_count", batch.get("pending_count", 0))) for batch in batches)
+    _publish_ticket_dashboard_event(
+        user_id,
+        event_type="processing_batch_started",
+        batch_id=batch_id,
+        notifications=_ticket_notifications_payload(user_id),
+    )
     return jsonify({
         "status": "accepted",
         "user_id": user_id,
@@ -2883,26 +2988,45 @@ def notify_ticket_processing():
 def get_ticket_notifications():
     """Return notification counts for PNR merge groups and pending duplicates."""
     user_id = session["user_id"]
+    return jsonify(_ticket_notifications_payload(user_id))
 
-    # PNR merge groups (existing logic)
-    merge_groups = _build_pnr_merge_groups(user_id)
-    # Only count groups that have NOT been fully merged yet
-    pending_merges = [g for g in merge_groups if g["merged_ticket_count"] < g["ticket_count"]]
 
-    # Pending duplicates
-    dup_count = Ticket.query.filter_by(
-        user_id=user_id,
-        duplicate_status="pending"
-    ).count()
-    processing_batches = _get_user_ticket_processing_batches(user_id)
+@app.route("/api/tickets/stream", methods=["GET"])
+@login_required
+def tickets_stream():
+    """Stream dashboard updates to the browser so the page doesn't need tight polling."""
+    user_id = session["user_id"]
+    listener = queue.Queue(maxsize=32)
+    with _ticket_dashboard_streams_lock:
+        _ticket_dashboard_streams.setdefault(user_id, []).append(listener)
 
-    return jsonify({
-        "merge_count": len(pending_merges),
-        "merge_groups": pending_merges,
-        "duplicate_count": dup_count,
-        "processing_count": sum(int(batch.get("display_count", batch.get("pending_count", 0))) for batch in processing_batches),
-        "processing_batches": processing_batches,
-    })
+    def event_generator():
+        initial_payload = {
+            "event": "connected",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "notifications": _ticket_notifications_payload(user_id),
+        }
+        yield f"data: {json.dumps(initial_payload)}\n\n"
+        try:
+            while True:
+                try:
+                    payload = listener.get(timeout=20)
+                    yield f"data: {json.dumps(payload)}\n\n"
+                except queue.Empty:
+                    yield "event: ping\ndata: {}\n\n"
+        finally:
+            with _ticket_dashboard_streams_lock:
+                listeners = _ticket_dashboard_streams.get(user_id) or []
+                if listener in listeners:
+                    listeners.remove(listener)
+                if not listeners and user_id in _ticket_dashboard_streams:
+                    _ticket_dashboard_streams.pop(user_id, None)
+
+    response = Response(stream_with_context(event_generator()), mimetype="text/event-stream")
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+    response.headers["Connection"] = "keep-alive"
+    return response
 
 
 @app.route("/api/tickets/duplicates", methods=["GET"])
@@ -2910,10 +3034,25 @@ def get_ticket_notifications():
 def get_pending_duplicates():
     """List all pending duplicate tickets with their original ticket info."""
     user_id = session["user_id"]
-    pending = Ticket.query.filter_by(
+    query = Ticket.query.filter_by(
         user_id=user_id,
         duplicate_status="pending"
-    ).order_by(Ticket.created_at.desc()).all()
+    ).order_by(Ticket.created_at.desc())
+
+    try:
+        limit = max(int(request.args.get("limit", 0) or 0), 0)
+    except (TypeError, ValueError):
+        limit = 0
+    try:
+        offset = max(int(request.args.get("offset", 0) or 0), 0)
+    except (TypeError, ValueError):
+        offset = 0
+
+    total_count = query.count()
+    pending_query = query.offset(offset)
+    if limit:
+        pending_query = pending_query.limit(limit)
+    pending = pending_query.all()
 
     result = []
     for dup_ticket in pending:
@@ -2963,7 +3102,14 @@ def get_pending_duplicates():
 
         result.append(dup_data)
 
-    return jsonify({"duplicates": result})
+    returned_count = len(result)
+    return jsonify({
+        "duplicates": result,
+        "total_count": total_count,
+        "offset": offset,
+        "returned_count": returned_count,
+        "has_more": (offset + returned_count) < total_count,
+    })
 
 
 @app.route("/api/tickets/<ticket_id>/approve-duplicate", methods=["POST"])
@@ -2978,6 +3124,12 @@ def approve_duplicate(ticket_id):
 
     ticket.duplicate_status = "approved"
     db.session.commit()
+    _publish_ticket_dashboard_event(
+        session["user_id"],
+        event_type="duplicate_approved",
+        ticket_id=ticket.id,
+        notifications=_ticket_notifications_payload(session["user_id"]),
+    )
     return jsonify({"message": "Duplicate approved. Ticket is now on the dashboard.", "ticket_id": ticket.id})
 
 
@@ -2993,6 +3145,12 @@ def reject_duplicate(ticket_id):
 
     ticket.duplicate_status = "rejected"
     db.session.commit()
+    _publish_ticket_dashboard_event(
+        session["user_id"],
+        event_type="duplicate_rejected",
+        ticket_id=ticket.id,
+        notifications=_ticket_notifications_payload(session["user_id"]),
+    )
     return jsonify({"message": "Duplicate rejected and hidden.", "ticket_id": ticket.id})
 
 
@@ -3181,6 +3339,13 @@ def merge_pnr_group(pnr):
         ticket.booking_group_id = booking_group.id
 
     db.session.commit()
+    _publish_ticket_dashboard_event(
+        session["user_id"],
+        event_type="booking_group_merged",
+        pnr=normalized_pnr,
+        booking_group_id=booking_group.id,
+        notifications=_ticket_notifications_payload(session["user_id"]),
+    )
     return jsonify({
         "message": f"Merged {len(selected_tickets)} tickets under PNR {normalized_pnr}.",
         "booking_group_id": booking_group.id,
@@ -3217,6 +3382,12 @@ def delete_pnr_group_tickets(pnr):
         db.session.commit()
         for agg_id in agg_ids:
             _recalc_running_balance(agg_id, session["user_id"])
+        _publish_ticket_dashboard_event(
+            session["user_id"],
+            event_type="booking_group_deleted",
+            pnr=normalized_pnr,
+            notifications=_ticket_notifications_payload(session["user_id"]),
+        )
         return jsonify({"message": f"Deleted {deleted_count} ticket{'' if deleted_count == 1 else 's'} from PNR {normalized_pnr}."})
     except Exception as e:
         db.session.rollback()
@@ -3227,10 +3398,25 @@ def delete_pnr_group_tickets(pnr):
 def get_tickets():
     """Get all tickets for the logged-in user"""
     from sqlalchemy import or_
-    tickets = Ticket.query.filter(
+    query = Ticket.query.filter(
         Ticket.user_id == session['user_id'],
         or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status == 'approved'),
-    ).order_by(Ticket.created_at.desc()).all()
+    ).order_by(Ticket.created_at.desc())
+
+    try:
+        limit = max(int(request.args.get("limit", 0) or 0), 0)
+    except (TypeError, ValueError):
+        limit = 0
+    try:
+        offset = max(int(request.args.get("offset", 0) or 0), 0)
+    except (TypeError, ValueError):
+        offset = 0
+
+    total_count = query.count()
+    tickets_query = query.offset(offset)
+    if limit:
+        tickets_query = tickets_query.limit(limit)
+    tickets = tickets_query.all()
     
     result = []
     seen_booking_groups = set()
@@ -3272,7 +3458,14 @@ def get_tickets():
         })
         result.append(payload)
     
-    return jsonify({"tickets": result})
+    returned_count = len(result)
+    return jsonify({
+        "tickets": result,
+        "total_count": total_count,
+        "offset": offset,
+        "returned_count": returned_count,
+        "has_more": (offset + returned_count) < total_count,
+    })
 
 
 @app.route("/api/tickets/<ticket_id>", methods=["GET"])
@@ -3376,6 +3569,13 @@ def update_ticket(ticket_id):
                 grouped_ticket.updated_at = datetime.utcnow()
 
             db.session.commit()
+            _publish_ticket_dashboard_event(
+                session["user_id"],
+                event_type="ticket_updated",
+                ticket_id=ticket.id,
+                booking_group_id=ticket.booking_group_id,
+                notifications=_ticket_notifications_payload(session["user_id"]),
+            )
             return jsonify({"message": "Merged booking updated successfully"})
         
         if 'pnr' in data:
@@ -3407,6 +3607,12 @@ def update_ticket(ticket_id):
         
         ticket.updated_at = datetime.utcnow()
         db.session.commit()
+        _publish_ticket_dashboard_event(
+            session["user_id"],
+            event_type="ticket_updated",
+            ticket_id=ticket.id,
+            notifications=_ticket_notifications_payload(session["user_id"]),
+        )
         
         return jsonify({"message": "Ticket updated successfully"})
     
@@ -3434,6 +3640,12 @@ def delete_ticket(ticket_id):
         db.session.commit()
         for agg_id in agg_ids:
             _recalc_running_balance(agg_id, session['user_id'])
+        _publish_ticket_dashboard_event(
+            session["user_id"],
+            event_type="ticket_deleted",
+            ticket_id=ticket_id,
+            notifications=_ticket_notifications_payload(session["user_id"]),
+        )
         return jsonify({"message": message})
     except Exception as e:
         db.session.rollback()
