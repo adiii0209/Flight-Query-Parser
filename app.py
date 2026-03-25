@@ -1326,13 +1326,6 @@ def _build_segment_bcbp_data(ticket, passengers, raw, segment, segment_index):
         f"{sequence_value}"
         f"{status}"
     )
-    app.logger.info(
-        "BCBP segment=%s ticket=%s value=%r length=%s",
-        segment_index,
-        getattr(ticket, "id", ""),
-        bcbp_string,
-        len(bcbp_string),
-    )
     return bcbp_string
 
 

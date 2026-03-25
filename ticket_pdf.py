@@ -372,7 +372,7 @@ def draw_ticket(c, data, include_fare=True):
     SEG_HEADER_H = 16   # airline strip height
     SEG_BODY_H   = 66 if compact_single_page else 72   # tighter flight block while preserving text spacing
     SEG_H        = SEG_HEADER_H + SEG_BODY_H
-    LAY_H        = 14 if compact_single_page else 16
+    LAY_H        = 0
     LLEG_H       = 16
     LEG_G        = 2 if compact_single_page else 4
 
@@ -393,8 +393,6 @@ def draw_ticket(c, data, include_fare=True):
                 needed_h += LEG_G
             if leg_label_pending:
                 needed_h += LLEG_H
-            if si > 0:
-                needed_h += LAY_H
             if fy - needed_h < PAGE_BOTTOM_LIMIT:
                 T = fy
                 _start_continuation_page()
@@ -412,35 +410,7 @@ def draw_ticket(c, data, include_fare=True):
 
             # ── layover strip ───────────────────────────────────────────────
             if si > 0:
-                lay_city = (_t(seg.get("departure", {}).get("city")) or
-                            _t(seg.get("departure", {}).get("airport")))
-                lay_dur  = _t(seg.get("layover") or seg.get("layover_duration"))
-                
-                if not lay_dur and isinstance(journey.get("layovers"), list):
-                    for lo in journey["layovers"]:
-                        if isinstance(lo, dict) and lo.get("after_segment") == global_seg_idx - 1:
-                            lay_dur = _t(lo.get("duration"))
-                            break
-
-                parts = []
-                if lay_dur:  parts.append(lay_dur)
-                parts.append("Layover")
-                if lay_city: parts.append(f"in {lay_city}")
-                lay_text = " ".join(parts)
-
-                tw = c.stringWidth(lay_text, "Times-Roman", 6.5)
-                lay_y = fy - LAY_H / 2
-                c.saveState()
-                c.setStrokeColor(ACCENT)
-                c.setLineWidth(0.5)
-                c.setDash(2, 2)
-                _hline(c, CX - tw/2 - 18, lay_y, 14, ACCENT, 0.5)
-                _hline(c, CX + tw/2 + 4,  lay_y, 14, ACCENT, 0.5)
-                c.restoreState()
-
-                _txt(c, CX, lay_y - 1.1, lay_text,
-                     "Times-Roman", 6.5, ACCENT, "center")
-                fy -= LAY_H
+                pass
 
             # ── airline header strip ────────────────────────────────────────
             _rect(c, M + 1, fy - SEG_HEADER_H, IW - 2, SEG_HEADER_H,
@@ -561,6 +531,48 @@ def draw_ticket(c, data, include_fare=True):
             if a_date:
                 tw_ad = c.stringWidth(a_date, "Times-Roman", 7)
                 _txt(c, right_x - tw_ad, date_y, a_date, size=7, col=INK)
+
+            if si < len(leg) - 1:
+                next_seg = leg[si + 1] or {}
+                lay_city = (_t(next_seg.get("departure", {}).get("city")) or
+                            _t(next_seg.get("departure", {}).get("airport")))
+                lay_dur = _t(next_seg.get("layover") or next_seg.get("layover_duration"))
+                if not lay_dur and isinstance(journey.get("layovers"), list):
+                    for lo in journey["layovers"]:
+                        if isinstance(lo, dict) and lo.get("after_segment") == global_seg_idx:
+                            lay_dur = _t(lo.get("duration"))
+                            break
+
+                parts = []
+                if lay_dur:
+                    parts.append(lay_dur)
+                parts.append("Layover")
+                if lay_city:
+                    parts.append(f"in {lay_city}")
+                lay_text = " ".join(parts)
+                if lay_text:
+                    lay_font = 6.5
+                    icon_path = os.path.join(_DIR, "icons", "aircraft.png")
+                    icon_gap = 5
+                    text_w = c.stringWidth(lay_text, "Times-Roman", lay_font)
+                    icon_w =10
+                    icon_h =10
+                    total_w = text_w + (icon_w + icon_gap if os.path.isfile(icon_path) else 0)
+                    start_x = CX - (total_w / 2)
+                    if os.path.isfile(icon_path):
+                        try:
+                            c.drawImage(
+                                ImageReader(icon_path),
+                                start_x,
+                                date_y - 0.7,
+                                width=icon_w,
+                                height=icon_h,
+                                mask="auto",
+                            )
+                            start_x += icon_w + icon_gap
+                        except Exception:
+                            pass
+                    _txt(c, start_x, date_y, lay_text, "Times-Roman", lay_font, ACCENT)
 
             c.saveState()
             c.setStrokeColor(SEP)
