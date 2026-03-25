@@ -1082,6 +1082,48 @@ def _clone_json(value):
     return json.loads(json.dumps(value))
 
 
+_MISSING = object()
+
+
+def _merge_concurrent_value(current, base, incoming):
+    if incoming is _MISSING:
+        return _clone_json(current)
+    if base is _MISSING:
+        return _clone_json(incoming)
+
+    if isinstance(current, dict) and isinstance(base, dict) and isinstance(incoming, dict):
+        merged = {}
+        for key in set(current.keys()) | set(base.keys()) | set(incoming.keys()):
+            merged[key] = _merge_concurrent_value(
+                current.get(key, _MISSING),
+                base.get(key, _MISSING),
+                incoming.get(key, _MISSING),
+            )
+        return merged
+
+    if isinstance(current, list) and isinstance(base, list) and isinstance(incoming, list):
+        if len(current) == len(base) == len(incoming):
+            return [
+                _merge_concurrent_value(
+                    current[idx] if idx < len(current) else _MISSING,
+                    base[idx] if idx < len(base) else _MISSING,
+                    incoming[idx] if idx < len(incoming) else _MISSING,
+                )
+                for idx in range(len(incoming))
+            ]
+        if incoming == base:
+            return _clone_json(current)
+        if current == base:
+            return _clone_json(incoming)
+        return _clone_json(incoming)
+
+    if incoming == base:
+        return _clone_json(current)
+    if current == base:
+        return _clone_json(incoming)
+    return _clone_json(incoming)
+
+
 def _generate_internal_ticket_number():
     return f"SYS-{datetime.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
 
@@ -3521,6 +3563,7 @@ def update_ticket(ticket_id):
             return jsonify({"error": "Ticket not found"}), 404
         
         data = request.get_json()
+        base_snapshot = data.get("_edit_base_snapshot") or {}
         if data.get("is_merged_view") and ticket.booking_group_id and ticket.booking_group:
             grouped_tickets = _booking_group_sorted_tickets(ticket.booking_group)
             passengers_by_ticket = {}
@@ -3590,33 +3633,38 @@ def update_ticket(ticket_id):
                 booking_group_id=ticket.booking_group_id,
             )
             return jsonify({"message": "Merged booking updated successfully"})
-        
+
+        current_snapshot = _ticket_dict_with_children(ticket)
+
         if 'pnr' in data:
-            ticket.pnr = data['pnr']
+            ticket.pnr = _merge_concurrent_value(current_snapshot.get('pnr'), base_snapshot.get('pnr', _MISSING), data['pnr'])
         if 'booking_date' in data:
-            ticket.booking_date = data['booking_date']
+            ticket.booking_date = _merge_concurrent_value(current_snapshot.get('booking_date'), base_snapshot.get('booking_date', _MISSING), data['booking_date'])
         if 'phone' in data:
-            ticket.phone = data['phone']
+            ticket.phone = _merge_concurrent_value(current_snapshot.get('phone'), base_snapshot.get('phone', _MISSING), data['phone'])
         if 'currency' in data:
-            ticket.currency = data['currency']
+            ticket.currency = _merge_concurrent_value(current_snapshot.get('currency'), base_snapshot.get('currency', _MISSING), data['currency'])
         if 'grand_total' in data:
-            ticket.grand_total = data['grand_total']
+            ticket.grand_total = _merge_concurrent_value(current_snapshot.get('grand_total'), base_snapshot.get('grand_total', _MISSING), data['grand_total'])
         if 'class_of_travel' in data:
-            ticket.class_of_travel = data['class_of_travel']
+            ticket.class_of_travel = _merge_concurrent_value(current_snapshot.get('class_of_travel'), base_snapshot.get('class_of_travel', _MISSING), data['class_of_travel'])
         if 'trip_type' in data:
-            ticket.trip_type = data['trip_type']
+            ticket.trip_type = _merge_concurrent_value(current_snapshot.get('trip_type'), base_snapshot.get('trip_type', _MISSING), data['trip_type'])
         if 'passengers' in data:
-            passengers = data['passengers']
+            passengers = _merge_concurrent_value(current_snapshot.get('passengers', []), base_snapshot.get('passengers', _MISSING), data['passengers'])
             _ensure_passenger_internal_ids(passengers)
             ticket.passengers_data = json.dumps(passengers)
         if 'segments' in data:
-            ticket.segments_data = json.dumps(data['segments'])
+            segments = _merge_concurrent_value(current_snapshot.get('segments', []), base_snapshot.get('segments', _MISSING), data['segments'])
+            ticket.segments_data = json.dumps(segments)
         if 'journey' in data:
-            ticket.journey_data = json.dumps(data['journey'])
+            journey = _merge_concurrent_value(current_snapshot.get('journey', {}), base_snapshot.get('journey', _MISSING), data['journey'])
+            ticket.journey_data = json.dumps(journey)
         if 'raw_data' in data:
-            ticket.raw_data = json.dumps(data['raw_data'])
+            raw_data = _merge_concurrent_value(current_snapshot.get('raw_data', {}), base_snapshot.get('raw_data', _MISSING), data['raw_data'])
+            ticket.raw_data = json.dumps(raw_data)
         if 'status' in data:
-            ticket.status = data['status']
+            ticket.status = _merge_concurrent_value(current_snapshot.get('status'), base_snapshot.get('status', _MISSING), data['status'])
         
         ticket.updated_at = datetime.utcnow()
         db.session.commit()

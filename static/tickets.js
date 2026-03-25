@@ -22,6 +22,9 @@ let lastFullTicketsSyncAt = 0;
 let fullTicketsSyncPromise = null;
 let ticketsEventSource = null;
 let realtimeRefreshHandle = null;
+let isSaveInFlight = false;
+let suppressRealtimeUntil = 0;
+let ticketEditBaseSnapshot = null;
 let duplicatePanelTickets = [];
 let duplicatePanelTotalCount = 0;
 let duplicatePanelIsLoadingMore = false;
@@ -233,8 +236,9 @@ function normalizeTicketFareData(ticket) {
     const normalized = JSON.parse(JSON.stringify(ticket));
     normalized.currency = safe(normalized.currency, 'INR');
     normalized.grand_total = parseMoneyValue(normalized.grand_total);
+    const persistedGrandTotal = normalized.grand_total;
     const rawBookingGrandTotal = parseMoneyValue((((normalized.raw_data || {}).booking || {}).grand_total));
-    if (rawBookingGrandTotal > 0) {
+    if (persistedGrandTotal <= 0 && rawBookingGrandTotal > 0) {
         normalized.grand_total = rawBookingGrandTotal;
     }
     if (normalized.journey) {
@@ -249,7 +253,7 @@ function normalizeTicketFareData(ticket) {
             normalized.journey.consolidated_fare.base_fare = parseMoneyValue(normalized.journey.consolidated_fare.base_fare);
             normalized.journey.consolidated_fare.k3_gst = parseMoneyValue(normalized.journey.consolidated_fare.k3_gst);
             normalized.journey.consolidated_fare.other_taxes = parseMoneyValue(normalized.journey.consolidated_fare.other_taxes);
-            if (normalized.grand_total > 0) {
+            if (normalized.grand_total > 0 && normalized.journey.global_markup <= 0) {
                 const consolidatedSubtotal =
                     normalized.journey.consolidated_fare.base_fare +
                     normalized.journey.consolidated_fare.k3_gst +
@@ -444,6 +448,10 @@ function cacheTicketDetail(ticket) {
     ticketDetailCache.set(normalized.id, normalized);
 }
 
+function setTicketEditBaseline(ticket) {
+    ticketEditBaseSnapshot = ticket ? JSON.parse(JSON.stringify(ticket)) : null;
+}
+
 function getCachedTicketDetail(id) {
     if (!id) return null;
     const fromMemory = ticketDetailCache.get(id);
@@ -549,7 +557,7 @@ async function syncAllTicketsInBackground() {
 }
 
 async function syncCurrentTicketFromServer() {
-    if (!currentTicket || isDetailDirty) return;
+    if (!currentTicket || isDetailDirty || isSaveInFlight || Date.now() < suppressRealtimeUntil) return;
     try {
         const r = await fetch('/api/tickets/' + currentTicket.id);
         if (!r.ok) return;
@@ -557,6 +565,7 @@ async function syncCurrentTicketFromServer() {
         cacheTicketDetail(currentTicket);
         editedData = JSON.parse(JSON.stringify(currentTicket));
         fareFieldsTouched = false;
+        setTicketEditBaseline(currentTicket);
         renderDetailView();
     } catch (e) {
         console.error('Failed to refresh current ticket', e);
@@ -569,7 +578,7 @@ function scheduleRealtimeRefresh(payload = {}) {
         _updateNotifBadges();
     }
     if (payload.ticket_id && currentTicket && currentTicket.id === payload.ticket_id) {
-        if (!isDetailDirty) {
+        if (!isDetailDirty && !isSaveInFlight && Date.now() >= suppressRealtimeUntil) {
             void syncCurrentTicketFromServer();
         }
     }
@@ -1146,6 +1155,7 @@ async function openTicket(id) {
             currentTicket = cachedTicket;
             fareFieldsTouched = false;
             editedData = JSON.parse(JSON.stringify(currentTicket));
+            setTicketEditBaseline(currentTicket);
             renderDetailView();
             showDetailView();
             void syncCurrentTicketFromServer();
@@ -1163,6 +1173,7 @@ async function openTicket(id) {
         cacheTicketDetail(currentTicket);
         fareFieldsTouched = false;
         editedData = JSON.parse(JSON.stringify(currentTicket));
+        setTicketEditBaseline(currentTicket);
         renderDetailView();
         showDetailView();
     } catch (e) { console.error(e); showToast('Error loading ticket', 'error'); }
@@ -3480,6 +3491,7 @@ function saveSegmentEdit(idx) {
 // ==================== SAVE & PDF ====================
 async function saveTicket(silent = false) {
     if (!currentTicket || !editedData) return;
+    isSaveInFlight = true;
     try {
         const payload = {
             is_merged_view: !!editedData.is_merged_view,
@@ -3494,7 +3506,8 @@ async function saveTicket(silent = false) {
             segments: editedData.segments,
             journey: editedData.journey,
             raw_data: editedData.raw_data,
-            status: editedData.status || 'unmatched'
+            status: editedData.status || 'unmatched',
+            _edit_base_snapshot: ticketEditBaseSnapshot
         };
         const r = await fetch('/api/tickets/' + currentTicket.id, {
             method: 'PUT',
@@ -3507,8 +3520,12 @@ async function saveTicket(silent = false) {
             return;
         }
         isDetailDirty = false;
+        suppressRealtimeUntil = Date.now() + 1500;
         if (!silent) showToast('Ticket saved successfully!', 'success');
         currentTicket = normalizeTicketFareData(JSON.parse(JSON.stringify(editedData)));
+        editedData = JSON.parse(JSON.stringify(currentTicket));
+        fareFieldsTouched = false;
+        setTicketEditBaseline(currentTicket);
         cacheTicketDetail(currentTicket);
 
         const idx = allTickets.findIndex(t => t.id === currentTicket.id);
@@ -3519,6 +3536,8 @@ async function saveTicket(silent = false) {
     } catch (e) {
         console.error(e);
         if (!silent) showToast('Save failed', 'error');
+    } finally {
+        isSaveInFlight = false;
     }
 }
 
@@ -3539,10 +3558,23 @@ function queueSave(silent = true) {
     return pendingSavePromise;
 }
 
+function isEditingFieldActive() {
+    const active = document.activeElement;
+    if (!active) return false;
+    const tag = (active.tagName || '').toUpperCase();
+    if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return false;
+    const detailView = document.getElementById('detailView');
+    return !!(detailView && detailView.contains(active));
+}
+
 function triggerAutoSave() {
     isDetailDirty = true;
     clearTimeout(autoSaveTimeout);
     autoSaveTimeout = setTimeout(() => {
+        if (isEditingFieldActive()) {
+            triggerAutoSave();
+            return;
+        }
         queueSave(true);
     }, 250);
 }
