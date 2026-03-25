@@ -18,6 +18,8 @@ let _lastProcessingCount = 0;
 let _processingIndicatorMode = 'idle';
 let _processingDoneTimeout = null;
 let _processingRefreshTimeout = null;
+let _processingJustCompleted = false;
+let _pendingArrivalToastMessage = '';
 let totalAvailableTickets = 0;
 let lastFullTicketsSyncAt = 0;
 let fullTicketsSyncPromise = null;
@@ -309,6 +311,14 @@ function getPaxLabel(type) {
     return 'Adult';
 }
 
+function _flushArrivalToastIfReady(force = false) {
+    if (!_pendingArrivalToastMessage) return;
+    if (!force && !_processingJustCompleted) return;
+    showToast(_pendingArrivalToastMessage, 'success');
+    _pendingArrivalToastMessage = '';
+    _processingJustCompleted = false;
+}
+
 function getSegmentDurationValue(segment) {
     if (!segment || typeof segment !== 'object') return '';
     if (segment.duration_calculated && segment.duration_calculated !== 'N/A') {
@@ -507,12 +517,13 @@ async function loadTickets(options = {}) {
                 const title = (firstTicket.passenger_names || []).filter(Boolean).slice(0, 2).join(', ')
                     || firstTicket.pnr
                     || 'New ticket';
-                showToast(
-                    newTickets.length === 1
-                        ? `New ticket received: ${title}`
-                        : `${newTickets.length} new tickets received`,
-                    'success'
-                );
+                _pendingArrivalToastMessage = newTickets.length === 1
+                    ? `New ticket received: ${title}`
+                    : `${newTickets.length} new tickets received`;
+                const activeProcessingTotal = Array.isArray(_notifData.processing_batches)
+                    ? _notifData.processing_batches.reduce((sum, batch) => sum + parseMoneyValue(batch.pending_count), 0)
+                    : parseMoneyValue(_notifData.processing_count);
+                _flushArrivalToastIfReady(activeProcessingTotal <= 0);
             }
         }
         if (limit > 0 || offset > 0) {
@@ -1205,17 +1216,22 @@ async function loadNotifications() {
     try {
         const r = await fetch('/api/tickets/notifications');
         if (!r.ok) return;
-        const previousProcessingCount = parseMoneyValue(_notifData.processing_count);
+        const previousActiveProcessingCount = Array.isArray(_notifData.processing_batches)
+            ? _notifData.processing_batches.reduce((sum, batch) => sum + parseMoneyValue(batch.pending_count), 0)
+            : parseMoneyValue(_notifData.processing_count);
         _notifData = await r.json();
-        const nextProcessingCount = parseMoneyValue(_notifData.processing_count);
-        if (nextProcessingCount > 0) {
+        const nextActiveProcessingCount = Array.isArray(_notifData.processing_batches)
+            ? _notifData.processing_batches.reduce((sum, batch) => sum + parseMoneyValue(batch.pending_count), 0)
+            : parseMoneyValue(_notifData.processing_count);
+        if (nextActiveProcessingCount > 0) {
             _processingIndicatorMode = 'processing';
             if (_processingDoneTimeout) {
                 clearTimeout(_processingDoneTimeout);
                 _processingDoneTimeout = null;
             }
-        } else if (previousProcessingCount > 0 && nextProcessingCount === 0) {
+        } else if (previousActiveProcessingCount > 0 && nextActiveProcessingCount === 0) {
             _processingIndicatorMode = 'done';
+            _processingJustCompleted = true;
             if (_processingDoneTimeout) clearTimeout(_processingDoneTimeout);
             _processingDoneTimeout = setTimeout(() => {
                 _processingIndicatorMode = 'idle';
@@ -1223,9 +1239,10 @@ async function loadNotifications() {
                 _updateNotifBadges();
             }, 3000);
         }
-        _lastProcessingCount = nextProcessingCount;
+        _lastProcessingCount = nextActiveProcessingCount;
         _updateNotifBadges();
         _scheduleProcessingRefresh();
+        _flushArrivalToastIfReady();
     } catch (e) { console.error('Failed to load notifications', e); }
 }
 
@@ -1292,17 +1309,20 @@ function _updateNotifBadges() {
 
     if (processingIndicator && processingCount && processingLabel) {
         const processingTotal = parseMoneyValue(_notifData.processing_count);
-        if (processingTotal > 0) {
+        const activeProcessingTotal = Array.isArray(_notifData.processing_batches)
+            ? _notifData.processing_batches.reduce((sum, batch) => sum + parseMoneyValue(batch.pending_count), 0)
+            : processingTotal;
+        if (activeProcessingTotal > 0) {
             processingIndicator.classList.remove('done');
-            processingCount.textContent = processingTotal;
+            processingCount.textContent = activeProcessingTotal;
             const activeBatchCount = (_notifData.processing_batches || []).length;
-            processingLabel.textContent = processingTotal === 1
+            processingLabel.textContent = activeProcessingTotal === 1
                 ? 'ticket processing'
                 : 'tickets processing';
             processingIndicator.style.display = 'inline-flex';
             processingIndicator.title = activeBatchCount > 1
-                ? `${processingTotal} tickets are being parsed across ${activeBatchCount} batches`
-                : `${processingTotal} tickets are being parsed`;
+                ? `${activeProcessingTotal} tickets are being parsed across ${activeBatchCount} batches`
+                : `${activeProcessingTotal} tickets are being parsed`;
         } else if (_processingIndicatorMode === 'done') {
             processingIndicator.classList.add('done');
             processingCount.textContent = '';
