@@ -17,6 +17,7 @@ let ticketDetailCache = new Map();
 let _lastProcessingCount = 0;
 let _processingIndicatorMode = 'idle';
 let _processingDoneTimeout = null;
+let _processingRefreshTimeout = null;
 let totalAvailableTickets = 0;
 let lastFullTicketsSyncAt = 0;
 let fullTicketsSyncPromise = null;
@@ -1224,7 +1225,39 @@ async function loadNotifications() {
         }
         _lastProcessingCount = nextProcessingCount;
         _updateNotifBadges();
+        _scheduleProcessingRefresh();
     } catch (e) { console.error('Failed to load notifications', e); }
+}
+
+function _scheduleProcessingRefresh() {
+    if (_processingRefreshTimeout) {
+        clearTimeout(_processingRefreshTimeout);
+        _processingRefreshTimeout = null;
+    }
+
+    const batches = Array.isArray(_notifData.processing_batches) ? _notifData.processing_batches : [];
+    if (!batches.length) return;
+
+    const nowTs = Date.now() / 1000;
+    let nextRefreshMs = null;
+
+    batches.forEach((batch) => {
+        const pendingCount = parseMoneyValue(batch.pending_count);
+        const visibleUntilTs = Number.parseFloat(batch.visible_until_ts);
+        if (pendingCount <= 0 && Number.isFinite(visibleUntilTs) && visibleUntilTs > nowTs) {
+            const remainingMs = Math.max(250, Math.ceil((visibleUntilTs - nowTs) * 1000) + 100);
+            if (nextRefreshMs === null || remainingMs < nextRefreshMs) {
+                nextRefreshMs = remainingMs;
+            }
+        }
+    });
+
+    if (nextRefreshMs !== null) {
+        _processingRefreshTimeout = setTimeout(() => {
+            _processingRefreshTimeout = null;
+            void loadNotifications();
+        }, nextRefreshMs);
+    }
 }
 
 function _updateNotifBadges() {
