@@ -28,6 +28,9 @@ let realtimeRefreshHandle = null;
 let isSaveInFlight = false;
 let suppressRealtimeUntil = 0;
 let ticketEditBaseSnapshot = null;
+let dashboardLiveUpdatesPaused = false;
+let draftRetryHandle = null;
+let hasPendingLocalDraft = false;
 let duplicatePanelTickets = [];
 let duplicatePanelTotalCount = 0;
 let duplicatePanelIsLoadingMore = false;
@@ -37,6 +40,7 @@ const TICKETS_POLL_INTERVAL_MS = 5000;
 const TICKETS_FULL_SYNC_INTERVAL_MS = 30000;
 const TICKETS_CACHE_KEY = 'ticketsDashboard.topCache.v1';
 const DUPLICATES_CACHE_KEY = 'ticketsDashboard.duplicatesCache.v1';
+const TICKET_DRAFT_CACHE_PREFIX = 'ticketsDashboard.ticketDraft.';
 const ACTIVE_FIELD_AUTOSAVE_IDLE_MS = 1200;
 let lastDetailInputAt = 0;
 
@@ -178,6 +182,66 @@ function writeCachedJson(key, value) {
     } catch (e) {
         console.warn('Failed to cache data', e);
     }
+}
+
+function removeCachedJson(key) {
+    try {
+        localStorage.removeItem(key);
+    } catch (e) {
+        console.warn('Failed to remove cached data', e);
+    }
+}
+
+function getTicketDraftCacheKey(ticketId) {
+    return ticketId ? `${TICKET_DRAFT_CACHE_PREFIX}${ticketId}` : '';
+}
+
+function readTicketDraft(ticketId) {
+    const key = getTicketDraftCacheKey(ticketId);
+    return key ? readCachedJson(key) : null;
+}
+
+function persistTicketDraft(ticket = editedData) {
+    const ticketId = ticket?.id || currentTicket?.id;
+    if (!ticketId || !ticket) return;
+    hasPendingLocalDraft = true;
+    writeCachedJson(getTicketDraftCacheKey(ticketId), {
+        saved_at: Date.now(),
+        ticket: JSON.parse(JSON.stringify(ticket)),
+        base_snapshot: ticketEditBaseSnapshot ? JSON.parse(JSON.stringify(ticketEditBaseSnapshot)) : null
+    });
+}
+
+function clearTicketDraft(ticketId = currentTicket?.id) {
+    const key = getTicketDraftCacheKey(ticketId);
+    if (!key) return;
+    hasPendingLocalDraft = false;
+    removeCachedJson(key);
+}
+
+function scheduleDraftRetry(delayMs = 2000) {
+    clearTimeout(draftRetryHandle);
+    draftRetryHandle = setTimeout(() => {
+        if (!currentTicket || !editedData || !isDetailDirty || isSaveInFlight) return;
+        void queueSave(true);
+    }, delayMs);
+}
+
+function applyTicketDraftIfPresent(ticketId, { showToastMessage = false } = {}) {
+    const draft = readTicketDraft(ticketId);
+    if (!draft?.ticket) return false;
+    editedData = normalizeTicketFareData(JSON.parse(JSON.stringify(draft.ticket)));
+    fareFieldsTouched = false;
+    hasPendingLocalDraft = true;
+    ticketEditBaseSnapshot = draft.base_snapshot
+        ? JSON.parse(JSON.stringify(draft.base_snapshot))
+        : (currentTicket ? JSON.parse(JSON.stringify(currentTicket)) : null);
+    isDetailDirty = true;
+    if (showToastMessage) {
+        showToast('Recovered unsaved local changes. Syncing in background...', 'info');
+    }
+    scheduleDraftRetry(1200);
+    return true;
 }
 
 function hydrateUserFromCache() {
@@ -624,6 +688,7 @@ function scheduleRealtimeRefresh(payload = {}) {
 }
 
 function startTicketsRealtime() {
+    if (dashboardLiveUpdatesPaused) return false;
     if (!('EventSource' in window) || ticketsEventSource) return false;
     try {
         const stream = new EventSource('/api/tickets/stream');
@@ -653,6 +718,7 @@ function startTicketsRealtime() {
 }
 
 function startTicketsPolling() {
+    if (dashboardLiveUpdatesPaused) return;
     if (ticketsPollingHandle) return;
     ticketsPollingHandle = setInterval(async () => {
         if (document.hidden) return;
@@ -671,6 +737,42 @@ function startTicketsPolling() {
             console.error('Tickets polling failed', e);
         }
     }, TICKETS_POLL_INTERVAL_MS);
+}
+
+function stopTicketsRealtime() {
+    if (!ticketsEventSource) return;
+    try {
+        ticketsEventSource.close();
+    } catch (e) {
+        console.error('Failed to close realtime stream', e);
+    }
+    ticketsEventSource = null;
+}
+
+function stopTicketsPolling() {
+    if (!ticketsPollingHandle) return;
+    clearInterval(ticketsPollingHandle);
+    ticketsPollingHandle = null;
+}
+
+function pauseDashboardLiveUpdates() {
+    dashboardLiveUpdatesPaused = true;
+    stopTicketsRealtime();
+    stopTicketsPolling();
+    clearTimeout(realtimeRefreshHandle);
+    realtimeRefreshHandle = null;
+}
+
+function resumeDashboardLiveUpdates({ refresh = false } = {}) {
+    dashboardLiveUpdatesPaused = false;
+    if (!startTicketsRealtime()) {
+        startTicketsPolling();
+    }
+    if (refresh) {
+        void loadNotifications();
+        void loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, render: true, notifyNewTickets: false });
+        void syncAllTicketsInBackground();
+    }
 }
 
 // ==================== FILTER & CARDS ====================
@@ -1177,12 +1279,14 @@ async function openTicket(id) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
     try {
+        pauseDashboardLiveUpdates();
         const cachedTicket = getCachedTicketDetail(id);
         if (cachedTicket) {
             currentTicket = cachedTicket;
             fareFieldsTouched = false;
             editedData = JSON.parse(JSON.stringify(currentTicket));
             setTicketEditBaseline(currentTicket);
+            applyTicketDraftIfPresent(currentTicket.id, { showToastMessage: true });
             renderDetailView();
             showDetailView();
             void syncCurrentTicketFromServer();
@@ -1201,9 +1305,14 @@ async function openTicket(id) {
         fareFieldsTouched = false;
         editedData = JSON.parse(JSON.stringify(currentTicket));
         setTicketEditBaseline(currentTicket);
+        applyTicketDraftIfPresent(currentTicket.id, { showToastMessage: true });
         renderDetailView();
         showDetailView();
-    } catch (e) { console.error(e); showToast('Error loading ticket', 'error'); }
+    } catch (e) {
+        console.error(e);
+        showToast('Error loading ticket', 'error');
+        await showListView();
+    }
 }
 
 async function showListView() {
@@ -1220,6 +1329,7 @@ async function showListView() {
     changeAttachmentState = { token: '', filename: '' };
     selectedPaxIndices.clear();
     _removePaxActionBar();
+    resumeDashboardLiveUpdates({ refresh: true });
 }
 
 // ==================== NOTIFICATION PANEL SYSTEM ====================
@@ -3588,23 +3698,52 @@ async function saveTicket(silent = false) {
             status: editedData.status || 'unmatched',
             _edit_base_snapshot: ticketEditBaseSnapshot
         };
-        const r = await fetch('/api/tickets/' + currentTicket.id, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+        let r = null;
         let responsePayload = {};
-        try {
-            responsePayload = await r.json();
-        } catch (e) {
-            responsePayload = {};
+        let requestError = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                r = await fetch('/api/tickets/' + currentTicket.id, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                try {
+                    responsePayload = await r.json();
+                } catch (e) {
+                    responsePayload = {};
+                }
+                if (r.ok) break;
+                if (![502, 503, 504].includes(r.status) || attempt === 1) {
+                    break;
+                }
+            } catch (e) {
+                requestError = e;
+                if (attempt === 1) throw e;
+            }
+            await new Promise(resolve => setTimeout(resolve, 900));
         }
+        if (requestError && !r) throw requestError;
         if (!r.ok) {
-            if (!silent) showToast(responsePayload.error || 'Save failed', 'error');
+            const hadPendingLocalDraft = hasPendingLocalDraft;
+            persistTicketDraft();
+            const isTransientSaveFailure = [502, 503, 504].includes(r.status);
+            const errMsg = responsePayload.error || (r.status === 503 ? 'Autosave failed because the server was busy. It will retry on the next change.' : 'Save failed');
+            if (!silent && !isTransientSaveFailure) {
+                showToast(errMsg, 'error');
+            }
+            if (isTransientSaveFailure && isDetailDirty) {
+                if (!hadPendingLocalDraft || !silent) {
+                    showToast('Server busy. Your edits are kept locally and will sync automatically.', 'warning');
+                }
+                scheduleDraftRetry(1500);
+            }
             return;
         }
         isDetailDirty = false;
         suppressRealtimeUntil = Date.now() + 1500;
+        clearTimeout(draftRetryHandle);
+        draftRetryHandle = null;
         if (!silent) showToast('Ticket saved successfully!', 'success');
         currentTicket = normalizeTicketFareData(
             responsePayload.ticket
@@ -3615,6 +3754,7 @@ async function saveTicket(silent = false) {
         fareFieldsTouched = false;
         setTicketEditBaseline(currentTicket);
         cacheTicketDetail(currentTicket);
+        clearTicketDraft(currentTicket.id);
 
         const idx = allTickets.findIndex(t => t.id === currentTicket.id);
         if (idx > -1) {
@@ -3623,7 +3763,12 @@ async function saveTicket(silent = false) {
         }
     } catch (e) {
         console.error(e);
-        if (!silent) showToast('Save failed', 'error');
+        const hadPendingLocalDraft = hasPendingLocalDraft;
+        persistTicketDraft();
+        scheduleDraftRetry(2000);
+        if (!hadPendingLocalDraft || !silent) {
+            showToast('Server unavailable. Your edits are stored locally and will retry automatically.', 'warning');
+        }
     } finally {
         isSaveInFlight = false;
     }
@@ -3682,6 +3827,7 @@ function shouldDeferAutosaveForActiveField() {
 
 function triggerAutoSave() {
     isDetailDirty = true;
+    persistTicketDraft();
     clearTimeout(autoSaveTimeout);
     autoSaveTimeout = setTimeout(() => {
         if (shouldDeferAutosaveForActiveField()) {
@@ -3690,6 +3836,25 @@ function triggerAutoSave() {
         }
         queueSave(true);
     }, 250);
+}
+
+function handleDetailFieldFocusOut(event) {
+    if (shouldIgnoreDetailAutoSaveTarget(event?.target)) return;
+    setTimeout(() => {
+        if (!currentTicket || !editedData || !isDetailDirty || isSaveInFlight) return;
+        const detailView = document.getElementById('detailView');
+        const active = document.activeElement;
+        const isAnotherEditableFieldActive = (
+            detailView
+            && active
+            && detailView.contains(active)
+            && !shouldIgnoreDetailAutoSaveTarget(active)
+        );
+        if (!isAnotherEditableFieldActive) {
+            clearTimeout(autoSaveTimeout);
+            void queueSave(true);
+        }
+    }, 0);
 }
 
 function getPassengerSortQueryParam() {
@@ -4613,6 +4778,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 triggerAutoSave();
             }
         });
+        detailView.addEventListener('focusout', handleDetailFieldFocusOut);
     }
 });
 
@@ -4620,6 +4786,12 @@ window.addEventListener('beforeunload', () => {
     if (ticketsEventSource) {
         ticketsEventSource.close();
         ticketsEventSource = null;
+    }
+});
+
+window.addEventListener('online', () => {
+    if (currentTicket && isDetailDirty) {
+        scheduleDraftRetry(400);
     }
 });
 
