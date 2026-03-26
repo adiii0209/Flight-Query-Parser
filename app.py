@@ -1086,31 +1086,46 @@ _MISSING = object()
 
 
 def _merge_concurrent_value(current, base, incoming):
+    if current is _MISSING and base is _MISSING and incoming is _MISSING:
+        return _MISSING
     if incoming is _MISSING:
-        return _clone_json(current)
+        if current is not _MISSING:
+            return _clone_json(current)
+        if base is not _MISSING:
+            return _clone_json(base)
+        return _MISSING
     if base is _MISSING:
+        if incoming is _MISSING:
+            return _clone_json(current) if current is not _MISSING else _MISSING
+        return _clone_json(incoming)
+    if current is _MISSING:
+        if incoming == base:
+            return _MISSING
         return _clone_json(incoming)
 
     if isinstance(current, dict) and isinstance(base, dict) and isinstance(incoming, dict):
         merged = {}
         for key in set(current.keys()) | set(base.keys()) | set(incoming.keys()):
-            merged[key] = _merge_concurrent_value(
+            merged_value = _merge_concurrent_value(
                 current.get(key, _MISSING),
                 base.get(key, _MISSING),
                 incoming.get(key, _MISSING),
             )
+            if merged_value is not _MISSING:
+                merged[key] = merged_value
         return merged
 
     if isinstance(current, list) and isinstance(base, list) and isinstance(incoming, list):
         if len(current) == len(base) == len(incoming):
-            return [
-                _merge_concurrent_value(
+            merged_items = []
+            for idx in range(len(incoming)):
+                merged_value = _merge_concurrent_value(
                     current[idx] if idx < len(current) else _MISSING,
                     base[idx] if idx < len(base) else _MISSING,
                     incoming[idx] if idx < len(incoming) else _MISSING,
                 )
-                for idx in range(len(incoming))
-            ]
+                merged_items.append(_clone_json(incoming[idx]) if merged_value is _MISSING else merged_value)
+            return merged_items
         if incoming == base:
             return _clone_json(current)
         if current == base:
@@ -1364,6 +1379,17 @@ def _segments_with_barcodes(ticket, passengers, segments, raw):
             segment_copy["barcode_image"] = None
         enriched_segments.append(segment_copy)
     return enriched_segments
+
+
+def _sanitize_segments_for_storage(segments):
+    cleaned_segments = []
+    for segment in segments or []:
+        segment_copy = _clone_json(segment)
+        if isinstance(segment_copy, dict):
+            segment_copy.pop("barcode_data", None)
+            segment_copy.pop("barcode_image", None)
+        cleaned_segments.append(segment_copy)
+    return cleaned_segments
 
 
 def _ticket_financials(passengers, journey):
@@ -3555,8 +3581,12 @@ def update_ticket(ticket_id):
         if not ticket:
             return jsonify({"error": "Ticket not found"}), 404
         
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid ticket update payload"}), 400
         base_snapshot = data.get("_edit_base_snapshot") or {}
+        if isinstance(base_snapshot.get("segments"), list):
+            base_snapshot["segments"] = _sanitize_segments_for_storage(base_snapshot.get("segments"))
         if data.get("is_merged_view") and ticket.booking_group_id and ticket.booking_group:
             grouped_tickets = _booking_group_sorted_tickets(ticket.booking_group)
             passengers_by_ticket = {}
@@ -3581,7 +3611,7 @@ def update_ticket(ticket_id):
                 if 'trip_type' in data:
                     grouped_ticket.trip_type = data['trip_type']
                 if 'segments' in data:
-                    grouped_ticket.segments_data = json.dumps(data['segments'])
+                    grouped_ticket.segments_data = json.dumps(_sanitize_segments_for_storage(data['segments']))
                 if 'raw_data' in data:
                     grouped_ticket.raw_data = json.dumps(data['raw_data'])
                 if 'status' in data:
@@ -3628,6 +3658,7 @@ def update_ticket(ticket_id):
             return jsonify({"message": "Merged booking updated successfully"})
 
         current_snapshot = _ticket_dict_with_children(ticket)
+        current_snapshot["segments"] = _sanitize_segments_for_storage(current_snapshot.get("segments", []))
 
         if 'pnr' in data:
             ticket.pnr = _merge_concurrent_value(current_snapshot.get('pnr'), base_snapshot.get('pnr', _MISSING), data['pnr'])
@@ -3649,7 +3680,7 @@ def update_ticket(ticket_id):
             ticket.passengers_data = json.dumps(passengers)
         if 'segments' in data:
             segments = _merge_concurrent_value(current_snapshot.get('segments', []), base_snapshot.get('segments', _MISSING), data['segments'])
-            ticket.segments_data = json.dumps(segments)
+            ticket.segments_data = json.dumps(_sanitize_segments_for_storage(segments))
         if 'journey' in data:
             journey = _merge_concurrent_value(current_snapshot.get('journey', {}), base_snapshot.get('journey', _MISSING), data['journey'])
             ticket.journey_data = json.dumps(journey)
@@ -4069,7 +4100,7 @@ def _ticket_pdf_snapshot_from_request(ticket):
         "class_of_travel": payload.get("class_of_travel", ticket.class_of_travel),
         "trip_type": payload.get("trip_type", ticket.trip_type),
         "passengers": _clone_json(payload.get("passengers")) if isinstance(payload.get("passengers"), list) else None,
-        "segments": _clone_json(payload.get("segments")) if isinstance(payload.get("segments"), list) else None,
+        "segments": _sanitize_segments_for_storage(payload.get("segments")) if isinstance(payload.get("segments"), list) else None,
         "journey": _clone_json(payload.get("journey")) if isinstance(payload.get("journey"), dict) else None,
         "raw_data": _clone_json(payload.get("raw_data")) if isinstance(payload.get("raw_data"), dict) else None,
         "is_merged_view": bool(payload.get("is_merged_view")),

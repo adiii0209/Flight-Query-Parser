@@ -526,7 +526,14 @@ function cacheTicketDetail(ticket) {
 }
 
 function setTicketEditBaseline(ticket) {
-    ticketEditBaseSnapshot = ticket ? JSON.parse(JSON.stringify(ticket)) : null;
+    if (!ticket) {
+        ticketEditBaseSnapshot = null;
+        return;
+    }
+    ticketEditBaseSnapshot = JSON.parse(JSON.stringify(ticket));
+    if (Array.isArray(ticketEditBaseSnapshot.segments)) {
+        ticketEditBaseSnapshot.segments = getPersistableSegments(ticketEditBaseSnapshot.segments);
+    }
 }
 
 function getCachedTicketDetail(id) {
@@ -3692,7 +3699,7 @@ async function saveTicket(silent = false) {
             class_of_travel: editedData.class_of_travel,
             trip_type: editedData.trip_type,
             passengers: editedData.passengers,
-            segments: editedData.segments,
+            segments: getPersistableSegments(editedData.segments),
             journey: editedData.journey,
             raw_data: editedData.raw_data,
             status: editedData.status || 'unmatched',
@@ -3897,6 +3904,15 @@ async function ensureTicketPersistedForDownload() {
     return !isDetailDirty;
 }
 
+function getPersistableSegments(segments = []) {
+    return (segments || []).map((segment) => {
+        const clean = JSON.parse(JSON.stringify(segment || {}));
+        delete clean.barcode_data;
+        delete clean.barcode_image;
+        return clean;
+    });
+}
+
 function buildTicketPdfSnapshot(extra = {}) {
     return {
         is_merged_view: !!editedData?.is_merged_view,
@@ -3908,7 +3924,7 @@ function buildTicketPdfSnapshot(extra = {}) {
         class_of_travel: editedData?.class_of_travel,
         trip_type: editedData?.trip_type,
         passengers: JSON.parse(JSON.stringify(editedData?.passengers || [])),
-        segments: JSON.parse(JSON.stringify(editedData?.segments || [])),
+        segments: getPersistableSegments(editedData?.segments || []),
         journey: JSON.parse(JSON.stringify(editedData?.journey || {})),
         raw_data: JSON.parse(JSON.stringify(editedData?.raw_data || {})),
         passenger_sort: passengerSortMode || '',
