@@ -2337,9 +2337,9 @@ function renderBookingSection() {
     document.getElementById('bookingSection').innerHTML = `
         <div class="section-header-row"><h2>📋 Booking Information</h2></div>
         <div class="field-grid">
-            <div class="field-item"><label>PNR</label><input type="text" value="${safe(t.pnr)}" oninput="editedData.pnr=this.value; triggerAutoSave()" onchange="editedData.pnr=this.value"></div>
-            <div class="field-item"><label>Booking Date</label><input type="text" value="${safe(t.booking_date)}" oninput="editedData.booking_date=this.value; triggerAutoSave()" onchange="editedData.booking_date=this.value"></div>
-            <div class="field-item"><label>Phone</label><input type="text" value="${safe(t.phone)}" oninput="editedData.phone=this.value; triggerAutoSave()" onchange="editedData.phone=this.value"></div>
+            <div class="field-item"><label>PNR</label><input type="text" value="${safe(t.pnr)}" oninput="editedData.pnr=this.value; triggerAutoSave()" onchange="editedData.pnr=this.value; triggerAutoSave()"></div>
+            <div class="field-item"><label>Booking Date</label><input type="text" value="${safe(t.booking_date)}" oninput="editedData.booking_date=this.value; triggerAutoSave()" onchange="editedData.booking_date=this.value; triggerAutoSave()"></div>
+            <div class="field-item"><label>Phone</label><input type="text" value="${safe(t.phone)}" oninput="editedData.phone=this.value; triggerAutoSave()" onchange="editedData.phone=this.value; triggerAutoSave()"></div>
             <div class="field-item"><label>Currency</label>
                 <select onchange="setTicketCurrency(this.value)">
                     <option value="INR" ${(t.currency || 'INR') === 'INR' ? 'selected' : ''}>INR</option>
@@ -2697,16 +2697,16 @@ function renderPassengersSection() {
                 </div>
             </div>
             <div class="field-grid">
-                <div class="field-item"><label>Name</label><input type="text" value="${safe(p.name)}" onchange="editedData.passengers[${i}].name=this.value"></div>
+                <div class="field-item"><label>Name</label><input type="text" value="${safe(p.name)}" oninput="updatePassengerField(${i}, 'name', this.value)" onchange="updatePassengerField(${i}, 'name', this.value)"></div>
                 <div class="field-item"><label>Pax Type</label>
-                    <select onchange="editedData.passengers[${i}].pax_type=this.value">
+                    <select onchange="updatePassengerField(${i}, 'pax_type', this.value)">
                         <option value="ADT" ${(p.pax_type || '').toUpperCase() === 'ADT' ? 'selected' : ''}>Adult</option>
                         <option value="CHD" ${(p.pax_type || '').toUpperCase() === 'CHD' ? 'selected' : ''}>Child</option>
                         <option value="INF" ${(p.pax_type || '').toUpperCase() === 'INF' ? 'selected' : ''}>Infant</option>
                     </select></div>
-                <div class="field-item"><label>Ticket Number</label><input type="text" value="${safe(p.ticket_number)}" onchange="editedData.passengers[${i}].ticket_number=this.value"></div>
-                <div class="field-item"><label>Frequent Flyer</label><input type="text" value="${safe(p.frequent_flyer_number)}" onchange="editedData.passengers[${i}].frequent_flyer_number=this.value"></div>
-                <div class="field-item"><label>Baggage</label><input type="text" value="${safe(p.baggage)}" onchange="editedData.passengers[${i}].baggage=this.value"></div>
+                <div class="field-item"><label>Ticket Number</label><input type="text" value="${safe(p.ticket_number)}" oninput="updatePassengerField(${i}, 'ticket_number', this.value)" onchange="updatePassengerField(${i}, 'ticket_number', this.value)"></div>
+                <div class="field-item"><label>Frequent Flyer</label><input type="text" value="${safe(p.frequent_flyer_number)}" oninput="updatePassengerField(${i}, 'frequent_flyer_number', this.value)" onchange="updatePassengerField(${i}, 'frequent_flyer_number', this.value)"></div>
+                <div class="field-item"><label>Baggage</label><input type="text" value="${safe(p.baggage)}" oninput="updatePassengerField(${i}, 'baggage', this.value)" onchange="updatePassengerField(${i}, 'baggage', this.value)"></div>
             </div>`;
 
         const getAncHTML = (paxIdx, segIdx) => {
@@ -3376,6 +3376,12 @@ function addPassenger() {
     showToast('New passenger added', 'info');
 }
 
+function updatePassengerField(index, field, value) {
+    if (!editedData.passengers || !editedData.passengers[index]) return;
+    editedData.passengers[index][field] = value;
+    triggerAutoSave();
+}
+
 function removePassenger(idx) {
     if (!confirm('Remove this passenger?')) return;
     editedData.passengers.splice(idx, 1);
@@ -3394,6 +3400,7 @@ function updateSeatForSegment(paxIdx, segIdx, value) {
     } else {
         seats.push({ segment_index: segIdx, seat_number: value });
     }
+    triggerAutoSave();
 }
 
 function updateAncillaryForSegment(paxIdx, ancIdx, value) {
@@ -3401,6 +3408,7 @@ function updateAncillaryForSegment(paxIdx, ancIdx, value) {
         editedData.passengers[paxIdx].ancillaries[ancIdx].name = value;
         editedData.passengers[paxIdx].ancillaries[ancIdx].code = value;
     }
+    triggerAutoSave();
 }
 
 function updateMealForSegment(paxIdx, segIdx, value) {
@@ -3419,18 +3427,21 @@ function updateMealForSegment(paxIdx, segIdx, value) {
     } else {
         meals.push({ segment_index: segIdx, name: value, code: value });
     }
+    triggerAutoSave();
 }
 
 function addAncillary(paxIdx, segIdx) {
     if (!editedData.passengers[paxIdx].ancillaries) editedData.passengers[paxIdx].ancillaries = [];
     editedData.passengers[paxIdx].ancillaries.push({ segment_index: segIdx, name: '', code: '' });
     renderPassengersSection();
+    triggerAutoSave();
 }
 
 function removeAncillary(paxIdx, ancIdx) {
     if (editedData.passengers[paxIdx] && editedData.passengers[paxIdx].ancillaries) {
         editedData.passengers[paxIdx].ancillaries.splice(ancIdx, 1);
         renderPassengersSection();
+        triggerAutoSave();
     }
 }
 
