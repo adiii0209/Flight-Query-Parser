@@ -3667,7 +3667,10 @@ def update_ticket(ticket_id):
             ticket_id=ticket.id,
         )
         
-        return jsonify({"message": "Ticket updated successfully"})
+        return jsonify({
+            "message": "Ticket updated successfully",
+            "ticket": _ticket_dict_with_children(ticket),
+        })
     
     except Exception as e:
         db.session.rollback()

@@ -37,6 +37,8 @@ const TICKETS_POLL_INTERVAL_MS = 5000;
 const TICKETS_FULL_SYNC_INTERVAL_MS = 30000;
 const TICKETS_CACHE_KEY = 'ticketsDashboard.topCache.v1';
 const DUPLICATES_CACHE_KEY = 'ticketsDashboard.duplicatesCache.v1';
+const ACTIVE_FIELD_AUTOSAVE_IDLE_MS = 1200;
+let lastDetailInputAt = 0;
 
 // ==================== SIDEBAR & THEME ====================
 function initializeSidebar() {
@@ -570,10 +572,23 @@ async function syncAllTicketsInBackground() {
 
 async function syncCurrentTicketFromServer() {
     if (!currentTicket || isDetailDirty || isSaveInFlight || Date.now() < suppressRealtimeUntil) return;
+    const syncTicketId = currentTicket.id;
+    const syncStartedAt = Date.now();
     try {
-        const r = await fetch('/api/tickets/' + currentTicket.id);
+        const r = await fetch('/api/tickets/' + syncTicketId);
         if (!r.ok) return;
-        currentTicket = normalizeTicketFareData(await r.json());
+        const freshTicket = normalizeTicketFareData(await r.json());
+        if (
+            !currentTicket
+            || currentTicket.id !== syncTicketId
+            || isDetailDirty
+            || isSaveInFlight
+            || Date.now() < suppressRealtimeUntil
+            || lastDetailInputAt > syncStartedAt
+        ) {
+            return;
+        }
+        currentTicket = freshTicket;
         cacheTicketDetail(currentTicket);
         editedData = JSON.parse(JSON.stringify(currentTicket));
         fareFieldsTouched = false;
@@ -2325,11 +2340,11 @@ function renderBookingSection() {
             <div class="field-grid">
                 <div class="field-item">
                     <label>Company Name</label>
-                    <input type="text" value="${safe(gst.company_name)}" placeholder="Enter company name" oninput="editedData.raw_data.gst_details.company_name=this.value; triggerAutoSave()" onchange="editedData.raw_data.gst_details.company_name=this.value">
+                    <input type="text" value="${safe(gst.company_name)}" placeholder="Enter company name" oninput="editedData.raw_data.gst_details.company_name=this.value; triggerAutoSave()" onchange="editedData.raw_data.gst_details.company_name=this.value; triggerAutoSave()">
                 </div>
                 <div class="field-item">
                     <label>GSTIN</label>
-                    <input type="text" value="${safe(gst.gst_number)}" placeholder="Enter full GST number" style="font-family:monospace;" oninput="editedData.raw_data.gst_details.gst_number=this.value; triggerAutoSave()" onchange="editedData.raw_data.gst_details.gst_number=this.value">
+                    <input type="text" value="${safe(gst.gst_number)}" placeholder="Enter full GST number" style="font-family:monospace;" oninput="editedData.raw_data.gst_details.gst_number=this.value; triggerAutoSave()" onchange="editedData.raw_data.gst_details.gst_number=this.value; triggerAutoSave()">
                 </div>
             </div>
         </div>`;
@@ -3578,15 +3593,24 @@ async function saveTicket(silent = false) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
+        let responsePayload = {};
+        try {
+            responsePayload = await r.json();
+        } catch (e) {
+            responsePayload = {};
+        }
         if (!r.ok) {
-            const e = await r.json();
-            if (!silent) showToast(e.error || 'Save failed', 'error');
+            if (!silent) showToast(responsePayload.error || 'Save failed', 'error');
             return;
         }
         isDetailDirty = false;
         suppressRealtimeUntil = Date.now() + 1500;
         if (!silent) showToast('Ticket saved successfully!', 'success');
-        currentTicket = normalizeTicketFareData(JSON.parse(JSON.stringify(editedData)));
+        currentTicket = normalizeTicketFareData(
+            responsePayload.ticket
+                ? JSON.parse(JSON.stringify(responsePayload.ticket))
+                : JSON.parse(JSON.stringify(editedData))
+        );
         editedData = JSON.parse(JSON.stringify(currentTicket));
         fareFieldsTouched = false;
         setTicketEditBaseline(currentTicket);
@@ -3622,20 +3646,45 @@ function queueSave(silent = true) {
     return pendingSavePromise;
 }
 
+function shouldIgnoreDetailAutoSaveTarget(target) {
+    if (!target) return true;
+    const tag = (target.tagName || '').toUpperCase();
+    if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return true;
+    const inputType = (target.type || '').toLowerCase();
+    if (inputType === 'checkbox' || inputType === 'radio') return true;
+    if (target.id === 'ledgerAggSelect' || target.id === 'paxSelectAll') return true;
+    if ((target.id || '').startsWith('paxCheck-')) return true;
+    if (target.classList && target.classList.contains('pax-checkbox')) return true;
+    const inlineHandler = `${target.getAttribute?.('onchange') || ''} ${target.getAttribute?.('oninput') || ''}`;
+    if (inlineHandler.includes('setPassengerSortMode')) return true;
+    return false;
+}
+
 function isEditingFieldActive() {
     const active = document.activeElement;
     if (!active) return false;
     const tag = (active.tagName || '').toUpperCase();
     if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return false;
     const detailView = document.getElementById('detailView');
-    return !!(detailView && detailView.contains(active));
+    if (!detailView || !detailView.contains(active)) return false;
+    return !shouldIgnoreDetailAutoSaveTarget(active);
+}
+
+function shouldDeferAutosaveForActiveField() {
+    if (!isEditingFieldActive()) return false;
+    const active = document.activeElement;
+    const tag = (active?.tagName || '').toUpperCase();
+    if (tag === 'SELECT') return false;
+    const inputType = (active?.type || '').toLowerCase();
+    if (inputType === 'checkbox' || inputType === 'radio') return false;
+    return (Date.now() - lastDetailInputAt) < ACTIVE_FIELD_AUTOSAVE_IDLE_MS;
 }
 
 function triggerAutoSave() {
     isDetailDirty = true;
     clearTimeout(autoSaveTimeout);
     autoSaveTimeout = setTimeout(() => {
-        if (isEditingFieldActive()) {
+        if (shouldDeferAutosaveForActiveField()) {
             triggerAutoSave();
             return;
         }
@@ -4552,8 +4601,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const detailView = document.getElementById('detailView');
     if (detailView) {
+        detailView.addEventListener('input', (e) => {
+            if (!shouldIgnoreDetailAutoSaveTarget(e.target)) {
+                lastDetailInputAt = Date.now();
+            }
+        });
         detailView.addEventListener('change', (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
+            if (!shouldIgnoreDetailAutoSaveTarget(e.target)) {
+                lastDetailInputAt = Date.now();
                 isDetailDirty = true;
                 triggerAutoSave();
             }
