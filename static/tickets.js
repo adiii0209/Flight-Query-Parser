@@ -3861,16 +3861,91 @@ function getPassengerSortQueryParam() {
     return passengerSortMode ? `&passenger_sort=${encodeURIComponent(passengerSortMode)}` : '';
 }
 
-async function downloadPDF(includeFare) {
+function _getDownloadFilenameFromResponse(response, fallbackName) {
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const utfMatch = disposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+    if (utfMatch && utfMatch[1]) {
+        try {
+            return decodeURIComponent(utfMatch[1]);
+        } catch (e) {
+            return utfMatch[1];
+        }
+    }
+    const simpleMatch = disposition.match(/filename\s*=\s*"?([^";]+)"?/i);
+    return simpleMatch && simpleMatch[1] ? simpleMatch[1] : fallbackName;
+}
+
+function _downloadBlob(blob, filename) {
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename || 'ticket.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
+}
+
+async function ensureTicketPersistedForDownload() {
     if (document.activeElement) document.activeElement.blur();
+    if (!currentTicket || !editedData) return false;
     try {
-        await saveTicket();
-        const url = `/api/tickets/${currentTicket.id}/pdf?include_fare=${includeFare}${getPassengerSortQueryParam()}`;
-        const a = document.createElement('a');
-        a.href = url; a.download = '';
-        document.body.appendChild(a); a.click(); a.remove();
+        await saveTicket(true);
+    } catch (e) {
+        console.error('Pre-download save failed', e);
+    }
+    return !isDetailDirty;
+}
+
+function buildTicketPdfSnapshot(extra = {}) {
+    return {
+        is_merged_view: !!editedData?.is_merged_view,
+        pnr: editedData?.pnr,
+        booking_date: editedData?.booking_date,
+        phone: editedData?.phone,
+        currency: editedData?.currency,
+        grand_total: editedData?.grand_total,
+        class_of_travel: editedData?.class_of_travel,
+        trip_type: editedData?.trip_type,
+        passengers: JSON.parse(JSON.stringify(editedData?.passengers || [])),
+        segments: JSON.parse(JSON.stringify(editedData?.segments || [])),
+        journey: JSON.parse(JSON.stringify(editedData?.journey || {})),
+        raw_data: JSON.parse(JSON.stringify(editedData?.raw_data || {})),
+        passenger_sort: passengerSortMode || '',
+        ...extra
+    };
+}
+
+async function downloadPdfFromSnapshot(path, payload, fallbackFilename) {
+    const r = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    if (!r.ok) {
+        let errorPayload = {};
+        try {
+            errorPayload = await r.json();
+        } catch (e) {
+            errorPayload = {};
+        }
+        throw new Error(errorPayload.error || 'PDF generation failed');
+    }
+    const blob = await r.blob();
+    const filename = _getDownloadFilenameFromResponse(r, fallbackFilename);
+    _downloadBlob(blob, filename);
+}
+
+async function downloadPDF(includeFare) {
+    try {
+        await ensureTicketPersistedForDownload();
+        await downloadPdfFromSnapshot(
+            `/api/tickets/${currentTicket.id}/pdf`,
+            buildTicketPdfSnapshot({ include_fare: includeFare }),
+            'ticket.pdf'
+        );
         showToast(`PDF download started (${includeFare ? 'with fare' : 'without fare'})`, 'success');
-    } catch (e) { showToast('PDF generation failed', 'error'); }
+    } catch (e) { showToast(e.message || 'PDF generation failed', 'error'); }
 }
 
 // ==================== PASSENGER SELECTION ====================
@@ -3988,35 +4063,44 @@ async function downloadSelectedPaxIndividually() {
     const indices = _getSelectedIndices();
     if (indices.length === 0) { showToast('No passengers selected', 'error'); return; }
     try {
-        await saveTicket();
+        await ensureTicketPersistedForDownload();
         showToast(`Downloading ${indices.length} individual PDF${indices.length > 1 ? 's' : ''}...`, 'info');
         for (const idx of indices) {
-            const url = `/api/tickets/${currentTicket.id}/pdf/selected?include_fare=${_paxDlIncludeFare}&mode=individual&passenger_indices=${idx}${getPassengerSortQueryParam()}`;
-            const a = document.createElement('a');
-            a.href = url; a.download = '';
-            document.body.appendChild(a); a.click(); a.remove();
+            await downloadPdfFromSnapshot(
+                `/api/tickets/${currentTicket.id}/pdf/selected`,
+                buildTicketPdfSnapshot({
+                    include_fare: _paxDlIncludeFare,
+                    mode: 'individual',
+                    passenger_indices: [idx]
+                }),
+                `ticket-${idx + 1}.pdf`
+            );
             // Small delay between downloads to avoid browser blocking
             if (indices.length > 1) {
                 await new Promise(r => setTimeout(r, 500));
             }
         }
         showToast('Individual PDFs downloaded', 'success');
-    } catch (e) { console.error(e); showToast('PDF generation failed', 'error'); }
+    } catch (e) { console.error(e); showToast(e.message || 'PDF generation failed', 'error'); }
 }
 
 async function downloadSelectedPaxTogether() {
     const indices = _getSelectedIndices();
     if (indices.length === 0) { showToast('No passengers selected', 'error'); return; }
     try {
-        await saveTicket();
+        await ensureTicketPersistedForDownload();
         showToast(`Downloading combined PDF for ${indices.length} passenger${indices.length > 1 ? 's' : ''}...`, 'info');
-        const params = indices.map(i => `passenger_indices=${i}`).join('&');
-        const url = `/api/tickets/${currentTicket.id}/pdf/selected?include_fare=${_paxDlIncludeFare}&mode=together&${params}${getPassengerSortQueryParam()}`;
-        const a = document.createElement('a');
-        a.href = url; a.download = '';
-        document.body.appendChild(a); a.click(); a.remove();
+        await downloadPdfFromSnapshot(
+            `/api/tickets/${currentTicket.id}/pdf/selected`,
+            buildTicketPdfSnapshot({
+                include_fare: _paxDlIncludeFare,
+                mode: 'together',
+                passenger_indices: indices
+            }),
+            'ticket-selected.pdf'
+        );
         showToast('Combined PDF downloaded', 'success');
-    } catch (e) { console.error(e); showToast('PDF generation failed', 'error'); }
+    } catch (e) { console.error(e); showToast(e.message || 'PDF generation failed', 'error'); }
 }
 
 async function deleteTicket() {

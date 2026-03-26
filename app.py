@@ -3707,7 +3707,7 @@ def delete_ticket(ticket_id):
         return jsonify({"error": f"Failed to delete ticket: {str(e)}"}), 500
 
 
-@app.route("/api/tickets/<ticket_id>/pdf", methods=["GET"])
+@app.route("/api/tickets/<ticket_id>/pdf", methods=["GET", "POST"])
 @login_required
 def generate_ticket_pdf(ticket_id):
     """Generate PDF for a ticket (with or without fare)"""
@@ -3715,22 +3715,22 @@ def generate_ticket_pdf(ticket_id):
     if not ticket:
         return jsonify({"error": "Ticket not found"}), 404
     
-    include_fare = request.args.get('include_fare', 'true').lower() == 'true'
-    passenger_sort = request.args.get('passenger_sort', '')
-    
-    passengers = json.loads(ticket.passengers_data) if ticket.passengers_data else []
-    segments = json.loads(ticket.segments_data) if ticket.segments_data else []
-    
-    # Extract journey and raw data for additional info
-    journey = json.loads(ticket.journey_data) if ticket.journey_data else {}
-    raw = json.loads(ticket.raw_data) if ticket.raw_data else {}
-    segments = _segments_with_barcodes(ticket, passengers, segments, raw)
-    gst_details = raw.get("gst_details") or {}
+    snapshot = _ticket_pdf_snapshot_from_request(ticket)
+    include_fare = (
+        str(snapshot["include_fare"]).lower() == "true"
+        if snapshot["include_fare"] is not None
+        else request.args.get('include_fare', 'true').lower() == 'true'
+    )
+    passenger_sort = snapshot["passenger_sort"] or request.args.get('passenger_sort', '')
 
-    grand_total = ticket.grand_total
+    passengers = snapshot["passengers"] if snapshot["passengers"] is not None else (json.loads(ticket.passengers_data) if ticket.passengers_data else [])
+    segments = snapshot["segments"] if snapshot["segments"] is not None else (json.loads(ticket.segments_data) if ticket.segments_data else [])
+    journey = snapshot["journey"] if snapshot["journey"] is not None else (json.loads(ticket.journey_data) if ticket.journey_data else {})
+    raw = snapshot["raw_data"] if snapshot["raw_data"] is not None else (json.loads(ticket.raw_data) if ticket.raw_data else {})
+    grand_total = snapshot["grand_total"]
 
-    # If this is a merged booking, combine passengers from all tickets in the group
-    if ticket.booking_group_id and ticket.booking_group:
+    # If this is a merged booking and no editor snapshot was posted, combine passengers from all tickets in the group
+    if ticket.booking_group_id and ticket.booking_group and snapshot["passengers"] is None:
         merged_passengers = []
         merged_total = 0.0
         for grouped_ticket in _booking_group_sorted_tickets(ticket.booking_group):
@@ -3744,23 +3744,25 @@ def generate_ticket_pdf(ticket_id):
         passengers = merged_passengers
         grand_total = _round_money(merged_total)
 
+    segments = _segments_with_barcodes(ticket, passengers, segments, raw)
+    gst_details = raw.get("gst_details") or {}
     passengers = _sort_passengers_for_pdf(passengers, passenger_sort)
 
     # Build data dict for PDF generator
     pdf_data = {
-        "booking_date": ticket.booking_date,
-        "phone": ticket.phone,
-        "pnr": ticket.pnr,
-        "currency": ticket.currency,
+        "booking_date": snapshot["booking_date"],
+        "phone": snapshot["phone"],
+        "pnr": snapshot["pnr"],
+        "currency": snapshot["currency"],
         "grand_total": grand_total,
-        "class_of_travel": ticket.class_of_travel,
+        "class_of_travel": snapshot["class_of_travel"],
         "passengers": passengers,
         "segments": segments,
         "journey": journey,
         "reference_number": raw.get("booking", {}).get("reference_number"),
         "gst_company_name": gst_details.get("company_name"),
         "gst_number": gst_details.get("gst_number"),
-        "trip_type": ticket.trip_type,
+        "trip_type": snapshot["trip_type"],
     }
     
     import io
@@ -3845,7 +3847,7 @@ def generate_ticket_pdf(ticket_id):
 
 
 
-@app.route("/api/tickets/<ticket_id>/pdf/selected", methods=["GET"])
+@app.route("/api/tickets/<ticket_id>/pdf/selected", methods=["GET", "POST"])
 @login_required
 def generate_selected_passenger_pdf(ticket_id):
     """Generate PDF for selected passengers - individual or combined."""
@@ -3853,23 +3855,29 @@ def generate_selected_passenger_pdf(ticket_id):
     if not ticket:
         return jsonify({"error": "Ticket not found"}), 404
 
-    include_fare = request.args.get('include_fare', 'true').lower() == 'true'
-    mode = request.args.get('mode', 'together')  # 'individual' or 'together'
-    pax_indices = request.args.getlist('passenger_indices', type=int)
-    passenger_sort = request.args.get('passenger_sort', '')
+    snapshot = _ticket_pdf_snapshot_from_request(ticket)
+    include_fare = (
+        str(snapshot["include_fare"]).lower() == "true"
+        if snapshot["include_fare"] is not None
+        else request.args.get('include_fare', 'true').lower() == 'true'
+    )
+    mode = snapshot["mode"] or request.args.get('mode', 'together')  # 'individual' or 'together'
+    passenger_sort = snapshot["passenger_sort"] or request.args.get('passenger_sort', '')
+    if isinstance(snapshot["passenger_indices"], list):
+        pax_indices = [int(i) for i in snapshot["passenger_indices"] if str(i).lstrip('-').isdigit()]
+    else:
+        pax_indices = request.args.getlist('passenger_indices', type=int)
 
     if not pax_indices:
         return jsonify({"error": "No passenger indices provided"}), 400
 
-    passengers = json.loads(ticket.passengers_data) if ticket.passengers_data else []
-    segments = json.loads(ticket.segments_data) if ticket.segments_data else []
-    journey = json.loads(ticket.journey_data) if ticket.journey_data else {}
-    raw = json.loads(ticket.raw_data) if ticket.raw_data else {}
-    segments = _segments_with_barcodes(ticket, passengers, segments, raw)
-    gst_details = raw.get("gst_details") or {}
+    passengers = snapshot["passengers"] if snapshot["passengers"] is not None else (json.loads(ticket.passengers_data) if ticket.passengers_data else [])
+    segments = snapshot["segments"] if snapshot["segments"] is not None else (json.loads(ticket.segments_data) if ticket.segments_data else [])
+    journey = snapshot["journey"] if snapshot["journey"] is not None else (json.loads(ticket.journey_data) if ticket.journey_data else {})
+    raw = snapshot["raw_data"] if snapshot["raw_data"] is not None else (json.loads(ticket.raw_data) if ticket.raw_data else {})
 
-    # If this is a merged booking, combine passengers from all tickets in the group
-    if ticket.booking_group_id and ticket.booking_group:
+    # If this is a merged booking and no editor snapshot was posted, combine passengers from all tickets in the group
+    if ticket.booking_group_id and ticket.booking_group and snapshot["passengers"] is None:
         merged_passengers = []
         for grouped_ticket in _booking_group_sorted_tickets(ticket.booking_group):
             ticket_passengers = json.loads(grouped_ticket.passengers_data or "[]")
@@ -3879,6 +3887,9 @@ def generate_selected_passenger_pdf(ticket_id):
                 p_copy["source_ticket_id"] = grouped_ticket.id
                 merged_passengers.append(p_copy)
         passengers = merged_passengers
+
+    segments = _segments_with_barcodes(ticket, passengers, segments, raw)
+    gst_details = raw.get("gst_details") or {}
 
     # Validate indices
     valid_indices = [i for i in pax_indices if 0 <= i < len(passengers)]
@@ -3922,19 +3933,19 @@ def generate_selected_passenger_pdf(ticket_id):
         # Generate single PDF for one passenger
         pax = selected_passengers[0]
         pdf_data = {
-            "booking_date": ticket.booking_date,
-            "phone": ticket.phone,
-            "pnr": ticket.pnr,
-            "currency": ticket.currency,
+            "booking_date": snapshot["booking_date"],
+            "phone": snapshot["phone"],
+            "pnr": snapshot["pnr"],
+            "currency": snapshot["currency"],
             "grand_total": grand_total,
-            "class_of_travel": ticket.class_of_travel,
+            "class_of_travel": snapshot["class_of_travel"],
             "passengers": [pax],
             "segments": segments,
             "journey": selected_journey,
             "reference_number": raw.get("booking", {}).get("reference_number"),
             "gst_company_name": gst_details.get("company_name"),
             "gst_number": gst_details.get("gst_number"),
-            "trip_type": ticket.trip_type,
+            "trip_type": snapshot["trip_type"],
         }
 
         buffer = _io.BytesIO()
@@ -3955,19 +3966,19 @@ def generate_selected_passenger_pdf(ticket_id):
     else:
         # 'together' mode – single PDF with all selected passengers
         pdf_data = {
-            "booking_date": ticket.booking_date,
-            "phone": ticket.phone,
-            "pnr": ticket.pnr,
-            "currency": ticket.currency,
+            "booking_date": snapshot["booking_date"],
+            "phone": snapshot["phone"],
+            "pnr": snapshot["pnr"],
+            "currency": snapshot["currency"],
             "grand_total": grand_total,
-            "class_of_travel": ticket.class_of_travel,
+            "class_of_travel": snapshot["class_of_travel"],
             "passengers": selected_passengers,
             "segments": segments,
             "journey": selected_journey,
             "reference_number": raw.get("booking", {}).get("reference_number"),
             "gst_company_name": gst_details.get("company_name"),
             "gst_number": gst_details.get("gst_number"),
-            "trip_type": ticket.trip_type,
+            "trip_type": snapshot["trip_type"],
         }
 
         buffer = _io.BytesIO()
@@ -4043,6 +4054,30 @@ def _build_pdf_filename(pax_name, ticket, segments):
     if not filename.endswith(".pdf"):
         filename += ".pdf"
     return filename
+
+
+def _ticket_pdf_snapshot_from_request(ticket):
+    payload = request.get_json(silent=True) if request.method != "GET" else None
+    if not isinstance(payload, dict):
+        payload = {}
+    return {
+        "booking_date": payload.get("booking_date", ticket.booking_date),
+        "phone": payload.get("phone", ticket.phone),
+        "pnr": payload.get("pnr", ticket.pnr),
+        "currency": payload.get("currency", ticket.currency),
+        "grand_total": payload.get("grand_total", ticket.grand_total),
+        "class_of_travel": payload.get("class_of_travel", ticket.class_of_travel),
+        "trip_type": payload.get("trip_type", ticket.trip_type),
+        "passengers": _clone_json(payload.get("passengers")) if isinstance(payload.get("passengers"), list) else None,
+        "segments": _clone_json(payload.get("segments")) if isinstance(payload.get("segments"), list) else None,
+        "journey": _clone_json(payload.get("journey")) if isinstance(payload.get("journey"), dict) else None,
+        "raw_data": _clone_json(payload.get("raw_data")) if isinstance(payload.get("raw_data"), dict) else None,
+        "is_merged_view": bool(payload.get("is_merged_view")),
+        "mode": payload.get("mode"),
+        "passenger_indices": payload.get("passenger_indices"),
+        "include_fare": payload.get("include_fare"),
+        "passenger_sort": payload.get("passenger_sort"),
+    }
 
 
 def _normalize_passenger_sort_value(value):
