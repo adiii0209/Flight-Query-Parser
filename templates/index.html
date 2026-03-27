@@ -4092,7 +4092,7 @@
       </div>
       <div id="cards" class="cards-grid" style="gap: 1rem;"></div>
       <div class="actions">
-        <button class="btn btn-secondary" onclick="downloadCardsImage()">
+        <button type="button" class="btn btn-secondary" onclick="downloadCardsImage()">
           📤 Download Cards Image
         </button>
       </div>
@@ -4107,13 +4107,13 @@
       <div id="output" class="output-section">No output yet.</div>
       <div class="actions-group">
         <div class="action-row">
-          <button class="btn btn-copy btn-sm" onclick="copyOutput()">
+          <button type="button" class="btn btn-copy btn-sm" onclick="copyOutput()">
             📋 Copy
           </button>
-          <button class="btn btn-whatsapp btn-sm" onclick="shareCombined('whatsapp')">
+          <button type="button" class="btn btn-whatsapp btn-sm" onclick="shareCombined('whatsapp')">
             📱 WhatsApp
           </button>
-          <button class="btn btn-gmail btn-sm" onclick="shareCombined('email')">
+          <button type="button" class="btn btn-gmail btn-sm" onclick="shareCombined('email')">
             📧 Gmail
           </button>
         </div>
@@ -8974,8 +8974,17 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
           // Add layover info if not the last segment
           if (idx < flight.segments.length - 1) {
-            output += `\n*Layover:* ${seg.arrival_city || seg.arrival_airport}`;
-            if (isFieldValid(seg.layover_duration)) output += ` — *${seg.layover_duration}*`;
+            const nextSeg = flight.segments[idx + 1];
+            const layoverCity = nextSeg.departure_city || nextSeg.departure_airport || seg.arrival_city || seg.arrival_airport;
+            let layoverDur = nextSeg.layover_duration || '';
+
+            if (!isFieldValid(layoverDur)) {
+              const layoverDiff = calculateTimeDiff(seg.arrival_time, nextSeg.departure_time);
+              if (layoverDiff) layoverDur = layoverDiff.text;
+            }
+
+            output += `\n*Layover:* ${layoverCity}`;
+            if (isFieldValid(layoverDur)) output += ` — *${layoverDur}*`;
             output += `\n\n`;
           }
         });
@@ -10515,34 +10524,53 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       showNotification('Draft cleared', 'success');
     }
 
+    const notificationTimers = new Map();
+
+    function clearNotificationTimer(key) {
+      const timerId = notificationTimers.get(key);
+      if (timerId) {
+        clearTimeout(timerId);
+        notificationTimers.delete(key);
+      }
+    }
+
     function showNotification(message, type = 'success', options = {}) {
       let container = document.getElementById('notification-container');
       if (!container) {
         container = document.createElement('div');
         container.id = 'notification-container';
+        container.setAttribute('aria-live', 'polite');
+        container.setAttribute('aria-atomic', 'true');
         document.body.appendChild(container);
       }
 
       const duration = Number.isFinite(options.duration) ? options.duration : 3000;
       const toastId = options.id || '';
+      const timerKey = toastId || `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       if (toastId) {
         const existing = container.querySelector(`.notification[data-toast-id="${toastId}"]`);
         if (existing) existing.remove();
       }
+      clearNotificationTimer(timerKey);
 
       const notif = document.createElement('div');
       notif.className = `notification ${type}`;
       if (toastId) notif.dataset.toastId = toastId;
+      notif.setAttribute('role', 'status');
 
       const icon = type === 'error' ? '❌' : type === 'warning' ? '⚠️' : type === 'info' ? 'ℹ️' : '✅';
       notif.innerHTML = `<span>${icon}</span><span>${message}</span>`;
 
       container.appendChild(notif);
 
-      setTimeout(() => {
+      const removeTimer = setTimeout(() => {
         notif.style.animation = 'slideIn 0.3s ease reverse';
-        setTimeout(() => notif.remove(), 300);
+        setTimeout(() => {
+          notif.remove();
+          clearNotificationTimer(timerKey);
+        }, 300);
       }, duration);
+      notificationTimers.set(timerKey, removeTimer);
     }
 
     // --- Global Loader ---
