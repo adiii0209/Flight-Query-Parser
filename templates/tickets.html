@@ -872,6 +872,74 @@
             max-width: 400px;
         }
 
+        .search-toolbar {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+        }
+
+        .search-toolbar > .search-wrapper {
+            flex: 1;
+        }
+
+        .notif-controls {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .detail-header h1 {
+            margin: 0 0 0.45rem;
+        }
+
+        .detail-subtitle {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.35rem;
+            line-height: 1.45;
+        }
+
+        .detail-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            flex-shrink: 0;
+        }
+
+        .detail-actions .btn-action.danger,
+        .detail-delete-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.45rem;
+            min-width: 138px;
+            padding: 0.72rem 1rem;
+            border-radius: 12px;
+            border: 1px solid rgba(220, 38, 38, 0.22);
+            background: linear-gradient(135deg, rgba(254, 242, 242, 0.92), rgba(254, 226, 226, 0.96));
+            color: #b91c1c;
+            font-weight: 700;
+            box-shadow: 0 10px 22px rgba(220, 38, 38, 0.08);
+        }
+
+        .detail-actions .btn-action.danger:hover,
+        .detail-delete-btn:hover {
+            border-color: rgba(220, 38, 38, 0.36);
+            background: linear-gradient(135deg, rgba(254, 226, 226, 0.98), rgba(254, 202, 202, 0.96));
+            transform: translateY(-1px);
+        }
+
         .search-wrapper .search-icon {
             position: absolute;
             left: 0.75rem;
@@ -1132,6 +1200,261 @@
 
         .notif-bell.has-items {
             border-color: var(--primary) !important;
+        }
+
+        .notif-bell.attention {
+            border-color: rgba(239, 68, 68, 0.7) !important;
+            background: rgba(239, 68, 68, 0.08) !important;
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35);
+            animation: notifAttentionPulse 0.9s ease-in-out 3;
+        }
+
+        .notif-badge.attention {
+            animation: notifBadgeBounce 0.7s ease-in-out 4;
+        }
+
+        @keyframes notifAttentionPulse {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35);
+            }
+            50% {
+                transform: scale(1.05);
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+
+        @keyframes notifBadgeBounce {
+            0%, 100% {
+                transform: scale(1);
+            }
+            35% {
+                transform: scale(1.18);
+            }
+            60% {
+                transform: scale(0.96);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding-left: 0.85rem;
+                padding-right: 0.85rem;
+            }
+
+            .top-header {
+                padding: 0.9rem 1rem;
+            }
+
+            .header-content h1 {
+                font-size: 1.15rem;
+            }
+
+            .header-content p {
+                font-size: 0.82rem;
+            }
+
+            .list-header-controls {
+                gap: 0.85rem;
+                margin-bottom: 1rem;
+            }
+
+            .list-header-controls > .search-toolbar,
+            .list-header-controls > .search-toolbar > .search-wrapper {
+                max-width: none !important;
+                width: 100%;
+            }
+
+            .list-header-controls > .search-toolbar {
+                flex-direction: column !important;
+                align-items: stretch !important;
+            }
+
+            #processingIndicator {
+                align-self: center;
+                max-width: 100%;
+            }
+
+            .notif-controls {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .filter-bar {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                padding-bottom: 0.15rem;
+                scrollbar-width: none;
+            }
+
+            .filter-bar::-webkit-scrollbar {
+                display: none;
+            }
+
+            .filter-bar .tab {
+                flex: 0 0 auto;
+                white-space: nowrap;
+            }
+
+            #detailView > .btn-action.secondary {
+                width: 100%;
+                justify-content: center;
+            }
+
+            #ticketDetailHeader {
+                gap: 0.85rem !important;
+            }
+
+            #ticketDetailHeader,
+            .detail-actions {
+                flex-direction: column;
+                align-items: stretch !important;
+            }
+
+            .detail-actions .btn-action,
+            #ticketDetailHeader .btn-action {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .detail-subtitle {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.35rem;
+                line-height: 1.45;
+            }
+
+            #actionsSection > div:last-child,
+            #actionsSection .pdf-btn-group,
+            #ledgerBtnGroup {
+                flex-direction: column !important;
+                align-items: stretch !important;
+                width: 100%;
+            }
+
+            #actionsSection .pdf-btn,
+            #actionsSection .btn-action,
+            #actionsSection select {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .field-grid {
+                grid-template-columns: 1fr;
+                gap: 0.85rem;
+            }
+
+            .leg-header-v2,
+            .leg-header-left,
+            .leg-header-right {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .leg-route-v2 {
+                justify-content: space-between;
+                width: 100%;
+            }
+
+            .leg-arrow-container {
+                min-width: 54px;
+            }
+
+            .leg-meta-stack {
+                align-items: flex-start;
+            }
+
+            .leg-segments-v2,
+            .leg-segments-v2.collapsed {
+                padding-left: 0.85rem;
+                padding-right: 0.85rem;
+            }
+
+            .segment-card-v2 {
+                padding: 0.9rem;
+            }
+
+            .segment-header-v2,
+            .segment-airline-info {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .segment-timeline-v2 {
+                flex-direction: column;
+                gap: 0.9rem;
+            }
+
+            .timeline-point,
+            .timeline-point.arr {
+                justify-content: flex-start;
+                text-align: left;
+            }
+
+            .timeline-point.arr .timeline-details {
+                align-items: flex-start;
+            }
+
+            .timeline-point.arr .tl-datetime {
+                justify-content: flex-start;
+            }
+
+            .timeline-connector {
+                width: 100%;
+                min-height: 36px;
+                flex: none;
+            }
+
+            .timeline-connector::before {
+                left: 0;
+                right: 0;
+            }
+
+            .timeline-duration {
+                top: -14px;
+                font-size: 0.68rem;
+            }
+
+            .pax-edit-card {
+                padding: 1rem;
+            }
+
+            .pax-edit-header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 0.75rem;
+            }
+
+            .seat-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .fare-table {
+                display: block;
+                overflow-x: auto;
+                white-space: nowrap;
+            }
+
+            .fare-table th,
+            .fare-table td {
+                min-width: 110px;
+            }
+
+            .notif-panel {
+                width: 100%;
+            }
+
+            .toast {
+                left: 1rem;
+                right: 1rem;
+                bottom: 1rem;
+                width: auto;
+                padding: 0.85rem 1rem;
+            }
         }
 
         .processing-indicator {
@@ -1417,13 +1740,13 @@
                         <span id="processingLabel">tickets processing</span>
                     </span>
                 </div>
-                <div class="search-wrapper" style="display:flex;gap:0.75rem;align-items:center;">
+                <div class="search-toolbar">
                     <div class="search-wrapper" style="flex:1;position:relative;">
                         <span class="search-icon">🔍</span>
                         <input type="text" id="ticketSearch" class="search-input"
                             placeholder="Search tickets by PNR, passenger, route, city..." oninput="renderTicketCards()">
                     </div>
-                    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+                    <div class="notif-controls">
                         <button class="notif-bell" id="mergeNotifBtn" onclick="toggleNotifPanel('merge')" title="PNR Merge Requests" style="position:relative;background:none;border:1px solid var(--border);border-radius:10px;padding:0.5rem 0.7rem;cursor:pointer;font-size:1.1rem;transition:all 0.2s;color:var(--text-primary);">
                             🔔<span class="notif-badge" id="mergeBadge" style="display:none;position:absolute;top:-5px;right:-5px;background:linear-gradient(135deg,#2563eb,#6366f1);color:white;border-radius:999px;font-size:0.65rem;font-weight:800;min-width:18px;height:18px;display:none;align-items:center;justify-content:center;padding:0 4px;">0</span>
                         </button>

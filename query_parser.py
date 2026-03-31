@@ -10,10 +10,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==================== CONFIG ====================
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 if not OPENROUTER_API_KEY:
-    raise ValueError("OPENROUTER_API_KEY is not set")
+    raise ValueError("OPENROUTER_API_KEY is not set in the environment")
 OPENROUTER_URL = os.getenv("OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions")
 MODEL = os.getenv("MODEL", "openai/gpt-4o-mini")
 MAX_TOKENS = 400

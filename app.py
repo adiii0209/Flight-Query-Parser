@@ -3330,6 +3330,10 @@ def _build_pnr_merge_groups(user_id):
             continue
         merged_ticket_count = 0
         signatures = [_ticket_signature(ticket) for ticket in pnr_tickets]
+        latest_activity_dt = max(
+            ((ticket.updated_at or ticket.created_at) for ticket in pnr_tickets),
+            default=None,
+        )
         unique_passengers = sorted({
             passenger_name
             for sig in signatures
@@ -3361,9 +3365,17 @@ def _build_pnr_merge_groups(user_id):
             "normalized_passengers": unique_passengers,
             "discrepancies": discrepancies,
             "tickets": signatures,
+            "latest_activity_at": latest_activity_dt.isoformat() if latest_activity_dt else None,
+            "latest_activity_ts": latest_activity_dt.timestamp() if latest_activity_dt else 0,
         })
 
-    return sorted(result, key=lambda item: (item["can_auto_merge"] is False, item["pnr"]))
+    return sorted(
+        result,
+        key=lambda item: (
+            -(item.get("latest_activity_ts") or 0),
+            item["pnr"],
+        ),
+    )
 
 
 @app.route("/api/tickets/pnr-groups", methods=["GET"])

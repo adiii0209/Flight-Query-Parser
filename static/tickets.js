@@ -20,6 +20,8 @@ let _processingDoneTimeout = null;
 let _processingRefreshTimeout = null;
 let _processingJustCompleted = false;
 let _pendingArrivalToastMessage = '';
+let _duplicateAlertTimeout = null;
+let _hasLoadedNotificationsOnce = false;
 let totalAvailableTickets = 0;
 let lastFullTicketsSyncAt = 0;
 let fullTicketsSyncPromise = null;
@@ -1348,13 +1350,25 @@ async function loadNotifications() {
     try {
         const r = await fetch('/api/tickets/notifications');
         if (!r.ok) return;
+        const previousDuplicateCount = parseMoneyValue(_notifData.duplicate_count);
         const previousActiveProcessingCount = Array.isArray(_notifData.processing_batches)
             ? _notifData.processing_batches.reduce((sum, batch) => sum + parseMoneyValue(batch.pending_count), 0)
             : parseMoneyValue(_notifData.processing_count);
         _notifData = await r.json();
+        const nextDuplicateCount = parseMoneyValue(_notifData.duplicate_count);
         const nextActiveProcessingCount = Array.isArray(_notifData.processing_batches)
             ? _notifData.processing_batches.reduce((sum, batch) => sum + parseMoneyValue(batch.pending_count), 0)
             : parseMoneyValue(_notifData.processing_count);
+        if (_hasLoadedNotificationsOnce && nextDuplicateCount > previousDuplicateCount) {
+            const newDuplicateCount = nextDuplicateCount - previousDuplicateCount;
+            _flashDuplicateNotificationAlert();
+            showToast(
+                newDuplicateCount === 1
+                    ? 'A new ticket was moved to Duplicate Tickets'
+                    : `${newDuplicateCount} new tickets were moved to Duplicate Tickets`,
+                'warning'
+            );
+        }
         if (nextActiveProcessingCount > 0) {
             _processingIndicatorMode = 'processing';
             if (_processingDoneTimeout) {
@@ -1372,6 +1386,7 @@ async function loadNotifications() {
             }, 3000);
         }
         _lastProcessingCount = nextActiveProcessingCount;
+        _hasLoadedNotificationsOnce = true;
         _updateNotifBadges();
         _scheduleProcessingRefresh();
         _flushArrivalToastIfReady();
@@ -1407,6 +1422,22 @@ function _scheduleProcessingRefresh() {
             void loadNotifications();
         }, nextRefreshMs);
     }
+}
+
+function _flashDuplicateNotificationAlert() {
+    const dupBtn = document.getElementById('dupNotifBtn');
+    const dupBadge = document.getElementById('dupBadge');
+    if (_duplicateAlertTimeout) {
+        clearTimeout(_duplicateAlertTimeout);
+        _duplicateAlertTimeout = null;
+    }
+    if (dupBtn) dupBtn.classList.add('attention');
+    if (dupBadge) dupBadge.classList.add('attention');
+    _duplicateAlertTimeout = setTimeout(() => {
+        if (dupBtn) dupBtn.classList.remove('attention');
+        if (dupBadge) dupBadge.classList.remove('attention');
+        _duplicateAlertTimeout = null;
+    }, 3200);
 }
 
 function _updateNotifBadges() {
@@ -1496,6 +1527,22 @@ function _closeNotifPanel() {
     _activeNotifPanel = null;
 }
 
+function getPnrGroupDisplayNames(group) {
+    const displayNames = [];
+    const seen = new Set();
+    (group?.tickets || []).forEach((ticket) => {
+        (ticket?.passenger_names || []).forEach((name) => {
+            const trimmed = safe(name, '').toString().trim();
+            if (!trimmed) return;
+            const key = trimmed.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            displayNames.push(trimmed);
+        });
+    });
+    return displayNames;
+}
+
 function _renderMergePanel(panel) {
     const groups = _notifData.merge_groups || [];
     const pendingGroups = groups.filter(g => g.merged_ticket_count < g.ticket_count);
@@ -1522,7 +1569,7 @@ function _renderMergePanel(panel) {
         const paxBadge = group.has_different_passengers
             ? '<span style="background:rgba(16,185,129,0.12);color:#10b981;padding:0.15rem 0.45rem;border-radius:999px;font-size:0.7rem;font-weight:700;">Different pax</span>'
             : '<span style="background:rgba(239,68,68,0.12);color:#ef4444;padding:0.15rem 0.45rem;border-radius:999px;font-size:0.7rem;font-weight:700;">Same pax</span>';
-        const paxNames = (group.normalized_passengers || []).join(', ') || 'Unknown';
+        const paxNames = getPnrGroupDisplayNames(group).join(', ') || 'Unknown';
 
         return `<div class="notif-card">
             <div class="notif-card-header">
@@ -1587,12 +1634,12 @@ async function _renderDuplicatePanel(panel) {
             const dupRoute = dup.route || '—';
             const origRoute = orig ? (orig.route || '—') : '—';
 
-            const timeAgo = _timeAgo(dup.created_at);
+            const createdLabel = formatLocalDateTime(dup.created_at) || 'Recent';
 
             return `<div class="notif-card" id="dup-card-${dup.id}">
                 <div class="notif-card-header">
                     <div>
-                        <div style="font-weight:800;font-size:0.95rem;">PNR ${dup.pnr || '—'} <span style="font-size:0.76rem;font-weight:500;color:var(--text-secondary);">· ${timeAgo}</span></div>
+                        <div style="font-weight:800;font-size:0.95rem;">PNR ${dup.pnr || '—'} <span style="font-size:0.76rem;font-weight:500;color:var(--text-secondary);">· ${createdLabel}</span></div>
                         <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.15rem;">${dupRoute} · ${dupNames}</div>
                     </div>
                     <span style="background:rgba(245,158,11,0.12);color:#d97706;padding:0.15rem 0.45rem;border-radius:999px;font-size:0.7rem;font-weight:700;">Suspected Duplicate</span>
@@ -1638,16 +1685,17 @@ async function _renderDuplicatePanel(panel) {
     }
 }
 
-function _timeAgo(isoDate) {
+function formatLocalDateTime(isoDate) {
     if (!isoDate) return '';
-    const diff = Date.now() - new Date(isoDate).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    const days = Math.floor(hrs / 24);
-    return `${days}d ago`;
+    const parsed = new Date(isoDate);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toLocaleString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+    });
 }
 
 function _getSelectedPnrReviewTicketIds(pnr) {
@@ -1815,7 +1863,7 @@ async function _renderDuplicatePanel(panel) {
             const origNames = orig ? (orig.passenger_names || []).join(', ') || 'Unknown' : '—';
             const dupRoute = dup.route || '—';
             const origRoute = orig ? (orig.route || '—') : '—';
-            const timeAgo = _timeAgo(dup.created_at);
+            const createdLabel = formatLocalDateTime(dup.created_at) || 'Recent';
 
             return `<div class="notif-card" id="dup-card-${dup.id}">
                 <div class="notif-card-header">
@@ -1824,7 +1872,7 @@ async function _renderDuplicatePanel(panel) {
                             <input type="checkbox" class="duplicate-review-checkbox" value="${dup.id}" checked>
                         </label>
                         <div>
-                            <div style="font-weight:800;font-size:0.95rem;">PNR ${dup.pnr || '—'} <span style="font-size:0.76rem;font-weight:500;color:var(--text-secondary);">· ${timeAgo}</span></div>
+                            <div style="font-weight:800;font-size:0.95rem;">PNR ${dup.pnr || '—'} <span style="font-size:0.76rem;font-weight:500;color:var(--text-secondary);">· ${createdLabel}</span></div>
                             <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.15rem;">${dupRoute} · ${dupNames}</div>
                         </div>
                     </div>
@@ -1887,7 +1935,7 @@ function _renderDuplicateCardsHtmlV2(dups) {
         const origNames = orig ? (orig.passenger_names || []).join(', ') || 'Unknown' : '-';
         const dupRoute = dup.route || '-';
         const origRoute = orig ? (orig.route || '-') : '-';
-        const timeAgo = _timeAgo(dup.created_at);
+        const createdLabel = formatLocalDateTime(dup.created_at) || 'Recent';
 
         return `<div class="notif-card" id="dup-card-${dup.id}">
             <div class="notif-card-header">
@@ -1896,7 +1944,7 @@ function _renderDuplicateCardsHtmlV2(dups) {
                         <input type="checkbox" class="duplicate-review-checkbox" value="${dup.id}" checked>
                     </label>
                     <div>
-                        <div style="font-weight:800;font-size:0.95rem;">PNR ${dup.pnr || '-'} <span style="font-size:0.76rem;font-weight:500;color:var(--text-secondary);">· ${timeAgo}</span></div>
+                        <div style="font-weight:800;font-size:0.95rem;">PNR ${dup.pnr || '-'} <span style="font-size:0.76rem;font-weight:500;color:var(--text-secondary);">· ${createdLabel}</span></div>
                         <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.15rem;">${dupRoute} · ${dupNames}</div>
                     </div>
                 </div>
@@ -3508,9 +3556,37 @@ function addPassenger() {
     showToast('New passenger added', 'info');
 }
 
+function syncPassengerNamesToVisibleUi(index) {
+    const passenger = editedData?.passengers?.[index];
+    if (!passenger) return;
+    const passengerName = safe(passenger.name, 'Passenger ' + (index + 1));
+    const passengerHeader = document.querySelector(`#pax-card-${index} .pax-edit-header h4`);
+    if (passengerHeader) {
+        passengerHeader.textContent = `👤 ${passengerName}`;
+    }
+
+    if (currentTicket?.id === editedData?.id) {
+        currentTicket.passengers = JSON.parse(JSON.stringify(editedData.passengers || []));
+        cacheTicketDetail(currentTicket);
+    }
+    const ticketIndex = allTickets.findIndex(ticket => ticket.id === editedData?.id);
+    if (ticketIndex !== -1) {
+        allTickets[ticketIndex].passengers = JSON.parse(JSON.stringify(editedData.passengers || []));
+    }
+
+    if (passengerSortMode === 'name') {
+        renderPassengersSection();
+    }
+    renderFareSection();
+    renderTicketCards();
+}
+
 function updatePassengerField(index, field, value) {
     if (!editedData.passengers || !editedData.passengers[index]) return;
     editedData.passengers[index][field] = value;
+    if (field === 'name') {
+        syncPassengerNamesToVisibleUi(index);
+    }
     triggerAutoSave();
 }
 
