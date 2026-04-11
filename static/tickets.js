@@ -33,6 +33,8 @@ let ticketEditBaseSnapshot = null;
 let dashboardLiveUpdatesPaused = false;
 let draftRetryHandle = null;
 let hasPendingLocalDraft = false;
+let activeSegmentEditIdx = null;
+let expandedLegIds = new Set();
 let duplicatePanelTickets = [];
 let duplicatePanelTotalCount = 0;
 let duplicatePanelIsLoadingMore = false;
@@ -417,12 +419,80 @@ function formatDurationFromMinutes(totalMinutes) {
     return `${minutes}m`;
 }
 
+function parseFlightDateTime(point) {
+    if (!point || typeof point !== 'object') return null;
+    const date = String(safe(point.date)).trim();
+    const time = String(safe(point.time)).trim();
+    if (!date || !time) return null;
+
+    const candidates = [
+        `${date} ${time}`,
+        `${date}T${time}`,
+        `${date.replace(/\//g, '-')} ${time}`
+    ];
+
+    for (const candidate of candidates) {
+        const parsed = new Date(candidate);
+        const value = parsed.getTime();
+        if (Number.isFinite(value)) return value;
+    }
+    return null;
+}
+
+function getElapsedMinutes(startPoint, endPoint) {
+    const start = parseFlightDateTime(startPoint);
+    const end = parseFlightDateTime(endPoint);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
+    let diffMinutes = Math.round((end - start) / 60000);
+    if (diffMinutes <= 0 && diffMinutes > -720) diffMinutes += 1440;
+    return diffMinutes > 0 ? diffMinutes : 0;
+}
+
+function getSegmentDurationMinutes(segment) {
+    const explicitMinutes = parseDurationToMinutes(getSegmentDurationValue(segment));
+    if (explicitMinutes > 0) return explicitMinutes;
+    return getElapsedMinutes(segment?.departure, segment?.arrival);
+}
+
+function getJourneyLayoverMap(journey) {
+    const layoverMap = {};
+    if (journey?.layovers && journey.layovers.length > 0) {
+        journey.layovers.forEach(lo => {
+            if (lo && lo.after_segment !== undefined && lo.after_segment !== null) {
+                layoverMap[lo.after_segment] = lo;
+            }
+        });
+    }
+    return layoverMap;
+}
+
+function getLayoverDurationValue(prevSeg, nextSeg, journey, prevSegIdx) {
+    const layoverMap = getJourneyLayoverMap(journey);
+    const explicit = [
+        layoverMap[prevSegIdx]?.duration,
+        nextSeg?.layover,
+        nextSeg?.layover_duration,
+        prevSeg?.layover,
+        prevSeg?.layover_duration
+    ].find(value => value && value !== 'N/A' && value !== 'Not Specified');
+    if (explicit) return explicit;
+
+    return formatDurationFromMinutes(getElapsedMinutes(prevSeg?.arrival, nextSeg?.departure));
+}
+
+function getLayoverDurationMinutes(prevSeg, nextSeg, journey, prevSegIdx) {
+    return parseDurationToMinutes(getLayoverDurationValue(prevSeg, nextSeg, journey, prevSegIdx));
+}
+
 function getLegDurationValue(legIndices, segments, journey, legIdx) {
+    const safeSegments = segments || [];
+    const indices = legIndices || [];
+    if (!indices.length) return '';
+
     let totalMinutes = 0;
-    (legIndices || []).forEach((segIdx) => {
-        totalMinutes += parseDurationToMinutes(getSegmentDurationValue((segments || [])[segIdx]));
-        const seg = (segments || [])[segIdx] || {};
-        totalMinutes += parseDurationToMinutes(seg.layover_duration);
+    indices.forEach((segIdx) => {
+        const seg = safeSegments[segIdx] || {};
+        totalMinutes += getSegmentDurationMinutes(seg);
     });
     return formatDurationFromMinutes(totalMinutes);
 }
@@ -431,6 +501,34 @@ function getJourneyDurationValue(legs, segments, journey) {
     let totalMinutes = 0;
     (legs || []).forEach((legIndices, legIdx) => {
         totalMinutes += parseDurationToMinutes(getLegDurationValue(legIndices, segments, journey, legIdx));
+    });
+    return formatDurationFromMinutes(totalMinutes);
+}
+
+function getLegLayoverDurationValue(legIndices, segments, journey) {
+    const safeSegments = segments || [];
+    let totalMinutes = 0;
+    (legIndices || []).forEach((segIdx, pos) => {
+        if (pos < legIndices.length - 1) {
+            const seg = safeSegments[segIdx] || {};
+            const nextSegIdx = legIndices[pos + 1];
+            const nextSeg = safeSegments[nextSegIdx] || {};
+            totalMinutes += getLayoverDurationMinutes(seg, nextSeg, journey, segIdx);
+        }
+    });
+    return formatDurationFromMinutes(totalMinutes);
+}
+
+function getLegTotalDurationValue(legIndices, segments, journey, legIdx) {
+    const flightMinutes = parseDurationToMinutes(getLegDurationValue(legIndices, segments, journey, legIdx));
+    const layoverMinutes = parseDurationToMinutes(getLegLayoverDurationValue(legIndices, segments, journey));
+    return formatDurationFromMinutes(flightMinutes + layoverMinutes);
+}
+
+function getJourneyTotalDurationValue(legs, segments, journey) {
+    let totalMinutes = 0;
+    (legs || []).forEach((legIndices, legIdx) => {
+        totalMinutes += parseDurationToMinutes(getLegTotalDurationValue(legIndices, segments, journey, legIdx));
     });
     return formatDurationFromMinutes(totalMinutes);
 }
@@ -764,6 +862,19 @@ function stopTicketsPolling() {
     ticketsPollingHandle = null;
 }
 
+function getTicketIdFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('ticket') || '';
+}
+
+function updateTicketUrl(ticketId = '', { replace = false } = {}) {
+    const url = new URL(window.location.href);
+    if (ticketId) url.searchParams.set('ticket', ticketId);
+    else url.searchParams.delete('ticket');
+    const method = replace ? 'replaceState' : 'pushState';
+    window.history[method]({ ticketId: ticketId || null }, '', url);
+}
+
 function pauseDashboardLiveUpdates() {
     dashboardLiveUpdatesPaused = true;
     stopTicketsRealtime();
@@ -868,22 +979,10 @@ function renderTicketCards() {
             routeHtml = `<span class="route-code">${depCode}</span><span class="route-arrow">${arrow}</span><span class="route-code">${arrCode}</span>`;
         }
 
-        // Count layovers
-        const totalSegments = segments.length;
-        const totalLegs = legs.length;
-        let layoverCount = totalSegments - totalLegs;
-        let layoverLabel = '';
-        if (layoverCount > 0) {
-            layoverLabel = `<span class="layover-chip">${layoverCount} stop${layoverCount > 1 ? 's' : ''}</span>`;
-        }
-
         // Trip type display
         const tripDisplay = journey.trip_type_display || getTripLabel(t.trip_type);
 
         const statusClass = t.status === 'matched' ? 'confirmed' : 'draft';
-        const statusBadge = t.status === 'matched'
-            ? '<span class="match-badge matched">✅ Matched</span>'
-            : '<span class="match-badge unmatched">Unmatched</span>';
 
         // Ticket status badge (live/cancelled/changed)
         const tStatus = t.ticket_status || 'live';
@@ -926,12 +1025,10 @@ function renderTicketCards() {
                         </div>
                         <div class="ticket-card-route">
                             ${routeHtml}
-                            ${layoverLabel}
                         </div>
                     </div>
                     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.4rem;">
                         <span class="pnr-label">${safe(t.pnr, '---')}</span>
-                        ${statusBadge}
                         ${tStatusBadge}
                         ${splitBadge}
                         ${mergedBadge}
@@ -940,10 +1037,9 @@ function renderTicketCards() {
                 <div class="itin-card-meta">
                     <span class="meta-item"><b>Type:</b> ${tripDisplay}</span>
                     <span class="meta-item"><b>Date:</b> ${safe(depDate, '-')}</span>
-                    ${t.class_of_travel && t.class_of_travel !== 'None' ? `<span class="meta-item"><b>Class:</b> ${safe(t.class_of_travel, 'Economy')}</span>` : ''}
                 </div>
                 <div class="ticket-card-pax">
-                    ${passengers.map(p => `<span class="pax-chip">👤 ${safe(p.name, 'Passenger')}<br><span style="font-size:0.68rem;color:var(--text-secondary);">${safe(p.system_ticket_number, '')}</span></span>`).join('')}
+                    ${passengers.map(p => `<span class="pax-chip">👤 ${safe(p.name, 'Passenger')}</span>`).join('')}
                 </div>
                 <div class="itin-card-footer">
                     <span class="itin-amount">${formatCurrency(displayTotal, t.currency || 'INR')}</span>
@@ -975,7 +1071,7 @@ function buildEmptyTicketsStateHtml() {
         ? 'No merged bookings yet. Merge PNR groups to see combined bookings here.'
         : (searchInput && searchInput.value ? 'No tickets matched your search.' : 'No tickets found. Tickets will appear here when received from the parser.');
     return `<div class="empty-state" style="grid-column:1/-1">
-        <div class="icon">${_mergedViewActive ? 'ðŸ“¦' : 'ðŸŽ«'}</div>
+        <div class="icon">${_mergedViewActive ? '📦' : '🎫'}</div>
         <p>${emptyMsg}</p>
     </div>`;
 }
@@ -1027,16 +1123,8 @@ function buildTicketCardHtml(t) {
         routeHtml = `<span class="route-code">${depCode}</span><span class="route-arrow">${arrow}</span><span class="route-code">${arrCode}</span>`;
     }
 
-    const layoverCount = segments.length - legs.length;
-    const layoverLabel = layoverCount > 0
-        ? `<span class="layover-chip">${layoverCount} stop${layoverCount > 1 ? 's' : ''}</span>`
-        : '';
-
     const tripDisplay = journey.trip_type_display || getTripLabel(t.trip_type);
     const statusClass = t.status === 'matched' ? 'confirmed' : 'draft';
-    const statusBadge = t.status === 'matched'
-        ? '<span class="match-badge matched">âœ… Matched</span>'
-        : '<span class="match-badge unmatched">Unmatched</span>';
     const tStatus = t.ticket_status || 'live';
     const tStatusBadge = tStatus === 'cancelled'
         ? '<span style="background:rgba(239,68,68,0.12);color:#ef4444;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">ðŸ”´ Cancelled</span>'
@@ -1073,12 +1161,10 @@ function buildTicketCardHtml(t) {
                     </div>
                     <div class="ticket-card-route">
                         ${routeHtml}
-                        ${layoverLabel}
                     </div>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.4rem;">
                     <span class="pnr-label">${safe(t.pnr, '---')}</span>
-                    ${statusBadge}
                     ${tStatusBadge}
                     ${splitBadge}
                     ${mergedBadge}
@@ -1087,10 +1173,9 @@ function buildTicketCardHtml(t) {
             <div class="itin-card-meta">
                 <span class="meta-item"><b>Type:</b> ${tripDisplay}</span>
                 <span class="meta-item"><b>Date:</b> ${safe(depDate, '-')}</span>
-                ${t.class_of_travel && t.class_of_travel !== 'None' ? `<span class="meta-item"><b>Class:</b> ${safe(t.class_of_travel, 'Economy')}</span>` : ''}
             </div>
             <div class="ticket-card-pax">
-                ${passengers.map(p => `<span class="pax-chip">ðŸ‘¤ ${safe(p.name, 'Passenger')}<br><span style="font-size:0.68rem;color:var(--text-secondary);">${safe(p.system_ticket_number, '')}</span></span>`).join('')}
+                ${passengers.map(p => `<span class="pax-chip">ðŸ‘¤ ${safe(p.name, 'Passenger')}</span>`).join('')}
             </div>
             <div class="itin-card-footer">
                 <span class="itin-amount">${formatCurrency(displayTotal, t.currency || 'INR')}</span>
@@ -1203,16 +1288,8 @@ function buildTicketCardHtml(t) {
         routeHtml = `<span class="route-code">${depCode}</span><span class="route-arrow">${arrow}</span><span class="route-code">${arrCode}</span>`;
     }
 
-    const layoverCount = segments.length - legs.length;
-    const layoverLabel = layoverCount > 0
-        ? `<span class="layover-chip">${layoverCount} stop${layoverCount > 1 ? 's' : ''}</span>`
-        : '';
-
     const tripDisplay = journey.trip_type_display || getTripLabel(t.trip_type);
     const statusClass = t.status === 'matched' ? 'confirmed' : 'draft';
-    const statusBadge = t.status === 'matched'
-        ? '<span class="match-badge matched">&#10004; Matched</span>'
-        : '<span class="match-badge unmatched">Unmatched</span>';
     const tStatus = t.ticket_status || 'live';
     const tStatusBadge = tStatus === 'cancelled'
         ? '<span style="background:rgba(239,68,68,0.12);color:#ef4444;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Cancelled</span>'
@@ -1249,12 +1326,10 @@ function buildTicketCardHtml(t) {
                     </div>
                     <div class="ticket-card-route">
                         ${routeHtml}
-                        ${layoverLabel}
                     </div>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.4rem;">
                     <span class="pnr-label">${safe(t.pnr, '---')}</span>
-                    ${statusBadge}
                     ${tStatusBadge}
                     ${splitBadge}
                     ${mergedBadge}
@@ -1263,10 +1338,9 @@ function buildTicketCardHtml(t) {
             <div class="itin-card-meta">
                 <span class="meta-item"><b>Type:</b> ${tripDisplay}</span>
                 <span class="meta-item"><b>Date:</b> ${safe(depDate, '-')}</span>
-                ${t.class_of_travel && t.class_of_travel !== 'None' ? `<span class="meta-item"><b>Class:</b> ${safe(t.class_of_travel, 'Economy')}</span>` : ''}
             </div>
             <div class="ticket-card-pax">
-                ${passengers.map(p => `<span class="pax-chip">👤 ${safe(p.name, 'Passenger')}<br><span style="font-size:0.68rem;color:var(--text-secondary);">${safe(p.system_ticket_number, '')}</span></span>`).join('')}
+                ${passengers.map(p => `<span class="pax-chip">👤 ${safe(p.name, 'Passenger')}</span>`).join('')}
             </div>
             <div class="itin-card-footer">
                 <span class="itin-amount">${formatCurrency(displayTotal, t.currency || 'INR')}</span>
@@ -1281,7 +1355,7 @@ function renderTicketCards() {
 }
 
 // ==================== OPEN TICKET DETAIL ====================
-async function openTicket(id) {
+async function openTicket(id, { syncUrl = true, replaceUrl = false } = {}) {
     const showDetailView = () => {
         document.getElementById('listView').style.display = 'none';
         document.getElementById('detailView').style.display = 'block';
@@ -1293,11 +1367,14 @@ async function openTicket(id) {
         if (cachedTicket) {
             currentTicket = cachedTicket;
             fareFieldsTouched = false;
+            activeSegmentEditIdx = null;
+            expandedLegIds = new Set();
             editedData = JSON.parse(JSON.stringify(currentTicket));
             setTicketEditBaseline(currentTicket);
             applyTicketDraftIfPresent(currentTicket.id, { showToastMessage: true });
             renderDetailView();
             showDetailView();
+            if (syncUrl) updateTicketUrl(id, { replace: replaceUrl });
             void syncCurrentTicketFromServer();
             return;
         }
@@ -1312,11 +1389,14 @@ async function openTicket(id) {
         currentTicket = normalizeTicketFareData(await r.json());
         cacheTicketDetail(currentTicket);
         fareFieldsTouched = false;
+        activeSegmentEditIdx = null;
+        expandedLegIds = new Set();
         editedData = JSON.parse(JSON.stringify(currentTicket));
         setTicketEditBaseline(currentTicket);
         applyTicketDraftIfPresent(currentTicket.id, { showToastMessage: true });
         renderDetailView();
         showDetailView();
+        if (syncUrl) updateTicketUrl(id, { replace: replaceUrl });
     } catch (e) {
         console.error(e);
         showToast('Error loading ticket', 'error');
@@ -1324,7 +1404,7 @@ async function openTicket(id) {
     }
 }
 
-async function showListView() {
+async function showListView({ syncUrl = true, replaceUrl = false } = {}) {
     if (currentTicket && editedData) {
         clearTimeout(autoSaveTimeout);
         if (isDetailDirty) {
@@ -1338,6 +1418,7 @@ async function showListView() {
     changeAttachmentState = { token: '', filename: '' };
     selectedPaxIndices.clear();
     _removePaxActionBar();
+    if (syncUrl) updateTicketUrl('', { replace: replaceUrl });
     resumeDashboardLiveUpdates({ refresh: true });
 }
 
@@ -2309,13 +2390,8 @@ function renderActionsSection() {
         <div class="section-header-row"><h2>⚡ Actions</h2></div>
                 <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
                     <div class="pdf-btn-group">
-                        <button class="pdf-btn with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
-                        <button class="pdf-btn without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
-                        <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">Sheet Export:</span>
-                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('AB')">📊 AB</button>
-                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('CK')">📊 CK</button>
+                        <button class="pdf-btn with-fare" data-pdf-download="with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
+                        <button class="pdf-btn without-fare" data-pdf-download="without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
                     </div>
                     ${!editedData.ledger_hash ? `
                     <div id="ledgerBtnGroup" style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
@@ -2368,13 +2444,8 @@ function renderActionsSection() {
         <div class="section-header-row"><h2>⚡ Actions</h2></div>
                 <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
                     <div class="pdf-btn-group">
-                        <button class="pdf-btn with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
-                        <button class="pdf-btn without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
-                        <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">Sheet Export:</span>
-                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('AB')">📊 AB</button>
-                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('CK')">📊 CK</button>
+                        <button class="pdf-btn with-fare" data-pdf-download="with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
+                        <button class="pdf-btn without-fare" data-pdf-download="without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
                     </div>
                     ${!editedData.ledger_hash ? `
                     <div id="ledgerBtnGroup" style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
@@ -2434,10 +2505,6 @@ function renderDetailView() {
     const depCode = (firstSeg.departure || {}).airport || '';
 
     const tripDisplay = journey.trip_type_display || getTripLabel(t.trip_type);
-    const summaryDuration = getJourneyDurationValue(legs, segments, journey);
-    const summaryDurationHtml = summaryDuration
-        ? `&nbsp;<span style="font-weight:700;color:var(--primary);">⏱ ${summaryDuration}</span>`
-        : '';
 
     let headerRouteHtml = '';
     if (t.trip_type === 'multi_city') {
@@ -2469,19 +2536,21 @@ function renderDetailView() {
     const chargeHtml = charge > 0 ? `<span style="background:rgba(239,68,68,0.1); color:#dc2626; padding:0.2rem 0.6rem; border-radius:8px; font-size:0.8rem; font-weight:700; border:1px solid rgba(239,68,68,0.2);">⚠️ XXD: ₹${charge.toLocaleString('en-IN')}</span>` : '';
 
     document.getElementById('ticketDetailHeader').innerHTML = `
-        <div>
-            <h1>${headerRouteHtml}</h1>
+        <div class="detail-header-main">
+            <div class="detail-route-kicker">Ticket Overview</div>
+            <div class="detail-title-row">
+                <h1>${headerRouteHtml}</h1>
+                ${detailTStatusBadge}
+            </div>
             <div class="detail-subtitle">
-                <span class="pnr-label" style="font-size:0.9rem;">${safe(t.pnr, 'No PNR')}</span>
-                &nbsp;${t.status === 'matched' ? '<span class="match-badge matched">✅ Matched</span>' : '<span class="match-badge unmatched">Unmatched</span>'}
-                &nbsp;${detailTStatusBadge}
-                &nbsp;${chargeHtml}
-                ${summaryDurationHtml}
-                &nbsp;•&nbsp; ${tripDisplay}
+                <span class="pnr-label" id="detailPnrLabel" style="font-size:0.9rem;">${safe(t.pnr, 'No PNR')}</span>
+                ${t.status === 'matched' ? '<span class="match-badge matched">Matched</span>' : '<span class="match-badge unmatched">Unmatched</span>'}
+                ${chargeHtml}
+                <span class="detail-meta-chip">${tripDisplay}</span>
             </div>
         </div>
         <div class="detail-actions">
-            <button class="btn-action small danger" onclick="deleteTicket()">🗑️ Delete</button>
+            <button class="btn-action small danger" onclick="deleteTicket()">Delete</button>
         </div>`;
     renderBookingSection();
     renderSegmentsSection();
@@ -2517,7 +2586,7 @@ function renderBookingSection() {
     document.getElementById('bookingSection').innerHTML = `
         <div class="section-header-row"><h2>📋 Booking Information</h2></div>
         <div class="field-grid">
-            <div class="field-item"><label>PNR</label><input type="text" value="${safe(t.pnr)}" oninput="editedData.pnr=this.value; triggerAutoSave()" onchange="editedData.pnr=this.value; triggerAutoSave()"></div>
+            <div class="field-item"><label>PNR</label><input type="text" value="${safe(t.pnr)}" oninput="updateTicketPnr(this.value)" onchange="updateTicketPnr(this.value)"></div>
             <div class="field-item"><label>Booking Date</label><input type="text" value="${safe(t.booking_date)}" oninput="editedData.booking_date=this.value; triggerAutoSave()" onchange="editedData.booking_date=this.value; triggerAutoSave()"></div>
             <div class="field-item"><label>Phone</label><input type="text" value="${safe(t.phone)}" oninput="editedData.phone=this.value; triggerAutoSave()" onchange="editedData.phone=this.value; triggerAutoSave()"></div>
             <div class="field-item"><label>Currency</label>
@@ -2531,14 +2600,6 @@ function renderBookingSection() {
                     <option value="THB" ${t.currency === 'THB' ? 'selected' : ''}>THB</option>
                 </select>
             </div>
-            <div class="field-item"><label>Class of Travel</label>
-                <select onchange="editedData.class_of_travel=this.value; triggerAutoSave()">
-                    <option value="None" ${!t.class_of_travel || t.class_of_travel === 'None' ? 'selected' : ''}>None (Mixed / Hidden)</option>
-                    <option value="Economy" ${t.class_of_travel === 'Economy' ? 'selected' : ''}>Economy</option>
-                    <option value="Premium Economy" ${t.class_of_travel === 'Premium Economy' ? 'selected' : ''}>Premium Economy</option>
-                    <option value="Business" ${t.class_of_travel === 'Business' ? 'selected' : ''}>Business</option>
-                    <option value="First" ${t.class_of_travel === 'First' ? 'selected' : ''}>First</option>
-                </select></div>
             <div class="field-item"><label>Trip Type</label>
                 <select onchange="editedData.trip_type=this.value; renderDetailView(); triggerAutoSave()">
                     <option value="one_way" ${t.trip_type === 'one_way' ? 'selected' : ''}>One Way</option>
@@ -2549,13 +2610,18 @@ function renderBookingSection() {
         ${gstHtml}`;
 }
 
+function updateTicketPnr(value) {
+    editedData.pnr = value;
+    const headerPnr = document.getElementById('detailPnrLabel');
+    if (headerPnr) headerPnr.textContent = value || 'No PNR';
+    triggerAutoSave();
+}
+
 function renderSegmentsSection() {
     const segments = editedData.segments || [];
     const journey = editedData.journey || {};
     const tripType = editedData.trip_type || 'one_way';
-    const cabinClassOptions = ['Economy', 'Premium Economy', 'Business', 'First'];
 
-    // Use journey legs from API if available, otherwise fall back to grouping
     let legs;
     if (journey.legs && journey.legs.length > 0) {
         legs = journey.legs.map(leg => leg.segments || []);
@@ -2563,23 +2629,15 @@ function renderSegmentsSection() {
         legs = groupSegmentsIntoLegs(segments);
     }
 
-    // Build a lookup for layover info from journey data
-    const layoverMap = {};
-    if (journey.layovers && journey.layovers.length > 0) {
-        journey.layovers.forEach(lo => {
-            layoverMap[lo.after_segment] = lo;
-        });
-    }
+    const layoverMap = getJourneyLayoverMap(journey);
 
-    // Trip type display
     const tripDisplay = journey.trip_type_display || getTripLabel(tripType);
-    const hasLayovers = journey.has_layovers || legs.some(l => l.length > 1);
 
     let html = `<div class="section-header-row">
-        <h2>✈️ Flight Segments</h2>
+        <h2>Flight Segments</h2>
         <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
             <span class="trip-type-chip">${tripDisplay}</span>
-            <span class="badge">${legs.length} leg${legs.length > 1 ? 's' : ''} • ${segments.length} segment${segments.length > 1 ? 's' : ''}</span>
+            <span class="badge">${legs.length} leg${legs.length > 1 ? 's' : ''} - ${segments.length} segment${segments.length > 1 ? 's' : ''}</span>
         </div>
     </div>`;
 
@@ -2597,190 +2655,133 @@ function renderSegmentsSection() {
         const depTime = (firstSeg.departure || {}).time || '';
         const arrTime = (lastSeg.arrival || {}).time || '';
         const arrDate = (lastSeg.arrival || {}).date || '';
-
-        // Get total duration from journey leg data if available
-        const legDuration = getLegDurationValue(legIndices, segments, journey, legIdx);
-
-        // Collect layover airport codes for summary
+        const totalDuration = getLegTotalDurationValue(legIndices, segments, journey, legIdx);
+        const durationSummaryHtml = totalDuration
+            ? `<span style="font-size:0.7rem; font-weight:700; color:var(--primary); padding:0.1rem 0.48rem; background:var(--bg-card); border:1px solid rgba(37,99,235,0.12); border-radius:999px; white-space:nowrap;">${totalDuration}</span>`
+            : '';
         const layoverAirports = [];
+
         if (hasStops) {
             for (let k = 0; k < legIndices.length - 1; k++) {
                 const segIdx = legIndices[k];
                 const lo = layoverMap[segIdx];
-                if (lo) {
-                    layoverAirports.push(lo.at_airport);
-                } else {
-                    const seg = segments[segIdx];
-                    layoverAirports.push((seg.arrival || {}).airport || '?');
-                }
+                if (lo) layoverAirports.push(lo.at_airport);
+                else layoverAirports.push(((segments[segIdx] || {}).arrival || {}).airport || '?');
             }
         }
 
         const legId = `leg-${legIdx}`;
-        const isCollapsible = hasStops;
-
-        html += `<div class="leg-group-v2" style="${(function() {
+        const showLegSummary = hasStops;
+        const isLegExpanded = !showLegSummary || expandedLegIds.has(legId) || legIndices.includes(activeSegmentEditIdx);
+        html += `<div class="leg-group-v2" style="${(() => {
             const segs = legIndices.map(i => segments[i]);
             const isFullyCancelled = segs.every(s => s.status === 'cancelled');
             return isFullyCancelled ? 'border: 2px solid #ef4444; background: rgba(239, 68, 68, 0.05);' : '';
-        })()}">
-            <div class="leg-header-v2" ${isCollapsible ? `onclick="toggleLeg('${legId}')" style="cursor:pointer;"` : ''}>
+        })()}">`;
+
+        if (showLegSummary) {
+            html += `<div class="leg-header-v2" onclick="toggleLeg('${legId}')" style="cursor:pointer;">
                 <div style="display:flex; width:100%; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
-                    
-                    <!-- Left: Badge -->
                     <div style="display:flex; align-items:center; gap:0.5rem;">
                         <span class="leg-badge-v2">${legLabel}</span>
-                        ${(function() {
-                            const segs = legIndices.map(i => segments[i]);
-                            const cancelled = segs.every(s => s.status === 'cancelled');
-                            const partial = !cancelled && segs.some(s => s.status === 'cancelled');
-                            if (cancelled) return '<span style="background:#ef4444; color:white; font-size:0.65rem; padding:1px 6px; border-radius:4px; font-weight:700;">CANCELLED</span>';
-                            if (partial) return '<span style="background:#f59e0b; color:white; font-size:0.65rem; padding:1px 6px; border-radius:4px; font-weight:700;">PARTIAL CANCEL</span>';
-                            return '';
-                        })()}
                     </div>
-
-                    <!-- Middle: Visual Route + Duration -->
                     <div style="display:flex; flex:1; justify-content:center; align-items:center; gap:1.5rem; min-width:300px;">
-                        <!-- Departure Info -->
                         <div style="display:flex; flex-direction:column; align-items:flex-start; text-align:left;">
-                            <div style="display:flex; align-items:baseline; gap:0.3rem;">
-                                <span class="leg-code">${legOrigin}</span>
-                                ${legOriginCity ? `<span class="leg-city" style="font-size:0.75rem; color:var(--text-secondary);">(${legOriginCity})</span>` : ''}
-                            </div>
-                            <div style="display:flex; gap:0.4rem; align-items:baseline; margin-top:2px;">
-                                <span style="font-weight:700; font-size:0.95rem;">${depTime || '--:--'}</span>
-                                <span style="font-size:0.7rem; color:var(--text-secondary);">${depDate}</span>
-                            </div>
+                            <div style="display:flex; align-items:baseline; gap:0.3rem;"><span class="leg-code">${legOrigin}</span>${legOriginCity ? `<span class="leg-city" style="font-size:0.75rem; color:var(--text-secondary);">(${legOriginCity})</span>` : ''}</div>
+                            <div style="display:flex; gap:0.4rem; align-items:baseline; margin-top:2px;"><span style="font-weight:700; font-size:0.95rem;">${depTime || '--:--'}</span><span style="font-size:0.7rem; color:var(--text-secondary);">${depDate}</span></div>
                         </div>
-
-                        <!-- Arrow & Duration -->
-                        <div style="flex:1; max-width:180px; position:relative; display:flex; flex-direction:column; align-items:center; min-height:40px; justify-content:center;">
-                            ${legDuration ? `<div style="position:absolute; top:-12px; left:50%; transform:translateX(-50%); font-size:0.72rem; font-weight:600; color:var(--primary); padding:0.1rem 0.4rem; background:rgba(37,99,235,0.08); border-radius:6px; white-space:nowrap;">🕐 ${legDuration}</div>` : ''}
-                            
-                            <div style="width:100%; height:2px; background:linear-gradient(90deg, var(--primary), #8b5cf6); border-radius:2px; position:relative; margin: 4px 0;">
-                                <div style="position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); font-size:0.95rem; color:#8b5cf6; background:transparent; z-index:1;">✈</div>
+                        <div style="flex:1; width:220px; max-width:220px; min-width:170px; display:grid; grid-template-rows:18px 18px 16px; align-items:center; justify-items:center; row-gap:0.16rem;">
+                            <div style="display:flex;align-items:center;justify-content:center;min-height:18px;">${durationSummaryHtml}</div>
+                            <div style="width:100%; height:18px; position:relative; display:flex; align-items:center; justify-content:center;">
+                                <div style="position:absolute; left:0; right:0; top:50%; height:2px; transform:translateY(-50%); background:linear-gradient(90deg, var(--primary), #8b5cf6); border-radius:2px;"></div>
+                                <div style="position:relative; z-index:1; width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; color:#8b5cf6; background:var(--bg-card); border:1px solid rgba(139,92,246,0.16); border-radius:999px; font-size:0.9rem; line-height:1;">&#9992;</div>
                             </div>
-                            
-                            <div style="position:absolute; top:24px; left:50%; transform:translateX(-50%); white-space:nowrap; display:flex; flex-direction:column; align-items:center;">
-                                ${hasStops ? `<div style="font-size:0.65rem; color:#f59e0b; font-weight:600; text-align:center;">${stopCount} stop${stopCount > 1 ? 's' : ''} in ${layoverAirports.join(', ')}</div>` : '<span class="leg-stops-badge direct" style="padding:0.15rem 0.5rem; font-size:0.65rem; font-weight:600;">Direct</span>'}
-                            </div>
+                            <div style="font-size:0.65rem; color:#f59e0b; font-weight:600; text-align:center; white-space:nowrap; line-height:1.1;">${stopCount} stop${stopCount > 1 ? 's' : ''} in ${layoverAirports.join(', ')}</div>
                         </div>
-
-                        <!-- Arrival Info -->
                         <div style="display:flex; flex-direction:column; align-items:flex-start; text-align:left;">
-                            <div style="display:flex; align-items:baseline; gap:0.3rem;">
-                                <span class="leg-code">${legDest}</span>
-                                ${legDestCity ? `<span class="leg-city" style="font-size:0.75rem; color:var(--text-secondary);">(${legDestCity})</span>` : ''}
-                            </div>
-                            <div style="display:flex; gap:0.4rem; align-items:baseline; margin-top:2px;">
-                                <span style="font-weight:700; font-size:0.95rem;">${arrTime || '--:--'}</span>
-                                <span style="font-size:0.7rem; color:var(--text-secondary);">${arrDate}</span>
-                            </div>
+                            <div style="display:flex; align-items:baseline; gap:0.3rem;"><span class="leg-code">${legDest}</span>${legDestCity ? `<span class="leg-city" style="font-size:0.75rem; color:var(--text-secondary);">(${legDestCity})</span>` : ''}</div>
+                            <div style="display:flex; gap:0.4rem; align-items:baseline; margin-top:2px;"><span style="font-weight:700; font-size:0.95rem;">${arrTime || '--:--'}</span><span style="font-size:0.7rem; color:var(--text-secondary);">${arrDate}</span></div>
                         </div>
                     </div>
-
-                    <!-- Right: Toggle Icon -->
-                    <div style="display:flex; align-items:center; min-width:20px; justify-content:flex-end;">
-                        ${isCollapsible ? '<span class="leg-expand-icon" id="icon-' + legId + '">▼</span>' : '<span style="width:12px;"></span>'}
-                    </div>
-
+                    <div style="display:flex; align-items:center; min-width:20px; justify-content:flex-end;"><span class="leg-expand-icon" id="icon-${legId}">v</span></div>
                 </div>
-            </div>
-            <div class="leg-segments-v2 ${isCollapsible ? 'collapsed' : ''}" id="${legId}">`;
+            </div>`;
+        }
+
+        html += `<div class="leg-segments-v2 ${isLegExpanded ? '' : 'collapsed'}" id="${legId}">`;
+        if (!showLegSummary) html += `<div style="margin:0 0 0.85rem 0;"><span class="leg-badge-v2" style="padding:0.25rem 0.7rem; font-size:0.72rem;">${legLabel}</span></div>`;
 
         legIndices.forEach((segIdx, posInLeg) => {
             const seg = segments[segIdx];
             const dep = seg.departure || {};
             const arr = seg.arrival || {};
             const duration = getSegmentDurationValue(seg);
-
-            // Layover indicator between segments in same leg
             if (posInLeg > 0) {
-                const lo = layoverMap[legIndices[posInLeg - 1]];
-                const layoverDur = lo ? lo.duration : (seg.layover_duration || '');
+                const prevSegIdx = legIndices[posInLeg - 1];
+                const prevSeg = segments[prevSegIdx] || {};
+                const lo = layoverMap[prevSegIdx];
+                const layoverDur = getLayoverDurationValue(prevSeg, seg, journey, prevSegIdx);
                 const layoverCity = lo ? lo.at_airport : (dep.city || dep.airport || '');
-                html += `<div class="layover-indicator-v2">
-                    <div class="layover-line-v2"></div>
-                    <div class="layover-info-v2">
-                        <span class="layover-icon-v2">⏱️</span>
-                        <span class="layover-text">Layover${layoverDur && layoverDur !== 'N/A' ? ' <strong>' + layoverDur + '</strong>' : ''} at <strong>${layoverCity}</strong></span>
-                    </div>
-                    <div class="layover-line-v2"></div>
-                </div>`;
+                html += `<div class="layover-indicator-v2"><div class="layover-line-v2"></div><div class="layover-info-v2"><span class="layover-text">Layover${layoverDur && layoverDur !== 'N/A' ? ' <strong>' + layoverDur + '</strong>' : ''} at <strong>${layoverCity}</strong></span></div><div class="layover-line-v2"></div></div>`;
             }
-
             const bkClassStr = getSegmentBookingClassValue(seg);
             const showCabinClass = !!bkClassStr;
             const segmentCardClass = showCabinClass ? 'segment-card-v2 has-cabin-class' : 'segment-card-v2';
             const depDateTimeClass = showCabinClass ? 'tl-datetime has-cabin-class' : 'tl-datetime';
             const arrDateTimeClass = showCabinClass ? 'tl-datetime has-cabin-class' : 'tl-datetime';
+            const isEditingSegment = activeSegmentEditIdx === segIdx;
+            const cabinOptions = ['', 'Economy', 'Premium Economy', 'Business', 'First'];
+            const inlineInputStyle = 'background:var(--bg-card); color:var(--text-primary); border:1px solid var(--border); border-radius:8px; padding:0.25rem 0.4rem; font:inherit; min-width:0; box-sizing:border-box;';
+            const segmentHeaderMainHtml = isEditingSegment
+                ? `<input class="segment-airline-v2" style="${inlineInputStyle}; width:150px; font-weight:700;" id="seg-airline-${segIdx}" value="${safe(seg.airline)}"><input class="segment-fltnum-v2" style="${inlineInputStyle}; width:95px; font-weight:700;" id="seg-fltnum-${segIdx}" value="${safe(seg.flight_number)}"><select class="seg-class-chip" style="${inlineInputStyle}; width:150px; font-size:0.72rem;" id="seg-class-${segIdx}">${cabinOptions.map(option => `<option value="${option}" ${bkClassStr === option ? 'selected' : ''}>${option || 'Hidden'}</option>`).join('')}</select>`
+                : `<span class="segment-airline-v2">${safe(seg.airline, 'Airline')}</span><span class="segment-fltnum-v2">${safe(seg.flight_number)}</span>${showCabinClass ? `<span class="seg-class-chip">${bkClassStr}</span>` : ''}`;
+            const depLocationHtml = isEditingSegment
+                ? `<input class="tl-code" style="${inlineInputStyle}; width:68px; font-weight:800; text-transform:uppercase; text-align:center;" id="seg-dep-apt-${segIdx}" value="${safe(dep.airport)}"><input class="tl-city" style="${inlineInputStyle}; width:112px; font-size:0.75rem;" id="seg-dep-city-${segIdx}" value="${safe(dep.city)}">`
+                : `<span class="tl-code">${safe(dep.airport, '---')}</span>${dep.city ? `<span class="tl-city" style="font-size:0.75rem; color:var(--text-secondary);">(${safe(dep.city)})</span>` : ''}`;
+            const depDateTimeHtml = isEditingSegment
+                ? `<input class="tl-time" style="${inlineInputStyle}; width:68px; font-weight:700; text-align:center;" id="seg-dep-time-${segIdx}" value="${safe(dep.time)}"><input class="tl-date" style="${inlineInputStyle}; width:104px; font-size:0.72rem;" id="seg-dep-date-${segIdx}" value="${safe(dep.date)}">`
+                : `<span class="tl-time">${safe(dep.time, '--:--')}</span><span class="tl-date">${safe(dep.date)}</span>`;
+            const depTerminalHtml = isEditingSegment
+                ? `<input class="tl-terminal" style="${inlineInputStyle}; width:96px; margin-top:0.25rem; font-size:0.72rem;" id="seg-dep-term-${segIdx}" placeholder="Terminal" value="${safe(dep.terminal)}">`
+                : `${dep.terminal && dep.terminal !== 'N/A' ? `<span class="tl-terminal">Terminal ${dep.terminal}</span>` : ''}`;
+            const arrLocationHtml = isEditingSegment
+                ? `<input class="tl-code" style="${inlineInputStyle}; width:68px; font-weight:800; text-transform:uppercase; text-align:center;" id="seg-arr-apt-${segIdx}" value="${safe(arr.airport)}"><input class="tl-city" style="${inlineInputStyle}; width:112px; font-size:0.75rem;" id="seg-arr-city-${segIdx}" value="${safe(arr.city)}">`
+                : `<span class="tl-code">${safe(arr.airport, '---')}</span>${arr.city ? `<span class="tl-city" style="font-size:0.75rem; color:var(--text-secondary);">(${safe(arr.city)})</span>` : ''}`;
+            const arrDateTimeHtml = isEditingSegment
+                ? `<input class="tl-time" style="${inlineInputStyle}; width:68px; font-weight:700; text-align:center;" id="seg-arr-time-${segIdx}" value="${safe(arr.time)}"><input class="tl-date" style="${inlineInputStyle}; width:104px; font-size:0.72rem;" id="seg-arr-date-${segIdx}" value="${safe(arr.date)}">`
+                : `<span class="tl-time">${safe(arr.time, '--:--')}</span><span class="tl-date">${safe(arr.date)}</span>`;
+            const arrTerminalHtml = isEditingSegment
+                ? `<input class="tl-terminal" style="${inlineInputStyle}; width:96px; margin-top:0.25rem; font-size:0.72rem;" id="seg-arr-term-${segIdx}" placeholder="Terminal" value="${safe(arr.terminal)}">`
+                : `${arr.terminal && arr.terminal !== 'N/A' ? `<span class="tl-terminal">Terminal ${arr.terminal}</span>` : ''}`;
+            const durationHtml = isEditingSegment
+                ? `<input style="${inlineInputStyle}; width:98px; text-align:center; font-size:0.72rem; position:absolute; top:-28px; left:50%; transform:translateX(-50%); z-index:3; background:var(--bg-card);" id="seg-duration-${segIdx}" value="${safe(duration)}">`
+                : `${duration ? `<span class="timeline-duration">${duration}</span>` : ''}`;
 
             html += `<div class="${segmentCardClass}" style="${seg.status === 'cancelled' ? 'opacity:0.85; border-left:6px solid #ef4444; background:rgba(239,68,68,0.08); box-shadow: inset 0 0 10px rgba(239,68,68,0.1);' : ''}">
                 <div class="segment-header-v2">
-                    <div class="segment-airline-info">
-                        <div class="segment-airline-main">
-                            <span class="segment-airline-v2">${safe(seg.airline, 'Airline')}</span>
-                            <span class="segment-fltnum-v2">${safe(seg.flight_number)}</span>
-                        </div>
-                        ${showCabinClass ? `<span class="seg-class-chip">${bkClassStr}</span>` : ''}
-                        ${seg.status === 'cancelled' ? `
-                            <span class="status-badge" style="background:#ef4444; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700; box-shadow:0 2px 4px rgba(239,68,68,0.2);">🔴 CANCELLED</span>
-                            ${editedData.cancellation_charge > 0 ? `<span style="background:rgba(239,68,68,0.08); color:#ef4444; font-size:0.75rem; font-weight:700; padding:2px 8px; border-radius:10px; border:1px solid rgba(239,68,68,0.2);">Charge: ₹${editedData.cancellation_charge}</span>` : ''}
-                        ` : ''}
-                    </div>
-                    <div style="display:flex;align-items:center;gap:0.5rem;">
-                        <button class="btn-action small secondary" onclick="editSegment(${segIdx})">✏️ Edit</button>
-                    </div>
+                    <div class="segment-airline-info"><div class="segment-airline-main">${segmentHeaderMainHtml}</div>${seg.status === 'cancelled' ? `<span class="status-badge" style="background:#ef4444; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700; box-shadow:0 2px 4px rgba(239,68,68,0.2);">CANCELLED</span>` : ''}</div>
+                    <div style="display:flex;align-items:center;gap:0.5rem;">${isEditingSegment ? `<button class="btn-action small secondary" onclick="cancelSegmentEdit()">Cancel</button><button class="btn-action small primary" onclick="saveSegmentEdit(${segIdx})">Save</button>` : `<button class="btn-action small secondary" onclick="editSegment(${segIdx})">Edit</button>`}</div>
                 </div>
                 <div class="segment-timeline-v2">
-                    <div class="timeline-point dep">
-                        <div class="timeline-dot"></div>
-                        <div class="timeline-details" style="display:flex; flex-direction:column; align-items:flex-start;">
-                            <div style="display:flex; align-items:baseline; gap:0.3rem;">
-                                <span class="tl-code">${safe(dep.airport, '---')}</span>
-                                ${dep.city ? `<span class="tl-city" style="font-size:0.75rem; color:var(--text-secondary);">(${safe(dep.city)})</span>` : ''}
-                            </div>
-                            <div class="${depDateTimeClass}" style="display:flex; gap:0.4rem; align-items:baseline; margin-top:2px; justify-content:flex-start;">
-                                <span class="tl-time">${safe(dep.time, '--:--')}</span>
-                                <span class="tl-date">${safe(dep.date)}</span>
-                            </div>
-                            ${dep.terminal && dep.terminal !== 'N/A' ? `<span class="tl-terminal">Terminal ${dep.terminal}</span>` : ''}
-                        </div>
-                    </div>
-                    <div class="timeline-connector">
-                        ${duration ? `<span class="timeline-duration">${duration}</span>` : ''}
-                    </div>
-                    <div class="timeline-point arr">
-                        <div class="timeline-dot arr-dot"></div>
-                        <div class="timeline-details" style="display:flex; flex-direction:column; align-items:flex-start; text-align:left;">
-                            <div style="display:flex; align-items:baseline; gap:0.3rem;">
-                                <span class="tl-code">${safe(arr.airport, '---')}</span>
-                                ${arr.city ? `<span class="tl-city" style="font-size:0.75rem; color:var(--text-secondary);">(${safe(arr.city)})</span>` : ''}
-                            </div>
-                            <div class="${arrDateTimeClass}" style="display:flex; gap:0.4rem; align-items:baseline; margin-top:2px; justify-content:flex-start;">
-                                <span class="tl-time">${safe(arr.time, '--:--')}</span>
-                                <span class="tl-date">${safe(arr.date)}</span>
-                            </div>
-                            ${arr.terminal && arr.terminal !== 'N/A' ? `<span class="tl-terminal">Terminal ${arr.terminal}</span>` : ''}
-                        </div>
-                    </div>
+                    <div class="timeline-point dep"><div class="timeline-dot"></div><div class="timeline-details" style="display:flex; flex-direction:column; align-items:flex-start;"><div style="display:flex; align-items:baseline; gap:0.3rem; flex-wrap:wrap;">${depLocationHtml}</div><div class="${depDateTimeClass}" style="display:flex; gap:0.4rem; align-items:baseline; margin-top:2px; justify-content:flex-start; flex-wrap:wrap;">${depDateTimeHtml}</div>${depTerminalHtml}</div></div>
+                    <div class="timeline-connector">${durationHtml}</div>
+                    <div class="timeline-point arr"><div class="timeline-dot arr-dot"></div><div class="timeline-details" style="display:flex; flex-direction:column; align-items:flex-start; text-align:left;"><div style="display:flex; align-items:baseline; gap:0.3rem; flex-wrap:wrap;">${arrLocationHtml}</div><div class="${arrDateTimeClass}" style="display:flex; gap:0.4rem; align-items:baseline; margin-top:2px; justify-content:flex-start; flex-wrap:wrap;">${arrDateTimeHtml}</div>${arrTerminalHtml}</div></div>
                 </div>
             </div>`;
         });
-
         html += `</div></div>`;
     });
 
     document.getElementById('segmentsSection').innerHTML = html;
 }
-
 function toggleLeg(legId) {
     const el = document.getElementById(legId);
     const icon = document.getElementById('icon-' + legId);
     if (!el) return;
     el.classList.toggle('collapsed');
-    if (icon) icon.textContent = el.classList.contains('collapsed') ? '▼' : '▲';
+    if (el.classList.contains('collapsed')) expandedLegIds.delete(legId);
+    else expandedLegIds.add(legId);
+    if (icon) icon.textContent = el.classList.contains('collapsed') ? 'v' : '^';
 }
 
 function setPassengerSortMode(mode) {
@@ -2835,7 +2836,7 @@ function renderPassengersSection() {
         <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
             <label style="display:flex; align-items:center; gap:0.45rem; font-size:0.9rem; color:var(--text-secondary);">
                 <span>Sort</span>
-                <select onchange="setPassengerSortMode(this.value)" style="min-width:160px;">
+                <select class="sort-control" onchange="setPassengerSortMode(this.value)">
                     <option value="" ${passengerSortMode === '' ? 'selected' : ''}>No Sort</option>
                     <option value="name" ${passengerSortMode === 'name' ? 'selected' : ''}>Name</option>
                     <option value="ticket_number" ${passengerSortMode === 'ticket_number' ? 'selected' : ''}>Ticket Number</option>
@@ -2857,13 +2858,22 @@ function renderPassengersSection() {
         </div>`;
     }
 
+    const passengerCardAccents = [
+        { border: '#1e3a8a' },
+        { border: '#92400e' },
+        { border: '#065f46' },
+        { border: '#9d174d' },
+        { border: '#5b21b6' }
+    ];
+
     passengerRows.forEach(({ passenger: p, originalIndex: i }) => {
         const paxType = getPaxLabel(p.pax_type || p.type);
         const typeClass = paxType.toLowerCase();
         const seats = p.seats || [];
 
         const isChecked = selectedPaxIndices.has(i);
-        html += `<div class="pax-edit-card ${isChecked ? 'pax-selected' : ''}" id="pax-card-${i}">
+        const accent = passengerCardAccents[i % passengerCardAccents.length];
+        html += `<div class="pax-edit-card ${isChecked ? 'pax-selected' : ''}" id="pax-card-${i}" style="--pax-accent-border:${accent.border};">
             <div class="pax-edit-header">
                 <div style="display:flex;align-items:center;gap:0.6rem;">
                     <input type="checkbox" class="pax-checkbox" id="paxCheck-${i}"
@@ -2907,15 +2917,6 @@ function renderPassengersSection() {
             return aHtml;
         };
 
-        const getBarcodeHTML = (segIdx) => {
-            const seg = segments[segIdx] || {};
-            if (!seg.barcode_image) return '';
-            return `<div style="margin-top:0.75rem; border-top:1px dashed var(--border); padding-top:0.75rem;">
-                <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:0.35rem;">Boarding Barcode</div>
-                <img src="${seg.barcode_image}" alt="PDF417 barcode for segment ${segIdx + 1}" style="display:block; width:100%; max-width:280px; height:auto; background:#fff; border:1px solid var(--border); border-radius:10px; padding:0.35rem;">
-            </div>`;
-        };
-
         // Section-wise seat and meal assignment
         if (hasMultipleSegments) {
             html += `<div class="seat-section-title">Seat & Meal Assignments by Segment</div>
@@ -2944,7 +2945,6 @@ function renderPassengersSection() {
                             <input type="text" placeholder="Meal (e.g. VGML)" value="${safe(mealName)}" onchange="updateMealForSegment(${i}, ${segIdx}, this.value)" style="flex:1;">
                         </div>
                         ${getAncHTML(i, segIdx)}
-                        ${getBarcodeHTML(segIdx)}
                     </div>`;
                 });
             });
@@ -2968,7 +2968,6 @@ function renderPassengersSection() {
                         <input type="text" placeholder="Meal (e.g. VGML)" value="${safe(mealObj)}" onchange="updateMealForSegment(${i}, 0, this.value)" style="flex:1;">
                     </div>
                     ${getAncHTML(i, 0)}
-                    ${getBarcodeHTML(0)}
                 </div>
             </div>`;
         }
@@ -3291,7 +3290,6 @@ function renderFareSection() {
             Grand Total : &nbsp;<span id="grand-total-val" style="color:var(--primary);">${formatCurrency(editedData.grand_total, curr)}</span>
         </div>
     </div>`;
-
     document.getElementById('fareSection').innerHTML = html;
 }
 
@@ -3305,8 +3303,8 @@ function renderActionsSection() {
             <div class="section-header-row"><h2>âš¡ Actions</h2></div>
             <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
                 <div class="pdf-btn-group">
-                    <button class="pdf-btn with-fare" onclick="downloadPDF(true)">ðŸ“„ PDF (With Fare)</button>
-                    <button class="pdf-btn without-fare" onclick="downloadPDF(false)">ðŸ“„ PDF (Without Fare)</button>
+                    <button class="pdf-btn with-fare" data-pdf-download="with-fare" onclick="downloadPDF(true)">ðŸ“„ PDF (With Fare)</button>
+                    <button class="pdf-btn without-fare" data-pdf-download="without-fare" onclick="downloadPDF(false)">ðŸ“„ PDF (Without Fare)</button>
                 </div>
                 <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(5,150,105,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(5,150,105,0.2);">
                     <span style="font-weight:700; color:#059669;">Merged booking view. Passenger tickets are grouped here as one booking.</span>
@@ -3319,13 +3317,8 @@ function renderActionsSection() {
         <div class="section-header-row"><h2>⚡ Actions</h2></div>
                 <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
                     <div class="pdf-btn-group">
-                        <button class="pdf-btn with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
-                        <button class="pdf-btn without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
-                        <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">Sheet Export:</span>
-                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('AB')">📊 AB</button>
-                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('CK')">📊 CK</button>
+                        <button class="pdf-btn with-fare" data-pdf-download="with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
+                        <button class="pdf-btn without-fare" data-pdf-download="without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
                     </div>
                     ${!editedData.ledger_hash ? `
                     <div id="ledgerBtnGroup" style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
@@ -3654,84 +3647,56 @@ function removeAncillary(paxIdx, ancIdx) {
 }
 
 function editSegment(idx) {
-    const seg = editedData.segments[idx];
-    const dep = seg.departure || {};
-    const arr = seg.arrival || {};
-    let selectedCabinClass = getSegmentBookingClassValue(seg);
-    const cabinOptions = ['', 'Economy', 'Premium Economy', 'Business', 'First'];
-    const modal = document.createElement('div');
-    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
-    modal.innerHTML = `
-        <div id="segment-edit-modal-content" style="background:var(--bg-card);border-radius:16px;padding:2rem;max-width:750px;width:95%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 40px rgba(0,0,0,0.3);" onclick="event.stopPropagation()">
-            <h3 style="margin-top:0;">✏️ Edit Segment ${idx + 1}</h3>
-            
-            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; background: var(--bg-main); padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border);">
-                <div class="field-item"><label>Airline</label><input type="text" id="seg-airline" value="${safe(seg.airline)}"></div>
-                <div class="field-item"><label>Flight Number</label><input type="text" id="seg-fltnum" value="${safe(seg.flight_number)}"></div>
-                <div class="field-item"><label>Cabin Class</label><select id="seg-class">${cabinOptions.map(option => `<option value="${option}" ${selectedCabinClass === option ? 'selected' : ''}>${option || 'Hidden by default'}</option>`).join('')}</select></div>
-                <div class="field-item" style="grid-column: 1 / -1;"><label>Duration</label><input type="text" id="seg-duration" value="${safe(getSegmentDurationValue(seg))}"></div>
-            </div>
+    activeSegmentEditIdx = activeSegmentEditIdx === idx ? null : idx;
+    if (activeSegmentEditIdx === idx) {
+        const segments = editedData.segments || [];
+        const journey = editedData.journey || {};
+        const legs = journey.legs && journey.legs.length > 0
+            ? journey.legs.map(leg => leg.segments || [])
+            : groupSegmentsIntoLegs(segments);
+        const legIdx = legs.findIndex(leg => Array.isArray(leg) && leg.includes(idx));
+        if (legIdx !== -1) expandedLegIds.add(`leg-${legIdx}`);
+    }
+    renderSegmentsSection();
+    if (activeSegmentEditIdx === idx) {
+        requestAnimationFrame(() => {
+            const input = document.getElementById(`seg-airline-${idx}`);
+            if (input) input.focus();
+        });
+    }
+}
 
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 0.5rem;">
-                <!-- Departure Column -->
-                <div style="background: var(--bg-main); padding: 1.25rem; border-radius: 12px; border: 1px dashed rgba(37,99,235,0.4);">
-                    <h4 style="margin-top:0; color: var(--primary); display:flex; align-items:center; gap:0.5rem;">🛫 Departure</h4>
-                    <div class="field-grid" style="grid-template-columns: 1fr;">
-                        <div class="field-item"><label>Airport Code</label><input type="text" id="seg-dep-apt" value="${safe(dep.airport)}" style="font-family: monospace; font-size:1rem; font-weight:bold;"></div>
-                        <div class="field-item"><label>City</label><input type="text" id="seg-dep-city" value="${safe(dep.city)}"></div>
-                        <div class="field-item"><label>Date</label><input type="text" id="seg-dep-date" value="${safe(dep.date)}"></div>
-                        <div class="field-item"><label>Time</label><input type="text" id="seg-dep-time" value="${safe(dep.time)}"></div>
-                        <div class="field-item"><label>Terminal</label><input type="text" id="seg-dep-term" value="${safe(dep.terminal)}"></div>
-                    </div>
-                </div>
-
-                <!-- Arrival Column -->
-                <div style="background: var(--bg-main); padding: 1.25rem; border-radius: 12px; border: 1px dashed rgba(16,185,129,0.4);">
-                    <h4 style="margin-top:0; color: var(--success); display:flex; align-items:center; gap:0.5rem;">🛬 Arrival</h4>
-                    <div class="field-grid" style="grid-template-columns: 1fr;">
-                        <div class="field-item"><label>Airport Code</label><input type="text" id="seg-arr-apt" value="${safe(arr.airport)}" style="font-family: monospace; font-size:1rem; font-weight:bold;"></div>
-                        <div class="field-item"><label>City</label><input type="text" id="seg-arr-city" value="${safe(arr.city)}"></div>
-                        <div class="field-item"><label>Date</label><input type="text" id="seg-arr-date" value="${safe(arr.date)}"></div>
-                        <div class="field-item"><label>Time</label><input type="text" id="seg-arr-time" value="${safe(arr.time)}"></div>
-                        <div class="field-item"><label>Terminal</label><input type="text" id="seg-arr-term" value="${safe(arr.terminal)}"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div style="display:flex;gap:1rem;justify-content:flex-end;margin-top:1.5rem;">
-                <button class="btn-action secondary" onclick="this.closest('div[style*=position]').remove()">Cancel</button>
-                <button class="btn-action primary" onclick="saveSegmentEdit(${idx})">Save Segment</button>
-            </div>
-        </div>`;
-    modal.onclick = () => modal.remove();
-    modal.id = 'segment-edit-modal';
-    document.body.appendChild(modal);
+function cancelSegmentEdit() {
+    activeSegmentEditIdx = null;
+    renderSegmentsSection();
 }
 
 function saveSegmentEdit(idx) {
     const seg = editedData.segments[idx];
-    seg.airline = document.getElementById('seg-airline').value;
-    seg.flight_number = document.getElementById('seg-fltnum').value;
-    const selectedCabinClass = document.getElementById('seg-class').value.trim();
+    const getValue = (id) => document.getElementById(`${id}-${idx}`)?.value || '';
+
+    seg.airline = getValue('seg-airline');
+    seg.flight_number = getValue('seg-fltnum');
+    const selectedCabinClass = getValue('seg-class').trim();
     seg.show_booking_class = !!selectedCabinClass;
-    if (selectedCabinClass) {
-        seg.booking_class = selectedCabinClass;
-    } else {
-        delete seg.booking_class;
-    }
+    if (selectedCabinClass) seg.booking_class = selectedCabinClass;
+    else delete seg.booking_class;
+
     if (!seg.departure) seg.departure = {};
-    seg.departure.airport = document.getElementById('seg-dep-apt').value;
-    seg.departure.city = document.getElementById('seg-dep-city').value;
-    seg.departure.date = document.getElementById('seg-dep-date').value;
-    seg.departure.time = document.getElementById('seg-dep-time').value;
-    seg.departure.terminal = document.getElementById('seg-dep-term').value;
+    seg.departure.airport = getValue('seg-dep-apt');
+    seg.departure.city = getValue('seg-dep-city');
+    seg.departure.date = getValue('seg-dep-date');
+    seg.departure.time = getValue('seg-dep-time');
+    seg.departure.terminal = getValue('seg-dep-term');
+
     if (!seg.arrival) seg.arrival = {};
-    seg.arrival.airport = document.getElementById('seg-arr-apt').value;
-    seg.arrival.city = document.getElementById('seg-arr-city').value;
-    seg.arrival.date = document.getElementById('seg-arr-date').value;
-    seg.arrival.time = document.getElementById('seg-arr-time').value;
-    seg.arrival.terminal = document.getElementById('seg-arr-term').value;
-    const editedDuration = document.getElementById('seg-duration').value;
+    seg.arrival.airport = getValue('seg-arr-apt');
+    seg.arrival.city = getValue('seg-arr-city');
+    seg.arrival.date = getValue('seg-arr-date');
+    seg.arrival.time = getValue('seg-arr-time');
+    seg.arrival.terminal = getValue('seg-arr-term');
+
+    const editedDuration = getValue('seg-duration');
     seg.duration_calculated = editedDuration;
     seg.duration = editedDuration;
     seg.duration_extracted = editedDuration;
@@ -3741,25 +3706,23 @@ function saveSegmentEdit(idx) {
     if (journey.legs && journey.legs.length > 0) {
         journey.legs.forEach((leg, legIdx) => {
             const legSegments = Array.isArray(leg?.segments) ? leg.segments : [];
-            journey.legs[legIdx].total_duration = getLegDurationValue(legSegments, segments, journey, legIdx);
+            journey.legs[legIdx].total_duration = getLegTotalDurationValue(legSegments, segments, journey, legIdx);
         });
     }
-    journey.total_journey_duration = getJourneyDurationValue(
+    journey.total_journey_duration = getJourneyTotalDurationValue(
         journey.legs && journey.legs.length > 0
             ? journey.legs.map((leg) => Array.isArray(leg?.segments) ? leg.segments : [])
             : groupSegmentsIntoLegs(segments),
         segments,
         journey
     );
+    editedData.journey = journey;
 
-    const modal = document.getElementById('segment-edit-modal');
-    if (modal) modal.remove();
-
+    activeSegmentEditIdx = null;
     renderSegmentsSection();
     triggerAutoSave();
     showToast('Segment updated', 'success');
 }
-
 // ==================== SAVE & PDF ====================
 async function saveTicket(silent = false) {
     if (!currentTicket || !editedData) return;
@@ -3772,7 +3735,6 @@ async function saveTicket(silent = false) {
             phone: editedData.phone,
             currency: editedData.currency,
             grand_total: editedData.grand_total,
-            class_of_travel: editedData.class_of_travel,
             trip_type: editedData.trip_type,
             passengers: editedData.passengers,
             segments: getPersistableSegments(editedData.segments),
@@ -3997,7 +3959,6 @@ function buildTicketPdfSnapshot(extra = {}) {
         phone: editedData?.phone,
         currency: editedData?.currency,
         grand_total: editedData?.grand_total,
-        class_of_travel: editedData?.class_of_travel,
         trip_type: editedData?.trip_type,
         passengers: JSON.parse(JSON.stringify(editedData?.passengers || [])),
         segments: getPersistableSegments(editedData?.segments || []),
@@ -4028,7 +3989,27 @@ async function downloadPdfFromSnapshot(path, payload, fallbackFilename) {
     _downloadBlob(blob, filename);
 }
 
+function setPdfButtonLoading(includeFare, isLoading) {
+    const buttonType = includeFare ? 'with-fare' : 'without-fare';
+    const button = document.querySelector(`[data-pdf-download="${buttonType}"]`);
+    if (!button) return;
+
+    if (!button.dataset.originalLabel) {
+        button.dataset.originalLabel = button.innerHTML;
+    }
+
+    if (isLoading) {
+        button.classList.add('is-loading');
+        button.innerHTML = includeFare ? 'Preparing Fare PDF' : 'Preparing PDF';
+        return;
+    }
+
+    button.classList.remove('is-loading');
+    button.innerHTML = button.dataset.originalLabel || button.innerHTML;
+}
+
 async function downloadPDF(includeFare) {
+    setPdfButtonLoading(includeFare, true);
     try {
         await ensureTicketPersistedForDownload();
         await downloadPdfFromSnapshot(
@@ -4037,7 +4018,11 @@ async function downloadPDF(includeFare) {
             'ticket.pdf'
         );
         showToast(`PDF download started (${includeFare ? 'with fare' : 'without fare'})`, 'success');
-    } catch (e) { showToast(e.message || 'PDF generation failed', 'error'); }
+    } catch (e) {
+        showToast(e.message || 'PDF generation failed', 'error');
+    } finally {
+        setPdfButtonLoading(includeFare, false);
+    }
 }
 
 // ==================== PASSENGER SELECTION ====================
@@ -4925,6 +4910,16 @@ async function _executeCancel(selectedPax, isFullCancel, perPersonFares, sectorI
 
 // ==================== INIT ====================
 document.addEventListener('DOMContentLoaded', async () => {
+    updateTicketUrl(getTicketIdFromUrl(), { replace: true });
+    const initialTicketId = getTicketIdFromUrl();
+    if (initialTicketId) {
+        const listView = document.getElementById('listView');
+        const detailView = document.getElementById('detailView');
+        if (listView) listView.style.display = 'none';
+        if (detailView) detailView.style.display = 'block';
+        const header = document.getElementById('ticketDetailHeader');
+        if (header) header.innerHTML = `<div><h1>Loading ticket...</h1></div>`;
+    }
     const initialTicketCards = document.getElementById('ticketCards');
     if (initialTicketCards && !initialTicketCards.querySelector('[data-ticket-id]')) {
         initialTicketCards.innerHTML = '';
@@ -4934,7 +4929,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     hydrateTicketsFromCache();
     void checkAuth();
     await loadNotifications();
-    await loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, showLoading: allTickets.length === 0 });
+    await loadTickets({
+        limit: INITIAL_TICKETS_BATCH_SIZE,
+        showLoading: allTickets.length === 0,
+        render: !initialTicketId
+    });
+    if (initialTicketId) {
+        await openTicket(initialTicketId, { syncUrl: false, replaceUrl: true });
+    }
     if (!startTicketsRealtime()) {
         startTicketsPolling();
     }
@@ -4955,6 +4957,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
         detailView.addEventListener('focusout', handleDetailFieldFocusOut);
+    }
+});
+
+window.addEventListener('popstate', async () => {
+    const ticketId = getTicketIdFromUrl();
+    if (ticketId) {
+        if (!currentTicket || currentTicket.id !== ticketId) {
+            await openTicket(ticketId, { syncUrl: false, replaceUrl: true });
+        }
+        return;
+    }
+    if (document.getElementById('detailView')?.style.display !== 'none') {
+        await showListView({ syncUrl: false, replaceUrl: true });
     }
 });
 
@@ -4980,13 +4995,8 @@ function renderActionsSection() {
         <div class="section-header-row"><h2>⚡ Actions</h2></div>
         <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
             <div class="pdf-btn-group">
-                <button class="pdf-btn with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
-                <button class="pdf-btn without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
-            </div>
-            <div style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
-                <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">Sheet Export:</span>
-                <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('AB')">📊 AB</button>
-                <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="exportToSheet('CK')">📊 CK</button>
+                <button class="pdf-btn with-fare" data-pdf-download="with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
+                <button class="pdf-btn without-fare" data-pdf-download="without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
             </div>
             ${!editedData.ledger_hash ? `
             <div id="ledgerBtnGroup" style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">

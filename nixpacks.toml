@@ -30,7 +30,8 @@ nixPkgs = [
   "xorg.libXrender",
   "xorg.libXcursor",
   "xorg.libXi",
-  "libxcb"
+  "libxcb",
+  "postgresql.lib"
 ]
 
 [phases.install]

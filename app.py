@@ -1940,7 +1940,8 @@ def _delete_ledger_entry_with_reverse(entry, user_id):
     return agg_id
 
 
-def _sqlite_add_column_if_missing(table_name, column_name, column_sql):
+def _add_column_if_missing(table_name, column_name, column_sql):
+    """Add a column if it doesn't exist. Works on both SQLite and PostgreSQL."""
     inspector = inspect(db.engine)
     if table_name not in inspector.get_table_names():
         return
@@ -1951,7 +1952,8 @@ def _sqlite_add_column_if_missing(table_name, column_name, column_sql):
     db.session.commit()
 
 
-def _sqlite_create_indexes_if_missing():
+def _create_indexes_if_missing():
+    """Create indexes if they don't exist. Works on both SQLite and PostgreSQL."""
     statements = [
         "CREATE INDEX IF NOT EXISTS ix_ticket_operation_user_id ON ticket_operation (user_id)",
         "CREATE INDEX IF NOT EXISTS ix_ticket_operation_root_ticket_id ON ticket_operation (root_ticket_id)",
@@ -1968,32 +1970,29 @@ def _sqlite_create_indexes_if_missing():
 
 def ensure_schema_compatibility():
     db.create_all()
-    dialect = db.engine.dialect.name
-    if dialect != "sqlite":
-        return
 
-    _sqlite_add_column_if_missing("ticket_operation", "updated_at", "DATETIME")
-    _sqlite_add_column_if_missing("ticket_operation", "user_id", "VARCHAR")
-    _sqlite_add_column_if_missing("ticket_operation", "ticket_id", "VARCHAR")
-    _sqlite_add_column_if_missing("ticket_operation", "root_ticket_id", "VARCHAR")
-    _sqlite_add_column_if_missing("ticket_operation", "action_type", "VARCHAR(20)")
-    _sqlite_add_column_if_missing("ticket_operation", "scenario", "VARCHAR(40)")
-    _sqlite_add_column_if_missing("ticket_operation", "status", "VARCHAR(20) DEFAULT 'active'")
-    _sqlite_add_column_if_missing("ticket_operation", "aggregator_id", "VARCHAR")
-    _sqlite_add_column_if_missing("ticket_operation", "preview_data", "TEXT")
-    _sqlite_add_column_if_missing("ticket_operation", "before_state", "TEXT")
-    _sqlite_add_column_if_missing("ticket_operation", "after_state", "TEXT")
-    _sqlite_add_column_if_missing("ticket_operation", "metadata_json", "TEXT")
-    _sqlite_add_column_if_missing("ticket", "booking_group_id", "VARCHAR")
-    _sqlite_add_column_if_missing("ticket", "duplicate_status", "VARCHAR(20)")
-    _sqlite_add_column_if_missing("ticket", "duplicate_of_id", "VARCHAR")
+    _add_column_if_missing("ticket_operation", "updated_at", "TIMESTAMP")
+    _add_column_if_missing("ticket_operation", "user_id", "VARCHAR")
+    _add_column_if_missing("ticket_operation", "ticket_id", "VARCHAR")
+    _add_column_if_missing("ticket_operation", "root_ticket_id", "VARCHAR")
+    _add_column_if_missing("ticket_operation", "action_type", "VARCHAR(20)")
+    _add_column_if_missing("ticket_operation", "scenario", "VARCHAR(40)")
+    _add_column_if_missing("ticket_operation", "status", "VARCHAR(20) DEFAULT 'active'")
+    _add_column_if_missing("ticket_operation", "aggregator_id", "VARCHAR")
+    _add_column_if_missing("ticket_operation", "preview_data", "TEXT")
+    _add_column_if_missing("ticket_operation", "before_state", "TEXT")
+    _add_column_if_missing("ticket_operation", "after_state", "TEXT")
+    _add_column_if_missing("ticket_operation", "metadata_json", "TEXT")
+    _add_column_if_missing("ticket", "booking_group_id", "VARCHAR")
+    _add_column_if_missing("ticket", "duplicate_status", "VARCHAR(20)")
+    _add_column_if_missing("ticket", "duplicate_of_id", "VARCHAR")
 
-    _sqlite_add_column_if_missing("operation_ledger_link", "created_at", "DATETIME")
-    _sqlite_add_column_if_missing("operation_ledger_link", "user_id", "VARCHAR")
-    _sqlite_add_column_if_missing("operation_ledger_link", "operation_id", "VARCHAR")
-    _sqlite_add_column_if_missing("operation_ledger_link", "ledger_entry_id", "VARCHAR")
+    _add_column_if_missing("operation_ledger_link", "created_at", "TIMESTAMP")
+    _add_column_if_missing("operation_ledger_link", "user_id", "VARCHAR")
+    _add_column_if_missing("operation_ledger_link", "operation_id", "VARCHAR")
+    _add_column_if_missing("operation_ledger_link", "ledger_entry_id", "VARCHAR")
 
-    _sqlite_create_indexes_if_missing()
+    _create_indexes_if_missing()
 
 # ==================== LEDGER ROUTES ====================
 

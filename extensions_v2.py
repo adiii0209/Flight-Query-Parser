@@ -14,15 +14,26 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Database URL from environment or derive from Flask's instance folder
-# Flask-SQLAlchemy uses instance/ by default, so we match that
+# Supports PostgreSQL via DATABASE_URL and falls back to SQLite
 _base_dir = os.path.abspath(os.path.dirname(__file__))
 _instance_dir = os.path.join(_base_dir, 'instance')
 os.makedirs(_instance_dir, exist_ok=True)
 _default_db = f"sqlite:///{os.path.join(_instance_dir, 'app.db')}"
-DATABASE_URL = os.getenv("DATABASE_URL", _default_db)
+DATABASE_URL = (os.getenv("DATABASE_URL") or _default_db).strip()
+
+# Fix Railway/Heroku postgres:// → postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
 
 # Create engine with SQLAlchemy 2.0 style
-engine = create_engine(DATABASE_URL, echo=False)
+# pool_pre_ping ensures stale connections are recycled (important for PostgreSQL)
+engine_kwargs = {"echo": False}
+if DATABASE_URL.startswith("postgresql"):
+    engine_kwargs["pool_pre_ping"] = True
+    engine_kwargs["pool_size"] = 5
+    engine_kwargs["max_overflow"] = 10
+
+engine = create_engine(DATABASE_URL, **engine_kwargs)
 
 # Session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

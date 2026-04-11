@@ -596,15 +596,18 @@
 
         .timeline-duration {
             position: absolute;
-            top: -18px;
+            top: -28px;
             left: 50%;
             transform: translateX(-50%);
             font-size: 0.7rem;
             font-weight: 600;
-            color: var(--text-secondary);
-            background: var(--bg-main);
-            padding: 0 0.3rem;
-            z-index: 1;
+            color: var(--primary);
+            background: var(--bg-card);
+            border: 1px solid rgba(37, 99, 235, 0.12);
+            border-radius: 6px;
+            padding: 0.1rem 0.45rem;
+            z-index: 2;
+            white-space: nowrap;
         }
 
         /* Layover indicator V2 */
@@ -647,10 +650,11 @@
         /* Passenger cards */
         .pax-edit-card {
             background: var(--bg-main);
-            border: 1px solid var(--border);
+            border: 1px solid var(--pax-accent-border, var(--border));
             border-radius: 12px;
             padding: 1.25rem;
             margin-bottom: 0.75rem;
+            border-left: 5px solid var(--pax-accent-border, var(--border));
         }
 
         .pax-edit-header {
@@ -776,6 +780,7 @@
         .pdf-btn {
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 0.4rem;
             padding: 0.6rem 1.2rem;
             border-radius: 10px;
@@ -785,6 +790,7 @@
             font-weight: 600;
             font-size: 0.85rem;
             transition: all 0.2s;
+            min-width: 168px;
         }
 
         .pdf-btn.with-fare {
@@ -800,6 +806,30 @@
         .pdf-btn:hover {
             filter: brightness(1.1);
             transform: translateY(-1px);
+        }
+
+        .pdf-btn.is-loading {
+            cursor: wait;
+            pointer-events: none;
+            transform: none;
+            filter: none;
+            opacity: 0.95;
+        }
+
+        .pdf-btn.is-loading::after {
+            content: '';
+            width: 0.95rem;
+            height: 0.95rem;
+            border-radius: 999px;
+            border: 2px solid rgba(255, 255, 255, 0.35);
+            border-top-color: rgba(255, 255, 255, 0.95);
+            animation: pdfBtnSpin 0.75s linear infinite;
+        }
+
+        @keyframes pdfBtnSpin {
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         /* Toast */
@@ -878,7 +908,7 @@
             align-items: center;
         }
 
-        .search-toolbar > .search-wrapper {
+        .search-toolbar>.search-wrapper {
             flex: 1;
         }
 
@@ -896,24 +926,100 @@
             align-items: flex-start;
             gap: 1rem;
             margin-bottom: 1.25rem;
+            padding: 1rem 1.1rem;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 18px;
+            background:
+                linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
         }
 
         .detail-header h1 {
             margin: 0 0 0.45rem;
+            font-size: clamp(1.2rem, 1.9vw, 1.65rem);
+            line-height: 1.15;
+            letter-spacing: -0.03em;
+            color: #0f172a;
         }
 
         .detail-subtitle {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
-            gap: 0.35rem;
+            gap: 0.45rem;
             line-height: 1.45;
+        }
+
+        .detail-header-main {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            min-width: 0;
+        }
+
+        .detail-route-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #64748b;
+        }
+
+        .detail-route-kicker::before {
+            content: '';
+            width: 28px;
+            height: 1px;
+            background: linear-gradient(90deg, #2563eb, rgba(37, 99, 235, 0.18));
+        }
+
+        .detail-title-row {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            flex-wrap: wrap;
+        }
+
+        .detail-pnr-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            min-height: 34px;
+            padding: 0.32rem 0.78rem;
+            border-radius: 999px;
+            border: 1px solid rgba(249, 115, 22, 0.22);
+            background: linear-gradient(135deg, rgba(255, 237, 213, 0.95), rgba(255, 255, 255, 0.96));
+            color: #9a3412;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .detail-pnr-chip strong {
+            color: #c2410c;
+            letter-spacing: 0.12em;
+        }
+
+        .detail-meta-chip {
+            display: inline-flex;
+            align-items: center;
+            min-height: 32px;
+            padding: 0.28rem 0.72rem;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(255, 255, 255, 0.9);
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #334155;
         }
 
         .detail-actions {
             display: flex;
             align-items: center;
             justify-content: flex-end;
+            align-self: center;
             flex-shrink: 0;
         }
 
@@ -938,6 +1044,42 @@
             border-color: rgba(220, 38, 38, 0.36);
             background: linear-gradient(135deg, rgba(254, 226, 226, 0.98), rgba(254, 202, 202, 0.96));
             transform: translateY(-1px);
+        }
+
+        .sort-control {
+            min-width: 168px;
+            padding: 0.55rem 2.1rem 0.55rem 0.8rem;
+            border: 1px solid rgba(148, 163, 184, 0.32);
+            border-radius: 12px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+            color: #0f172a;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.86rem;
+            font-weight: 600;
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image:
+                linear-gradient(45deg, transparent 50%, #64748b 50%),
+                linear-gradient(135deg, #64748b 50%, transparent 50%);
+            background-position:
+                calc(100% - 18px) calc(50% - 2px),
+                calc(100% - 12px) calc(50% - 2px);
+            background-size: 6px 6px, 6px 6px;
+            background-repeat: no-repeat;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+        }
+
+        .sort-control:hover {
+            border-color: rgba(37, 99, 235, 0.34);
+            background-color: rgba(255, 255, 255, 1);
+        }
+
+        .sort-control:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
         }
 
         .search-wrapper .search-icon {
@@ -1159,6 +1301,7 @@
                 transform: translateY(100%);
                 opacity: 0;
             }
+
             to {
                 transform: translateY(0);
                 opacity: 1;
@@ -1218,10 +1361,12 @@
                 transform: scale(1);
                 box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35);
             }
+
             50% {
                 transform: scale(1.05);
                 box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
             }
+
             100% {
                 transform: scale(1);
                 box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
@@ -1229,12 +1374,16 @@
         }
 
         @keyframes notifBadgeBounce {
-            0%, 100% {
+
+            0%,
+            100% {
                 transform: scale(1);
             }
+
             35% {
                 transform: scale(1.18);
             }
+
             60% {
                 transform: scale(0.96);
             }
@@ -1263,13 +1412,13 @@
                 margin-bottom: 1rem;
             }
 
-            .list-header-controls > .search-toolbar,
-            .list-header-controls > .search-toolbar > .search-wrapper {
+            .list-header-controls>.search-toolbar,
+            .list-header-controls>.search-toolbar>.search-wrapper {
                 max-width: none !important;
                 width: 100%;
             }
 
-            .list-header-controls > .search-toolbar {
+            .list-header-controls>.search-toolbar {
                 flex-direction: column !important;
                 align-items: stretch !important;
             }
@@ -1300,7 +1449,7 @@
                 white-space: nowrap;
             }
 
-            #detailView > .btn-action.secondary {
+            #detailView>.btn-action.secondary {
                 width: 100%;
                 justify-content: center;
             }
@@ -1313,6 +1462,30 @@
             .detail-actions {
                 flex-direction: column;
                 align-items: stretch !important;
+            }
+
+            .detail-header {
+                padding: 0.9rem;
+                border-radius: 16px;
+            }
+
+            .detail-header h1 {
+                font-size: 1.15rem;
+            }
+
+            .detail-title-row {
+                align-items: flex-start;
+            }
+
+            .detail-pnr-chip {
+                min-height: 32px;
+                padding: 0.28rem 0.7rem;
+                font-size: 0.76rem;
+            }
+
+            .detail-meta-chip {
+                min-height: 30px;
+                padding: 0.25rem 0.65rem;
             }
 
             .detail-actions .btn-action,
@@ -1328,7 +1501,7 @@
                 line-height: 1.45;
             }
 
-            #actionsSection > div:last-child,
+            #actionsSection>div:last-child,
             #actionsSection .pdf-btn-group,
             #ledgerBtnGroup {
                 flex-direction: column !important;
@@ -1415,7 +1588,7 @@
             }
 
             .timeline-duration {
-                top: -14px;
+                top: -24px;
                 font-size: 0.68rem;
             }
 
@@ -1522,7 +1695,10 @@
         }
 
         @keyframes processingPulse {
-            0%, 80%, 100% {
+
+            0%,
+            80%,
+            100% {
                 transform: translateY(0);
                 opacity: 0.28;
             }
@@ -1610,12 +1786,35 @@
             transition: all 0.2s;
         }
 
-        .notif-btn:hover { filter: brightness(1.1); }
-        .notif-btn.approve { background: linear-gradient(135deg, #059669, #10b981); color: white; }
-        .notif-btn.reject { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
-        .notif-btn.reject:hover { background: rgba(239, 68, 68, 0.15); }
-        .notif-btn.merge { background: linear-gradient(135deg, #2563eb, #6366f1); color: white; }
-        .notif-btn.review { background: rgba(37, 99, 235, 0.1); color: var(--primary); border: 1px solid rgba(37, 99, 235, 0.2); }
+        .notif-btn:hover {
+            filter: brightness(1.1);
+        }
+
+        .notif-btn.approve {
+            background: linear-gradient(135deg, #059669, #10b981);
+            color: white;
+        }
+
+        .notif-btn.reject {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .notif-btn.reject:hover {
+            background: rgba(239, 68, 68, 0.15);
+        }
+
+        .notif-btn.merge {
+            background: linear-gradient(135deg, #2563eb, #6366f1);
+            color: white;
+        }
+
+        .notif-btn.review {
+            background: rgba(37, 99, 235, 0.1);
+            color: var(--primary);
+            border: 1px solid rgba(37, 99, 235, 0.2);
+        }
 
         .dup-compare {
             display: grid;
@@ -1674,8 +1873,15 @@
         }
 
         @keyframes slideDown {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
     </style>
 </head>
@@ -1744,14 +1950,21 @@
                     <div class="search-wrapper" style="flex:1;position:relative;">
                         <span class="search-icon">🔍</span>
                         <input type="text" id="ticketSearch" class="search-input"
-                            placeholder="Search tickets by PNR, passenger, route, city..." oninput="renderTicketCards()">
+                            placeholder="Search tickets by PNR, passenger, route, city..."
+                            oninput="renderTicketCards()">
                     </div>
                     <div class="notif-controls">
-                        <button class="notif-bell" id="mergeNotifBtn" onclick="toggleNotifPanel('merge')" title="PNR Merge Requests" style="position:relative;background:none;border:1px solid var(--border);border-radius:10px;padding:0.5rem 0.7rem;cursor:pointer;font-size:1.1rem;transition:all 0.2s;color:var(--text-primary);">
-                            🔔<span class="notif-badge" id="mergeBadge" style="display:none;position:absolute;top:-5px;right:-5px;background:linear-gradient(135deg,#2563eb,#6366f1);color:white;border-radius:999px;font-size:0.65rem;font-weight:800;min-width:18px;height:18px;display:none;align-items:center;justify-content:center;padding:0 4px;">0</span>
+                        <button class="notif-bell" id="mergeNotifBtn" onclick="toggleNotifPanel('merge')"
+                            title="PNR Merge Requests"
+                            style="position:relative;background:none;border:1px solid var(--border);border-radius:10px;padding:0.5rem 0.7rem;cursor:pointer;font-size:1.1rem;transition:all 0.2s;color:var(--text-primary);">
+                            🔔<span class="notif-badge" id="mergeBadge"
+                                style="display:none;position:absolute;top:-5px;right:-5px;background:linear-gradient(135deg,#2563eb,#6366f1);color:white;border-radius:999px;font-size:0.65rem;font-weight:800;min-width:18px;height:18px;display:none;align-items:center;justify-content:center;padding:0 4px;">0</span>
                         </button>
-                        <button class="notif-bell" id="dupNotifBtn" onclick="toggleNotifPanel('duplicate')" title="Duplicate Tickets" style="position:relative;background:none;border:1px solid var(--border);border-radius:10px;padding:0.5rem 0.7rem;cursor:pointer;font-size:1.1rem;transition:all 0.2s;color:var(--text-primary);">
-                            ⚠️<span class="notif-badge" id="dupBadge" style="display:none;position:absolute;top:-5px;right:-5px;background:linear-gradient(135deg,#dc2626,#ef4444);color:white;border-radius:999px;font-size:0.65rem;font-weight:800;min-width:18px;height:18px;display:none;align-items:center;justify-content:center;padding:0 4px;">0</span>
+                        <button class="notif-bell" id="dupNotifBtn" onclick="toggleNotifPanel('duplicate')"
+                            title="Duplicate Tickets"
+                            style="position:relative;background:none;border:1px solid var(--border);border-radius:10px;padding:0.5rem 0.7rem;cursor:pointer;font-size:1.1rem;transition:all 0.2s;color:var(--text-primary);">
+                            ⚠️<span class="notif-badge" id="dupBadge"
+                                style="display:none;position:absolute;top:-5px;right:-5px;background:linear-gradient(135deg,#dc2626,#ef4444);color:white;border-radius:999px;font-size:0.65rem;font-weight:800;min-width:18px;height:18px;display:none;align-items:center;justify-content:center;padding:0 4px;">0</span>
                         </button>
                     </div>
                 </div>
