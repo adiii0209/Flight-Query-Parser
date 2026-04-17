@@ -11,48 +11,11 @@
     href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="/static/dashboard.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
 </head>
 
 <body>
-  <!-- Sidebar Overlay -->
-  <div class="sidebar-overlay" id="sidebarOverlay"></div>
-
-  <!-- Sidebar Drawer -->
-  <div class="sidebar" id="sidebar">
-    <button class="sidebar-close" id="sidebarClose">✕</button>
-    <div class="sidebar-header">
-      <div class="user-profile-section">
-        <div class="user-avatar" id="sidebarAvatar">👤</div>
-        <div class="user-info">
-          <div class="user-name" id="sidebarUserName">Guest User</div>
-          <div class="user-email" id="sidebarUserEmail">Welcome!</div>
-        </div>
-      </div>
-      <div class="auth-btn-container">
-        <button class="sidebar-auth-btn" id="sidebarAuthBtn" onclick="handleAuthClick()">
-          🔐 Login / Register
-        </button>
-      </div>
-    </div>
-    <div class="sidebar-body">
-      <nav class="sidebar-nav">
-        <a href="/" class="sidebar-link">🏠 Home</a>
-        <a href="/passengers" class="sidebar-link active">👤 Passengers</a>
-        <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
-        <a href="/itineraries" class="sidebar-link">📋 Itineraries</a>
-        <a href="/billing" class="sidebar-link">💰 Billing</a>
-        <a href="/tickets" class="sidebar-link">🎫 Tickets</a>
-        <div style="margin-top: 1.5rem; padding: 0 0.5rem;">
-          <label class="input-label"
-            style="display: block; margin-bottom: 0.75rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Appearance</label>
-          <button class="sidebar-link" style="width: 100%; border: none; cursor: pointer;" id="sidebarThemeToggle">
-            <span class="theme-icon-container">🌙</span>
-            <span id="themeToggleText">Dark Mode</span>
-          </button>
-        </div>
-      </nav>
-    </div>
-  </div>
+  {% include 'components/sidebar.html' %}
 
   <!-- Main Content -->
   <div class="main-content">
@@ -756,9 +719,10 @@
         const response = await fetch('/api/user');
         if (response.ok) {
           const user = await response.json();
-          document.getElementById('sidebarUserName').textContent = user.username;
-          document.getElementById('sidebarUserEmail').textContent = user.email || 'Member';
-          document.getElementById('sidebarAvatar').textContent = user.username.charAt(0).toUpperCase();
+          document.getElementById('sidebarUserName').textContent = user.full_name || user.username || 'Guest User';
+          const handleEl = document.getElementById('sidebarUserHandle');
+          if (handleEl) handleEl.textContent = user.username ? '@' + user.username : '';
+          document.getElementById('sidebarAvatar').textContent = (user.full_name || user.username || 'U').charAt(0).toUpperCase();
 
           const authBtn = document.getElementById('sidebarAuthBtn');
           authBtn.textContent = '🚪 Logout';

@@ -11,6 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/itineraries.css">
     <link rel="stylesheet" href="/static/dashboard.css">
+    <link rel="stylesheet" href="/static/sidebar.css">
     <style>
         .modal-overlay {
             display: none !important;
@@ -74,6 +75,48 @@
         .ticket-card-route .route-code {
             font-family: 'Outfit', monospace;
             letter-spacing: 0.5px;
+        }
+
+        .itin-card.ticket-unread {
+            position: relative;
+            background:
+                linear-gradient(135deg, rgba(16, 185, 129, 0.16), rgba(34, 197, 94, 0.08) 42%, rgba(255, 255, 255, 0.96) 100%);
+            border-color: rgba(16, 185, 129, 0.28);
+            padding-top: 20px;
+        }
+
+        .unread-strip {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 20px;
+            background: linear-gradient(90deg, #10b981, #22c55e);
+            color: white;
+            font-size: 0.62rem;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            z-index: 10;
+            box-shadow: inset 0 -2px 4px rgba(0,0,0,0.05);
+            border-radius: 13px 13px 0 0; /* Matches card radius minus border */
+        }
+
+        .itin-card.ticket-unread .itin-card-body {
+            background:
+                linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(34, 197, 94, 0.05) 46%, rgba(255, 255, 255, 0.94) 100%);
+        }
+
+        .itin-card.ticket-unread .itin-card-top {
+            display: none;
+        }
+
+        .itin-card.ticket-unread .airline-tag {
+            background: rgba(5, 150, 105, 0.12);
+            color: #047857;
         }
 
         .ticket-card-pax {
@@ -183,6 +226,43 @@
             outline: none;
             border-color: var(--primary);
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .field-item.warning label {
+            color: #b91c1c;
+        }
+
+        .field-item.warning input {
+            border-color: rgba(220, 38, 38, 0.55);
+            box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.08);
+        }
+
+        .field-label-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+
+        .field-warning-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 1.2rem;
+            height: 1.2rem;
+            padding: 0 0.35rem;
+            border-radius: 999px;
+            background: rgba(245, 158, 11, 0.18);
+            color: #b45309;
+            font-size: 0.72rem;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        button.field-warning-badge {
+            border: none;
+            cursor: pointer;
+            font-family: inherit;
         }
 
         /* ===== LEG GROUP V2 ===== */
@@ -655,6 +735,8 @@
             padding: 1.25rem;
             margin-bottom: 0.75rem;
             border-left: 5px solid var(--pax-accent-border, var(--border));
+            position: relative;
+            transition: border-color 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease;
         }
 
         .pax-edit-header {
@@ -791,6 +873,22 @@
             font-size: 0.85rem;
             transition: all 0.2s;
             min-width: 168px;
+        }
+
+        #actionsSection .pdf-btn-group {
+            gap: 0.55rem;
+        }
+
+        #actionsSection .pdf-btn {
+            min-width: 142px;
+            padding: 0.55rem 0.9rem;
+            font-size: 0.82rem;
+        }
+
+        #actionsSection #ledgerBtnGroup,
+        #actionsSection .action-danger-group {
+            gap: 0.4rem;
+            padding: 0.45rem 0.75rem;
         }
 
         .pdf-btn.with-fare {
@@ -1883,43 +1981,49 @@
                 transform: translateY(0);
             }
         }
+        /* ===== DARK MODE OVERRIDE ===== */
+        /* Only background is dark, all components remain light and inherit light mode variables */
+        [data-theme="dark"] .container,
+        [data-theme="dark"] .sidebar,
+        [data-theme="dark"] .sidebar-overlay,
+        [data-theme="dark"] .modal-content,
+        [data-theme="dark"] .top-header,
+        [data-theme="dark"] .notif-panel {
+            --bg-main: #f8fafc;
+            --bg-primary: #f8fafc;
+            --bg-card: #ffffff;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f1f5f9;
+            --bg-hover: #f1f5f9;
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+            --text-tertiary: #94a3b8;
+            --text-inverse: #ffffff;
+            --border: #e2e8f0;
+            --border-light: #e2e8f0;
+            --border-medium: #cbd5e1;
+            --shadow: rgba(15, 23, 42, 0.08);
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+            --shadow-lg: rgba(15, 23, 42, 0.15);
+        }
+
+        [data-theme="dark"] .empty-state {
+            background: var(--bg-card);
+            border-radius: 14px;
+            border: 1px solid var(--border);
+            padding: 3rem;
+        }
+
+        body[data-theme="dark"] .notif-bell {
+            color: #ffffff !important;
+            border-color: rgba(255, 255, 255, 0.2) !important;
+        }
     </style>
 </head>
 
 <body>
-    <!-- Sidebar Overlay -->
-    <div class="sidebar-overlay" id="sidebarOverlay"></div>
-
-    <!-- Drawer Sidebar -->
-    <aside class="sidebar" id="sidebar">
-        <button class="sidebar-close" id="sidebarClose">✕</button>
-        <div class="sidebar-header">
-            <div class="user-profile-section">
-                <div class="user-avatar" id="sidebarAvatar">?</div>
-                <div>
-                    <div class="user-name" id="sidebarUserName">User</div>
-                    <div class="user-email" id="sidebarUserEmail">member</div>
-                </div>
-            </div>
-        </div>
-        <nav class="sidebar-nav">
-            <a href="/" class="sidebar-link">✈️ Flight Parser</a>
-            <a href="/itineraries" class="sidebar-link">📋 Itineraries</a>
-            <a href="/billing" class="sidebar-link">💰 Billing</a>
-            <a href="/tickets" class="sidebar-link active">🎫 Tickets</a>
-            <a href="/ledger" class="sidebar-link">📒 Ledger</a>
-            <div class="sidebar-divider"></div>
-            <a href="/passengers" class="sidebar-link">👥 Passengers</a>
-            <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
-        </nav>
-        <div class="sidebar-footer">
-            <button class="sidebar-theme-toggle" id="sidebarThemeToggle">
-                <span class="theme-icon-container">🌙</span>
-                <span id="themeToggleText">Dark Mode</span>
-            </button>
-            <button class="sidebar-auth-btn" id="sidebarAuthBtn" onclick="handleAuthClick()">🔑 Login</button>
-        </div>
-    </aside>
+  {% include 'components/sidebar.html' %}
 
     <!-- Top Header -->
     <header class="top-header">
@@ -1929,7 +2033,6 @@
             <p>Manage received flight tickets</p>
         </div>
     </header>
-
     <!-- Main Container -->
     <div class="container">
         <!-- ===== LIST VIEW ===== -->
@@ -2002,3 +2105,7 @@
 </body>
 
 </html>
+
+
+
+

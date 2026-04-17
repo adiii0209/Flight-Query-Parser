@@ -38,6 +38,7 @@ let expandedLegIds = new Set();
 let duplicatePanelTickets = [];
 let duplicatePanelTotalCount = 0;
 let duplicatePanelIsLoadingMore = false;
+let dismissedWarningKeys = new Set();
 const INITIAL_TICKETS_BATCH_SIZE = 6;
 const DUPLICATES_BATCH_SIZE = 6;
 const TICKETS_POLL_INTERVAL_MS = 5000;
@@ -45,8 +46,14 @@ const TICKETS_FULL_SYNC_INTERVAL_MS = 30000;
 const TICKETS_CACHE_KEY = 'ticketsDashboard.topCache.v1';
 const DUPLICATES_CACHE_KEY = 'ticketsDashboard.duplicatesCache.v1';
 const TICKET_DRAFT_CACHE_PREFIX = 'ticketsDashboard.ticketDraft.';
+const UNREAD_TICKETS_CACHE_KEY = 'ticketsDashboard.unreadTickets.v1';
+const TICKETS_LAST_SEEN_AT_KEY = 'ticketsDashboard.lastSeenAt.v1';
+const TICKETS_READ_OVERRIDES_KEY = 'ticketsDashboard.readOverrides.v1';
 const ACTIVE_FIELD_AUTOSAVE_IDLE_MS = 1200;
 let lastDetailInputAt = 0;
+let unreadTicketIds = new Set();
+let readOverrideTicketIds = new Set();
+let ticketsLastSeenAtMs = 0;
 
 // ==================== SIDEBAR & THEME ====================
 function initializeSidebar() {
@@ -97,11 +104,11 @@ async function checkAuth() {
         if (!r.ok) { return false; }
         const u = await r.json();
         const nameEl = document.getElementById('sidebarUserName');
-        if (nameEl) nameEl.textContent = u.full_name || u.username;
-        const emailEl = document.getElementById('sidebarUserEmail');
-        if (emailEl) emailEl.textContent = u.email || 'Member';
+        if (nameEl) nameEl.textContent = u.full_name || u.username || 'Guest User';
+        const handleEl = document.getElementById('sidebarUserHandle');
+        if (handleEl) handleEl.textContent = u.username ? '@' + u.username : '';
         const avatarEl = document.getElementById('sidebarAvatar');
-        if (avatarEl) avatarEl.textContent = (u.full_name || u.username).charAt(0).toUpperCase();
+        if (avatarEl) avatarEl.textContent = (u.full_name || u.username || 'U').charAt(0).toUpperCase();
         const authBtn = document.getElementById('sidebarAuthBtn');
         if (authBtn) {
             authBtn.textContent = '🚪 Logout';
@@ -252,9 +259,9 @@ function hydrateUserFromCache() {
     const cachedUser = readCachedJson('ticketsDashboard.userCache.v1');
     if (!cachedUser) return;
     const nameEl = document.getElementById('sidebarUserName');
-    if (nameEl) nameEl.textContent = cachedUser.full_name || cachedUser.username || '';
-    const emailEl = document.getElementById('sidebarUserEmail');
-    if (emailEl) emailEl.textContent = cachedUser.email || 'Member';
+    if (nameEl) nameEl.textContent = cachedUser.full_name || cachedUser.username || 'Guest User';
+    const handleEl = document.getElementById('sidebarUserHandle');
+    if (handleEl) handleEl.textContent = cachedUser.username ? '@' + cachedUser.username : '';
     const avatarEl = document.getElementById('sidebarAvatar');
     const avatarSource = cachedUser.full_name || cachedUser.username || '';
     if (avatarEl && avatarSource) avatarEl.textContent = avatarSource.charAt(0).toUpperCase();
@@ -297,10 +304,11 @@ function inferDuplicatedConsolidatedFareFromPassengers(passengers) {
         row.total_fare === first.total_fare
     );
     if (!allIdentical) return null;
+    const passengerCount = rows.length;
     return {
-        base_fare: first.base_fare,
-        k3_gst: first.k3_gst,
-        other_taxes: first.other_taxes
+        base_fare: first.base_fare * passengerCount,
+        k3_gst: first.k3_gst * passengerCount,
+        other_taxes: first.other_taxes * passengerCount
     };
 }
 
@@ -309,11 +317,6 @@ function normalizeTicketFareData(ticket) {
     const normalized = JSON.parse(JSON.stringify(ticket));
     normalized.currency = safe(normalized.currency, 'INR');
     normalized.grand_total = parseMoneyValue(normalized.grand_total);
-    const persistedGrandTotal = normalized.grand_total;
-    const rawBookingGrandTotal = parseMoneyValue((((normalized.raw_data || {}).booking || {}).grand_total));
-    if (persistedGrandTotal <= 0 && rawBookingGrandTotal > 0) {
-        normalized.grand_total = rawBookingGrandTotal;
-    }
     if (normalized.journey) {
         normalized.journey.global_markup = parseMoneyValue(normalized.journey.global_markup);
         if (!normalized.journey.consolidated_fare) {
@@ -454,6 +457,40 @@ function getSegmentDurationMinutes(segment) {
     return getElapsedMinutes(segment?.departure, segment?.arrival);
 }
 
+function doesSegmentDurationNeedWarning(segment) {
+    const durationMinutes = getSegmentDurationMinutes(segment);
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return false;
+    return durationMinutes < 10 || durationMinutes > (24 * 60);
+}
+
+function doesSegmentDateOrderNeedWarning(segment) {
+    const departurePoint = segment?.departure || {};
+    const arrivalPoint = segment?.arrival || {};
+    const departureTs = parseFlightDateTime({ date: departurePoint.date, time: '12:00' });
+    const arrivalTs = parseFlightDateTime({ date: arrivalPoint.date, time: '12:00' });
+    if (!Number.isFinite(departureTs) || !Number.isFinite(arrivalTs)) return false;
+    return arrivalTs < departureTs;
+}
+
+function getPnrWarningKey(value) {
+    return `pnr:${String(value || '').trim()}`;
+}
+
+function getPhoneWarningKey(value) {
+    return `phone:${String(value || '').trim()}`;
+}
+
+function getTicketNumberWarningKey(index, value) {
+    return `ticket-number:${index}:${String(value || '').trim()}`;
+}
+
+function getSegmentWarningKey(segIdx, kind, segment) {
+    const dep = segment?.departure || {};
+    const arr = segment?.arrival || {};
+    const duration = getSegmentDurationValue(segment);
+    return `segment:${segIdx}:${kind}:${safe(dep.date)}:${safe(dep.time)}:${safe(arr.date)}:${safe(arr.time)}:${safe(duration)}`;
+}
+
 function getJourneyLayoverMap(journey) {
     const layoverMap = {};
     if (journey?.layovers && journey.layovers.length > 0) {
@@ -531,6 +568,223 @@ function getJourneyTotalDurationValue(legs, segments, journey) {
         totalMinutes += parseDurationToMinutes(getLegTotalDurationValue(legIndices, segments, journey, legIdx));
     });
     return formatDurationFromMinutes(totalMinutes);
+}
+
+function cloneSegmentScheduleSnapshot(segment) {
+    const departure = segment?.departure || {};
+    const arrival = segment?.arrival || {};
+    return {
+        departure_airport: safe(departure.airport).trim(),
+        departure_date: safe(departure.date).trim(),
+        departure_time: safe(departure.time).trim(),
+        arrival_airport: safe(arrival.airport).trim(),
+        arrival_date: safe(arrival.date).trim(),
+        arrival_time: safe(arrival.time).trim()
+    };
+}
+
+function didSegmentScheduleChange(beforeSegment, afterSegment) {
+    const before = cloneSegmentScheduleSnapshot(beforeSegment);
+    const after = cloneSegmentScheduleSnapshot(afterSegment);
+    return Object.keys(before).some((key) => before[key] !== after[key]);
+}
+
+function deriveDayOffsetFromDates(segment) {
+    const departurePoint = segment?.departure || {};
+    const arrivalPoint = segment?.arrival || {};
+    const departureTs = parseFlightDateTime({ date: departurePoint.date, time: '12:00' });
+    const arrivalTs = parseFlightDateTime({ date: arrivalPoint.date, time: '12:00' });
+    if (!Number.isFinite(departureTs) || !Number.isFinite(arrivalTs)) return null;
+    const diffDays = Math.round((arrivalTs - departureTs) / 86400000);
+    return diffDays >= 0 ? diffDays : 0;
+}
+
+function recalculateSegmentsLocally(segments = []) {
+    const updatedSegments = JSON.parse(JSON.stringify(segments || []));
+    const layovers = [];
+
+    updatedSegments.forEach((segment, index) => {
+        const durationMinutes = getElapsedMinutes(segment?.departure, segment?.arrival);
+        const durationText = formatDurationFromMinutes(durationMinutes) || getSegmentDurationValue(segment) || 'N/A';
+        const explicitDayOffset = deriveDayOffsetFromDates(segment);
+        segment.days_offset = explicitDayOffset !== null
+            ? explicitDayOffset
+            : ((segment?.arrival?.time || '') < (segment?.departure?.time || '') ? 1 : 0);
+        segment.duration_calculated = durationText;
+        segment.duration_extracted = durationText;
+        segment.duration = durationText;
+
+        if (index === 0) {
+            segment.layover_duration = 'N/A';
+            segment.layover = 'N/A';
+            return;
+        }
+
+        const prevSegment = updatedSegments[index - 1] || {};
+        const layoverText = formatDurationFromMinutes(getElapsedMinutes(prevSegment?.arrival, segment?.departure)) || 'N/A';
+        segment.layover_duration = layoverText;
+        segment.layover = layoverText;
+        layovers.push({
+            after_segment: index - 1,
+            duration: layoverText,
+            at_airport: (segment?.departure?.airport || '').trim().toUpperCase()
+        });
+    });
+
+    return { segments: updatedSegments, layovers };
+}
+
+async function refreshEditedSegmentDerivedData() {
+    const segmentsPayload = getPersistableSegments(editedData.segments || []);
+    try {
+        const response = await fetch('/api/tickets/recalculate-segments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ segments: segmentsPayload })
+        });
+        if (!response.ok) throw new Error('recalculate request failed');
+        return await response.json();
+    } catch (error) {
+        console.error('Segment timing recalculation failed, using local fallback', error);
+        return recalculateSegmentsLocally(segmentsPayload);
+    }
+}
+
+function hydrateUnreadTicketsFromCache() {
+    const cached = readCachedJson(UNREAD_TICKETS_CACHE_KEY);
+    unreadTicketIds = new Set(Array.isArray(cached?.ids) ? cached.ids.filter(Boolean) : []);
+}
+
+function hydrateUnreadSeenStateFromCache() {
+    const lastSeenRaw = Number(readCachedJson(TICKETS_LAST_SEEN_AT_KEY)?.ts || 0);
+    ticketsLastSeenAtMs = Number.isFinite(lastSeenRaw) ? lastSeenRaw : 0;
+    const readOverrides = readCachedJson(TICKETS_READ_OVERRIDES_KEY);
+    readOverrideTicketIds = new Set(Array.isArray(readOverrides?.ids) ? readOverrides.ids.filter(Boolean) : []);
+}
+
+function persistUnreadTickets() {
+    writeCachedJson(UNREAD_TICKETS_CACHE_KEY, { ids: Array.from(unreadTicketIds) });
+}
+
+function persistUnreadSeenState() {
+    writeCachedJson(TICKETS_LAST_SEEN_AT_KEY, { ts: ticketsLastSeenAtMs });
+    writeCachedJson(TICKETS_READ_OVERRIDES_KEY, { ids: Array.from(readOverrideTicketIds) });
+}
+
+function getTicketCreatedAtMs(ticket) {
+    const candidate = ticket?.created_at || ticket?.updated_at || '';
+    if (!candidate) return 0;
+    const parsed = new Date(candidate);
+    const ms = parsed.getTime();
+    return Number.isFinite(ms) ? ms : 0;
+}
+
+function getNewestTicketTimestampMs(tickets = allTickets) {
+    return (tickets || []).reduce((max, ticket) => Math.max(max, getTicketCreatedAtMs(ticket)), 0);
+}
+
+function initializeTicketSeenBaseline(tickets = allTickets) {
+    if (ticketsLastSeenAtMs > 0) return;
+    const newestCreatedAtMs = getNewestTicketTimestampMs(tickets);
+    ticketsLastSeenAtMs = newestCreatedAtMs || Date.now();
+    persistUnreadSeenState();
+}
+
+function advanceTicketsSeenBaseline(timestampMs = Date.now()) {
+    const nextMs = Number.isFinite(timestampMs) ? timestampMs : Date.now();
+    if (nextMs <= ticketsLastSeenAtMs) return;
+    ticketsLastSeenAtMs = nextMs;
+    readOverrideTicketIds.clear();
+    persistUnreadSeenState();
+}
+
+function markTicketsUnread(ticketIds = []) {
+    let changed = false;
+    (ticketIds || []).forEach((ticketId) => {
+        if (!ticketId || unreadTicketIds.has(ticketId)) return;
+        unreadTicketIds.add(ticketId);
+        readOverrideTicketIds.delete(ticketId);
+        changed = true;
+    });
+    if (changed) {
+        persistUnreadTickets();
+        persistUnreadSeenState();
+    }
+}
+
+function markTicketRead(ticketId) {
+    if (!ticketId) return;
+    let changed = false;
+    if (unreadTicketIds.has(ticketId)) {
+        unreadTicketIds.delete(ticketId);
+        changed = true;
+    }
+    if (!readOverrideTicketIds.has(ticketId)) {
+        readOverrideTicketIds.add(ticketId);
+        changed = true;
+    }
+    if (changed) {
+        persistUnreadTickets();
+        persistUnreadSeenState();
+    }
+}
+
+function isTicketUnread(ticketOrId, createdAt = '') {
+    const ticketId = typeof ticketOrId === 'object' ? ticketOrId?.id : ticketOrId;
+    const createdAtMs = typeof ticketOrId === 'object'
+        ? getTicketCreatedAtMs(ticketOrId)
+        : getTicketCreatedAtMs({ created_at: createdAt });
+    if (!ticketId) return false;
+    if (readOverrideTicketIds.has(ticketId)) return false;
+    if (unreadTicketIds.has(ticketId)) return true;
+    return ticketsLastSeenAtMs > 0 && createdAtMs > ticketsLastSeenAtMs;
+}
+
+function isWarningDismissed(warningKey) {
+    return !!warningKey && dismissedWarningKeys.has(warningKey);
+}
+
+function dismissWarning(warningKey) {
+    if (!warningKey) return;
+    dismissedWarningKeys.add(warningKey);
+}
+
+function clearDismissedWarning(warningKey) {
+    if (!warningKey) return;
+    dismissedWarningKeys.delete(warningKey);
+}
+
+function escapeHtmlAttribute(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function buildWarningBadge(warningKey, message) {
+    const safeKey = JSON.stringify(String(warningKey || ''));
+    const safeMessage = JSON.stringify(String(message || ''));
+    const title = escapeHtmlAttribute(message);
+    return `<button type="button" class="field-warning-badge" title="${title}" onclick='event.stopPropagation(); openWarningReviewModal(${safeKey}, ${safeMessage})'>&#9888;</button>`;
+}
+
+function syncJourneyDerivedDurations() {
+    const journey = editedData.journey || {};
+    const segments = editedData.segments || [];
+    const legGroups = journey.legs && journey.legs.length > 0
+        ? journey.legs.map((leg) => Array.isArray(leg?.segments) ? leg.segments : [])
+        : groupSegmentsIntoLegs(segments);
+
+    if (journey.legs && journey.legs.length > 0) {
+        journey.legs.forEach((leg, legIdx) => {
+            const legSegments = Array.isArray(leg?.segments) ? leg.segments : [];
+            journey.legs[legIdx].total_duration = getLegTotalDurationValue(legSegments, segments, journey, legIdx);
+        });
+    }
+
+    journey.total_journey_duration = getJourneyTotalDurationValue(legGroups, segments, journey);
+    editedData.journey = journey;
 }
 
 function getSegmentBookingClassValue(segment) {
@@ -686,6 +940,7 @@ async function loadTickets(options = {}) {
         if (notifyNewTickets && hasInitializedTicketFeed && offset === 0) {
             const newTickets = incomingTickets.filter((ticket) => ticket && ticket.id && !knownTicketIds.has(ticket.id));
             if (newTickets.length > 0) {
+                markTicketsUnread(newTickets.map((ticket) => ticket.id));
                 const firstTicket = newTickets[0];
                 const title = (firstTicket.passenger_names || []).filter(Boolean).slice(0, 2).join(', ')
                     || firstTicket.pnr
@@ -720,6 +975,7 @@ async function loadTickets(options = {}) {
         }
         hasInitializedTicketFeed = true;
         if (render) {
+            initializeTicketSeenBaseline(allTickets);
             renderTicketCards();
         }
         return {
@@ -1137,6 +1393,9 @@ function buildTicketCardHtml(t) {
     const mergedBadge = t.booking_group_id
         ? '<span style="background:rgba(5,150,105,0.12);color:#059669;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Merged Booking</span>'
         : '';
+    const unread = isTicketUnread(t);
+    const unreadClass = unread ? ' ticket-unread' : '';
+    const unreadStrip = unread ? '<div class="unread-strip">UNREAD</div>' : '';
 
     let calculatedTotal = 0;
     const globalMarkup = parseMoneyValue(journey.global_markup);
@@ -1150,7 +1409,8 @@ function buildTicketCardHtml(t) {
     const grandTotal = parseMoneyValue(t.grand_total);
     const displayTotal = grandTotal > 0 ? grandTotal : calculatedTotal;
 
-    return `<div class="itin-card" data-ticket-id="${safe(t.id)}" onclick="openTicket('${t.id}')">
+    return `<div class="itin-card${unreadClass}" data-ticket-id="${safe(t.id)}" onclick="openTicket('${t.id}')">
+        ${unreadStrip}
         <div class="itin-card-top ${statusClass}"></div>
         <div class="itin-card-body">
             <div class="itin-card-header">
@@ -1302,6 +1562,9 @@ function buildTicketCardHtml(t) {
     const mergedBadge = t.booking_group_id
         ? '<span style="background:rgba(5,150,105,0.12);color:#059669;padding:0.15rem 0.5rem;border-radius:6px;font-size:0.72rem;font-weight:700;">Merged Booking</span>'
         : '';
+    const unread = isTicketUnread(t);
+    const unreadClass = unread ? ' ticket-unread' : '';
+    const unreadStrip = unread ? '<div class="unread-strip">UNREAD</div>' : '';
 
     let calculatedTotal = 0;
     const globalMarkup = parseMoneyValue(journey.global_markup);
@@ -1315,7 +1578,8 @@ function buildTicketCardHtml(t) {
     const grandTotal = parseMoneyValue(t.grand_total);
     const displayTotal = grandTotal > 0 ? grandTotal : calculatedTotal;
 
-    return `<div class="itin-card" data-ticket-id="${safe(t.id)}" onclick="openTicket('${t.id}')">
+    return `<div class="itin-card${unreadClass}" data-ticket-id="${safe(t.id)}" onclick="openTicket('${t.id}')">
+        ${unreadStrip}
         <div class="itin-card-top ${statusClass}"></div>
         <div class="itin-card-body">
             <div class="itin-card-header">
@@ -1362,6 +1626,8 @@ async function openTicket(id, { syncUrl = true, replaceUrl = false } = {}) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
     try {
+        markTicketRead(id);
+        renderTicketCards();
         pauseDashboardLiveUpdates();
         const cachedTicket = getCachedTicketDetail(id);
         if (cachedTicket) {
@@ -2564,6 +2830,10 @@ function renderBookingSection() {
     if (!t.raw_data) t.raw_data = {};
     if (!t.raw_data.gst_details) t.raw_data.gst_details = {};
     const gst = t.raw_data.gst_details;
+    const pnrNeedsWarning = doesPnrNeedWarning(t.pnr);
+    const phoneNeedsWarning = doesPhoneNeedWarning(t.phone);
+    const pnrWarningKey = getPnrWarningKey(t.pnr);
+    const phoneWarningKey = getPhoneWarningKey(t.phone);
 
     const gstHtml = `
         <div style="margin-top:1rem; padding:1rem; background:var(--bg-main); border-radius:10px; border:1px solid var(--border);">
@@ -2586,9 +2856,21 @@ function renderBookingSection() {
     document.getElementById('bookingSection').innerHTML = `
         <div class="section-header-row"><h2>📋 Booking Information</h2></div>
         <div class="field-grid">
-            <div class="field-item"><label>PNR</label><input type="text" value="${safe(t.pnr)}" oninput="updateTicketPnr(this.value)" onchange="updateTicketPnr(this.value)"></div>
+            <div class="field-item ${pnrNeedsWarning ? 'warning' : ''}" id="ticketPnrField">
+                <div class="field-label-row">
+                    <label>PNR</label>
+                    ${pnrNeedsWarning ? buildWarningBadge(pnrWarningKey, 'PNR is empty, not 6 characters, or looks like a normal word') : ''}
+                </div>
+                <input type="text" id="ticketPnrInput" value="${safe(t.pnr)}" oninput="updateTicketPnr(this.value)" onchange="updateTicketPnr(this.value)">
+            </div>
             <div class="field-item"><label>Booking Date</label><input type="text" value="${safe(t.booking_date)}" oninput="editedData.booking_date=this.value; triggerAutoSave()" onchange="editedData.booking_date=this.value; triggerAutoSave()"></div>
-            <div class="field-item"><label>Phone</label><input type="text" value="${safe(t.phone)}" oninput="editedData.phone=this.value; triggerAutoSave()" onchange="editedData.phone=this.value; triggerAutoSave()"></div>
+            <div class="field-item ${phoneNeedsWarning ? 'warning' : ''}" id="ticketPhoneField">
+                <div class="field-label-row">
+                    <label>Phone</label>
+                    ${phoneNeedsWarning ? buildWarningBadge(phoneWarningKey, 'Phone number is missing, too short, or too long') : ''}
+                </div>
+                <input type="text" id="ticketPhoneInput" value="${safe(t.phone)}" oninput="updateTicketPhone(this.value)" onchange="updateTicketPhone(this.value)">
+            </div>
             <div class="field-item"><label>Currency</label>
                 <select onchange="setTicketCurrency(this.value)">
                     <option value="INR" ${(t.currency || 'INR') === 'INR' ? 'selected' : ''}>INR</option>
@@ -2614,6 +2896,65 @@ function updateTicketPnr(value) {
     editedData.pnr = value;
     const headerPnr = document.getElementById('detailPnrLabel');
     if (headerPnr) headerPnr.textContent = value || 'No PNR';
+    syncPnrWarningUi();
+    triggerAutoSave();
+}
+
+function doesPnrNeedWarning(value) {
+    const normalized = String(value || '').trim();
+    const invalid = /^[A-Za-z]{4,}$/.test(normalized);
+    const warningKey = getPnrWarningKey(normalized);
+    const shouldWarn = !normalized || normalized.length !== 6 || invalid;
+    if (!shouldWarn) clearDismissedWarning(warningKey);
+    return shouldWarn && !isWarningDismissed(warningKey);
+}
+
+function doesPhoneNeedWarning(value) {
+    const raw = String(value || '').trim();
+    const digitsOnly = raw.replace(/\D/g, '');
+    const invalid = digitsOnly.length < 7 || raw.length > 15;
+    const warningKey = getPhoneWarningKey(raw);
+    if (!invalid) clearDismissedWarning(warningKey);
+    return invalid && !isWarningDismissed(warningKey);
+}
+
+function syncPnrWarningUi() {
+    const pnrField = document.getElementById('ticketPnrField');
+    if (!pnrField) return;
+    const needsWarning = doesPnrNeedWarning(editedData.pnr);
+    const warningKey = getPnrWarningKey(editedData.pnr);
+    pnrField.classList.toggle('warning', needsWarning);
+
+    let badge = pnrField.querySelector('.field-warning-badge');
+    if (needsWarning && !badge) {
+        const labelRow = pnrField.querySelector('.field-label-row');
+        if (!labelRow) return;
+        labelRow.insertAdjacentHTML('beforeend', buildWarningBadge(warningKey, 'PNR is empty, not 6 characters, or looks like a normal word'));
+    } else if (!needsWarning && badge) {
+        badge.remove();
+    }
+}
+
+function syncPhoneWarningUi() {
+    const phoneField = document.getElementById('ticketPhoneField');
+    if (!phoneField) return;
+    const needsWarning = doesPhoneNeedWarning(editedData.phone);
+    const warningKey = getPhoneWarningKey(editedData.phone);
+    phoneField.classList.toggle('warning', needsWarning);
+
+    let badge = phoneField.querySelector('.field-warning-badge');
+    if (needsWarning && !badge) {
+        const labelRow = phoneField.querySelector('.field-label-row');
+        if (!labelRow) return;
+        labelRow.insertAdjacentHTML('beforeend', buildWarningBadge(warningKey, 'Phone number is missing, too short, or too long'));
+    } else if (!needsWarning && badge) {
+        badge.remove();
+    }
+}
+
+function updateTicketPhone(value) {
+    editedData.phone = value;
+    syncPhoneWarningUi();
     triggerAutoSave();
 }
 
@@ -2716,6 +3057,26 @@ function renderSegmentsSection() {
             const dep = seg.departure || {};
             const arr = seg.arrival || {};
             const duration = getSegmentDurationValue(seg);
+            const hasDurationWarning = doesSegmentDurationNeedWarning(seg);
+            const hasDateOrderWarning = doesSegmentDateOrderNeedWarning(seg);
+            const durationWarningKey = getSegmentWarningKey(segIdx, 'duration', seg);
+            const dateOrderWarningKey = getSegmentWarningKey(segIdx, 'date-order', seg);
+            const showDurationWarning = hasDurationWarning && !isWarningDismissed(durationWarningKey);
+            const showDateOrderWarning = hasDateOrderWarning && !isWarningDismissed(dateOrderWarningKey);
+            const hasTimingWarning = showDurationWarning || showDateOrderWarning;
+            const warningMessages = [];
+            const warningKeys = [];
+            if (showDurationWarning) {
+                warningMessages.push('Flight duration looks unusual: less than 10 minutes or more than 24 hours');
+                warningKeys.push(durationWarningKey);
+            }
+            if (showDateOrderWarning) {
+                warningMessages.push('Arrival date is earlier than departure date');
+                warningKeys.push(dateOrderWarningKey);
+            }
+            const durationWarningBadge = hasTimingWarning
+                ? buildWarningBadge(warningKeys.join('||'), warningMessages.join(' | '))
+                : '';
             if (posInLeg > 0) {
                 const prevSegIdx = legIndices[posInLeg - 1];
                 const prevSeg = segments[prevSegIdx] || {};
@@ -2754,8 +3115,8 @@ function renderSegmentsSection() {
                 ? `<input class="tl-terminal" style="${inlineInputStyle}; width:96px; margin-top:0.25rem; font-size:0.72rem;" id="seg-arr-term-${segIdx}" placeholder="Terminal" value="${safe(arr.terminal)}">`
                 : `${arr.terminal && arr.terminal !== 'N/A' ? `<span class="tl-terminal">Terminal ${arr.terminal}</span>` : ''}`;
             const durationHtml = isEditingSegment
-                ? `<input style="${inlineInputStyle}; width:98px; text-align:center; font-size:0.72rem; position:absolute; top:-28px; left:50%; transform:translateX(-50%); z-index:3; background:var(--bg-card);" id="seg-duration-${segIdx}" value="${safe(duration)}">`
-                : `${duration ? `<span class="timeline-duration">${duration}</span>` : ''}`;
+                ? `<div style="position:absolute; top:-30px; left:50%; transform:translateX(-50%); z-index:3; display:flex; align-items:center; gap:0.35rem;"><input style="${inlineInputStyle}; width:98px; text-align:center; font-size:0.72rem; background:var(--bg-card); color:${hasTimingWarning ? '#dc2626' : 'var(--text-primary)'}; border-color:${hasTimingWarning ? 'rgba(220,38,38,0.4)' : 'var(--border)'};" id="seg-duration-${segIdx}" value="${safe(duration)}">${durationWarningBadge}</div>`
+                : `${duration ? `<span class="timeline-duration" style="${hasTimingWarning ? 'color:#dc2626; font-weight:800; display:inline-flex; align-items:center; gap:0.35rem;' : 'display:inline-flex; align-items:center; gap:0.35rem;'}">${duration}${hasTimingWarning ? durationWarningBadge : ''}</span>` : ''}`;
 
             html += `<div class="${segmentCardClass}" style="${seg.status === 'cancelled' ? 'opacity:0.85; border-left:6px solid #ef4444; background:rgba(239,68,68,0.08); box-shadow: inset 0 0 10px rgba(239,68,68,0.1);' : ''}">
                 <div class="segment-header-v2">
@@ -2894,7 +3255,13 @@ function renderPassengersSection() {
                         <option value="CHD" ${(p.pax_type || '').toUpperCase() === 'CHD' ? 'selected' : ''}>Child</option>
                         <option value="INF" ${(p.pax_type || '').toUpperCase() === 'INF' ? 'selected' : ''}>Infant</option>
                     </select></div>
-                <div class="field-item"><label>Ticket Number</label><input type="text" value="${safe(p.ticket_number)}" oninput="updatePassengerField(${i}, 'ticket_number', this.value)" onchange="updatePassengerField(${i}, 'ticket_number', this.value)"></div>
+                <div class="field-item ${doesTicketNumberNeedWarning(p.ticket_number) && !isWarningDismissed(getTicketNumberWarningKey(i, p.ticket_number)) ? 'warning' : ''}" id="pax-ticket-field-${i}">
+                    <div class="field-label-row">
+                        <label>Ticket Number</label>
+                        ${doesTicketNumberNeedWarning(p.ticket_number) && !isWarningDismissed(getTicketNumberWarningKey(i, p.ticket_number)) ? buildWarningBadge(getTicketNumberWarningKey(i, p.ticket_number), 'Ticket number is shorter than 13 characters') : ''}
+                    </div>
+                    <input type="text" value="${safe(p.ticket_number)}" oninput="updatePassengerField(${i}, 'ticket_number', this.value)" onchange="updatePassengerField(${i}, 'ticket_number', this.value)">
+                </div>
                 <div class="field-item"><label>Frequent Flyer</label><input type="text" value="${safe(p.frequent_flyer_number)}" oninput="updatePassengerField(${i}, 'frequent_flyer_number', this.value)" onchange="updatePassengerField(${i}, 'frequent_flyer_number', this.value)"></div>
                 <div class="field-item"><label>Baggage</label><input type="text" value="${safe(p.baggage)}" oninput="updatePassengerField(${i}, 'baggage', this.value)" onchange="updatePassengerField(${i}, 'baggage', this.value)"></div>
             </div>`;
@@ -3014,8 +3381,8 @@ function getNormalizedFareState() {
     } : { base: 0, k3: 0, other: 0 };
     const hasRawConsolidatedFare = !!(rawConsolidatedTotals.base || rawConsolidatedTotals.k3 || rawConsolidatedTotals.other);
     const useConsolidatedSource = fareDisplayMode === 'consolidated'
-        ? (fareFieldsTouched || hasRawConsolidatedFare)
-        : (!fareFieldsTouched && hasRawConsolidatedFare);
+        ? (hasRawConsolidatedFare || !hasExplicitPassengerFares)
+        : !hasExplicitPassengerFares;
     const canInferMarkupFromGrandTotal = hasRawConsolidatedFare && fallbackGrandTotal > 0;
     const inferredMarkupTotal = canInferMarkupFromGrandTotal
         ? Math.max(fallbackGrandTotal - (rawConsolidatedTotals.base + rawConsolidatedTotals.k3 + rawConsolidatedTotals.other), 0)
@@ -3574,11 +3941,38 @@ function syncPassengerNamesToVisibleUi(index) {
     renderTicketCards();
 }
 
+function doesTicketNumberNeedWarning(value) {
+    if (value === undefined || value === null) return false;
+    const normalized = String(value).trim();
+    if (!normalized || normalized === 'N/A' || normalized === 'Not Specified') return false;
+    return normalized.length < 13;
+}
+
+function syncPassengerTicketNumberWarningUi(index) {
+    const field = document.getElementById(`pax-ticket-field-${index}`);
+    if (!field) return;
+    const ticketNumber = editedData?.passengers?.[index]?.ticket_number;
+    const warningKey = getTicketNumberWarningKey(index, ticketNumber);
+    const needsWarning = doesTicketNumberNeedWarning(ticketNumber) && !isWarningDismissed(warningKey);
+    field.classList.toggle('warning', needsWarning);
+
+    let badge = field.querySelector('.field-warning-badge');
+    if (needsWarning && !badge) {
+        const labelRow = field.querySelector('.field-label-row');
+        if (!labelRow) return;
+        labelRow.insertAdjacentHTML('beforeend', buildWarningBadge(warningKey, 'Ticket number is shorter than 13 characters'));
+    } else if (!needsWarning && badge) {
+        badge.remove();
+    }
+}
+
 function updatePassengerField(index, field, value) {
     if (!editedData.passengers || !editedData.passengers[index]) return;
     editedData.passengers[index][field] = value;
     if (field === 'name') {
         syncPassengerNamesToVisibleUi(index);
+    } else if (field === 'ticket_number') {
+        syncPassengerTicketNumberWarningUi(index);
     }
     triggerAutoSave();
 }
@@ -3671,8 +4065,9 @@ function cancelSegmentEdit() {
     renderSegmentsSection();
 }
 
-function saveSegmentEdit(idx) {
+async function saveSegmentEdit(idx) {
     const seg = editedData.segments[idx];
+    const originalSegment = JSON.parse(JSON.stringify(seg || {}));
     const getValue = (id) => document.getElementById(`${id}-${idx}`)?.value || '';
 
     seg.airline = getValue('seg-airline');
@@ -3697,26 +4092,20 @@ function saveSegmentEdit(idx) {
     seg.arrival.terminal = getValue('seg-arr-term');
 
     const editedDuration = getValue('seg-duration');
-    seg.duration_calculated = editedDuration;
-    seg.duration = editedDuration;
-    seg.duration_extracted = editedDuration;
-
-    const journey = editedData.journey || {};
-    const segments = editedData.segments || [];
-    if (journey.legs && journey.legs.length > 0) {
-        journey.legs.forEach((leg, legIdx) => {
-            const legSegments = Array.isArray(leg?.segments) ? leg.segments : [];
-            journey.legs[legIdx].total_duration = getLegTotalDurationValue(legSegments, segments, journey, legIdx);
-        });
+    if (didSegmentScheduleChange(originalSegment, seg)) {
+        const recalculated = await refreshEditedSegmentDerivedData();
+        if (Array.isArray(recalculated?.segments)) {
+            editedData.segments = recalculated.segments;
+        }
+        if (!editedData.journey) editedData.journey = {};
+        editedData.journey.layovers = Array.isArray(recalculated?.layovers) ? recalculated.layovers : [];
+    } else {
+        seg.duration_calculated = editedDuration;
+        seg.duration = editedDuration;
+        seg.duration_extracted = editedDuration;
     }
-    journey.total_journey_duration = getJourneyTotalDurationValue(
-        journey.legs && journey.legs.length > 0
-            ? journey.legs.map((leg) => Array.isArray(leg?.segments) ? leg.segments : [])
-            : groupSegmentsIntoLegs(segments),
-        segments,
-        journey
-    );
-    editedData.journey = journey;
+
+    syncJourneyDerivedDurations();
 
     activeSegmentEditIdx = null;
     renderSegmentsSection();
@@ -4233,6 +4622,31 @@ function _createModalOverlay(innerHTML) {
 function _closeModal() {
     const m = document.getElementById('cancel-change-modal');
     if (m) m.remove();
+}
+
+function openWarningReviewModal(warningKey, warningMessage) {
+    const html = `
+        <div style="max-width:360px;">
+            <div style="display:flex; align-items:center; gap:0.65rem; margin-bottom:0.9rem;">
+                <span class="field-warning-badge" style="cursor:default;">&#9888;</span>
+                <div style="font-weight:800; font-size:1rem; color:var(--text-primary);">Warning Check</div>
+            </div>
+            <div style="color:var(--text-secondary); font-size:0.92rem; line-height:1.5; margin-bottom:1rem;">
+                ${escapeHtmlAttribute(warningMessage)}
+            </div>
+            <div style="font-weight:700; color:var(--text-primary); margin-bottom:1rem;">Is this warning okay or wrong?</div>
+            <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+                <button class="btn-action secondary" onclick="_closeModal()">Wrong</button>
+                <button class="btn-action primary" onclick='confirmWarningOkay(${JSON.stringify(String(warningKey || ""))})'>OK</button>
+            </div>
+        </div>`;
+    _createModalOverlay(html);
+}
+
+function confirmWarningOkay(warningKey) {
+    String(warningKey || '').split('||').filter(Boolean).forEach(dismissWarning);
+    _closeModal();
+    renderDetailView();
 }
 
 // ========== CANCEL MODAL ==========
@@ -4926,6 +5340,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     initializeSidebar();
     hydrateUserFromCache();
+    hydrateUnreadTicketsFromCache();
+    hydrateUnreadSeenStateFromCache();
     hydrateTicketsFromCache();
     void checkAuth();
     await loadNotifications();
@@ -4974,10 +5390,15 @@ window.addEventListener('popstate', async () => {
 });
 
 window.addEventListener('beforeunload', () => {
+    advanceTicketsSeenBaseline(Math.max(Date.now(), getNewestTicketTimestampMs()));
     if (ticketsEventSource) {
         ticketsEventSource.close();
         ticketsEventSource = null;
     }
+});
+
+window.addEventListener('pagehide', () => {
+    advanceTicketsSeenBaseline(Math.max(Date.now(), getNewestTicketTimestampMs()));
 });
 
 window.addEventListener('online', () => {
@@ -5011,7 +5432,7 @@ function renderActionsSection() {
                 <span style="font-weight:700; color:#10b981;">✅ In Ledger</span>
             </div>`}
             ${!isCancelled ? `
-            <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(239,68,68,0.05); padding:0.5rem 1rem; border-radius:12px; border:1px solid rgba(239,68,68,0.2);">
+            <div class="action-danger-group" style="display:flex; align-items:center; gap:0.5rem; background:rgba(239,68,68,0.05); padding:0.5rem 1rem; border-radius:12px; border:1px solid rgba(239,68,68,0.2);">
                 <button class="pdf-btn" style="background:linear-gradient(135deg,#dc2626,#ef4444); color:white; padding:0.5rem 1rem;" onclick="openCancelModal()">❌ Cancel / Split</button>
                 <button class="pdf-btn" style="background:linear-gradient(135deg,#d97706,#f59e0b); color:white; padding:0.5rem 1rem;" onclick="openChangeModal()">🔄 Change</button>
             </div>` : `

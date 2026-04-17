@@ -11,6 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/itineraries.css">
     <link rel="stylesheet" href="/static/dashboard.css">
+    <link rel="stylesheet" href="/static/sidebar.css">
     <style>
         /* Fix for dashboard.css overlapping the page */
         .modal-overlay {
@@ -42,42 +43,7 @@
 </head>
 
 <body>
-    <!-- Sidebar Overlay -->
-    <div class="sidebar-overlay" id="sidebarOverlay"></div>
-
-    <!-- Drawer Sidebar -->
-    <aside class="sidebar" id="sidebar">
-        <button class="sidebar-close" id="sidebarClose">✕</button>
-        <div class="sidebar-header">
-            <div class="user-profile-section">
-                <div class="user-avatar" id="sidebarAvatar">?</div>
-                <div>
-                    <div class="user-name" id="sidebarUserName">User</div>
-                    <div class="user-email" id="sidebarUserEmail">member</div>
-                </div>
-            </div>
-        </div>
-        <nav class="sidebar-nav">
-            <a href="/" class="sidebar-link">✈️ Flight Parser</a>
-            <a href="/itineraries" class="sidebar-link active">📋 Itineraries</a>
-            <a href="/billing" class="sidebar-link">💰 Billing</a>
-            <a href="/tickets" class="sidebar-link">🎫 Tickets</a>
-            <div class="sidebar-divider"></div>
-            <a href="/passengers" class="sidebar-link">👥 Passengers</a>
-            <a href="/corporates" class="sidebar-link">🏢 Corporates</a>
-        </nav>
-        <div class="sidebar-footer">
-            <button class="sidebar-theme-toggle" id="sidebarThemeToggle">
-                <span class="theme-icon-container">🌙</span>
-                <span id="themeToggleText">Dark Mode</span>
-            </button>
-            <button class="sidebar-theme-toggle" id="sidebarValentineToggle" style="margin-top: 0.5rem;">
-                <span class="theme-icon-container">🎀</span>
-                <span id="sidebarValToggleText">Pookie Mode</span>
-            </button>
-            <button class="sidebar-auth-btn" id="sidebarAuthBtn" onclick="handleAuthClick()">🔑 Login</button>
-        </div>
-    </aside>
+    {% include 'components/sidebar.html' %}
 
     <!-- Top Header -->
     <header class="top-header">

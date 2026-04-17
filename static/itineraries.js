@@ -81,13 +81,13 @@ async function checkAuth() {
     }
     const u = await r.json();
     const nameEl = document.getElementById('sidebarUserName');
-    if (nameEl) nameEl.textContent = u.full_name || u.username;
+    if (nameEl) nameEl.textContent = u.full_name || u.username || 'Guest User';
 
-    const emailEl = document.getElementById('sidebarUserEmail');
-    if (emailEl) emailEl.textContent = u.email || 'Member';
+    const handleEl = document.getElementById('sidebarUserHandle');
+    if (handleEl) handleEl.textContent = u.username ? '@' + u.username : '';
 
     const avatarEl = document.getElementById('sidebarAvatar');
-    if (avatarEl) avatarEl.textContent = (u.full_name || u.username).charAt(0).toUpperCase();
+    if (avatarEl) avatarEl.textContent = (u.full_name || u.username || 'U').charAt(0).toUpperCase();
 
     const authBtn = document.getElementById('sidebarAuthBtn');
     if (authBtn) {
@@ -238,13 +238,41 @@ function filterByStatus(status, btn) {
   renderItineraryCards();
 }
 
-function getCardRoute(flights, tripType) {
+function getFlightUnitId(flight) {
+  if (!flight || typeof flight !== 'object') return '1';
+  return String(flight.unit_id || flight.unitId || '1');
+}
+
+function getRawUnitFlights(rawInputData) {
+  if (!rawInputData || typeof rawInputData !== 'object') return null;
+  const unitFlights = rawInputData.unit_flights;
+  return unitFlights && typeof unitFlights === 'object' ? unitFlights : null;
+}
+
+function buildMultiCityOptionsFromRawMap(flights, rawInputData) {
+  const unitFlights = getRawUnitFlights(rawInputData);
+  if (!unitFlights || !Array.isArray(flights) || flights.length === 0) return [];
+
+  const options = [];
+  Object.keys(unitFlights).forEach((unitId, idx) => {
+    const indices = Array.isArray(unitFlights[unitId]) ? unitFlights[unitId] : [];
+    const optionFlights = indices.map(i => flights[i]).filter(Boolean);
+    if (optionFlights.length > 0) {
+      options.push({ flights: optionFlights, label: 'Option ' + (idx + 1), index: idx });
+    }
+  });
+  return options;
+}
+
+function getCardRoute(flights, tripType, rawInputData) {
   if (!flights || flights.length === 0) return null;
 
   // For multi-city, we want the sequence of all unique segments in the first option
   if (tripType === 'multi_city') {
-    const firstUnitId = flights[0].unit_id || '1';
-    const firstOptionFlights = flights.filter(f => (f.unit_id || '1') === firstUnitId);
+    const rawOptions = buildMultiCityOptionsFromRawMap(flights, rawInputData);
+    const firstOptionFlights = rawOptions.length > 0
+      ? rawOptions[0].flights
+      : flights.filter(f => getFlightUnitId(f) === getFlightUnitId(flights[0]));
 
     if (firstOptionFlights.length === 0) return null;
 
@@ -326,15 +354,14 @@ function renderItineraryCards() {
 
   container.innerHTML = items.map(it => {
     const flights = it.flights || [];
-    const routeText = getCardRoute(flights, it.trip_type);
+    const routeText = getCardRoute(flights, it.trip_type, it.raw_input_data);
 
     // Count options based on trip type
     let numOpts = 0;
     if (it.trip_type === 'round_trip') {
       numOpts = Math.ceil(flights.length / 2);
     } else if (it.trip_type === 'multi_city') {
-      const units = new Set(flights.map(f => f.unit_id || '1'));
-      numOpts = units.size;
+      numOpts = getFlightOptionCount(flights, it.trip_type, it.raw_input_data);
     } else {
       numOpts = flights.length;
     }
@@ -435,7 +462,7 @@ function renderActions() {
     html += `<button class="btn-action small primary" onclick="editInParser()">✏️ Edit</button>`;
     const flights = it.flights || [];
     // Show approve only if a flight option is selected (or only 1 option exists)
-    const numOpts = getFlightOptionCount(flights, it.trip_type);
+  const numOpts = getFlightOptionCount(flights, it.trip_type, it.raw_input_data);
     if (numOpts === 1 || it.selected_flight_option !== null) {
       html += `<button class="btn-action small success" onclick="approveItinerary()">✅ Approve</button>`;
     }
@@ -545,7 +572,7 @@ function getFinancialTotals(it) {
     return { total: it.total_amount || 0, markup: mu, svc: svc, gst: gst };
   }
 
-  const options = groupFlightsIntoOptions(it.flights, it.trip_type);
+  const options = groupFlightsIntoOptions(it.flights, it.trip_type, it.raw_input_data);
   const selIdx = it.selected_flight_option !== null ? it.selected_flight_option : 0;
   const opt = options[selIdx];
 
@@ -582,14 +609,16 @@ function getEffectiveTotal(it) {
   return getFinancialTotals(it).total;
 }
 function shouldShowFinancials(it) {
-  const numOpts = getFlightOptionCount(it.flights, it.trip_type);
+  const numOpts = getFlightOptionCount(it.flights, it.trip_type, it.raw_input_data);
   return numOpts === 1 || it.selected_flight_option !== null;
 }
-function getFlightOptionCount(flights, tripType) {
+function getFlightOptionCount(flights, tripType, rawInputData) {
   if (!flights || flights.length === 0) return 0;
   if (tripType === 'round_trip') return Math.ceil(flights.length / 2);
   if (tripType === 'multi_city') {
-    const units = new Set(flights.map(f => f.unit_id || '1'));
+    const rawOptions = buildMultiCityOptionsFromRawMap(flights, rawInputData);
+    if (rawOptions.length > 0) return rawOptions.length;
+    const units = new Set(flights.map(f => getFlightUnitId(f)));
     return units.size;
   }
   return flights.length;
@@ -605,7 +634,7 @@ const areFaresInitiallySame = (f1, f2) => {
 };
 
 // Group flights into options based on trip type
-function groupFlightsIntoOptions(flights, tripType) {
+function groupFlightsIntoOptions(flights, tripType, rawInputData) {
   if (!flights || flights.length === 0) return [];
   const options = [];
 
@@ -617,10 +646,12 @@ function groupFlightsIntoOptions(flights, tripType) {
       options.push(opt);
     }
   } else if (tripType === 'multi_city') {
+    const rawOptions = buildMultiCityOptionsFromRawMap(flights, rawInputData);
+    if (rawOptions.length > 0) return rawOptions;
     // Multi-city: group by unit_id
     const unitMap = {};
     flights.forEach((f, i) => {
-      const uid = f.unit_id || '1';
+      const uid = getFlightUnitId(f);
       if (!unitMap[uid]) unitMap[uid] = { flights: [], label: 'Option ' + Object.keys(unitMap).length + 1, indices: [] };
       unitMap[uid].flights.push(f);
       unitMap[uid].indices.push(i);
@@ -656,7 +687,7 @@ function renderFlightSection() {
   section.style.display = 'block';
 
   // Always Group Options Correctly
-  const options = groupFlightsIntoOptions(flights, it.trip_type);
+  const options = groupFlightsIntoOptions(flights, it.trip_type, it.raw_input_data);
 
   // After approval: show ONLY the selected flight, with finalized details
   if (isApprovedOrBeyond && it.selected_flight_option !== null) {
@@ -1657,7 +1688,7 @@ async function selectFlightOption(idx) {
 
 async function approveItinerary() {
   const it = currentItinerary; const flights = it.flights || [];
-  const numOpts = getFlightOptionCount(flights, it.trip_type);
+  const numOpts = getFlightOptionCount(flights, it.trip_type, it.raw_input_data);
   if (numOpts > 1 && it.selected_flight_option === null) {
     showToast('Please select a flight option first', 'error'); return;
   }
@@ -1745,7 +1776,7 @@ function copyItinerary() {
   if (it.reference_number) text += `Reference: ${it.reference_number}\n`;
   text += `Amount: ${formatCurrency(getEffectiveTotal(it))}\n\n`;
 
-  const options = groupFlightsIntoOptions(flights, it.trip_type);
+  const options = groupFlightsIntoOptions(flights, it.trip_type, it.raw_input_data);
   options.forEach((opt, idx) => {
     if (it.selected_flight_option !== null && it.selected_flight_option !== idx) return;
     text += `--- ${opt.label} ---\n`;

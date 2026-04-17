@@ -663,21 +663,38 @@ def draw_ticket(c, data, include_fare=True):
         ancs = p.get("ancillaries") or []
         meals = p.get("meals") or []
 
+        def _normalize_passenger_segment_index(raw_index):
+            try:
+                idx = int(raw_index)
+            except (TypeError, ValueError):
+                return 0
+            if n_seg <= 0:
+                return 0
+            if 0 <= idx < n_seg:
+                return idx
+            # Handle one-based legacy indices from older/alternate payloads.
+            if 1 <= idx <= n_seg:
+                return idx - 1
+            # For single-segment bookings, always collapse to the only segment.
+            if n_seg == 1:
+                return 0
+            return max(0, min(idx, n_seg - 1))
+
         seg_map = {}
         for s in seats:
-            si = (s.get("segment_index", 0) if isinstance(s, dict) else 0)
+            si = _normalize_passenger_segment_index(s.get("segment_index", 0) if isinstance(s, dict) else 0)
             sn = _t(s.get("seat_number") if isinstance(s, dict) else s)
             if sn:
                 seg_map.setdefault(si, {})["seat"] = sn
         for a in ancs:
             if isinstance(a, dict):
-                si = a.get("segment_index", 0)
+                si = _normalize_passenger_segment_index(a.get("segment_index", 0))
                 desc = _t(a.get("name") or a.get("code"))
                 if desc:
                     seg_map.setdefault(si, {}).setdefault("anc", []).append(desc)
         for m in meals:
             if isinstance(m, dict):
-                si = m.get("segment_index", 0)
+                si = _normalize_passenger_segment_index(m.get("segment_index", 0))
                 desc = _t(m.get("name") or m.get("code"))
                 if desc:
                     seg_map.setdefault(si, {}).setdefault("meal", []).append(desc)

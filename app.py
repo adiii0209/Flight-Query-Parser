@@ -1763,11 +1763,21 @@ def _merged_ticket_dict(booking_group, lead_ticket):
     merged_passengers = []
     merged_total = 0.0
     merged_ticket_ids = []
+    merged_base = 0.0
+    merged_k3 = 0.0
+    merged_other = 0.0
+    merged_markup_total = 0.0
     for grouped_ticket in _booking_group_sorted_tickets(booking_group):
         merged_ticket_ids.append(grouped_ticket.id)
         merged_total += parseFloat(grouped_ticket.grand_total or 0)
         ticket_passengers = json.loads(grouped_ticket.passengers_data or "[]")
         _ensure_passenger_internal_ids(ticket_passengers)
+        grouped_journey = json.loads(grouped_ticket.journey_data or "{}")
+        grouped_financials = _ticket_financials(ticket_passengers, grouped_journey)
+        merged_base += parseFloat(grouped_financials.get("base", 0))
+        merged_k3 += parseFloat(grouped_financials.get("k3", 0))
+        merged_other += parseFloat(grouped_financials.get("other", 0))
+        merged_markup_total += parseFloat(grouped_financials.get("mu", 0))
         for passenger in ticket_passengers:
             passenger_copy = _clone_json(passenger)
             passenger_copy["source_ticket_id"] = grouped_ticket.id
@@ -1776,6 +1786,17 @@ def _merged_ticket_dict(booking_group, lead_ticket):
     lead_payload["passengers"] = merged_passengers
     lead_payload["passenger_names"] = [p.get("name", "") for p in merged_passengers]
     lead_payload["grand_total"] = _round_money(merged_total)
+    lead_payload.setdefault("journey", {})
+    lead_payload["journey"]["consolidated_fare"] = {
+        "base_fare": _round_money(merged_base),
+        "k3_gst": _round_money(merged_k3),
+        "other_taxes": _round_money(merged_other),
+    }
+    merged_passenger_count = len(merged_passengers)
+    lead_payload["journey"]["global_markup"] = (
+        _round_money(merged_markup_total / merged_passenger_count)
+        if merged_passenger_count else 0.0
+    )
     lead_payload["is_merged_view"] = True
     lead_payload["merged_ticket_ids"] = merged_ticket_ids
     lead_payload["merged_ticket_count"] = len(merged_ticket_ids)
@@ -2479,6 +2500,152 @@ def recalculate():
         return jsonify({"error": str(e)}), 500
 
 
+def _parse_flexible_flight_date(raw_value):
+    text_value = (raw_value or "").strip() if isinstance(raw_value, str) else raw_value
+    if not text_value or text_value in {"N/A", "Not Specified"}:
+        return None
+    if isinstance(text_value, datetime):
+        return text_value
+
+    for fmt in (
+        "%Y-%m-%d",
+        "%d-%m-%Y",
+        "%d/%m/%Y",
+        "%d/%m/%y",
+        "%d %b %Y",
+        "%d %B %Y",
+        "%d %b %y",
+        "%d %B %y",
+        "%b %d %Y",
+        "%B %d %Y",
+    ):
+        try:
+            return datetime.strptime(str(text_value), fmt)
+        except Exception:
+            pass
+
+    try:
+        import dateutil.parser
+        return dateutil.parser.parse(str(text_value), dayfirst=True, fuzzy=True)
+    except Exception:
+        return None
+
+
+def _recalculate_segment_timing_data(segments):
+    from query_parser import DurationCalculator, DayOffsetCalculator
+
+    recalculated_segments = _clone_json(segments or [])
+    layovers = []
+    current_cumulative_days = 0
+
+    for seg_idx, seg in enumerate(recalculated_segments):
+        departure = seg.setdefault("departure", {})
+        arrival = seg.setdefault("arrival", {})
+
+        dep_airport = (departure.get("airport") or seg.get("departure_airport") or "").strip().upper()
+        arr_airport = (arrival.get("airport") or seg.get("arrival_airport") or "").strip().upper()
+        dep_time = departure.get("time") or seg.get("departure_time") or ""
+        arr_time = arrival.get("time") or seg.get("arrival_time") or ""
+        dep_date_obj = _parse_flexible_flight_date(departure.get("date") or seg.get("departure_date"))
+        arr_date_obj = _parse_flexible_flight_date(arrival.get("date") or seg.get("arrival_date"))
+
+        explicit_days_offset = None
+        if dep_date_obj and arr_date_obj:
+            explicit_days_offset = max((arr_date_obj.date() - dep_date_obj.date()).days, 0)
+
+        preview_duration = DurationCalculator.calculate(
+            dep_time,
+            arr_time,
+            dep_airport,
+            arr_airport,
+            days_offset=explicit_days_offset or 0,
+            flight_date=dep_date_obj,
+            check_ultra_long=True,
+        )
+        days_offset = explicit_days_offset if explicit_days_offset is not None else DayOffsetCalculator.calculate(
+            dep_time,
+            arr_time,
+            preview_duration,
+            dep_airport,
+            arr_airport,
+            dep_date_obj,
+        )
+        duration_text = DurationCalculator.calculate(
+            dep_time,
+            arr_time,
+            dep_airport,
+            arr_airport,
+            days_offset=days_offset,
+            flight_date=dep_date_obj,
+            check_ultra_long=True,
+        )
+
+        if seg_idx == 0:
+            seg["layover_duration"] = "N/A"
+            seg["layover"] = "N/A"
+        else:
+            prev_seg = recalculated_segments[seg_idx - 1]
+            prev_arrival = prev_seg.get("arrival") or {}
+            prev_arr_time = prev_arrival.get("time") or prev_seg.get("arrival_time") or ""
+            prev_arr_date_obj = _parse_flexible_flight_date(prev_arrival.get("date") or prev_seg.get("arrival_date"))
+
+            if prev_arr_date_obj and dep_date_obj:
+                days_between = max((dep_date_obj.date() - prev_arr_date_obj.date()).days, 0)
+            else:
+                days_between = 0
+                try:
+                    prev_arr_dt = DurationCalculator.parse_time(prev_arr_time)
+                    curr_dep_dt = DurationCalculator.parse_time(dep_time)
+                    if prev_arr_dt and curr_dep_dt and curr_dep_dt < prev_arr_dt:
+                        days_between = 1
+                except Exception:
+                    days_between = 0
+
+            layover_text = DurationCalculator.calculate_layover(
+                prev_arr_time,
+                dep_time,
+                dep_airport,
+                days_between,
+                dep_date_obj,
+            )
+            seg["layover_duration"] = layover_text
+            seg["layover"] = layover_text
+            layovers.append({
+                "after_segment": seg_idx - 1,
+                "duration": layover_text,
+                "at_airport": dep_airport,
+            })
+            if days_between > 0:
+                current_cumulative_days += days_between
+
+        seg["days_offset"] = days_offset
+        seg["duration_calculated"] = duration_text
+        seg["duration_extracted"] = duration_text
+        seg["duration"] = duration_text
+        seg["accumulated_dep_days"] = current_cumulative_days
+        current_cumulative_days += days_offset
+        seg["accumulated_arr_days"] = current_cumulative_days
+
+    return {
+        "segments": recalculated_segments,
+        "layovers": layovers,
+    }
+
+
+@app.route("/api/tickets/recalculate-segments", methods=["POST"])
+@login_required
+def recalculate_ticket_segments():
+    try:
+        payload = request.get_json(silent=True) or {}
+        segments = payload.get("segments")
+        if not isinstance(segments, list):
+            return jsonify({"error": "Segments payload is required"}), 400
+        return jsonify(_recalculate_segment_timing_data(segments))
+    except Exception as e:
+        print(f"Ticket segment recalculation error: {str(e)}")
+        return jsonify({"error": f"Failed to recalculate segment timings: {str(e)}"}), 500
+
+
 @app.route("/api/render/cards-image", methods=["POST"])
 def render_cards_image():
     try:
@@ -2860,7 +3027,9 @@ def receive_ticket():
 
         received_grand_total = parseFloat(booking.get("grand_total", 0))
         if received_grand_total <= 0 and consolidated_components_total > 0:
-            received_grand_total = consolidated_components_total + parseFloat(journey.get("global_markup", 0))
+            received_grand_total = consolidated_components_total + (
+                parseFloat(journey.get("global_markup", 0)) * passenger_count
+            )
 
         if received_grand_total > 0:
             final_grand_total = received_grand_total
@@ -3690,11 +3859,13 @@ def update_ticket(ticket_id):
             _ensure_passenger_internal_ids(passengers)
             ticket.passengers_data = json.dumps(passengers)
         if 'segments' in data:
-            segments = _merge_concurrent_value(current_snapshot.get('segments', []), base_snapshot.get('segments', _MISSING), data['segments'])
-            ticket.segments_data = json.dumps(_sanitize_segments_for_storage(segments))
+            # Segment edits come from a full in-place editor payload, so store the
+            # submitted segment list exactly instead of recursively merging stale keys.
+            ticket.segments_data = json.dumps(_sanitize_segments_for_storage(data['segments']))
         if 'journey' in data:
-            journey = _merge_concurrent_value(current_snapshot.get('journey', {}), base_snapshot.get('journey', _MISSING), data['journey'])
-            ticket.journey_data = json.dumps(journey)
+            # Journey totals/legs are recalculated client-side from the edited segments
+            # and should stay aligned with the submitted segment payload.
+            ticket.journey_data = json.dumps(_clone_json(data['journey'] or {}))
         if 'raw_data' in data:
             raw_data = _merge_concurrent_value(current_snapshot.get('raw_data', {}), base_snapshot.get('raw_data', _MISSING), data['raw_data'])
             ticket.raw_data = json.dumps(raw_data)
