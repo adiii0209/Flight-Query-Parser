@@ -1,5 +1,5 @@
 """
-Time Travels – Professional E-Ticket
+Time Tours – Professional E-Ticket
 Clean, minimal airline-style layout. White background, coloured section
 headings, no heavy fill bars (except a thin accent stripe in the header).
 
