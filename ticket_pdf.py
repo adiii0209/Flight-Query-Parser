@@ -10,11 +10,39 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Table, TableStyle
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 import base64
 import io
 import os
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Register DejaVu fonts (support ₹ and other Unicode glyphs)
+def _register_fonts():
+    _DEJAVU_PATHS = [
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",      "DejaVuSans"),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  "DejaVuSans-Bold"),
+    ]
+    for path, name in _DEJAVU_PATHS:
+        if os.path.exists(path):
+            try:
+                pdfmetrics.registerFont(TTFont(name, path))
+            except Exception:
+                pass
+
+_register_fonts()
+
+# Font helpers — fall back gracefully if DejaVu not available
+def _font(bold=False):
+    name = "DejaVuSans-Bold" if bold else "DejaVuSans"
+    try:
+        pdfmetrics.getFont(name)
+        return name
+    except Exception:
+        return "Helvetica-Bold" if bold else "Helvetica"
+
+
 
 # ── Palette ────────────────────────────────────────────────────────────────────
 BRAND        = colors.Color(0.07, 0.28, 0.73)   # deep blue
@@ -29,7 +57,6 @@ INK3         = colors.Color(0.55, 0.57, 0.63)   # labels
 RULE         = colors.Color(0.88, 0.89, 0.92)   # light divider
 SEP          = colors.Color(0.74, 0.76, 0.82)   # medium divider
 WHITE        = colors.white
-
 
 # ── Primitives ─────────────────────────────────────────────────────────────────
 def _t(v):
@@ -64,6 +91,8 @@ def _hline(c, x, y, w, col=None, lw=0.5):
     c.line(x, y, x + w, y)
     c.restoreState()
 
+
+
 def _vline(c, x, y1, y2, col=None, lw=0.5):
     c.saveState()
     c.setStrokeColor(col or RULE)
@@ -82,7 +111,6 @@ def _rect(c, x, y, w, h, fill=None, stroke=None, lw=0.4, radius=0):
         c.rect(x, y, w, h, fill=1 if fill else 0, stroke=1 if stroke else 0)
     c.restoreState()
 
-
 # ── Section heading: coloured label + hairline ─────────────────────────────────
 def _section_heading(c, x, y, label, col, right_x):
     """Draw coloured bold label + extending rule to right_x. Returns new y."""
@@ -97,7 +125,6 @@ def _section_heading(c, x, y, label, col, right_x):
     c.restoreState()
     return y - 13
 
-
 # ── Leg grouping ───────────────────────────────────────────────────────────────
 def _group_legs(segments, journey=None):
     if not segments: return []
@@ -110,6 +137,9 @@ def _group_legs(segments, journey=None):
         if legs: return legs
     legs, cur = [], [segments[0]]
     for i in range(1, len(segments)):
+
+
+
         pa  = _t(segments[i-1].get("arrival",   {}).get("airport")).upper()
         cd  = _t(segments[i].get("departure", {}).get("airport")).upper()
         hl  = bool(_t(segments[i].get("layover") or segments[i].get("layover_duration")))
@@ -127,17 +157,16 @@ def _leg_tag(idx, trip_type):
         return f"FLIGHT {idx + 1}"
     return ""
 
-
-def _barcode_image_reader(data_uri):
+def _barcode_image_bytes(data_uri):
+    """Return raw PNG/JPEG bytes from a data-URI, or None. Call fresh ImageReader each draw."""
     value = _t(data_uri)
     if not value or not value.startswith("data:image"):
         return None
     try:
         _, encoded = value.split(",", 1)
-        return ImageReader(io.BytesIO(base64.b64decode(encoded)))
+        return base64.b64decode(encoded)
     except Exception:
         return None
-
 
 def _cabin_badge_style(label):
     normalized = _t(label).strip().lower()
@@ -151,16 +180,17 @@ def _cabin_badge_style(label):
         return (colors.Color(0.90, 0.97, 0.93), GREEN)
     return (colors.Color(0.82, 0.90, 1.00), BRAND)
 
-
 def _fit_font_size(c, text, font, max_size, max_width, min_size=7):
     value = _t(text)
     if not value:
         return max_size
+
+
+
     size = max_size
     while size > min_size and c.stringWidth(value, font, size) > max_width:
         size -= 0.5
     return size
-
 
 def _draw_traveller_icon(c, x, y, size=10, col=None):
     icon_path = os.path.join(_DIR, "traveller.png")
@@ -191,7 +221,6 @@ def _draw_traveller_icon(c, x, y, size=10, col=None):
     c.roundRect(body_x, body_y, body_w, body_h, size * 0.16, fill=1, stroke=0)
     c.restoreState()
 
-
 def _draw_traveler_icon(c, x, y, col=BRAND):
     c.saveState()
     c.setFillColor(col)
@@ -199,747 +228,771 @@ def _draw_traveler_icon(c, x, y, col=BRAND):
     c.roundRect(x + 1, y, 6, 5, 2, fill=1, stroke=0)
     c.restoreState()
 
-
 # ══════════════════════════════════════════════════════════════════════════════
+# Exact-match palette from reference PDF
+NAVY        = colors.HexColor("#1E3A5F")   # steel blue navy
+
+
+
+RED         = colors.HexColor("#2563EB")   # steel blue accent
+CARD_BG     = colors.HexColor("#F7F8FA")   # card background
+CARD_BOR    = colors.HexColor("#DDE1EA")   # card border / left bar
+LAYOVER_BG  = colors.HexColor("#ECEEF3")   # layover chip bg
+LAYOVER_TXT = colors.HexColor("#555E72")   # layover chip text
+INF_LABEL   = colors.HexColor("#8A92A6")   # small caps label
+NOTE_BG     = colors.HexColor("#FFF8F7")   # notes section bg
+
 def draw_ticket(c, data, include_fare=True):
-    W, H  = A4           # 595.3 × 841.9
+    W, H  = A4
     passengers = data.get("passengers") or []
     segments   = data.get("segments")   or []
     journey    = data.get("journey")    or {}
     trip_type  = (_t(data.get("trip_type")) or
                   _t(journey.get("trip_type")) or "one_way")
-    n_pax = len(passengers)
-    curr_code = _t(data.get("currency")) or "INR"
-    bdate = _t(data.get("booking_date"))
-    phone = _t(data.get("phone"))
-    pnr = _t(data.get("pnr")) or "—"
-    ref = _t(data.get("reference_number"))
-    tdsp = trip_type.replace("_", " ").title()
-    gst_no = _t(data.get("gst_number"))
-    gst_comp = _t(data.get("gst_company_name"))
+    n_pax      = len(passengers)
+    curr_code  = _t(data.get("currency")) or "INR"
+    bdate      = _t(data.get("booking_date"))
+    pnr        = _t(data.get("pnr")) or "—"
+    ref        = _t(data.get("reference_number"))
+    tdsp       = trip_type.replace("_", " ").title()
+    gst_no     = _t(data.get("gst_number"))
+    gst_comp   = _t(data.get("gst_company_name"))
 
     cotv = _t(data.get("class_of_travel"))
-    if cotv and cotv.lower() != "none":
-        cotv = cotv.title()
-    else:
-        cotv = None
+    cotv = cotv.title() if cotv and cotv.lower() != "none" else None
 
-    compact_single_page = False
-
-    M     = 22 if compact_single_page else 36
-    IW    = W - 2*M      # inner width ≈ 523
+    M     = 24          # tighter margins → wider content, better on mobile
+    IW    = W - 2 * M
     RIGHT = M + IW
     CX    = W / 2
-    G     = 8 if compact_single_page else 10           # gap between sections
-    T     = H - M        # top cursor (descends)
+    G     = 7            # tighter global gap
+    T     = H - M
+    FTH   = 22
+    PAGE_BOTTOM_LIMIT = M + FTH + 6
 
-    FTH = 24 if compact_single_page else 28
-    PAGE_BOTTOM_LIMIT = M + (8 if compact_single_page else 14)
-
+    # ── page helpers ──────────────────────────────────────────────────────────
     def _draw_footer():
-        _hline(c, M, M + FTH, IW, RULE, 0.5)
-        _rect(c, M, M, 4, FTH, fill=ACCENT)
-        _txt(c, CX, M + 6,
+        _hline(c, M, M + FTH, IW, CARD_BOR, 0.5)
+        _txt(c, CX, M + 8,
              "Time Tours Tech Pvt Ltd  |  www.timetours.in  |  +91 33 400 11 333",
-             "Times-Bold", 6, INK2, align="center")
+             "Helvetica", 6.5, INF_LABEL, align="center")
 
     def _start_continuation_page():
         nonlocal T
         c.showPage()
+
+
+
         _rect(c, 0, 0, W, H, fill=WHITE)
         T = H - M
 
-    def _ensure_space(required_height):
+    def _ensure_space(h):
         nonlocal T
-        if T - required_height < PAGE_BOTTOM_LIMIT:
+        if T - h < PAGE_BOTTOM_LIMIT:
             _start_continuation_page()
 
-    def _start_section(label, color):
-        _ensure_space(24)
-        return _section_heading(c, M + 10, T - 11, label, color, RIGHT - 10)
-
-    # White page
+    # White background
     _rect(c, 0, 0, W, H, fill=WHITE)
 
     # ══════════════════════════════════════════════════════════════════════════
-    #  HEADER  – white background, bottom accent stripe
+    #  HEADER  — white bg, navy bold agency name, red website/phone,
+    #            "Issued / E-TICKET" flush right, thin red bottom rule
     # ══════════════════════════════════════════════════════════════════════════
-    HDR_H = 56 if compact_single_page else 62
+    HDR_H = 48
     HDR_Y = T - HDR_H
 
-    logo = os.path.join(_DIR, "logo.png")
+    _txt(c, M, HDR_Y + 32, "TIME TOURS TECH", "Helvetica-Bold", 15, NAVY)
+    _txt(c, M, HDR_Y + 18, "www.timetours.in  ·  +91 33 400 11 333",
+         "Helvetica", 8, RED)
 
-    # ── LOGO ON RIGHT ─────────────────────────────────────────
-    LOGO_W = 75
-    logo_x = RIGHT - LOGO_W-25
-
-    try:
-        c.drawImage(
-            ImageReader(logo),
-            logo_x,
-            HDR_Y + 30,
-            width=LOGO_W + 25,
-            height=25,
-            mask="auto"
-        )
-    except Exception:
-        pass
-
-
-    # ── E-TICKET ON LEFT ──────────────────────────────────────
-    _txt(
-        c,
-        M ,
-        HDR_Y + 44,
-        "E-TICKET",
-        "Times-Bold",
-        14,
-        BRAND,
-        "left"
-    )
-
-    # Amber underline below label
-    '''tw_et = c.stringWidth("E-TICKET", "Times-Bold", 14)
-
-    _rect(
-        c,
-        M ,
-        HDR_Y + 41,
-        tw_et,
-        2,
-        fill=ACCENT
-    )'''
-
-    # Booking info under E-TICKET
     if bdate:
-        _txt(
-            c,
-            M,
-            HDR_Y + 28,
-            f"Issued: {bdate}",
-            "Times-Bold",
-            size=6.5,
-            col=INK,
-            align="left"
-        )
+        _txt(c, RIGHT, HDR_Y + 32, f"Issued: {bdate}",
+             "Helvetica", 7.5, INF_LABEL, align="right")
+    _txt(c, RIGHT, HDR_Y + 18, "E-TICKET",
+         "Helvetica-Bold", 8, INF_LABEL, align="right")
 
-    if phone:
-        _txt(
-            c,
-            M ,
-            HDR_Y + 18,
-            f"Phone: {phone}",
-            "Times-Bold",
-            size=6.5,
-            col=INK,
-            align="left"
-        )
+    _hline(c, M, HDR_Y + 6, IW, RED, 0.8)
 
-    T -= HDR_H + G
+    T -= HDR_H + 8
+
     # ══════════════════════════════════════════════════════════════════════════
-    #  PNR / TRIP INFO ROW  – three clean info cells
+    #  BOOKING INFO ROW  — light card, 3 cells: PNR · Trip Type · Passengers
     # ══════════════════════════════════════════════════════════════════════════
-    INFO_H = 34 if compact_single_page else 38
-    _rect(c, M, T - INFO_H, IW, INFO_H, stroke=RULE, lw=0.5, radius=6)
+    INFO_H = 40
+    _rect(c, M, T - INFO_H, IW, INFO_H,
+          fill=CARD_BG, stroke=CARD_BOR, lw=0.4, radius=4)
 
-    # Cell renderer
-    def _info_cell(cx, label, value, vcol=INK, vsize=10, bold=True):
-        _txt(c, cx, T - 13, label, size=6, col=INK3)
-        fn = "Times-Bold" if bold else "Times-Roman"
-        _txt(c, cx, T - 26, value, fn, vsize, vcol)
+    # PNR gets ~40% of width, rest split between remaining cells
+    other_cells = []
+    if cotv: other_cells.append(("CLASS OF TRAVEL", cotv, "Helvetica-Bold", 9, NAVY))
+    other_cells.append(("TRIP TYPE", tdsp, "Helvetica-Bold", 10, NAVY))
+    other_cells.append(("PASSENGERS", str(n_pax), "Helvetica-Bold", 13, NAVY))
+    if ref: other_cells.append(("REFERENCE NO.", ref, "Helvetica", 8.5, INF_LABEL))
 
-    # dynamically distributed cells
-    cells = [("BOOKING REF (PNR)", pnr, BRAND, 11, True)]
-    if cotv:
-        cells.append(("CLASS OF TRAVEL", cotv, INK, 9, False))
-    cells.append(("TRIP TYPE", tdsp, INK, 9, False))
-    
-    if ref:
-        cells.append(("REFERENCE NO.", ref, INK2, 8, False))
+    pnr_w  = IW * 0.36
 
-    cell_w = IW / len(cells)
-    for i, (lbl, val, vc, vs, bd) in enumerate(cells):
-        cx = M + i * cell_w + 8
-        _info_cell(cx, lbl, val, vc, vs, bd)
-        '''if i < len(cells) - 1:
-            _vline(c, M + (i + 1) * cell_w, T - INFO_H + 6, T - 6, RULE, 0.5)'''
 
-    T -= INFO_H + G
 
+    rest_w = (IW - pnr_w) / len(other_cells)
+
+    # PNR cell
+    _txt(c, M + 10, T - 12, "BOOKING REF (PNR)", "Helvetica", 6, INF_LABEL)
+    _txt(c, M + 10, T - 30, pnr, "Helvetica-Bold", 17, NAVY)
+
+    # Subtle vertical divider after PNR
+    _vline(c, M + pnr_w, T - INFO_H + 6, T - 6, CARD_BOR, 0.4)
+
+    for i, (lbl, val, fn, vs, vc) in enumerate(other_cells):
+        cx = M + pnr_w + i * rest_w + 10
+        _txt(c, cx, T - 12, lbl, "Helvetica", 6, INF_LABEL)
+        _txt(c, cx, T - 28, val, fn, vs, vc)
+
+    T -= INFO_H + 10
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  FLIGHT SEGMENTS
+    #  Each leg gets a coloured section label above its cards.
+    #  Each segment card: light-grey bg, left red bar, airline strip,
+    #  large time / bold IATA / city / date, dashed connector + ✈ + duration
+    # ══════════════════════════════════════════════════════════════════════════
     legs     = _group_legs(segments, journey)
     num_legs = len(legs)
 
-    SEG_HEADER_H = 16   # airline strip height
-    SEG_BODY_H   = 66 if compact_single_page else 72   # tighter flight block while preserving text spacing
-    SEG_H        = SEG_HEADER_H + SEG_BODY_H
-    LAY_H        = 0
-    LLEG_H       = 16
-    LEG_G        = 2 if compact_single_page else 4
-
-    has_lbls    = trip_type in ("round_trip", "multi_city")
-    total_segs  = sum(len(l) for l in legs)
-    total_lays  = sum(max(0, len(l) - 1) for l in legs)
-    fy = _start_section("Flight Details", BRAND)
+    # Heights
+    # Heights — terminal adds one extra row (~8pt)
+    SEG_CARD_H_BASE = 64
+    SEG_CARD_H_TERM = 74   # when terminal info present
+    LAY_CHIP_H  = 16    # layover chip
+    LEG_LABEL_H = 16
+    CARD_GAP    = 0
+    LEG_GAP     = 12
 
     global_seg_idx = 0
 
     for li, leg in enumerate(legs):
-        leg_gap_pending = li > 0
-        leg_label_pending = bool(_leg_tag(li, trip_type))
+        if li > 0:
+            T -= LEG_GAP
+
+        leg_tag = _leg_tag(li, trip_type)
+
+        # ── Leg label: "OUTBOUND JOURNEY · 19 MAY 2026" ──────────────────────
+        # Get date from first segment departure
+        first_dep_date = _t((leg[0].get("departure") or {}).get("date")) if leg else ""
+        if leg_tag:
+            label_parts = [leg_tag + " JOURNEY"]
+
+
+
+            if first_dep_date:
+                label_parts.append(first_dep_date.upper())
+            leg_label = "  ·  ".join(label_parts)
+        else:
+            leg_label = ""
+
+        if leg_label:
+            _ensure_space(LEG_LABEL_H)
+            _txt(c, M, T - 12, leg_label, "Helvetica-Bold", 7.5, RED)
+            T -= LEG_LABEL_H
 
         for si, seg in enumerate(leg):
-            needed_h = SEG_H
-            if leg_gap_pending:
-                needed_h += LEG_G
-            if leg_label_pending:
-                needed_h += LLEG_H
-            if fy - needed_h < PAGE_BOTTOM_LIMIT:
-                T = fy
-                _start_continuation_page()
-                fy = T
-                leg_gap_pending = False
-
-            if leg_gap_pending:
-                fy -= LEG_G
-                leg_gap_pending = False
-
-            ltag = _leg_tag(li, trip_type)
-            if leg_label_pending and ltag:
-                fy -= 2
-                leg_label_pending = False
-
-            # ── layover strip ───────────────────────────────────────────────
-            if si > 0:
-                pass
-
-            # ── airline header strip ────────────────────────────────────────
-            _rect(c, M + 1, fy - SEG_HEADER_H, IW - 2, SEG_HEADER_H,
-                  fill=BRAND_PALE)
-
-            dep      = seg.get("departure") or {}
-            arr      = seg.get("arrival")   or {}
+            dep = seg.get("departure") or {}
+            arr = seg.get("arrival")   or {}
             airline  = _t(seg.get("airline"))
             fnum     = _t(seg.get("flight_number"))
-            
             bk_obj   = seg.get("booking_class")
             if isinstance(bk_obj, dict):
                 bkclass = _t(bk_obj.get("full_form") or bk_obj.get("cabin") or "")
             else:
-                bkclass  = _t(bk_obj)
+                bkclass = _t(bk_obj)
+            if bkclass.lower() in ("n/a", "none"): bkclass = ""
+            dur = _t(seg.get("duration_calculated") or
+                     seg.get("duration_extracted") or
+                     seg.get("duration"))
 
-            if bkclass.lower() in ("n/a", "none"):
-                bkclass = ""
-
-            dur      = _t(seg.get("duration_calculated") or
-                         seg.get("duration_extracted") or
-                         seg.get("duration"))
-
-            # ── FIX 2: Airline name and flight number on separate x positions
-            #    with enough gap so they never overlap ──────────────────────
-            ax = M + 12
-            if airline:
-                _txt(c, ax, fy - SEG_HEADER_H + 5, airline,
-                     "Times-Bold", 7, BRAND)
-                ax += c.stringWidth(airline, "Times-Bold", 7) + 20
-            if fnum:
-                _txt(c, ax, fy - SEG_HEADER_H + 5, fnum,
-                     "Times-Bold", 7, INK2)
-                ax += c.stringWidth(fnum, "Times-Bold", 7) + 12
-            if bkclass:
-                badge_style = _cabin_badge_style(bkclass)
-                if badge_style:
-                    badge_fill, badge_text = badge_style
-                    badge_w = c.stringWidth(bkclass, "Times-Bold", 7) + 10
-                    _rect(c, ax, fy - SEG_HEADER_H + 2.6, badge_w, 10.4,
-                          fill=badge_fill, stroke=None, radius=5)
-                    _txt(c, ax + badge_w / 2, fy - SEG_HEADER_H + 5.15, bkclass,
-                         "Times-Bold", 7, badge_text, align="center")
-
-            leg_badge = _leg_tag(li, trip_type) if trip_type in ("round_trip", "multi_city") and si == 0 else ""
-            if leg_badge:
-                badge_fill = colors.Color(0.90, 0.97, 0.93) if leg_badge == "OUTBOUND" else colors.Color(1.00, 0.95, 0.84)
-                badge_text = GREEN if leg_badge == "OUTBOUND" else colors.Color(0.72, 0.45, 0.02)
-                badge_w = c.stringWidth(leg_badge, "Times-Bold", 6) + 14
-                badge_x = RIGHT - 10 - badge_w
-                _rect(c, badge_x, fy - SEG_HEADER_H + 2.5, badge_w, 10.5,
-                      fill=badge_fill, stroke=None, radius=4)
-                _txt(c, badge_x + badge_w / 2, fy - SEG_HEADER_H + 5.2, leg_badge,
-                     "Times-Bold", 6, badge_text, align="center")
-
-            fy -= SEG_HEADER_H + 15
-
-            # ── body: DEP  ~~✈~~  ARR ──────────────────────────────────────
-            d_ap   = _t(dep.get("airport")) or "---"
-            d_city_name = _t(dep.get("city")) or d_ap
-            d_terminal = _t(dep.get("terminal"))
-            d_terminal_text = f"Terminal {d_terminal}" if d_terminal else ""
-            d_time = _t(dep.get("time")) or "--:--"
-            d_date = _t(dep.get("date")) or ""
-
-            a_ap   = _t(arr.get("airport")) or "---"
-            a_city_name = _t(arr.get("city")) or a_ap
-            a_terminal = _t(arr.get("terminal"))
-            a_terminal_text = f"Terminal {a_terminal}" if a_terminal else ""
-            a_time = _t(arr.get("time")) or "--:--"
-            a_date = _t(arr.get("date")) or ""
-
-            city_y = fy - 10
-            time_y = city_y - 12
-            terminal_y = time_y - 10
-            date_y = terminal_y - 10
-
-            left_x = M + 14
-            right_x = RIGHT - 14
-            max_side_w = 150
-            dep_iata_text = f"({d_ap})"
-            dep_city_size = _fit_font_size(c, d_city_name, "Times-Bold", 10.5, max_side_w - 34, min_size=8)
-            dep_iata_size = 8
-            dep_city_w = c.stringWidth(d_city_name, "Times-Bold", dep_city_size)
-            dep_iata_w = c.stringWidth(dep_iata_text, "Times-Roman", dep_iata_size)
-            dep_group_w = dep_city_w + 4 + dep_iata_w
-
-            arr_iata_text = f"({a_ap})"
-            arr_city_size = _fit_font_size(c, a_city_name, "Times-Bold", 10.5, max_side_w - 34, min_size=8)
-            arr_iata_size = 8
-            arr_city_w = c.stringWidth(a_city_name, "Times-Bold", arr_city_size)
-            arr_iata_w = c.stringWidth(arr_iata_text, "Times-Roman", arr_iata_size)
-            arr_group_w = arr_city_w + 4 + arr_iata_w
-            arr_group_x = right_x - arr_group_w
-
-            # Connector line shrinks around the visible city/IATA labels.
-            conn_y = city_y + 2
-            conn_lx = left_x + dep_group_w + 18
-            conn_rx = arr_group_x - 18
-
-            # DEP (left)
-            _txt(c, left_x, city_y, d_city_name, "Times-Bold", dep_city_size, INK)
-            _txt(c, left_x + dep_city_w + 4, city_y + 1, dep_iata_text, size=dep_iata_size, col=INK)
-            _txt(c, left_x, time_y, d_time, "Times-Bold", 8.5, INK)
-            if d_terminal_text:
-                _txt(c, left_x, terminal_y, d_terminal_text, size=7, col=INK)
-            if d_date:
-                _txt(c, left_x, date_y, d_date, size=7, col=INK)
-
-            # ARR (right-aligned)
-            _txt(c, arr_group_x, city_y, a_city_name, "Times-Bold", arr_city_size, INK)
-            _txt(c, arr_group_x + arr_city_w + 4, city_y + 1, arr_iata_text, size=arr_iata_size, col=INK)
-            tw_ti  = c.stringWidth(a_time, "Times-Bold", 8.5)
-            _txt(c, right_x - tw_ti, time_y, a_time, "Times-Bold", 8.5, INK)
-            if a_terminal_text:
-                tw_term = c.stringWidth(a_terminal_text, "Times-Roman", 7)
-                _txt(c, right_x - tw_term, terminal_y, a_terminal_text, size=7, col=INK)
-            if a_date:
-                tw_ad = c.stringWidth(a_date, "Times-Roman", 7)
-                _txt(c, right_x - tw_ad, date_y, a_date, size=7, col=INK)
-
-            if si < len(leg) - 1:
+            # Check if this segment has a layover after it
+            has_layover = si < len(leg) - 1
+            lay_text = ""
+            if has_layover:
                 next_seg = leg[si + 1] or {}
-                lay_city = (_t(next_seg.get("departure", {}).get("city")) or
-                            _t(next_seg.get("departure", {}).get("airport")))
-                lay_dur = _t(next_seg.get("layover") or next_seg.get("layover_duration"))
+                # The current segment's own layover field has the full text
+                lay_dur  = _t(seg.get("layover") or seg.get("layover_duration"))
+                if not lay_dur:
+                    lay_dur = _t(next_seg.get("layover") or next_seg.get("layover_duration"))
                 if not lay_dur and isinstance(journey.get("layovers"), list):
                     for lo in journey["layovers"]:
                         if isinstance(lo, dict) and lo.get("after_segment") == global_seg_idx:
                             lay_dur = _t(lo.get("duration"))
                             break
+                lay_city = (_t(next_seg.get("departure", {}).get("city")) or
+                            _t(next_seg.get("departure", {}).get("airport")))
+                nxt_term = _t(next_seg.get("departure", {}).get("terminal"))
 
-                parts = []
-                if lay_dur:
-                    parts.append(lay_dur)
-                parts.append("Layover")
-                if lay_city:
-                    parts.append(f"in {lay_city}")
-                lay_text = " ".join(parts)
-                if lay_text:
-                    lay_font = 6.5
-                    icon_path = os.path.join(_DIR, "icons", "aircraft.png")
-                    icon_gap = 5
-                    text_w = c.stringWidth(lay_text, "Times-Roman", lay_font)
-                    icon_w =10
-                    icon_h =10
-                    total_w = text_w + (icon_w + icon_gap if os.path.isfile(icon_path) else 0)
-                    start_x = CX - (total_w / 2)
-                    if os.path.isfile(icon_path):
-                        try:
-                            c.drawImage(
-                                ImageReader(icon_path),
-                                start_x,
-                                date_y - 0.7,
-                                width=icon_w,
-                                height=icon_h,
-                                mask="auto",
-                            )
-                            start_x += icon_w + icon_gap
-                        except Exception:
-                            pass
-                    _txt(c, start_x, date_y, lay_text, "Times-Roman", lay_font, ACCENT)
+                # If lay_dur already contains full layover string, use it directly
+                if lay_dur and ("layover" in lay_dur.lower() or "in " in lay_dur.lower()):
+                    lay_text = lay_dur
+
+
+
+                else:
+                    parts = []
+                    if lay_dur: parts.append(lay_dur)
+                    parts.append("layover in")
+                    if lay_city: parts.append(lay_city)
+                    if nxt_term: parts.append(f"·  Terminal {nxt_term}")
+                    lay_text = " ".join(parts) if parts else ""
+
+            # Dynamic card height — taller when terminal info is present
+            has_term = bool(_t(seg.get("departure", {}).get("terminal")) or
+                            _t(seg.get("arrival",   {}).get("terminal")))
+            SEG_CARD_H = SEG_CARD_H_TERM if has_term else SEG_CARD_H_BASE
+
+            card_total_h = SEG_CARD_H + (LAY_CHIP_H if lay_text else 0)
+            if si > 0:
+                card_total_h += CARD_GAP
+            _ensure_space(card_total_h + 4)
+            if si > 0:
+                T -= CARD_GAP
+
+            # Card — flat left, rounded right corners (radius 10)
+            R = 10
+            k = 0.5523 * R
+            card_top  = T
+            card_bot  = T - SEG_CARD_H
+            card_left = M
+            card_right = M + IW
 
             c.saveState()
-            c.setStrokeColor(SEP)
-            c.setLineWidth(0.6)
-            c.setDash(4, 3)
+            c.setFillColor(WHITE)
+            c.setStrokeColor(CARD_BOR)
+            c.setLineWidth(0.5)
+            p = c.beginPath()
+            # Start top-left (square)
+            p.moveTo(card_left, card_top)
+            # Top edge → top-right arc
+            p.lineTo(card_right - R, card_top)
+            p.curveTo(card_right - R + k, card_top,
+                      card_right, card_top - R + k,
+                      card_right, card_top - R)
+            # Right edge down → bottom-right arc
+            p.lineTo(card_right, card_bot + R)
+            p.curveTo(card_right, card_bot + R - k,
+                      card_right - R + k, card_bot,
+                      card_right - R, card_bot)
+            # Bottom edge ← bottom-left (square)
+            p.lineTo(card_left, card_bot)
+
+
+
+            p.close()
+            c.drawPath(p, fill=1, stroke=1)
+            c.restoreState()
+
+            # Thick navy left accent line — sharp, clean anchor
+            c.saveState()
+            c.setStrokeColor(NAVY)
+            c.setLineWidth(2.5)
+            c.line(card_left, card_bot, card_left, card_top)
+            c.restoreState()
+
+            card_y = T - SEG_CARD_H   # used below for badge positioning
+            ah_y = T - 10
+            parts_ah = []
+            if airline: parts_ah.append(airline)
+            if fnum:    parts_ah.append(fnum)
+            if bkclass: parts_ah.append(bkclass)
+            airline_str = "  ·  ".join(parts_ah)
+            _txt(c, M + 10, ah_y, airline_str, "Helvetica", 6.5, INF_LABEL)
+
+            if leg_tag and si == 0:
+                badge_w = c.stringWidth(leg_tag, "Helvetica-Bold", 6.5) + 10
+                badge_x = RIGHT - badge_w - 2
+                badge_y = T - 14
+                _rect(c, badge_x, badge_y, badge_w, 12, fill=RED, radius=3)
+                _txt(c, badge_x + badge_w / 2, badge_y + 2.5, leg_tag,
+                     "Helvetica-Bold", 6.5, WHITE, align="center")
+
+            # ── Flight body ───────────────────────────────────────────────────
+            d_time = _t(dep.get("time")) or "--:--"
+            d_ap   = _t(dep.get("airport")) or "---"
+            d_city = _t(dep.get("city")) or d_ap
+            d_date = _t(dep.get("date")) or ""
+            d_term = _t(dep.get("terminal"))
+
+            a_time = _t(arr.get("time")) or "--:--"
+            a_ap   = _t(arr.get("airport")) or "---"
+            a_city = _t(arr.get("city")) or a_ap
+            a_date = _t(arr.get("date")) or ""
+            a_term = _t(arr.get("terminal"))
+
+            # Y positions — tighter stack inside compact card
+            body_top = T - 13
+            TIME_SZ  = 19
+            IATA_SZ  = 11
+            CITY_SZ  = 6.5
+            DATE_SZ  = 6
+
+
+
+            time_y = body_top - TIME_SZ
+            iata_y = time_y   - 10
+            city_y = iata_y   - IATA_SZ - 2
+            date_y = city_y   - CITY_SZ - 1
+            if d_term or a_term:
+                term_y = date_y - DATE_SZ - 1
+            else:
+                term_y = date_y
+
+            left_x  = M + 10
+            right_x = RIGHT - 10
+
+            conn_y = (time_y + iata_y) / 2 + 2
+
+            dep_tw = c.stringWidth(d_time, "Helvetica-Bold", TIME_SZ)
+            arr_tw = c.stringWidth(a_time, "Helvetica-Bold", TIME_SZ)
+            dep_iw = c.stringWidth(d_ap,   "Helvetica-Bold", IATA_SZ)
+            arr_iw = c.stringWidth(a_ap,   "Helvetica-Bold", IATA_SZ)
+            conn_lx = left_x  + max(dep_tw, dep_iw) + 14
+            conn_rx = right_x - max(arr_tw, arr_iw) - 14
+
+            # DEP column
+            _txt(c, left_x, time_y, d_time, "Helvetica-Bold", TIME_SZ, NAVY)
+            _txt(c, left_x, iata_y, d_ap,   "Helvetica-Bold", IATA_SZ, NAVY)
+            _txt(c, left_x, city_y, d_city,  "Helvetica",      CITY_SZ, INF_LABEL)
+            if d_date:
+                _txt(c, left_x, date_y, d_date, "Helvetica", DATE_SZ, INF_LABEL)
+            if d_term:
+                _txt(c, left_x, term_y, f"Terminal {d_term}", "Helvetica", DATE_SZ, INF_LABEL)
+
+            # ARR column (right-aligned)
+            _txt(c, right_x, time_y, a_time, "Helvetica-Bold", TIME_SZ, NAVY,  align="right")
+            _txt(c, right_x, iata_y, a_ap,   "Helvetica-Bold", IATA_SZ, NAVY,  align="right")
+            _txt(c, right_x, city_y, a_city,  "Helvetica",      CITY_SZ, INF_LABEL, align="right")
+            if a_date:
+                _txt(c, right_x, date_y, a_date, "Helvetica", DATE_SZ, INF_LABEL, align="right")
+            if a_term:
+                _txt(c, right_x, term_y, f"Terminal {a_term}", "Helvetica", DATE_SZ, INF_LABEL, align="right")
+
+            # ── Dashed connector line ─────────────────────────────────────────
             if conn_rx > conn_lx:
-                c.line(conn_lx + 6, conn_y, conn_rx - 6, conn_y)
-            c.restoreState()
+                c.saveState()
+                c.setStrokeColor(CARD_BOR)
+                c.setLineWidth(0.7)
+                c.setDash(3, 3)
+                c.line(conn_lx, conn_y, conn_rx, conn_y)
 
-            # End dots
-            c.saveState()
-            c.setFillColor(BRAND)
-            if conn_rx > conn_lx:
-                c.circle(conn_lx + 4,  conn_y, 3, fill=1, stroke=0)
-                c.circle(conn_rx - 4, conn_y, 3, fill=1, stroke=0)
-            c.restoreState()
 
-            # Plane / Airline icon centred ABOVE the connector line
-            c.saveState()
-            cx_icon = CX
-            cy_icon = conn_y + 4          # center for logos or baseline for plane
-            
-            logo_found = False
-            if airline:
-                logo_path = os.path.join(_DIR, "Airline Logos", f"{airline}.png")
-                if os.path.isfile(logo_path):
-                    try:
-                        img = ImageReader(logo_path)
-                        iw, ih = img.getSize()
-                        aspect = iw / ih
-                        draw_h = 14
-                        draw_w = draw_h * aspect
-                        if draw_w > 60:
-                            draw_w = 60
-                            draw_h = draw_w / aspect
-                        
-                        c.drawImage(img, cx_icon - draw_w/2, cy_icon,
-                                    width=draw_w, height=draw_h, mask="auto")
-                        logo_found = True
-                    except Exception:
-                        pass
 
-            if not logo_found:
-                icon_w = 10
-                icon_h = 10
-                icon_path = os.path.join(_DIR, "airplane (2).png")
-                try:
-                    c.translate(cx_icon, conn_y + 6 + icon_h/2 - 2)
-                    c.rotate(-25)  # Rotate 45 degrees clockwise
-                    c.drawImage(ImageReader(icon_path), -icon_w/2, -icon_h/2,
-                                width=icon_w, height=icon_h, mask="auto")
-                except Exception:
-                    # If falling back to unicode, just mirror it to face right
-                    c.restoreState() # reset from translate/rotate
-                    c.saveState()
-                    c.setFillColor(BRAND)
-                    c.setFont("Times-Roman", 14)
-                    ptw = c.stringWidth("\u2708", "Times-Roman", 14)
-                    c.transform(-1, 0, 0, 1, 2 * cx_icon, 0)
-                    c.drawString(cx_icon - ptw / 2, conn_y + 6, "\u2708")
-            c.restoreState()
+                c.restoreState()
 
-            # Duration
+            # Duration centred above connector line
             if dur:
-                _txt(c, CX, conn_y - 14, dur, size=6, col=INK3, align="center")
+                _txt(c, CX, conn_y + 5, dur, "Helvetica", 7, INF_LABEL, align="center")
 
-            fy -= SEG_BODY_H
+            # Red plane icon centred on the connector line
+            c.saveState()
+            c.setFillColor(RED)
+            c.setFont("Helvetica-Bold", 11)
+            c.drawCentredString(CX, conn_y - 4, "✈")
+            c.restoreState()
+
+            T -= SEG_CARD_H
+
+            # ── Layover — double hairline band ────────────────────────────────
+            if lay_text:
+                LAY_H = LAY_CHIP_H + 4
+                _hline(c, M, T,          IW, colors.HexColor("#E2E8F0"), 0.4)
+                _hline(c, M, T - LAY_H, IW, colors.HexColor("#E2E8F0"), 0.4)
+                _txt(c, CX, T - LAY_H + 6, lay_text,
+                     "Helvetica", 6.5, colors.HexColor("#94A3B8"), align="center")
+                T -= LAY_H
+
             global_seg_idx += 1
 
-    T = fy - 4
+        T -= 4  # small gap after last card in leg
+
+    T -= 16   # clear gap before travellers section
 
     # ══════════════════════════════════════════════════════════════════════════
-    #  TRAVELLERS
+    #  TRAVELLERS  — listed first, then barcodes grouped by flight segment
     # ══════════════════════════════════════════════════════════════════════════
-
-    # Unified travellers data
-    n_seg = len(segments)
-    traveller_blocks = []
+    bag_label = ""
     for p in passengers:
-        pname = _t(p.get("name")) or "Passenger"
-        pt = _t(p.get("pax_type") or p.get("type")) or "ADT"
-        type_label = ("Child" if pt.upper() in ("CHD", "CNN") else
-                      "Infant" if pt.upper() in ("INF",) else "Adult")
-        bag = _t(p.get("baggage"))
+        bag_label = _t(p.get("baggage")) or ""
+        if bag_label: break
+    if not bag_label:
+        bag_label = _t(journey.get("baggage")) or _t(data.get("baggage")) or ""
+
+    trav_heading = "TRAVELLERS"
+    if bag_label:
+        trav_heading = f"TRAVELLERS  ·  {bag_label.upper()} BAGGAGE EACH"
+
+    _ensure_space(20)
+    _txt(c, M, T - 12, trav_heading, "Helvetica-Bold", 7, RED)
+    T -= 18
+
+
+
+    # ── 1. Passenger name list ────────────────────────────────────────────
+    PAX_ROW_H = 26
+    PAX_GAP   = 2
+
+    for i, p in enumerate(passengers):
+        pname     = _t(p.get("name")) or "Passenger"
+        pt        = _t(p.get("pax_type") or p.get("type")) or "ADT"
+        type_lbl  = ("Child"  if pt.upper() in ("CHD", "CNN") else
+                     "Infant" if pt.upper() in ("INF",)       else "Adult")
         ticket_no = _t(p.get("ticket_number"))
-        ff_no = _t(p.get("frequent_flyer_number"))
-        seats = p.get("seats") or []
-        ancs = p.get("ancillaries") or []
-        meals = p.get("meals") or []
+        ff_no     = _t(p.get("frequent_flyer_number"))
 
-        def _normalize_passenger_segment_index(raw_index):
-            try:
-                idx = int(raw_index)
-            except (TypeError, ValueError):
-                return 0
-            if n_seg <= 0:
-                return 0
-            if 0 <= idx < n_seg:
-                return idx
-            # Handle one-based legacy indices from older/alternate payloads.
-            if 1 <= idx <= n_seg:
-                return idx - 1
-            # For single-segment bookings, always collapse to the only segment.
-            if n_seg == 1:
-                return 0
-            return max(0, min(idx, n_seg - 1))
+        _ensure_space(PAX_ROW_H + PAX_GAP)
+        row_fill = CARD_BG if i % 2 == 0 else WHITE
+        row_y = T - PAX_ROW_H
+        _rect(c, M, row_y, IW, PAX_ROW_H, fill=row_fill, stroke=CARD_BOR, lw=0.4, radius=4)
 
+        # Initial circle
+        initial = pname.strip()[0].upper() if pname.strip() else "?"
+        circ_cx = M + 16
+        circ_cy = T - PAX_ROW_H / 2
+        c.saveState()
+        c.setFillColor(NAVY)
+        c.circle(circ_cx, circ_cy, 8, fill=1, stroke=0)
+        c.setFillColor(WHITE)
+        c.setFont("Helvetica-Bold", 8)
+        c.drawCentredString(circ_cx, circ_cy - 3, initial)
+        c.restoreState()
+
+        # Name + type
+        _txt(c, M + 30, T - 10, pname,            "Helvetica-Bold", 8.5, NAVY)
+        _txt(c, M + 30, T - 20, type_lbl.upper(), "Helvetica",      6,   INF_LABEL)
+
+        # Ticket right-aligned
+        rx = RIGHT - 8
+        if ticket_no:
+            _txt(c, rx, T - 11, f"Ticket: {ticket_no}", "Helvetica", 7, INF_LABEL, align="right")
+        if ff_no:
+            _txt(c, rx, T - 20, f"FFN: {ff_no}",        "Helvetica", 6.5, INF_LABEL, align="right")
+
+        T -= PAX_ROW_H + PAX_GAP
+
+    T -= 8
+
+    # ── 2. Ticket barcodes — Cleartrip style ─────────────────────────────
+    # Per-passenger blocks. Each segment gets one small barcode stacked
+
+
+
+    # vertically. Small, clean, well-spaced — reference barcodes not gate
+    # boarding passes.
+    n_seg = len(segments)
+
+    def _norm_idx(raw, n):
+        try:    idx = int(raw)
+        except: return 0
+        if 0 <= idx < n:  return idx
+        if 1 <= idx <= n: return idx - 1
+        return max(0, min(idx, n - 1))
+
+    pax_seg_maps = []
+    for p in passengers:
         seg_map = {}
-        for s in seats:
-            si = _normalize_passenger_segment_index(s.get("segment_index", 0) if isinstance(s, dict) else 0)
+        for s in (p.get("seats") or []):
+            si = _norm_idx(s.get("segment_index", 0) if isinstance(s, dict) else 0, n_seg)
             sn = _t(s.get("seat_number") if isinstance(s, dict) else s)
-            if sn:
-                seg_map.setdefault(si, {})["seat"] = sn
-        for a in ancs:
+            if sn: seg_map.setdefault(si, {})["seat"] = sn
+        for a in (p.get("ancillaries") or []):
             if isinstance(a, dict):
-                si = _normalize_passenger_segment_index(a.get("segment_index", 0))
+                si   = _norm_idx(a.get("segment_index", 0), n_seg)
                 desc = _t(a.get("name") or a.get("code"))
-                if desc:
-                    seg_map.setdefault(si, {}).setdefault("anc", []).append(desc)
-        for m in meals:
+                if desc: seg_map.setdefault(si, {}).setdefault("anc", []).append(desc)
+        for m in (p.get("meals") or []):
             if isinstance(m, dict):
-                si = _normalize_passenger_segment_index(m.get("segment_index", 0))
+                si   = _norm_idx(m.get("segment_index", 0), n_seg)
                 desc = _t(m.get("name") or m.get("code"))
-                if desc:
-                    seg_map.setdefault(si, {}).setdefault("meal", []).append(desc)
+                if desc: seg_map.setdefault(si, {}).setdefault("meal", []).append(desc)
+        pax_seg_maps.append(seg_map)
 
-        segs_info = []
-        segment_indices = sorted(set(seg_map.keys()) | {idx for idx, seg in enumerate(segments) if _t(seg.get("barcode_image"))})
-        for si in segment_indices:
-            info = seg_map.get(si, {})
-            seg = segments[si] if si < n_seg else {}
-            barcode_image = seg.get("barcode_image")
-            if not info.get("seat") and not info.get("anc") and not info.get("meal") and not _t(barcode_image):
+    # Barcode dimensions — small reference barcodes like Cleartrip
+    BC_W       = 130   # barcode width  (~36% of content width)
+    BC_H       = 26    # barcode height — compact
+    BC_GAP     = 12    # gap between stacked barcodes
+    BC_TOP_PAD = 16    # space above first barcode in block
+    BC_BOT_PAD = 16    # space below last barcode in block
+    PAX_HDR_H  = 34    # passenger name row height
+    PAX_GAP    = 0     # no gap — rows touch, divider separates them
+
+    # Section label
+    _ensure_space(18)
+    _txt(c, M, T - 11, "TICKET BARCODES", "Helvetica-Bold", 7, RED)
+    T -= 18
+
+    for pi, p in enumerate(passengers):
+        pname     = _t(p.get("name")) or "Passenger"
+        pt        = _t(p.get("pax_type") or p.get("type")) or "ADT"
+
+
+
+        type_lbl  = ("Child"  if pt.upper() in ("CHD", "CNN") else
+                     "Infant" if pt.upper() in ("INF",)       else "Adult")
+        ticket_no = _t(p.get("ticket_number"))
+        ff_no     = _t(p.get("frequent_flyer_number"))
+
+        # Collect barcodes for this passenger
+        seg_bars = []
+        for si, seg in enumerate(segments):
+            bb = _barcode_image_bytes(seg.get("barcode_image"))
+            if not bb:
                 continue
-            dap = _t(seg.get("departure", {}).get("airport"))
-            aap = _t(seg.get("arrival", {}).get("airport"))
-            airline_name = _t(seg.get("airline"))
-            fnum = _t(seg.get("flight_number"))
-            route = f"{dap} → {aap}" if dap and aap else f"Seg {si+1}"
-            if airline_name or fnum:
-                route = f"{route}  |  {airline_name} {fnum}".strip()
-            parts = []
-            if info.get("seat"):
-                parts.append(f"Seat: {info.get('seat')}")
-            if info.get("anc"):
-                parts.append(", ".join(info.get("anc", [])))
-            if info.get("meal"):
-                parts.append(f"Meal: {', '.join(info.get('meal', []))}")
-            segs_info.append({
-                "route": route,
-                "details": "  |  ".join(parts),
-                "barcode_image": barcode_image
-            })
+            info   = pax_seg_maps[pi].get(si, {})
+            dep_ap = _t(seg.get("departure", {}).get("airport"))
+            arr_ap = _t(seg.get("arrival",   {}).get("airport"))
+            fn_str = _t(seg.get("flight_number"))
+            parts  = []
+            if info.get("seat"): parts.append(f"Seat: {info['seat']}")
+            detail = "  ·  ".join(parts)
+            seg_bars.append((dep_ap, arr_ap, fn_str, detail, bb))
 
-        traveller_blocks.append({
-            "name": pname,
-            "type_label": type_label,
-            "ticket_number": ticket_no,
-            "ff_no": ff_no,
-            "baggage": bag,
-            "segments": segs_info
-        })
+        n_bars  = len(seg_bars)
+        # Block height: name header + padding + barcodes + gaps + bottom pad
+        bars_h  = (n_bars * BC_H
+                   + max(0, n_bars - 1) * BC_GAP
+                   + BC_TOP_PAD + BC_BOT_PAD)
+        block_h = PAX_HDR_H + bars_h
 
-    # Travellers
-    if traveller_blocks:
-        first_seg_count = max(1, len(traveller_blocks[0]["segments"])) if traveller_blocks else 1
-        first_card_h = 44 + (first_seg_count * 42)
-        if T - (24 + first_card_h) < PAGE_BOTTOM_LIMIT:
-            _start_continuation_page()
-        ty = _start_section("Travellers", BRAND)
-        for traveller in traveller_blocks:
-            seg_count = max(1, len(traveller["segments"]))
-            row_step = 38 if compact_single_page else 42
-            card_h = (40 if compact_single_page else 44) + (seg_count * row_step)
-            if ty - card_h < PAGE_BOTTOM_LIMIT:
-                T = ty
-                _start_continuation_page()
-                ty = _start_section("Travellers", BRAND)
+        _ensure_space(block_h + 1)
 
-            #_rect(c, M, ty - card_h, IW, card_h, stroke=RULE, lw=0.5, radius=6)
-            name_line = f"{traveller['name']} ({traveller['type_label']})"
-            name_x = M + 30
-            _draw_traveller_icon(c, M + 18, ty - 14, size=8, col=INK)
-            _txt(c, name_x, ty - 17, name_line, "Times-Bold", 9, INK)
-            right_x = RIGHT - 16
-            if traveller["ticket_number"]:
-                _txt(c, right_x, ty - 14, f"Ticket Number: {traveller['ticket_number']}", "Times-Bold", 7.5, INK, align="right")
-            if traveller["ff_no"]:
-                _txt(c, right_x, ty - 24, f"FFN: {traveller['ff_no']}", "Times-Bold", 7.0, INK, align="right")
-            if traveller["baggage"]:
-                _txt(c, name_x, ty - 29, f"Baggage: {traveller['baggage']}", size=7, col=INK)
+        block_y = T - block_h
+        _rect(c, M, block_y, IW, block_h,
+              fill=WHITE, stroke=CARD_BOR, lw=0.4, radius=0)
 
-            row_y = ty - (39 if compact_single_page else 43)
-            detail_x = name_x
-            for seg_info in traveller["segments"]:
-                _rect(c, M + 12, row_y - (28 if compact_single_page else 30), IW - 24, 32 if compact_single_page else 34, fill=colors.Color(0.985, 0.988, 0.998), stroke=None, radius=4)
-                _txt(c, detail_x, row_y - 2, seg_info["route"], "Times-Bold", 7.5, INK)
-                if seg_info["details"]:
-                    _txt(c, detail_x, row_y - 14, seg_info["details"], size=7, col=INK2)
-                barcode = _barcode_image_reader(seg_info.get("barcode_image"))
-                if barcode:
-                    try:
-                        c.drawImage(barcode, RIGHT - 148, row_y - (22 if compact_single_page else 24), width=120, height=22 if compact_single_page else 24, mask="auto")
-                    except Exception:
-                        pass
-                row_y -= row_step
+        # ── Passenger name row ────────────────────────────────────────────
+        # Icon
+        initial = pname.strip()[0].upper() if pname.strip() else "?"
+        ic_cx   = M + 16
+        ic_cy   = T - PAX_HDR_H / 2
+        c.saveState()
+        c.setFillColor(NAVY)
+        c.circle(ic_cx, ic_cy, 8, fill=1, stroke=0)
+        c.setFillColor(WHITE)
+        c.setFont("Helvetica-Bold", 7.5)
+        c.drawCentredString(ic_cx, ic_cy - 2.8, initial)
+        c.restoreState()
 
-            ty -= card_h + 4
+        # Name + type
 
-        T = ty - 4
+
+
+        _txt(c, M + 30, T - 11, pname,            "Helvetica-Bold", 9, NAVY)
+        _txt(c, M + 30, T - 22, type_lbl.upper(), "Helvetica",      6, INF_LABEL)
+
+        # Ticket label + number right-aligned
+        if ticket_no:
+            _txt(c, RIGHT - 12, T - 11,
+                 "TICKET NO.", "Helvetica", 6, INF_LABEL, align="right")
+            _txt(c, RIGHT - 12, T - 22,
+                 ticket_no, "Helvetica-Bold", 7.5, NAVY, align="right")
+
+        # Thin rule under name row
+        _hline(c, M, T - PAX_HDR_H, IW, CARD_BOR, 0.3)
+
+        # ── Stacked barcodes ──────────────────────────────────────────────
+        cur_y = T - PAX_HDR_H - BC_TOP_PAD
+
+        for bi, (dep_ap, arr_ap, fn_str, detail, bb) in enumerate(seg_bars):
+            # Route label left of barcode
+            route = f"{dep_ap} → {arr_ap}"
+            if fn_str: route += f"  {fn_str}"
+            lbl_x = M + 12
+            lbl_y = cur_y - BC_H / 2 + 2   # vertically centred beside barcode
+
+            _txt(c, lbl_x, lbl_y + 6,  route,  "Helvetica-Bold", 7,   NAVY)
+            if detail:
+                _txt(c, lbl_x, lbl_y - 4, detail, "Helvetica",     6.5, INF_LABEL)
+
+            # Barcode — right-aligned, compact
+            if bb:
+                try:
+                    ir = ImageReader(io.BytesIO(bb))
+                    c.drawImage(ir,
+                                RIGHT - BC_W - 12,
+                                cur_y - BC_H,
+                                width=BC_W, height=BC_H,
+                                mask="auto")
+                except Exception:
+                    pass
+
+            cur_y -= BC_H
+            if bi < n_bars - 1:
+                # Thin dotted separator between barcodes
+                _hline(c, M + 12, cur_y - BC_GAP / 2,
+                       IW - 24, CARD_BOR, 0.25)
+                cur_y -= BC_GAP
+
+        # Border between passengers
+
+
+
+        if pi < len(passengers) - 1:
+            _hline(c, M, block_y, IW, CARD_BOR, 0.4)
+
+        T -= block_h
 
     # ══════════════════════════════════════════════════════════════════════════
-    #  FARE DETAILS
+    #  FARE SUMMARY  — single consolidated card matching reference layout
     # ══════════════════════════════════════════════════════════════════════════
     if include_fare:
-        fare_display = journey.get("fare_display")
-        if not fare_display:
-            fare_display = "per_passenger" if n_pax <= 1 else "consolidated"
+        fare_display = journey.get("fare_display") or (
+            "per_passenger" if n_pax <= 1 else "consolidated")
         is_consolidated = (fare_display == "consolidated")
 
-        FR      = 16
-        n_fr    = 3 if is_consolidated else (2 + n_pax)
-        FAR_TBL = n_fr * FR
-        FAR_H   = FAR_TBL + 28
-        _ensure_space(FAR_H + G)
-        _rect(c, M, T - FAR_H, IW, FAR_H, fill=colors.Color(0.995, 0.997, 1.0), stroke=RULE, lw=0.5, radius=8)
-        fc = _section_heading(c, M + 10, T - 11, "Fare Details", BRAND, RIGHT - 10)
-
-        frows = []
-        running = 0
-        
         try:
             global_markup = float(_t(journey.get("global_markup")) or 0)
         except ValueError:
             global_markup = 0
 
+        FARE_H = 60
+        _ensure_space(FARE_H + 18)
+
+        _txt(c, M, T - 11, "FARE SUMMARY", "Helvetica-Bold", 7, RED)
+        T -= 16
+
+        _rect(c, M, T - FARE_H, IW, FARE_H,
+              fill=CARD_BG, stroke=CARD_BOR, lw=0.4, radius=4)
+
         if is_consolidated:
-            fhead = ["Total Passengers", "Total Base Fare", "Total GST (K3)", "Total Other Taxes & Fees", "Total Fare"]
-            frows.append(fhead)
-            
-            cf = journey.get("consolidated_fare") or {}
-            p_len = str(n_pax)
-            base = _t(cf.get("base_fare")) or "—"
-            k3 = _t(cf.get("k3_gst")) or "—"
-            othr = _t(cf.get("other_taxes"))
-            
+            cf        = journey.get("consolidated_fare") or {}
+            grand_raw = _t(data.get("grand_total")) or "—"
+
+            base  = _t(cf.get("base_fare"))    or "—"
+            k3    = _t(cf.get("k3_gst"))       or "—"
+            othr  = _t(cf.get("other_taxes"))
             if global_markup > 0:
                 try:
-                    o_val = float(str(othr).replace(",", "")) if othr else 0
-                    o_val += global_markup * n_pax
-                    othr = f"{o_val:g}"
+                    ov = float(str(othr).replace(",", "")) if othr else 0
+                    ov += global_markup * n_pax
+                    othr = f"{ov:g}"
                 except ValueError:
                     pass
-                    
             othr_str = othr or "—"
-            grand = _t(data.get("grand_total")) or "—"
-            
-            frows.append([p_len, base, k3, othr_str, f"{curr_code} {grand}"])
-            frows.append(["", "", "", "Grand Total", f"{curr_code} {grand}"])
-            
-            ft = Table(frows, colWidths=[95, 95, 95, 126, 110])
-            c_idx = 1
-            h_idx_span = 3
+
+            cols  = ["PASSENGERS", "BASE FARE", "GST (K3)", "OTHER TAXES", "TOTAL"]
+            vals  = [str(n_pax), f"₹{base}", f"₹{k3}", f"₹{othr_str}", f"₹{grand_raw}"]
+            n_cols = len(cols)
+            col_w  = IW / n_cols
+
+
+
+            lbl_y  = T - 14
+            val_y  = T - 32
+
+            for ci, (col_lbl, col_val) in enumerate(zip(cols, vals)):
+                cx = M + ci * col_w + col_w / 2
+                _txt(c, cx, lbl_y, col_lbl, "Helvetica", 6, INF_LABEL, align="center")
+                is_total = (ci == n_cols - 1)
+                vfont = _font(bold=True)
+                vsize = 13 if is_total else 11
+                vcol  = RED if is_total else NAVY
+                _txt(c, cx, val_y, col_val, vfont, vsize, vcol, align="center")
+
+            # Subtle column dividers
+            for ci in range(1, n_cols):
+                lx = M + ci * col_w
+                _vline(c, lx, T - FARE_H + 6, T - 6, CARD_BOR, 0.3)
+
         else:
-            fhead = ["#", "Passenger", "Base Fare", "GST (K3)", "Other Taxes", "Total Fare"]
-            frows.append(fhead)
-            for i, p in enumerate(passengers, 1):
-                pf   = p.get("fare") or {}
-                # Extract actual passenger name instead of "Adult"
-                name_str = p.get("name", "").strip() or "Passenger"
-                base = _t(pf.get("base_fare"))
-                k3   = _t(pf.get("k3_gst"))
-                othr = _t(pf.get("other_taxes"))
-                tot  = _t(pf.get("total_fare"))
-                
+            # per-passenger table
+            running = 0
+            row_h   = 14
+            th_y    = T - 14
+            cols    = ["#", "PASSENGER", "BASE FARE", "GST (K3)", "OTHER TAXES", "TOTAL"]
+            col_ws  = [18, IW - 18 - 60 - 60 - 90 - 70, 60, 60, 90, 70]
+            cx_list = [M + sum(col_ws[:i]) + 4 for i in range(len(cols))]
+
+            for ci, col_lbl in enumerate(cols):
+                _txt(c, cx_list[ci], th_y, col_lbl, "Helvetica", 6.5, INF_LABEL)
+            _hline(c, M + 4, th_y - 2, IW - 8, CARD_BOR, 0.4)
+
+            ry = th_y - row_h
+            for pi, p in enumerate(passengers):
+                pf    = p.get("fare") or {}
+                pname = _t(p.get("name")) or "Passenger"
+                base  = _t(pf.get("base_fare")) or "—"
+                k3    = _t(pf.get("k3_gst"))    or "—"
+                othr  = _t(pf.get("other_taxes"))
                 if global_markup > 0:
                     try:
-                        o_val = float(str(othr).replace(",", "")) if othr else 0
-                        o_val += global_markup
-                        othr = f"{o_val:g}"  # format without trailing zeroes
+                        ov = float(str(othr).replace(",", "")) if othr else 0
+                        ov += global_markup
+                        othr = f"{ov:g}"
                     except ValueError:
                         pass
+                tot = _t(pf.get("total_fare")) or "—"
+                if tot != "—":
+                    try: running += float(str(tot).replace(",", ""))
 
-                if tot:
-                    try:    running += float(str(tot).replace(",", ""))
+
+
                     except: pass
-                frows.append([str(i), name_str, base or "—", k3 or "—", othr or "—", tot or "—"])
+                row_vals = [str(pi+1), pname, base, k3, othr or "—", tot]
+                for ci, rv in enumerate(row_vals):
+                    _txt(c, cx_list[ci], ry, rv, "Helvetica", 7.5, NAVY)
+                ry -= row_h
 
             grand = _t(data.get("grand_total")) or (str(running) if running else "—")
-            frows.append(["", "", "", "", "Grand Total", f"{curr_code} {grand}"])
-            ft = Table(frows, colWidths=[18, 94, 80, 70, 110, 149])
-            c_idx = 2
-            h_idx_span = 4
+            _hline(c, M + 4, ry + row_h - 2, IW - 8, CARD_BOR, 0.4)
+            _txt(c, RIGHT - 8, ry, f"{curr_code} {grand}",
+                 "Helvetica-Bold", 9, RED, align="right")
 
-        li2 = len(frows) - 1
+        T -= FARE_H + 6
 
-        ft.setStyle(TableStyle([
-            ("FONT",          (0, 0), (-1, 0),       "Times-Bold", 7.5),
-            ("TEXTCOLOR",     (0, 0), (-1, 0),       INK3),
-            ("BACKGROUND",    (0, 0), (-1, 0),       colors.Color(0.985, 0.989, 0.997)),
-            ("FONT",          (0, 1), (-1, li2-1),   "Times-Roman", 7.8),
-            ("TEXTCOLOR",     (0, 1), (-1, li2-1),   INK),
-            ("FONT",          (0, li2), (-1, li2),   "Times-Bold", 8.5),
-            ("TEXTCOLOR",     (0, li2), (-1, li2),   INK),
-            ("BACKGROUND",    (0, li2), (-1, li2),   colors.Color(0.985, 0.989, 0.997)),
-            ("ROWBACKGROUNDS",(0, 1), (-1, li2-1),   [WHITE, colors.Color(0.992, 0.995, 1.0)]),
-            ("ALIGN",         (c_idx, 0), (-1, -1), "RIGHT"),
-            ("ALIGN",         (0, 0), (c_idx-1, -1),  "LEFT"),
-            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
-            ("TOPPADDING",    (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ("LINEBELOW",     (0, 0), (-1, 0),   0.5, colors.Color(0.90, 0.93, 0.97)),
-            ("LINEABOVE",     (0, li2), (-1, li2), 0.6, colors.Color(0.86, 0.90, 0.96)),
-            ("LINEBELOW",     (0, li2), (-1, li2), 0.2, colors.Color(0.90, 0.93, 0.97)),
-            ("LINEBELOW",     (0, 1), (-1, li2-1), 0.2, colors.Color(0.93, 0.95, 0.98)),
-        ]))
-        ft.wrapOn(c, W, H)
-        ft.drawOn(c, M + 1, fc - FAR_TBL - 2)
-        T -= FAR_H + G
+    # ══════════════════════════════════════════════════════════════════════════
+    #  GST INFO
+    # ══════════════════════════════════════════════════════════════════════════
+    if gst_no or gst_comp:
+        GST_H = 30
+        _ensure_space(GST_H + G)
+        _rect(c, RIGHT - 180, T - GST_H, 180, GST_H,
+              stroke=CARD_BOR, lw=0.4, radius=4)
+        _txt(c, RIGHT - 174, T - 9, "GST", "Helvetica-Bold", 7, RED)
+        if gst_comp:
+            _txt(c, RIGHT - 174, T - 18, gst_comp, "Helvetica", 7, INF_LABEL)
+        if gst_no:
+            _txt(c, RIGHT - 174, T - 27, f"GSTIN: {gst_no}", "Helvetica", 7, INF_LABEL)
+        T -= GST_H + G
 
     # ══════════════════════════════════════════════════════════════════════════
     #  IMPORTANT NOTES
     # ══════════════════════════════════════════════════════════════════════════
-    # GST below fares
-    if gst_no or gst_comp:
-        GST_H = 34
-        _ensure_space(GST_H + G)
-        _rect(c, RIGHT - 190, T - GST_H, 190, GST_H, stroke=RULE, lw=0.4, radius=6)
-        _txt(c, RIGHT - 178, T - 10, "GST", "Times-Bold", 7, ACCENT)
-        if gst_comp:
-            _txt(c, RIGHT - 178, T - 19, gst_comp, "Times-Roman", 7.2, INK2)
-        if gst_no:
-            _txt(c, RIGHT - 178, T - 28, f"GSTIN: {gst_no}", "Times-Roman", 7.2, INK2)
-        T -= GST_H + G
-
     notes = [
         "Please carry a valid government-issued photo ID at check-in.",
-        "Check departure terminal with the airline; arrive 2 hrs before departure.",
+        "Check departure terminal with the airline; arrive 2 hours before departure.",
         "Use the Airline PNR for all correspondence directly with the airline.",
-        "Cancellations: contact us 4 hrs prior (Domestic) or 24 hrs prior (International).",
-        "If the airline cancels or you cancel directly, notify us immediately for refund.",
+        "Cancellations: contact us 24 hrs prior (International flights).",
     ]
     NL     = 11
     NOTE_H = len(notes) * NL + 22
     _ensure_space(NOTE_H + G)
-    _rect(c, M, T - NOTE_H, IW, NOTE_H, stroke=RULE, lw=0.5, radius=6)
-    ny = _section_heading(c, M + 10, T - 11, "Important Notes",
-                          ACCENT, RIGHT - 10)
+
+    _rect(c, M, T - NOTE_H, IW, NOTE_H,
+          fill=CARD_BG, stroke=CARD_BOR,
+          lw=0.4, radius=4)
+
+    _txt(c, M + 8, T - 11, "IMPORTANT NOTES", "Helvetica-Bold", 7, RED)
+    ny = T - 21
+
+
 
     for n in notes:
         c.saveState()
-        c.setFillColor(ACCENT)
-        c.circle(M + 16, ny - 2, 1.5, fill=1, stroke=0)
-        c.setFont("Times-Roman", 7)
-        c.setFillColor(INK2)
-        c.drawString(M + 22, ny - 4, n)
+        c.setFillColor(INF_LABEL)
+        c.circle(M + 14, ny - 1.5, 1.8, fill=1, stroke=0)
+        c.setFont("Helvetica", 7)
+        c.setFillColor(INF_LABEL)
+        c.drawString(M + 20, ny - 3, n)
         c.restoreState()
         ny -= NL
 
-    T -= NOTE_H + G
+    T -= NOTE_H + 4
 
-    # ══════════════════════════════════════════════════════════════════════════
-    #  FOOTER
-    # ══════════════════════════════════════════════════════════════════════════
-    if T < M + FTH + 4:
-        _start_continuation_page()
+    # ── Footer — always on same page, no orphan blank page ────────────────
+    _ensure_space(FTH + 2)
     _draw_footer()
-

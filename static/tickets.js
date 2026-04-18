@@ -95,6 +95,31 @@ function updateTheme(theme) {
         if (theme === 'dark') { icon.textContent = '☀️'; text.textContent = 'Light Mode'; }
         else { icon.textContent = '🌙'; text.textContent = 'Dark Mode'; }
     }
+    if (typeof updateParticleVisibility === 'function') {
+        updateParticleVisibility(theme);
+    }
+}
+
+async function updateParticleVisibility(theme) {
+    const particles = document.getElementById('tsparticles');
+    if (!particles || typeof tsParticles === 'undefined') return;
+
+    if (theme === 'dark') {
+        particles.style.display = 'block';
+        await tsParticles.load("tsparticles", {
+            background: { color: { value: "#020617" } },
+            particles: {
+                color: { value: ["#38bdf8", "#818cf8", "#c084fc"] },
+                links: { color: "#64748b", distance: 150, enable: true, opacity: 0.2, width: 1 },
+                move: { enable: true, speed: 0.8 },
+                number: { value: 60 },
+                opacity: { value: 0.5 },
+                size: { value: { min: 1, max: 3 } }
+            }
+        });
+    } else {
+        particles.style.display = 'none';
+    }
 }
 
 // ==================== AUTH ====================
@@ -1946,80 +1971,26 @@ function _renderMergePanel(panel) {
 }
 
 async function _renderDuplicatePanel(panel) {
+    // Show a modern loading state inside the panel
     panel.innerHTML = `<div class="notif-panel">
         <div class="notif-panel-header">
             <h3>⚠️ Duplicate Tickets</h3>
             <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
         </div>
-        <div class="empty-notif">Loading duplicates...</div>
+        <div class="empty-notif">
+            <div class="loading" style="width:30px;height:30px;"></div>
+            <div style="font-weight:600;margin-top:0.5rem;">Scanning for duplicates...</div>
+        </div>
     </div>`;
 
     try {
-        const r = await fetch('/api/tickets/duplicates');
-        if (!r.ok) throw new Error('Failed to load');
-        const data = await r.json();
-        const dups = data.duplicates || [];
-
-        if (!dups.length) {
-            panel.innerHTML = `<div class="notif-panel">
-                <div class="notif-panel-header">
-                    <h3>⚠️ Duplicate Tickets</h3>
-                    <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
-                </div>
-                <div class="empty-notif">
-                    <div style="font-size:2rem;margin-bottom:0.5rem;">✅</div>
-                    No pending duplicate tickets
-                </div>
-            </div>`;
-            return;
-        }
-
-        const cardsHtml = dups.map(dup => {
-            const orig = dup.original_ticket;
-            const dupNames = (dup.passenger_names || []).join(', ') || 'Unknown';
-            const origNames = orig ? (orig.passenger_names || []).join(', ') || 'Unknown' : '—';
-            const dupRoute = dup.route || '—';
-            const origRoute = orig ? (orig.route || '—') : '—';
-
-            const createdLabel = formatLocalDateTime(dup.created_at) || 'Recent';
-
-            return `<div class="notif-card" id="dup-card-${dup.id}">
-                <div class="notif-card-header">
-                    <div>
-                        <div style="font-weight:800;font-size:0.95rem;">PNR ${dup.pnr || '—'} <span style="font-size:0.76rem;font-weight:500;color:var(--text-secondary);">· ${createdLabel}</span></div>
-                        <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.15rem;">${dupRoute} · ${dupNames}</div>
-                    </div>
-                    <span style="background:rgba(245,158,11,0.12);color:#d97706;padding:0.15rem 0.45rem;border-radius:999px;font-size:0.7rem;font-weight:700;">Suspected Duplicate</span>
-                </div>
-                ${orig ? `<div class="dup-compare">
-                    <div class="dup-side">
-                        <div class="label">Original Ticket</div>
-                        <div style="font-weight:700;">${origNames}</div>
-                        <div style="color:var(--text-secondary);font-size:0.78rem;">${origRoute}</div>
-                        <div style="color:var(--text-secondary);font-size:0.75rem;">${formatCurrency(orig.grand_total, orig.currency || 'INR')}</div>
-                    </div>
-                    <div class="vs">VS</div>
-                    <div class="dup-side">
-                        <div class="label">New (Duplicate)</div>
-                        <div style="font-weight:700;">${dupNames}</div>
-                        <div style="color:var(--text-secondary);font-size:0.78rem;">${dupRoute}</div>
-                        <div style="color:var(--text-secondary);font-size:0.75rem;">${formatCurrency(dup.grand_total, dup.currency || 'INR')}</div>
-                    </div>
-                </div>` : ''}
-                <div class="notif-card-actions">
-                    <button class="notif-btn approve" onclick="approveDuplicate('${dup.id}')">✅ Approve & Add</button>
-                    <button class="notif-btn reject" onclick="rejectDuplicate('${dup.id}')">🗑️ Reject</button>
-                </div>
-            </div>`;
-        }).join('');
-
-        panel.innerHTML = `<div class="notif-panel">
-            <div class="notif-panel-header">
-                <h3>⚠️ Duplicate Tickets <span style="font-size:0.8rem;font-weight:600;color:var(--text-secondary);">(${dups.length})</span></h3>
-                <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
-            </div>
-            <div style="max-height:50vh;overflow-y:auto;">${cardsHtml}</div>
-        </div>`;
+        // Use the paged loading logic for consistency
+        const data = await loadDuplicateTicketsPage(0);
+        duplicatePanelTickets = data.duplicates || [];
+        duplicatePanelTotalCount = Number(data.total_count || duplicatePanelTickets.length);
+        
+        // Render using the new high-end layout
+        _renderDuplicatePanelLayout(panel);
     } catch (e) {
         console.error(e);
         panel.innerHTML = `<div class="notif-panel">
@@ -2027,7 +1998,11 @@ async function _renderDuplicatePanel(panel) {
                 <h3>⚠️ Duplicate Tickets</h3>
                 <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
             </div>
-            <div class="empty-notif">Failed to load duplicates</div>
+            <div class="empty-notif">
+                <div style="font-size:2rem;">❌</div>
+                <div style="font-weight:700;">Failed to load sync</div>
+                <div style="color:var(--text-tertiary);font-size:0.8rem;">Please check your connection or try again later.</div>
+            </div>
         </div>`;
     }
 }
@@ -2275,46 +2250,113 @@ async function _renderDuplicatePanel(panel) {
     }
 }
 
+
+function toggleDupExpanded(event, cardId) {
+    if (event) event.stopPropagation();
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    
+    // Close others
+    const isExpanding = !card.classList.contains('expanded');
+    if (isExpanding) {
+        document.querySelectorAll('.dup-review-card.expanded').forEach(c => {
+            if (c.id !== cardId) c.classList.remove('expanded');
+        });
+    }
+    card.classList.toggle('expanded');
+}
+
+function toggleDuplicateSelectionGlobal() {
+    const boxes = document.querySelectorAll('.duplicate-review-checkbox');
+    if (!boxes.length) return;
+    
+    const allChecked = Array.from(boxes).every(b => b.checked);
+    boxes.forEach(b => b.checked = !allChecked);
+    
+    const btn = document.getElementById('duplicateSelectionToggleBtn');
+    if (btn) btn.textContent = allChecked ? 'Select All' : 'Clear All';
+}
+
 function _renderDuplicateCardsHtmlV2(dups) {
     return dups.map((dup) => {
         const orig = dup.original_ticket;
         const dupNames = (dup.passenger_names || []).join(', ') || 'Unknown';
-        const origNames = orig ? (orig.passenger_names || []).join(', ') || 'Unknown' : '-';
-        const dupRoute = dup.route || '-';
-        const origRoute = orig ? (orig.route || '-') : '-';
-        const createdLabel = formatLocalDateTime(dup.created_at) || 'Recent';
+        const origNames = orig ? (orig.passenger_names || []).join(', ') || 'Unknown' : '—';
+        const dupRoute = dup.route || '—';
+        const origRoute = orig ? (orig.route || '—') : '—';
+        const dupPnr = dup.pnr || '—';
+        const origPnr = orig ? (orig.pnr || '—') : '—';
+        const dupTotal = formatCurrency(dup.grand_total, dup.currency || 'INR');
+        const origTotal = orig ? formatCurrency(orig.grand_total, orig.currency || 'INR') : '—';
 
-        return `<div class="notif-card" id="dup-card-${dup.id}">
-            <div class="notif-card-header">
-                <div style="display:flex;gap:0.8rem;align-items:flex-start;">
-                    <label style="display:flex;align-items:center;margin-top:0.2rem;">
-                        <input type="checkbox" class="duplicate-review-checkbox" value="${dup.id}" checked>
-                    </label>
-                    <div>
-                        <div style="font-weight:800;font-size:0.95rem;">PNR ${dup.pnr || '-'} <span style="font-size:0.76rem;font-weight:500;color:var(--text-secondary);">· ${createdLabel}</span></div>
-                        <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.15rem;">${dupRoute} · ${dupNames}</div>
-                    </div>
+        // Timestamps
+        const dupCreated = formatLocalDateTime(dup.created_at) || 'Recent';
+        const origCreated = orig ? (formatLocalDateTime(orig.created_at) || 'Existing') : '—';
+
+        const compare = (v1, v2) => {
+            if (!v1 || !v2) return '';
+            const s1 = String(v1).trim().toLowerCase();
+            const s2 = String(v2).trim().toLowerCase();
+            return (s1 === s2 && s1 !== '—') ? 'vs-val-match' : 'vs-val-diff';
+        };
+
+        const cardId = `dup-card-${dup.id}`;
+
+        return `<div class="dup-review-card" id="${cardId}">
+            <div class="dup-summary-row" onclick="toggleDupExpanded(event, '${cardId}')">
+                <div class="dup-selection-wrap" onclick="event.stopPropagation()">
+                    <input type="checkbox" class="duplicate-review-checkbox" value="${dup.id}" onchange="document.getElementById('duplicateSelectionToggleBtn').textContent='Select All'">
                 </div>
-                <span style="background:rgba(245,158,11,0.12);color:#d97706;padding:0.15rem 0.45rem;border-radius:999px;font-size:0.7rem;font-weight:700;">Suspected Duplicate</span>
+                <div class="dup-summary-main">
+                    <div class="dup-pnr-box">${dupPnr}</div>
+                    <div class="dup-route-box">${dupRoute}</div>
+                    <div class="dup-pax-box">${dupNames}</div>
+                    <div class="dup-total-box">${dupTotal}</div>
+                </div>
+                <div class="dup-actions-minimal" onclick="event.stopPropagation()" style="display:flex; gap:0.4rem; align-items:center;">
+                    <button class="notif-btn-icon reject" title="Reject" onclick="rejectDuplicate('${dup.id}')" style="width:26px; height:26px; border-radius:5px; border:1px solid rgba(239,68,68,0.15); color:#ef4444; background:none; cursor:pointer;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
+                    <button class="notif-btn-icon approve" title="Approve" onclick="approveDuplicate('${dup.id}')" style="width:26px; height:26px; border-radius:5px; border:1px solid rgba(16,185,129,0.15); color:#10b981; background:none; cursor:pointer;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </button>
+                    <span style="font-size:0.6rem; color:var(--text-tertiary); margin-left:0.2rem;">▼</span>
+                </div>
             </div>
-            ${orig ? `<div class="dup-compare">
-                <div class="dup-side">
-                    <div class="label">Original Ticket</div>
-                    <div style="font-weight:700;">${origNames}</div>
-                    <div style="color:var(--text-secondary);font-size:0.78rem;">${origRoute}</div>
-                    <div style="color:var(--text-secondary);font-size:0.75rem;">${formatCurrency(orig.grand_total, orig.currency || 'INR')}</div>
-                </div>
-                <div class="vs">VS</div>
-                <div class="dup-side">
-                    <div class="label">New (Duplicate)</div>
-                    <div style="font-weight:700;">${dupNames}</div>
-                    <div style="color:var(--text-secondary);font-size:0.78rem;">${dupRoute}</div>
-                    <div style="color:var(--text-secondary);font-size:0.75rem;">${formatCurrency(dup.grand_total, dup.currency || 'INR')}</div>
-                </div>
-            </div>` : ''}
-            <div class="notif-card-actions">
-                <button class="notif-btn approve" onclick="approveDuplicate('${dup.id}')">Approve & Add</button>
-                <button class="notif-btn reject" onclick="rejectDuplicate('${dup.id}')">Reject</button>
+
+            <div class="dup-comparison-body">
+                <table class="vs-table">
+                    <tr class="vs-header-row">
+                        <th class="vs-label">Compare</th>
+                        <th class="vs-orig">Existing Document</th>
+                        <th class="vs-new">New Suspect</th>
+                    </tr>
+                    <tr>
+                        <td class="vs-label">Timestamp</td>
+                        <td class="vs-orig">${origCreated}</td>
+                        <td class="vs-new">${dupCreated}</td>
+                    </tr>
+                    <tr>
+                        <td class="vs-label">PNR</td>
+                        <td class="vs-orig">${origPnr}</td>
+                        <td class="vs-new ${compare(dupPnr, origPnr)}">${dupPnr}</td>
+                    </tr>
+                    <tr>
+                        <td class="vs-label">Route</td>
+                        <td class="vs-orig">${origRoute}</td>
+                        <td class="vs-new ${compare(dupRoute, origRoute)}">${dupRoute}</td>
+                    </tr>
+                    <tr>
+                        <td class="vs-label">Passengers</td>
+                        <td class="vs-orig">${origNames}</td>
+                        <td class="vs-new ${compare(dupNames, origNames)}">${dupNames}</td>
+                    </tr>
+                    <tr>
+                        <td class="vs-label">Total Fare</td>
+                        <td class="vs-orig">${origTotal}</td>
+                        <td class="vs-new ${compare(dupTotal, origTotal)}">${dupTotal}</td>
+                    </tr>
+                </table>
             </div>
         </div>`;
     }).join('');
@@ -2324,32 +2366,43 @@ function _renderDuplicatePanelLayout(panel) {
     if (!duplicatePanelTickets.length) {
         panel.innerHTML = `<div class="notif-panel">
             <div class="notif-panel-header">
-                <h3>Duplicate Tickets</h3>
-                <button class="close-btn" onclick="_closeNotifPanel()">×</button>
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                    <span style="font-size:1.2rem;">⚠️</span>
+                    <h3 style="margin:0;">Duplicate Quarantine</h3>
+                </div>
+                <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
             </div>
-            <div class="empty-notif">
-                <div style="font-size:2rem;margin-bottom:0.5rem;">✓</div>
-                No pending duplicate tickets
+            <div class="empty-notif" style="padding:4rem 2rem; text-align:center;">
+                <div style="font-size:2.5rem; margin-bottom:1rem;">✨</div>
+                <div style="font-weight:700; font-size:1.1rem;">Looks Good!</div>
+                <div style="color:var(--text-tertiary); font-size:0.9rem;">No suspected duplicates in the quarantine.</div>
             </div>
         </div>`;
         return;
     }
 
-    panel.innerHTML = `<div class="notif-panel">
-        <div class="notif-panel-header">
-            <h3>Duplicate Tickets <span id="duplicatePanelTotal" style="font-size:0.8rem;font-weight:600;color:var(--text-secondary);">(${duplicatePanelTotalCount})</span></h3>
-            <button class="close-btn" onclick="_closeNotifPanel()">×</button>
+    panel.innerHTML = `<div class="notif-panel" style="padding: 0; overflow: hidden; border-radius:12px; border:1px solid var(--border); box-shadow: 0 10px 40px rgba(0,0,0,0.12); border:none;">
+        <div class="notif-panel-header" style="padding: 1.1rem; margin-bottom: 0; background: white; border-bottom: 1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; align-items:center; gap:0.6rem;">
+                <h3 style="margin:0; font-size:1.05rem; font-weight:800;">Duplicate Quarantine</h3>
+                <span id="duplicatePanelTotal" style="font-size:0.75rem; font-weight:700; color:var(--text-secondary); background:#f1f5f9; padding:0.15rem 0.5rem; border-radius:100px;">${duplicatePanelTotalCount}</span>
+            </div>
+            <button class="close-btn" onclick="_closeNotifPanel()">✕</button>
         </div>
-        <div style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;align-items:center;margin-bottom:0.85rem;padding:0.85rem 1rem;border-radius:12px;border:1px solid var(--border);background:var(--bg-main);">
-            <div id="duplicatePanelSummary" style="font-size:0.84rem;color:var(--text-secondary);font-weight:600;">Showing ${duplicatePanelTickets.length} of ${duplicatePanelTotalCount} duplicate tickets.</div>
-            <div style="display:flex;gap:0.55rem;flex-wrap:wrap;">
-                <button class="btn-action secondary" onclick="toggleDuplicateSelection(true)">Select All</button>
-                <button class="btn-action secondary" onclick="toggleDuplicateSelection(false)">Clear</button>
-                <button class="btn-action secondary" style="border-color:rgba(239,68,68,0.35);color:#dc2626;" onclick="rejectSelectedDuplicates()">Reject Selected</button>
-                <button class="btn-action primary" onclick="approveSelectedDuplicates()">Approve Selected</button>
+        
+        <div style="background: #f8fafc; padding: 0.75rem 1.1rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;">
+            <div>
+                <button id="duplicateSelectionToggleBtn" class="toggle-all-btn" onclick="toggleDuplicateSelectionGlobal()">Select All</button>
+            </div>
+            <div style="display:flex; gap:0.5rem;">
+                <button class="notif-btn reject" style="background:none; color:#ef4444; border:1px solid rgba(239,68,68,0.2); padding:0.4rem 0.85rem; font-size:0.75rem; font-weight:700; border-radius:8px; cursor:pointer;" onclick="rejectSelectedDuplicates()">Reject Selected</button>
+                <button class="notif-btn approve" style="background:var(--primary); color:white; border:none; padding:0.4rem 0.85rem; font-size:0.75rem; font-weight:700; border-radius:8px; cursor:pointer;" onclick="approveSelectedDuplicates()">Approve Selected</button>
             </div>
         </div>
-        <div id="duplicateListBody" style="max-height:50vh;overflow-y:auto;">${_renderDuplicateCardsHtmlV2(duplicatePanelTickets)}</div>
+
+        <div id="duplicateListBody" style="max-height:60vh; overflow-y:auto; padding: 1rem; background: #fff;">
+            ${_renderDuplicateCardsHtmlV2(duplicatePanelTickets)}
+        </div>
     </div>`;
 }
 
@@ -2654,19 +2707,19 @@ function renderActionsSection() {
 
     document.getElementById('actionsSection').innerHTML = `
         <div class="section-header-row"><h2>⚡ Actions</h2></div>
-                <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
+                <div style="display:flex;flex-wrap:nowrap;gap:0.75rem;align-items:center;overflow-x:auto;padding-bottom:10px;scrollbar-width:none;-ms-overflow-style:none;">
                     <div class="pdf-btn-group">
                         <button class="pdf-btn with-fare" data-pdf-download="with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
                         <button class="pdf-btn without-fare" data-pdf-download="without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
                     </div>
                     ${!editedData.ledger_hash ? `
-                    <div id="ledgerBtnGroup" style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
-                        <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">Add to Ledger:</span>
+                    <div id="ledgerBtnGroup" style="display:flex; align-items:center; gap:0.4rem; background:var(--bg-main); padding:0.4rem 0.75rem; border-radius:12px; border:1px solid var(--border); flex-shrink:0;">
+                        <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase; white-space:nowrap;">Ledger:</span>
                         <select id="ledgerAggSelect" style="padding:0.35rem 0.5rem; border-radius:8px; border:1px solid var(--border); font-family:inherit; font-size:0.82rem; background:var(--bg-card); color:var(--text-primary);">
                             <option value="">Loading...</option>
                         </select>
-                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('AB')">📒 AB</button>
-                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('CK')">📒 CK</button>
+                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.45rem 0.5rem; min-width:38px; justify-content:center;" onclick="addToLedger('AB')">AB</button>
+                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.45rem 0.5rem; min-width:38px; justify-content:center;" onclick="addToLedger('CK')">CK</button>
                     </div>` : `
                     <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(16,185,129,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(16,185,129,0.2);">
                         <span style="font-weight:700; color:#10b981;">✅ In Ledger</span>
@@ -2708,7 +2761,7 @@ function renderActionsSection() {
 
     document.getElementById('actionsSection').innerHTML = `
         <div class="section-header-row"><h2>⚡ Actions</h2></div>
-                <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
+                <div style="display:flex;flex-wrap:nowrap;gap:0.75rem;align-items:center;overflow-x:auto;padding-bottom:10px;scrollbar-width:none;-ms-overflow-style:none;">
                     <div class="pdf-btn-group">
                         <button class="pdf-btn with-fare" data-pdf-download="with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
                         <button class="pdf-btn without-fare" data-pdf-download="without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
@@ -2719,8 +2772,8 @@ function renderActionsSection() {
                         <select id="ledgerAggSelect" style="padding:0.35rem 0.5rem; border-radius:8px; border:1px solid var(--border); font-family:inherit; font-size:0.82rem; background:var(--bg-card); color:var(--text-primary);">
                             <option value="">Loading...</option>
                         </select>
-                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('AB')">📒 AB</button>
-                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('CK')">📒 CK</button>
+                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.45rem 0.5rem; min-width:38px; justify-content:center;" onclick="addToLedger('AB')">AB</button>
+                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.45rem 0.5rem; min-width:38px; justify-content:center;" onclick="addToLedger('CK')">CK</button>
                     </div>` : `
                     <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(16,185,129,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(16,185,129,0.2);">
                         <span style="font-weight:700; color:#10b981;">✅ In Ledger</span>
@@ -3682,7 +3735,7 @@ function renderActionsSection() {
 
     document.getElementById('actionsSection').innerHTML = `
         <div class="section-header-row"><h2>⚡ Actions</h2></div>
-                <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
+                <div style="display:flex;flex-wrap:nowrap;gap:0.75rem;align-items:center;overflow-x:auto;padding-bottom:10px;scrollbar-width:none;-ms-overflow-style:none;">
                     <div class="pdf-btn-group">
                         <button class="pdf-btn with-fare" data-pdf-download="with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
                         <button class="pdf-btn without-fare" data-pdf-download="without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
@@ -3693,8 +3746,8 @@ function renderActionsSection() {
                         <select id="ledgerAggSelect" style="padding:0.35rem 0.5rem; border-radius:8px; border:1px solid var(--border); font-family:inherit; font-size:0.82rem; background:var(--bg-card); color:var(--text-primary);">
                             <option value="">Loading...</option>
                         </select>
-                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('AB')">📒 AB</button>
-                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('CK')">📒 CK</button>
+                        <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.45rem 0.5rem; min-width:38px; justify-content:center;" onclick="addToLedger('AB')">AB</button>
+                        <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.45rem 0.5rem; min-width:38px; justify-content:center;" onclick="addToLedger('CK')">CK</button>
                     </div>` : `
                     <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(16,185,129,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(16,185,129,0.2);">
                         <span style="font-weight:700; color:#10b981;">✅ In Ledger</span>
@@ -5425,8 +5478,8 @@ function renderActionsSection() {
                 <select id="ledgerAggSelect" style="padding:0.35rem 0.5rem; border-radius:8px; border:1px solid var(--border); font-family:inherit; font-size:0.82rem; background:var(--bg-card); color:var(--text-primary);">
                     <option value="">Loading...</option>
                 </select>
-                <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('AB')">📒 AB</button>
-                <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.5rem 0.8rem;" onclick="addToLedger('CK')">📒 CK</button>
+                <button class="pdf-btn" style="background: #10b981; color:white; padding: 0.45rem 0.5rem; min-width:38px; justify-content:center;" onclick="addToLedger('AB')">AB</button>
+                <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.45rem 0.5rem; min-width:38px; justify-content:center;" onclick="addToLedger('CK')">CK</button>
             </div>` : `
             <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(16,185,129,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(16,185,129,0.2);">
                 <span style="font-weight:700; color:#10b981;">✅ In Ledger</span>

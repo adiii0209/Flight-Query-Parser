@@ -231,6 +231,23 @@
   opacity: 0.8;
 }
 
+.sidebar-badge {
+  background: #ef4444;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  height: 18px;
+  display: none; /* Changed via JS */
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  margin-left: auto;
+  box-shadow: 0 2px 5px rgba(239, 68, 68, 0.3);
+}
+
 .sidebar-link.active .link-icon {
   opacity: 1;
 }

@@ -2008,7 +2008,7 @@
       transition: all 0.3s ease;
       z-index: 100;
     }
-
+    
     .menu-toggle:hover {
       background: rgba(255, 255, 255, 0.25);
       transform: scale(1.05);
@@ -3456,7 +3456,15 @@
       border-radius: 2px;
       transition: all 0.3s ease;
     }
+    @keyframes btn-pop {
+      0% { transform: scale(1); }
+      40% { transform: scale(0.88); }
+      100% { transform: scale(1); }
+    }
 
+    .btn-animate-click {
+      animation: btn-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
   </style>
   <style>
     /* ================= MODAL OVERLAY ================= */
@@ -3605,6 +3613,7 @@
         <span class="menu-bar"></span>
         <span class="menu-bar"></span>
         <span class="menu-bar"></span>
+        <span class="menu-badge" id="menuNotificationBadge">0</span>
       </button>
 
       <div class="header-brand">
@@ -3628,7 +3637,7 @@
         </div>
       </div>
       <img src="/static/logo.png" alt="Logo"
-        style="position: absolute; top: 3.25rem; transform: translateY(-50%); right: 2rem; width: 150px; height: 120px; object-fit: contain; pointer-events: none;">
+        style="position: absolute; top: 3.25rem; transform: translateY(-50%); right: 2rem; width: 150px; height: 140px; object-fit: contain; pointer-events: none;">
 
       <div style="margin-bottom: 1.5rem;">
         <label class="input-label">Trip Type</label>
@@ -3724,13 +3733,13 @@
       <div id="output" class="output-section">No output yet.</div>
       <div class="actions-group">
         <div class="action-row">
-          <button type="button" class="btn btn-copy btn-sm" onclick="copyOutput()">
+          <button type="button" class="btn btn-copy btn-sm" onclick="copyOutput(this)">
             📋 Copy
           </button>
           <button type="button" class="btn btn-whatsapp btn-sm" onclick="shareCombined('whatsapp')">
             📱 WhatsApp
           </button>
-          <button type="button" class="btn btn-gmail btn-sm" onclick="shareCombined('email')">
+          <button type="button" class="btn btn-gmail btn-sm" onclick="shareCombined('email', this)">
             📧 Gmail
           </button>
         </div>
@@ -6264,6 +6273,49 @@
       const splitWrapper = document.getElementById(`fares-split-wrapper-${unitId}`);
 
       if (toggle && toggle.checked) {
+        // Copy values from combined to outbound before hiding
+        const combinedFares = document.querySelectorAll(`#fare-list-${unitId} .fare-card`);
+        combinedFares.forEach(card => {
+          const fareKey = card.dataset.fareKey;
+          const sourceUniqueKey = `${fareKey}-unit-${unitId}`;
+          const outUniqueKey = `${fareKey}-unit-${unitId}_out`;
+
+          // If outbound card doesn't exist (e.g. user added custom fare to combined), add it
+          if (!document.getElementById(`fare-card-${outUniqueKey}`)) {
+            const outList = document.getElementById(`fare-list-${unitId}_out`);
+            const retList = document.getElementById(`fare-list-${unitId}_ret`);
+            const label = card.querySelector('label')?.textContent || '';
+            const sourceChk = document.getElementById(`chk-${sourceUniqueKey}`);
+            
+            if (outList) outList.insertAdjacentHTML('beforeend', createFareCard(fareKey, label, unitId, sourceChk ? sourceChk.checked : true, '_out'));
+            if (retList) retList.insertAdjacentHTML('beforeend', createFareCard(fareKey, label, unitId, sourceChk ? sourceChk.checked : true, '_ret'));
+          }
+
+          const copyValue = (selectorSuffix, targetUniqueKey) => {
+            const src = document.querySelector(`.${selectorSuffix}-${sourceUniqueKey}`);
+            const tgt = document.querySelector(`.${selectorSuffix}-${targetUniqueKey}`);
+            if (src && tgt) tgt.value = src.value;
+          };
+
+          // Main fare fields
+          copyValue('fare', outUniqueKey);
+          copyValue('mu', outUniqueKey);
+          copyValue('svc', outUniqueKey);
+
+          // Extra details fields
+          ['cabin', 'checkin', 'pcs', 'seat', 'meal', 'cancellation', 'penalty'].forEach(field => {
+            copyValue(`fare-${field}`, outUniqueKey);
+          });
+
+          // Sync checkbox status
+          const sourceChk = document.getElementById(`chk-${sourceUniqueKey}`);
+          const outChk = document.getElementById(`chk-${outUniqueKey}`);
+          if (sourceChk && outChk && sourceChk.checked && !outChk.checked) {
+            outChk.checked = true;
+            toggleFareCard(outChk, fareKey, unitId, '_out');
+          }
+        });
+
         combinedWrapper.style.display = 'none';
         splitWrapper.style.display = 'flex';
       } else {
@@ -7717,12 +7769,18 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     function getOrderedFareEntries(flight) {
       const fares = flight && flight.fares ? flight.fares : {};
-      const fareOrder = Array.isArray(flight && flight.fare_order) ? flight.fare_order : [];
-      const orderedKeys = fareOrder.filter((key) => Object.prototype.hasOwnProperty.call(fares, key));
-      Object.keys(fares).forEach((key) => {
-        if (!orderedKeys.includes(key)) orderedKeys.push(key);
+      const fareMU = (flight && flight.fare_mu) ? flight.fare_mu : {};
+      const globalMU = (flight && flight.markup) ? flight.markup : 0;
+      
+      const entries = Object.entries(fares).map(([type, base]) => {
+        const mu = (fareMU[type] !== undefined) ? fareMU[type] : globalMU;
+        return { type, base, total: base + mu };
       });
-      return orderedKeys.map((key) => [key, fares[key]]);
+
+      // Sort by total price ascending (lowest to highest)
+      entries.sort((a, b) => a.total - b.total);
+
+      return entries.map(e => [e.type, e.base]);
     }
 
     function getFareDisplayLabel(flight, type) {
@@ -7972,11 +8030,31 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         globalEditBtn.innerHTML = '✏️ Edit Fares';
         globalEditBtn.classList.remove('active');
       }
+
+      // RE-RENDER to update card contents (switching between select and pills)
+      renderResults(currentFlights);
     }
 
     function getRelatedFlightIndices(flightIndex) {
-      const match = Object.values(unitFlights || {}).find(ids => Array.isArray(ids) && ids.includes(flightIndex));
-      return (match && match.length) ? [...match] : [flightIndex];
+      // unitFlights stores 1-based IDs from the input boxes.
+      // rendered results use 0-based indices from the currentFlights array.
+      // We need to map the flightIndex to its unit by calculating the cumulative counts.
+      let currentBaseIndex = 0;
+      const units = Object.entries(unitFlights || {});
+      
+      for (const [unitId, flightIds] of units) {
+        const count = Array.isArray(flightIds) ? flightIds.length : 0;
+        if (flightIndex >= currentBaseIndex && flightIndex < currentBaseIndex + count) {
+          const related = [];
+          for (let i = 0; i < count; i++) {
+            related.push(currentBaseIndex + i);
+          }
+          return related;
+        }
+        currentBaseIndex += count;
+      }
+      
+      return [flightIndex];
     }
 
     function clearPendingCabinSelections(flightIndex) {
@@ -8089,7 +8167,14 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         `;
 
         let faresHTML = '';
-        Object.entries(fData.fares).forEach(([fareType, baseFare]) => {
+        // Sort fares by price for consistency
+        const sortedFares = Object.entries(fData.fares).sort((a, b) => {
+          const muA = fData.fare_mu && fData.fare_mu[a[0]] !== undefined ? fData.fare_mu[a[0]] : currentMarkup;
+          const muB = fData.fare_mu && fData.fare_mu[b[0]] !== undefined ? fData.fare_mu[b[0]] : currentMarkup;
+          return (a[1] + muA) - (b[1] + muB);
+        });
+
+        sortedFares.forEach(([fareType, baseFare]) => {
           let mu = fData.fare_mu && fData.fare_mu[fareType] !== undefined ? fData.fare_mu[fareType] : '';
           let svc = fData.fare_svc && fData.fare_svc[fareType] !== undefined ? fData.fare_svc[fareType] : '';
           let extras = fData.fare_extra_details && fData.fare_extra_details[fareType] ? fData.fare_extra_details[fareType] : {};
@@ -9146,7 +9231,33 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       scheduleCardsImagePreload();
     }
 
-    function copyOutput() {
+    function animateButton(btn, text, icon = '✅') {
+      if (!btn) return;
+      const originalHtml = btn.innerHTML;
+      
+      // Visual feedback
+      btn.classList.add('btn-animate-click');
+      btn.innerHTML = `<span>${icon} ${text}</span>`;
+      
+      // Green color theme for success
+      btn.style.setProperty('background', '#10b981', 'important');
+      btn.style.setProperty('border-color', '#10b981', 'important');
+      btn.style.setProperty('color', '#ffffff', 'important');
+      btn.style.setProperty('box-shadow', '0 0 15px rgba(16, 185, 129, 0.4)', 'important');
+
+      setTimeout(() => {
+        btn.classList.remove('btn-animate-click');
+        setTimeout(() => {
+          btn.innerHTML = originalHtml;
+          btn.style.background = '';
+          btn.style.borderColor = '';
+          btn.style.color = '';
+          btn.style.boxShadow = '';
+        }, 2000);
+      }, 300);
+    }
+
+    function copyOutput(btn) {
       if (document.activeElement) document.activeElement.blur();
       // Use currentFinalText which is the properly formatted output
       const output = currentFinalText || document.getElementById("output").textContent;
@@ -9160,16 +9271,17 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(output).then(() => {
           showNotification('Copied to clipboard!', 'success');
+          animateButton(btn, 'Copied');
         }).catch((err) => {
           console.error('Clipboard API failed', err);
-          fallbackCopy(output);
+          fallbackCopy(output, btn);
         });
       } else {
-        fallbackCopy(output);
+        fallbackCopy(output, btn);
       }
     }
 
-    function fallbackCopy(text) {
+    function fallbackCopy(text, btn) {
       // Fallback for older browsers or when clipboard API is not available
       const textarea = document.createElement('textarea');
       textarea.value = text;
@@ -9184,6 +9296,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         const successful = document.execCommand('copy');
         if (successful) {
           showNotification('Copied to clipboard!', 'success');
+          if (btn) animateButton(btn, 'Copied');
         } else {
           showNotification('Failed to copy. Please select and copy manually.', 'error');
         }
@@ -9592,7 +9705,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     }
 
 
-    async function shareCombined(type) {
+    async function shareCombined(type, btn) {
       if (document.activeElement) document.activeElement.blur();
 
       if (!currentFinalText) {
@@ -9612,11 +9725,12 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           if (navigator.clipboard?.writeText) {
             await navigator.clipboard.writeText(plainText);
           } else {
-            fallbackCopy(plainText);
+            fallbackCopy(plainText, btn);
           }
           showNotification('Text copied for Email (no formatting)', 'success');
+          animateButton(btn, 'Copied');
         } catch (e) {
-          fallbackCopy(plainText);
+          fallbackCopy(plainText, btn);
         }
         return;
       }
@@ -10327,9 +10441,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     document.addEventListener('DOMContentLoaded', async () => {
       if (isRenderPreviewMode()) return;
-      // Particles are loaded inside updateParticleVisibility now for better switching
-
-      // --- Sidebar & Theme Logic ---
+      
+       // --- Sidebar & Theme Logic ---
       const menuToggle = document.getElementById('menuToggle');
       const sidebar = document.getElementById('sidebar');
       const sidebarClose = document.getElementById('sidebarClose');

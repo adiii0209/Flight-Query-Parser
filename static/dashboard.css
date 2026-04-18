@@ -204,6 +204,30 @@ body {
     border-radius: var(--radius-md);
     cursor: pointer;
     transition: var(--transition-fast);
+    position: relative;
+}
+
+.menu-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    background: #ef4444;
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 800;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: none; /* Controlled via JS */
+    align-items: center;
+    justify-content: center;
+    border: 2px solid white;
+    z-index: 5;
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+}
+
+[data-theme="dark"] .menu-badge {
+    border-color: #0f172a;
 }
 
 .menu-toggle:hover {
