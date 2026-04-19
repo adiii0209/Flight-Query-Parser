@@ -76,49 +76,111 @@
 </div>
 
 <script>
+    const ticketNotificationStreamState = window.__ticketNotificationStreamState || {
+      source: null,
+      retryHandle: null
+    };
+    window.__ticketNotificationStreamState = ticketNotificationStreamState;
+
+    function applyTicketNotificationBadges(data = {}) {
+      const totalAlerts = (data.merge_count || 0) + (data.duplicate_count || 0);
+      const sidebarBadge = document.getElementById('ticketsBadge');
+      const menuBadge = document.getElementById('menuNotificationBadge');
+      const sidebar = document.getElementById('sidebar');
+
+      if (totalAlerts > 0) {
+        if (sidebarBadge) {
+          sidebarBadge.textContent = totalAlerts;
+          sidebarBadge.style.display = 'flex';
+        }
+        if (menuBadge) {
+          menuBadge.textContent = totalAlerts;
+          menuBadge.style.display = sidebar && !sidebar.classList.contains('active') ? 'flex' : 'none';
+        }
+      } else {
+        if (sidebarBadge) sidebarBadge.style.display = 'none';
+        if (menuBadge) menuBadge.style.display = 'none';
+      }
+
+      window.__lastTicketNotificationPayload = data;
+      document.dispatchEvent(new CustomEvent('ticket-notifications:updated', { detail: data }));
+    }
+
     async function updateNotificationBadges() {
       try {
         const res = await fetch('/api/tickets/notifications');
-        if (!res.ok) return;
+        if (!res.ok) return null;
         const data = await res.json();
-        
-        // Count merges + duplicates as unread alerts
-        const totalAlerts = (data.merge_count || 0) + (data.duplicate_count || 0);
-        
-        const sidebarBadge = document.getElementById('ticketsBadge');
-        const menuBadge = document.getElementById('menuNotificationBadge');
-        const sidebar = document.getElementById('sidebar');
-        
-        if (totalAlerts > 0) {
-          // Update Sidebar Badge
-          if (sidebarBadge) {
-            sidebarBadge.textContent = totalAlerts;
-            sidebarBadge.style.display = 'flex';
-          }
-          
-          // Update Menu Badge (only if sidebar is closed)
-          if (menuBadge) {
-            menuBadge.textContent = totalAlerts;
-            if (sidebar && !sidebar.classList.contains('active')) {
-              menuBadge.style.display = 'flex';
-            } else {
-              menuBadge.style.display = 'none';
-            }
-          }
-        } else {
-          if (sidebarBadge) sidebarBadge.style.display = 'none';
-          if (menuBadge) menuBadge.style.display = 'none';
-        }
+        applyTicketNotificationBadges(data);
+        return data;
       } catch (e) {
         console.error('Error fetching notifications:', e);
+        return null;
       }
     }
 
-    // Initialize notification polling globally
+    function scheduleTicketNotificationStreamReconnect() {
+      if (window.location.pathname === '/tickets') return;
+      if (ticketNotificationStreamState.retryHandle) return;
+      ticketNotificationStreamState.retryHandle = setTimeout(() => {
+        ticketNotificationStreamState.retryHandle = null;
+        initializeTicketNotificationStream();
+      }, 5000);
+    }
+
+    function initializeTicketNotificationStream() {
+      if (window.location.pathname === '/tickets') return false;
+      if (!('EventSource' in window) || ticketNotificationStreamState.source) return false;
+
+      if (ticketNotificationStreamState.retryHandle) {
+        clearTimeout(ticketNotificationStreamState.retryHandle);
+        ticketNotificationStreamState.retryHandle = null;
+      }
+
+      try {
+        const stream = new EventSource('/api/tickets/stream');
+        stream.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data || '{}');
+            if (payload.notifications) {
+              applyTicketNotificationBadges(payload.notifications);
+              return;
+            }
+            if (payload.event) {
+              void updateNotificationBadges();
+            }
+          } catch (e) {
+            console.error('Invalid ticket notification payload:', e);
+          }
+        };
+        stream.onerror = () => {
+          try {
+            stream.close();
+          } catch (e) {
+            console.error('Failed to close notification stream:', e);
+          }
+          if (ticketNotificationStreamState.source === stream) {
+            ticketNotificationStreamState.source = null;
+          }
+          scheduleTicketNotificationStreamReconnect();
+        };
+        ticketNotificationStreamState.source = stream;
+        return true;
+      } catch (e) {
+        console.error('Unable to start notification stream:', e);
+        scheduleTicketNotificationStreamReconnect();
+        return false;
+      }
+    }
+
+    window.applyTicketNotificationBadges = applyTicketNotificationBadges;
+    window.updateNotificationBadges = updateNotificationBadges;
+    window.initializeTicketNotificationStream = initializeTicketNotificationStream;
+
     if (typeof isRenderPreviewMode === 'undefined' || !isRenderPreviewMode()) {
        document.addEventListener('DOMContentLoaded', () => {
          updateNotificationBadges();
-         setInterval(updateNotificationBadges, 30000); 
+         initializeTicketNotificationStream();
        });
     }
 
@@ -146,5 +208,20 @@
 
        if (sidebarClose) sidebarClose.addEventListener('click', restoreMenuBadge);
        if (sidebarOverlay) sidebarOverlay.addEventListener('click', restoreMenuBadge);
+    });
+
+    window.addEventListener('beforeunload', () => {
+      if (ticketNotificationStreamState.retryHandle) {
+        clearTimeout(ticketNotificationStreamState.retryHandle);
+        ticketNotificationStreamState.retryHandle = null;
+      }
+      if (ticketNotificationStreamState.source) {
+        try {
+          ticketNotificationStreamState.source.close();
+        } catch (e) {
+          console.error('Failed to close notification stream:', e);
+        }
+        ticketNotificationStreamState.source = null;
+      }
     });
 </script>

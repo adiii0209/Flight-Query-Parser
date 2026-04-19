@@ -15,7 +15,7 @@ AIRPORT_CODES = {
     "AGR": "Agra", "IXD": "Allahabad", "VDY": "Vadodara", "RJA": "Rajahmundry", "TIR": "Tirupati",
     "BEP": "Bellary", "HBX": "Hubli", "IXG": "Belgaum", "GOP": "Gorakhpur", "DED": "Dehradun",
     "PGH": "Pantnagar", "TNI": "Satna", "KUU": "Kullu Manali", "SHL": "Shillong", "IXS": "Silchar",
-    "AJL": "Aizawl", "IXA": "Agartala", "DMU": "Dimapur", "CBD": "Car Nicobar", "IXV": "Along",
+    "AJL": "Aizawl", "IXA": "Agartala", "DMU": "Dimapur", "CBD": "Car Nicobar", "IXV": "Along", "NMI": "Navi Mumbai",
     
     # ===== UNITED STATES (Major hubs first) =====
     "ATL": "Atlanta Hartsfield-Jackson", "LAX": "Los Angeles", "ORD": "Chicago O'Hare", 
@@ -545,7 +545,7 @@ AIRPORT_TZ_MAP = {
     "KUU": "Asia/Kolkata", "SHL": "Asia/Kolkata", "IXS": "Asia/Kolkata", "AJL": "Asia/Kolkata",
     "IXA": "Asia/Kolkata", "DMU": "Asia/Kolkata", "CBD": "Asia/Kolkata", "IXV": "Asia/Kolkata",
     "IXW": "Asia/Kolkata", "IXI": "Asia/Kolkata", "TEZ": "Asia/Kolkata", "RGH": "Asia/Kolkata",
-    "COH": "Asia/Kolkata", "VTZ": "Asia/Kolkata",
+    "COH": "Asia/Kolkata", "VTZ": "Asia/Kolkata", "NMI": "Asia/Kolkata",
     
     # ===== UNITED STATES (With DST) =====
     "ATL": "America/New_York", "JFK": "America/New_York", "EWR": "America/New_York",

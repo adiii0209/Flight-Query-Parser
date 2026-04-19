@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings | Flight Manager</title>
+    <link rel="icon" type="image/png" href="/static/ticket-flight.png">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/dashboard.css">
+    <link rel="stylesheet" href="/static/sidebar.css">
+    <link rel="stylesheet" href="/static/settings.css">
+
+</head>
+
+<body>
+    {% include 'components/sidebar.html' %}
+
+
+    <header class="app-header">
+        <div class="header-content">
+            <button class="menu-toggle" id="menuToggle" aria-label="Open menu">
+                <div class="menu-bar"></div>
+                <div class="menu-bar"></div>
+                <div class="menu-bar"></div>
+            </button>
+
+            <div class="header-brand">
+                <div class="brand-name">Time <span>Tours</span></div>
+                <div class="brand-sub">Settings & Profile</div>
+            </div>
+
+            <div class="header-actions">
+                <div class="user-pill">
+                    <div class="user-avatar" id="headerAvatar">{{ user.username[0].upper() }}</div>
+                    <span class="user-name">{{ user.username }}</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="settings-layout">
+            <!-- Settings Sidebar -->
+            <aside class="settings-sidebar">
+                <nav class="settings-nav">
+                    <button class="nav-item active" data-tab="profile">
+                        <i data-lucide="user"></i>
+                        <span>User Profile</span>
+                    </button>
+                    <button class="nav-item" data-tab="security">
+                        <i data-lucide="shield-check"></i>
+                        <span>Security</span>
+                    </button>
+                    <button class="nav-item" data-tab="preferences">
+                        <i data-lucide="settings"></i>
+                        <span>Preferences</span>
+                    </button>
+                    <button class="nav-item" data-tab="about">
+                        <i data-lucide="info"></i>
+                        <span>About</span>
+                    </button>
+                </nav>
+            </aside>
+
+            <!-- Settings Content -->
+            <section class="settings-content">
+                <!-- Tab: Profile -->
+                <div class="tab-pane active" id="profile">
+                    <div class="content-header">
+                        <h2>User Profile</h2>
+                        <p>Manage your account settings and set your profile information.</p>
+                    </div>
+
+                    <div class="profile-card">
+                        <div class="avatar-large">{{ user.username[0].upper() }}</div>
+                        <div class="profile-info">
+                            <h3>{{ user.full_name or user.username }}</h3>
+                            <p>{{ user.email }}</p>
+                            <span class="badge">Member since {{ user.created_at.strftime('%B %Y') }}</span>
+                        </div>
+                    </div>
+
+                    <div class="settings-form Card">
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input type="text" value="{{ user.username }}" readonly class="readonly">
+                            <span class="help-text">Username cannot be changed.</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Full Name</label>
+                            <input type="text" id="fullName" value="{{ user.full_name or '' }}" placeholder="Enter your full name">
+                        </div>
+                        <div class="form-group">
+                            <label>Email Address</label>
+                            <input type="email" id="email" value="{{ user.email }}" placeholder="Enter your email">
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn primary" onclick="saveProfile()">Save Changes</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Security -->
+                <div class="tab-pane" id="security">
+                    <div class="content-header">
+                        <h2>Security</h2>
+                        <p>Update your password and manage security keys.</p>
+                    </div>
+
+                    <div class="Card section-card">
+                        <h3>Change Password</h3>
+                        <div class="form-group">
+                            <label>Current Password</label>
+                            <input type="password" id="currentPassword" placeholder="••••••••">
+                        </div>
+                        <div class="form-group">
+                            <label>New Password</label>
+                            <input type="password" id="newPassword" placeholder="••••••••">
+                        </div>
+                        <div class="form-group">
+                            <label>Confirm New Password</label>
+                            <input type="password" id="confirmPassword" placeholder="••••••••">
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn secondary" onclick="updatePassword()">Update Password</button>
+                        </div>
+                    </div>
+
+
+                    <div class="Card section-card">
+                        <h3>API & Integration Access</h3>
+                        <p class="section-desc">This key is used by external automated tools (like your Email/GDS Parser) to securely send flight tickets to your dashboard. Keep this key private.</p>
+                        <div class="form-group">
+                            <label>System Authorization Key</label>
+                            <div class="key-display">
+                                <code id="apiKey">timetours@1978</code>
+                                <button class="btn-icon" onclick="copyApiKey()" title="Copy Key">
+                                    <i data-lucide="copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="Card danger-zone">
+                        <h3>Danger Zone</h3>
+                        <p class="section-desc">Once you delete your account, there is no going back. Please be certain.</p>
+                        <div class="form-actions delete-action">
+                            <button class="btn danger" onclick="openDeleteModal()">Delete Account</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Preferences -->
+                <div class="tab-pane" id="preferences">
+                    <div class="coming-soon-container">
+                        <div class="coming-soon-card Card">
+                            <div class="soon-icon"><i data-lucide="clock"></i></div>
+                            <h2>Preferences Coming Soon</h2>
+                            <p>We are working on advanced customization features including theme engine, custom currency mappings, and notification rules.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: About -->
+                <div class="tab-pane" id="about">
+                    <div class="coming-soon-container">
+                        <div class="coming-soon-card Card">
+                            <div class="soon-icon"><i data-lucide="info"></i></div>
+                            <h2>System Info Coming Soon</h2>
+                            <p>About page with technical logs, system status, and engine version details will be available in the next security update.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Delete Account Modal -->
+    <div id="deleteModal" class="modal-overlay">
+        <div class="modal-content Card">
+            <div class="modal-header">
+                <h2>Delete Account</h2>
+                <button class="close-modal" onclick="closeDeleteModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="alert warn">
+                    <i data-lucide="alert-triangle"></i>
+                    <span>This action is irreversible. All your tickets, itineraries, and data will be permanently removed.</span>
+                </div>
+                <p class="confirm-prompt">To confirm, please type your User ID: <strong id="confirmUserIdDisplay">{{ user.id }}</strong></p>
+                <input type="text" id="deleteConfirmInput" placeholder="Enter User ID to confirm" class="full-width">
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" onclick="closeDeleteModal()">Cancel</button>
+                <button class="btn danger" id="btnConfirmDelete" onclick="confirmDeleteAccount()" disabled>Permanently Delete</button>
+            </div>
+        </div>
+    </div>
+
+
+
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Init Lucide Icons
+            if (typeof lucide !== 'undefined') {
+                lucide.initIcons();
+            }
+
+            // Global Sidebar & Auth logic
+            const sideDrawer = document.getElementById('sidebar');
+            const sideOverlay = document.getElementById('sidebarOverlay');
+            const sideClose = document.getElementById('sidebarClose');
+            const menuToggle = document.getElementById('menuToggle');
+
+            function toggleSidebar(show) {
+                if (!sideDrawer || !sideOverlay) return;
+                if (show) {
+                    sideDrawer.classList.add('active');
+                    sideOverlay.classList.add('active');
+                    document.body.style.overflow = 'hidden';
+                } else {
+                    sideDrawer.classList.remove('active');
+                    sideOverlay.classList.remove('active');
+                    document.body.style.overflow = '';
+                }
+            }
+
+            if (menuToggle) menuToggle.addEventListener('click', () => toggleSidebar(true));
+            if (sideClose) sideClose.addEventListener('click', () => toggleSidebar(false));
+            if (sideOverlay) sideOverlay.addEventListener('click', () => toggleSidebar(false));
+
+            // Theme toggle sync
+            const themeBtn = document.getElementById('sidebarThemeToggle');
+            if (themeBtn) {
+                themeBtn.addEventListener('click', () => {
+                    const current = document.documentElement.getAttribute('data-theme');
+                    const next = current === 'dark' ? 'light' : 'dark';
+                    document.documentElement.setAttribute('data-theme', next);
+                    localStorage.setItem('theme', next);
+                    updateThemeDisplay(next);
+                });
+            }
+
+            function updateThemeDisplay(theme) {
+                const text = document.getElementById('themeToggleText');
+                const icon = document.querySelector('.theme-icon-container');
+                if (text && icon) {
+                    if (theme === 'dark') { icon.textContent = '☀️'; text.textContent = 'Light Mode'; }
+                    else { icon.textContent = '🌙'; text.textContent = 'Dark Mode'; }
+                }
+            }
+
+            // Auth Status Check & Sidebar Population
+            async function checkAuthStatus() {
+                try {
+                    const response = await fetch('/api/user');
+                    if (response.ok) {
+                        const user = await response.json();
+                        // Update Sidebar
+                        const sidebarName = document.getElementById('sidebarUserName');
+                        const sidebarHandle = document.getElementById('sidebarUserHandle');
+                        const sidebarAvatar = document.getElementById('sidebarAvatar');
+                        const authBtn = document.getElementById('sidebarAuthBtn');
+
+                        if (sidebarName) sidebarName.textContent = user.full_name || user.username || 'Guest';
+                        if (sidebarHandle) sidebarHandle.textContent = user.username ? '@' + user.username : '';
+                        if (sidebarAvatar) sidebarAvatar.textContent = (user.full_name || user.username || 'U')[0].toUpperCase();
+                        
+                        if (authBtn) {
+                            authBtn.textContent = '🚪 Logout';
+                            authBtn.classList.add('logout');
+                            authBtn.onclick = async () => {
+                                if (confirm('Are you sure you want to logout?')) {
+                                    await fetch('/api/logout', { method: 'POST' });
+                                    window.location.href = '/login';
+                                }
+                            };
+                        }
+
+                        // Update Header
+                        const headerAvatar = document.getElementById('headerAvatar');
+                        if (headerAvatar) headerAvatar.textContent = (user.full_name || user.username || 'U')[0].toUpperCase();
+                        
+                        return true;
+                    }
+                } catch (e) {
+                    console.error('Auth check failed:', e);
+                }
+                return false;
+            }
+
+            await checkAuthStatus();
+
+            // Sync initial theme display
+            updateThemeDisplay(document.documentElement.getAttribute('data-theme') || 'light');
+
+            // Tab Switching Logic
+            const tabButtons = document.querySelectorAll('.settings-nav .nav-item');
+            const tabSections = document.querySelectorAll('.settings-content .tab-pane');
+
+            tabButtons.forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    const targetId = this.getAttribute('data-tab');
+                    if (!targetId) return;
+
+                    tabButtons.forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+
+                    tabSections.forEach(section => {
+                        section.classList.remove('active');
+                        if (section.id === targetId) {
+                            section.classList.add('active');
+                        }
+                    });
+                });
+            });
+
+            // Delete Confirm Listener
+            const inputDelete = document.getElementById('deleteConfirmInput');
+            const btnDelete = document.getElementById('btnConfirmDelete');
+            const displayId = document.getElementById('confirmUserIdDisplay');
+
+            if (inputDelete && btnDelete && displayId) {
+                inputDelete.addEventListener('input', (e) => {
+                    const expected = displayId.innerText.trim();
+                    const actual = e.target.value.trim();
+                    btnDelete.disabled = (expected !== actual);
+                });
+            }
+        });
+
+        // Backend Interaction Functions
+        async function saveProfile() {
+            const fullName = document.getElementById('fullName').value;
+            const email = document.getElementById('email').value;
+            
+            try {
+                const response = await fetch('/api/user/profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ full_name: fullName, email: email })
+                });
+                
+                if (response.ok) {
+                    alert('Profile changes saved successfully!');
+                } else {
+                    const data = await response.json();
+                    alert('Failed to save profile: ' + (data.error || response.statusText));
+                }
+            } catch (error) {
+                console.error('Error saving profile:', error);
+                alert('An error occurred while saving profile.');
+            }
+        }
+
+        async function updatePassword() {
+            const currentPass = document.getElementById('currentPassword').value;
+            const newPass = document.getElementById('newPassword').value;
+            const confirmPass = document.getElementById('confirmPassword').value;
+            
+            if (!currentPass || !newPass || newPass !== confirmPass) {
+                alert('Passwords do not match or are empty.');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/user/password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        current_password: currentPass, 
+                        new_password: newPass 
+                    })
+                });
+                
+                if (response.ok) {
+                    alert('Password updated successfully!');
+                    document.getElementById('currentPassword').value = '';
+                    document.getElementById('newPassword').value = '';
+                    document.getElementById('confirmPassword').value = '';
+                } else {
+                    const data = await response.json();
+                    alert('Failed to update password: ' + (data.error || response.statusText));
+                }
+            } catch (error) {
+                console.error('Error updating password:', error);
+                alert('An error occurred while updating your password.');
+            }
+        }
+
+        function copyApiKey() {
+            const apiKey = document.getElementById('apiKey').innerText;
+            navigator.clipboard.writeText(apiKey).then(() => {
+                alert('API Key copied to clipboard!');
+            });
+        }
+
+        function openDeleteModal() {
+            const modal = document.getElementById('deleteModal');
+            if (modal) modal.classList.add('active');
+        }
+
+        function closeDeleteModal() {
+            const modal = document.getElementById('deleteModal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        async function confirmDeleteAccount() {
+            if (!confirm('Are you absolutely sure you want to PERMANENTLY delete your account? This cannot be undone.')) return;
+            
+            try {
+                const response = await fetch('/api/user/delete', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (response.ok) {
+                    alert('Account deleted successfully. Logging you out...');
+                    window.location.href = '/login';
+                } else {
+                    const data = await response.json();
+                    alert('Failed to delete account: ' + (data.error || response.statusText));
+                }
+            } catch (error) {
+                console.error('Error deleting account:', error);
+                alert('An error occurred while deleting your account.');
+            }
+        }
+    </script>
+</body>
+
+</html>

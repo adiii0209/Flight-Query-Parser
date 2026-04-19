@@ -3191,11 +3191,20 @@ def receive_ticket():
 
 # ==================== TICKETS PAGE ====================
 
+
 @app.route("/tickets")
 @login_required
 def tickets_page():
     """Serve the tickets dashboard page"""
     return render_template('tickets.html')
+
+
+@app.route("/settings")
+@login_required
+def settings_page():
+    """Serve the settings page"""
+    user = User.query.get(session['user_id'])
+    return render_template('settings.html', user=user)
 
 
 
@@ -3721,6 +3730,66 @@ def get_tickets():
         "returned_count": returned_count,
         "has_more": (offset + returned_count) < total_count,
     })
+
+
+
+
+
+@app.route("/api/user/profile", methods=["POST"])
+@login_required
+def update_profile():
+    """Update user profile information"""
+    user = User.query.get(session['user_id'])
+    data = request.get_json()
+    
+    if 'full_name' in data:
+        user.full_name = data['full_name']
+    if 'email' in data:
+        user.email = data['email']
+        
+    db.session.commit()
+    return jsonify({"message": "Profile updated successfully"})
+
+
+
+@app.route("/api/user/password", methods=["POST"])
+@login_required
+def update_password():
+    """Update user password"""
+    user = User.query.get(session['user_id'])
+    data = request.get_json()
+    
+    current_pass = data.get('current_password')
+    new_pass = data.get('new_password')
+    
+    if not current_pass or not new_pass:
+        return jsonify({"error": "Missing password fields"}), 400
+        
+    if not user.check_password(current_pass):
+        return jsonify({"error": "Incorrect current password"}), 401
+        
+    user.set_password(new_pass)
+    db.session.commit()
+    return jsonify({"message": "Password updated successfully"})
+
+
+@app.route("/api/user/delete", methods=["DELETE"])
+@login_required
+def delete_account():
+    """Permanently delete user account and all data"""
+    user = User.query.get(session['user_id'])
+    
+    # Optional: Delete associated data if cascade isn't fully covering everything
+    # But User model has cascade='all, delete-orphan' for itineraries
+    # Tickets and other models should also be cleaned up
+    Ticket.query.filter_by(user_id=user.id).delete()
+    Aggregator.query.filter_by(user_id=user.id).delete()
+    LedgerEntry.query.filter_by(user_id=user.id).delete()
+    
+    db.session.delete(user)
+    db.session.commit()
+    session.clear()
+    return jsonify({"message": "Account deleted successfully"})
 
 
 @app.route("/api/tickets/<ticket_id>", methods=["GET"])

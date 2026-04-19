@@ -12,7 +12,6 @@ let isDetailDirty = false;
 let fareFieldsTouched = false;
 let knownTicketIds = new Set();
 let hasInitializedTicketFeed = false;
-let ticketsPollingHandle = null;
 let ticketDetailCache = new Map();
 let _lastProcessingCount = 0;
 let _processingIndicatorMode = 'idle';
@@ -27,6 +26,7 @@ let lastFullTicketsSyncAt = 0;
 let fullTicketsSyncPromise = null;
 let ticketsEventSource = null;
 let realtimeRefreshHandle = null;
+let ticketsRealtimeRetryHandle = null;
 let isSaveInFlight = false;
 let suppressRealtimeUntil = 0;
 let ticketEditBaseSnapshot = null;
@@ -41,8 +41,6 @@ let duplicatePanelIsLoadingMore = false;
 let dismissedWarningKeys = new Set();
 const INITIAL_TICKETS_BATCH_SIZE = 6;
 const DUPLICATES_BATCH_SIZE = 6;
-const TICKETS_POLL_INTERVAL_MS = 5000;
-const TICKETS_FULL_SYNC_INTERVAL_MS = 30000;
 const TICKETS_CACHE_KEY = 'ticketsDashboard.topCache.v1';
 const DUPLICATES_CACHE_KEY = 'ticketsDashboard.duplicatesCache.v1';
 const TICKET_DRAFT_CACHE_PREFIX = 'ticketsDashboard.ticketDraft.';
@@ -50,6 +48,7 @@ const UNREAD_TICKETS_CACHE_KEY = 'ticketsDashboard.unreadTickets.v1';
 const TICKETS_LAST_SEEN_AT_KEY = 'ticketsDashboard.lastSeenAt.v1';
 const TICKETS_READ_OVERRIDES_KEY = 'ticketsDashboard.readOverrides.v1';
 const ACTIVE_FIELD_AUTOSAVE_IDLE_MS = 1200;
+const TICKETS_REALTIME_RETRY_MS = 5000;
 let lastDetailInputAt = 0;
 let unreadTicketIds = new Set();
 let readOverrideTicketIds = new Set();
@@ -1078,6 +1077,10 @@ function scheduleRealtimeRefresh(payload = {}) {
 function startTicketsRealtime() {
     if (dashboardLiveUpdatesPaused) return false;
     if (!('EventSource' in window) || ticketsEventSource) return false;
+    if (ticketsRealtimeRetryHandle) {
+        clearTimeout(ticketsRealtimeRetryHandle);
+        ticketsRealtimeRetryHandle = null;
+    }
     try {
         const stream = new EventSource('/api/tickets/stream');
         stream.onmessage = (event) => {
@@ -1095,36 +1098,23 @@ function startTicketsRealtime() {
                 console.error('Failed to close realtime stream', e);
             }
             ticketsEventSource = null;
-            startTicketsPolling();
+            scheduleTicketsRealtimeRetry();
         };
         ticketsEventSource = stream;
         return true;
     } catch (e) {
         console.error('Realtime stream unavailable', e);
+        scheduleTicketsRealtimeRetry();
         return false;
     }
 }
 
-function startTicketsPolling() {
-    if (dashboardLiveUpdatesPaused) return;
-    if (ticketsPollingHandle) return;
-    ticketsPollingHandle = setInterval(async () => {
-        if (document.hidden) return;
-        try {
-            await loadNotifications();
-            const snapshot = await loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, render: true });
-            const needsFullSync = (
-                allTickets.length < totalAvailableTickets
-                || !lastFullTicketsSyncAt
-                || (Date.now() - lastFullTicketsSyncAt) >= TICKETS_FULL_SYNC_INTERVAL_MS
-            );
-            if (snapshot && needsFullSync) {
-                void syncAllTicketsInBackground();
-            }
-        } catch (e) {
-            console.error('Tickets polling failed', e);
-        }
-    }, TICKETS_POLL_INTERVAL_MS);
+function scheduleTicketsRealtimeRetry() {
+    if (dashboardLiveUpdatesPaused || !('EventSource' in window) || ticketsEventSource || ticketsRealtimeRetryHandle) return;
+    ticketsRealtimeRetryHandle = setTimeout(() => {
+        ticketsRealtimeRetryHandle = null;
+        startTicketsRealtime();
+    }, TICKETS_REALTIME_RETRY_MS);
 }
 
 function stopTicketsRealtime() {
@@ -1135,12 +1125,6 @@ function stopTicketsRealtime() {
         console.error('Failed to close realtime stream', e);
     }
     ticketsEventSource = null;
-}
-
-function stopTicketsPolling() {
-    if (!ticketsPollingHandle) return;
-    clearInterval(ticketsPollingHandle);
-    ticketsPollingHandle = null;
 }
 
 function getTicketIdFromUrl() {
@@ -1159,15 +1143,18 @@ function updateTicketUrl(ticketId = '', { replace = false } = {}) {
 function pauseDashboardLiveUpdates() {
     dashboardLiveUpdatesPaused = true;
     stopTicketsRealtime();
-    stopTicketsPolling();
+    if (ticketsRealtimeRetryHandle) {
+        clearTimeout(ticketsRealtimeRetryHandle);
+        ticketsRealtimeRetryHandle = null;
+    }
     clearTimeout(realtimeRefreshHandle);
     realtimeRefreshHandle = null;
 }
 
 function resumeDashboardLiveUpdates({ refresh = false } = {}) {
     dashboardLiveUpdatesPaused = false;
-    if (!startTicketsRealtime()) {
-        startTicketsPolling();
+    if (!startTicketsRealtime() && 'EventSource' in window) {
+        scheduleTicketsRealtimeRetry();
     }
     if (refresh) {
         void loadNotifications();
@@ -1760,6 +1747,9 @@ async function loadNotifications() {
         _lastProcessingCount = nextActiveProcessingCount;
         _hasLoadedNotificationsOnce = true;
         _updateNotifBadges();
+        if (typeof window.applyTicketNotificationBadges === 'function') {
+            window.applyTicketNotificationBadges(_notifData);
+        }
         _scheduleProcessingRefresh();
         _flushArrivalToastIfReady();
     } catch (e) { console.error('Failed to load notifications', e); }
@@ -5406,8 +5396,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (initialTicketId) {
         await openTicket(initialTicketId, { syncUrl: false, replaceUrl: true });
     }
-    if (!startTicketsRealtime()) {
-        startTicketsPolling();
+    if (!startTicketsRealtime() && 'EventSource' in window) {
+        scheduleTicketsRealtimeRetry();
     }
     void syncAllTicketsInBackground();
 
@@ -5447,6 +5437,10 @@ window.addEventListener('beforeunload', () => {
     if (ticketsEventSource) {
         ticketsEventSource.close();
         ticketsEventSource = null;
+    }
+    if (ticketsRealtimeRetryHandle) {
+        clearTimeout(ticketsRealtimeRetryHandle);
+        ticketsRealtimeRetryHandle = null;
     }
 });
 

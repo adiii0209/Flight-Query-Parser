@@ -1798,6 +1798,134 @@
                 border-radius: 16px;
             }
 
+            .detail-header-main {
+                width: 100%;
+            }
+
+            .detail-title-row {
+                justify-content: space-between;
+                width: 100%;
+            }
+
+            .field-grid {
+                grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) !important;
+                gap: 0.5rem !important;
+            }
+
+            .field-item {
+                min-width: 0; /* Allow items to shrink */
+            }
+
+            .field-item label {
+                font-size: 0.62rem !important;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .field-item input, .field-item select {
+                font-size: 0.78rem !important;
+                padding: 0.35rem 0.5rem !important;
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+            .leg-header-v2 {
+                padding: 0.6rem !important;
+                flex-direction: column;
+                align-items: stretch !important;
+            }
+
+            .leg-header-right {
+                width: 100%;
+                display: flex;
+                justify-content: space-between;
+                margin-top: 0.4rem;
+                padding-top: 0.4rem;
+                border-top: 1px dashed rgba(0,0,0,0.1);
+            }
+
+            .leg-segments-v2 {
+                padding: 0.5rem !important;
+            }
+
+            .segment-card-v2 {
+                padding: 0.6rem !important;
+            }
+
+            .pdf-btn-group {
+                gap: 0.4rem !important;
+                display: grid !important;
+                grid-template-columns: repeat(2, 1fr) !important;
+                width: 100%;
+            }
+
+            .pdf-btn {
+                min-width: 0 !important;
+                width: 100% !important;
+                padding: 0.5rem 0.2rem !important;
+                font-size: 0.72rem !important;
+                height: auto !important;
+                white-space: normal !important;
+                text-align: center;
+            }
+
+            .segment-timeline-v2 {
+                flex-direction: row !important;
+                align-items: center !important;
+                justify-content: space-between !important;
+                gap: 0 !important;
+                width: 100%;
+            }
+
+            .timeline-point {
+                flex: 0 0 auto !important;
+                width: 42% !important; /* Limit width of both points */
+                min-width: 0;
+            }
+
+            .timeline-point.arr {
+                justify-content: flex-end !important;
+                padding-left: 0.5rem; /* Add breathing room from connector */
+            }
+
+            .timeline-point.dep {
+                padding-right: 0.5rem;
+                justify-content: flex-start !important;
+            }
+
+            .timeline-connector {
+                flex: 1 !important; /* Allow connector to fill the center space */
+                min-width: 30px;
+                max-width: 60px;
+                position: relative;
+            }
+
+            .timeline-connector::after {
+                width: 20px !important;
+                height: 20px !important;
+                font-size: 0.6rem !important;
+            }
+
+            .timeline-details {
+                min-width: 0;
+            }
+
+            .tl-code {
+                font-size: 0.85rem !important;
+            }
+
+            .tl-city {
+                font-size: 0.62rem !important;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .tl-time {
+                font-size: 0.8rem !important;
+            }
+
             .detail-header h1 {
                 font-size: 1.15rem;
             }
@@ -2419,7 +2547,7 @@
     </div>
 
     <div id="tsparticles" style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:-10;"></div>
-    <script src="/static/tickets.js"></script>
+<script src="{{ url_for('static', filename='tickets.js') }}?v=20260420a"></script>
 </body>
 
 </html>
