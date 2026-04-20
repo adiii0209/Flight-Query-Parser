@@ -1716,8 +1716,6 @@ def _ticket_dict_with_children(ticket):
         "id": ticket.id,
         "created_at": ticket.created_at.isoformat(),
         "updated_at": ticket.updated_at.isoformat() if ticket.updated_at else None,
-        "read_at": ticket.read_at.isoformat() if ticket.read_at else None,
-        "is_unread": ticket.read_at is None,
         "pnr": ticket.pnr,
         "booking_date": ticket.booking_date,
         "phone": ticket.phone,
@@ -1803,31 +1801,12 @@ def _merged_ticket_dict(booking_group, lead_ticket):
     lead_payload["is_merged_view"] = True
     lead_payload["merged_ticket_ids"] = merged_ticket_ids
     lead_payload["merged_ticket_count"] = len(merged_ticket_ids)
-    grouped_tickets = _booking_group_sorted_tickets(booking_group)
-    merged_read_at = None
-    if grouped_tickets and all(ticket.read_at for ticket in grouped_tickets):
-        merged_read_at = max(ticket.read_at for ticket in grouped_tickets)
-    lead_payload["read_at"] = merged_read_at.isoformat() if merged_read_at else None
-    lead_payload["is_unread"] = any(ticket.read_at is None for ticket in grouped_tickets)
     lead_payload["booking_group"] = {
         "id": booking_group.id,
         "pnr": booking_group.pnr,
         "status": booking_group.status,
     }
     return lead_payload
-
-
-def _mark_ticket_read(ticket):
-    if not ticket:
-        return False
-    changed = False
-    now = datetime.utcnow()
-    tickets_to_mark = _booking_group_sorted_tickets(ticket.booking_group) if ticket.booking_group_id and ticket.booking_group else [ticket]
-    for item in tickets_to_mark:
-        if item.read_at is None:
-            item.read_at = now
-            changed = True
-    return changed
 
 
 def _collect_ticket_delete_side_effects(ticket, user_id):
@@ -1987,13 +1966,12 @@ def _add_column_if_missing(table_name, column_name, column_sql):
     """Add a column if it doesn't exist. Works on both SQLite and PostgreSQL."""
     inspector = inspect(db.engine)
     if table_name not in inspector.get_table_names():
-        return False
+        return
     existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
     if column_name in existing_columns:
-        return False
+        return
     db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}"))
     db.session.commit()
-    return True
 
 
 def _create_indexes_if_missing():
@@ -2030,14 +2008,6 @@ def ensure_schema_compatibility():
     _add_column_if_missing("ticket", "booking_group_id", "VARCHAR")
     _add_column_if_missing("ticket", "duplicate_status", "VARCHAR(20)")
     _add_column_if_missing("ticket", "duplicate_of_id", "VARCHAR")
-    read_at_added = _add_column_if_missing("ticket", "read_at", "TIMESTAMP")
-
-    if read_at_added:
-        # Backfill historical tickets as already read so the migration doesn't mark
-        # all existing records unread. New tickets created after this stay unread
-        # until the user opens them.
-        db.session.execute(text("UPDATE ticket SET read_at = created_at WHERE read_at IS NULL"))
-        db.session.commit()
 
     _add_column_if_missing("operation_ledger_link", "created_at", "TIMESTAMP")
     _add_column_if_missing("operation_ledger_link", "user_id", "VARCHAR")
@@ -3856,31 +3826,6 @@ def get_ticket(ticket_id):
     return jsonify(_ticket_dict_with_children(ticket))
 
 
-@app.route("/api/tickets/<ticket_id>/read", methods=["POST"])
-@login_required
-def mark_ticket_read(ticket_id):
-    """Persist read state for a ticket card on the server."""
-    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
-    if not ticket:
-        return jsonify({"error": "Ticket not found"}), 404
-
-    if _mark_ticket_read(ticket):
-        db.session.commit()
-        _publish_ticket_dashboard_event(
-            session["user_id"],
-            event_type="ticket_updated",
-            ticket_id=ticket.id,
-            booking_group_id=ticket.booking_group_id,
-        )
-
-    if ticket.booking_group_id and ticket.booking_group:
-        grouped_tickets = _booking_group_sorted_tickets(ticket.booking_group)
-        lead_ticket = grouped_tickets[0] if grouped_tickets else ticket
-        return jsonify(_merged_ticket_dict(ticket.booking_group, lead_ticket))
-
-    return jsonify(_ticket_dict_with_children(ticket))
-
-
 @app.route("/api/tickets/<ticket_id>", methods=["PUT"])
 @login_required
 def update_ticket(ticket_id):
@@ -4813,7 +4758,6 @@ def _execute_operation(ticket, plan, action_type):
 
     for item in plan["ticket_creates"]:
         new_ticket = Ticket(user_id=session["user_id"])
-        new_ticket.read_at = datetime.utcnow()
         _apply_ticket_payload(new_ticket, item["payload"])
         db.session.add(new_ticket)
         db.session.flush()

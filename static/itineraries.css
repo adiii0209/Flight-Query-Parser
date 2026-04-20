@@ -1685,8 +1685,8 @@ body {
 }
 
 .layover-pill {
-  background: #fff1f2;
-  color: #be123c;
+  background: #fff7ed;
+  color: #ea580c;
   padding: 0.5rem 1rem;
   border-radius: 100px;
   font-size: 0.85rem;
@@ -1701,8 +1701,8 @@ body {
 }
 
 [data-theme="dark"] .layover-pill {
-  background: #4c0519;
-  color: #fda4af;
+  background: #431407;
+  color: #fb923c;
 }
 
 /* Fares Footer */

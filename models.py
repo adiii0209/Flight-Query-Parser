@@ -59,7 +59,6 @@ class Ticket(db.Model):
     id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    read_at = db.Column(db.DateTime, nullable=True)
     # Booking info
     pnr = db.Column(db.String(20))
     booking_date = db.Column(db.String(50))

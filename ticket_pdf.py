@@ -1,4 +1,4 @@
-"""
+﻿"""
 Time Tours – Professional E-Ticket
 Clean, minimal airline-style layout. White background, coloured section
 headings, no heavy fill bars (except a thin accent stripe in the header).
@@ -18,20 +18,28 @@ import os
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Register DejaVu fonts (support ₹ and other Unicode glyphs)
+_UNICODE_FONT_READY = False
+
+# Register DejaVu fonts (support Unicode glyphs)
 def _register_fonts():
+    global _UNICODE_FONT_READY
     _DEJAVU_PATHS = [
-        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",      "DejaVuSans"),
-        ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  "DejaVuSans-Bold"),
-        ("C:/Windows/Fonts/DejaVuSans.ttf",                       "DejaVuSans"),
-        ("C:/Windows/Fonts/DejaVuSans-Bold.ttf",                  "DejaVuSans-Bold"),
-        ("C:/Windows/Fonts/arial.ttf",                            "DejaVuSans"),
-        ("C:/Windows/Fonts/arialbd.ttf",                          "DejaVuSans-Bold"),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",       "DejaVuSans"),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",   "DejaVuSans-Bold"),
+        ("/usr/share/fonts/dejavu/DejaVuSans.ttf",                 "DejaVuSans"),
+        ("/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",            "DejaVuSans-Bold"),
+        ("C:/Windows/Fonts/DejaVuSans.ttf",                        "DejaVuSans"),
+        ("C:/Windows/Fonts/DejaVuSans-Bold.ttf",                   "DejaVuSans-Bold"),
+        # Fallbacks (might not have ₹ symbol but better than nothing for general Unicode)
+        ("/usr/share/fonts/truetype/freefont/FreeSans.ttf",        "DejaVuSans"),
+        ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", "DejaVuSans"),
     ]
     for path, name in _DEJAVU_PATHS:
         if os.path.exists(path):
             try:
                 pdfmetrics.registerFont(TTFont(name, path))
+                if "DejaVuSans" in path: # Only mark as ready if it's the real DejaVu 
+                    _UNICODE_FONT_READY = True
             except Exception:
                 pass
 
@@ -235,7 +243,9 @@ def _draw_traveler_icon(c, x, y, col=BRAND):
 def _currency_prefix(curr_code):
     code = _t(curr_code).upper()
     if code == "INR":
-        return "\u20B9"
+        # built-in Helvetica/Times don't support ₹ and some DejaVu versions on Linux are broken.
+        # Fallback to 'INR ' to ensure it renders correctly "by any means" without boxes.
+        return "INR "
     return f"{code} " if code else ""
 
 def _format_money_display(curr_code, value):
@@ -333,7 +343,7 @@ def draw_ticket(c, data, include_fare=True):
     if phone:
         _txt(c, M, HDR_Y + 18, f"Phone: {phone}", "Helvetica-Bold", size=6.5, col=NAVY, align="left")
 
-    _hline(c, M, HDR_Y + 6, IW, RED, 0.8)
+    #_hline(c, M, HDR_Y + 6, IW, RED, 0.8)
 
     T -= HDR_H + 8
 
@@ -661,7 +671,7 @@ def draw_ticket(c, data, include_fare=True):
                 _hline(c, M, T,          IW, colors.HexColor("#E2E8F0"), 0.4)
                 _hline(c, M, T - LAY_H, IW, colors.HexColor("#E2E8F0"), 0.4)
                 _txt(c, CX, T - LAY_H + 6, lay_text,
-                     "Helvetica", 6.5, colors.HexColor("#94A3B8"), align="center")
+                     _font(), 6.5, ACCENT, align="center")
                 T -= LAY_H
 
             global_seg_idx += 1
@@ -779,7 +789,7 @@ def draw_ticket(c, data, include_fare=True):
     BC_GAP     = 12    # gap between stacked barcodes
     BC_TOP_PAD = 16    # space above first barcode in block
     BC_BOT_PAD = 16    # space below last barcode in block
-    PAX_HDR_H  = 42    # passenger name row height
+    PAX_HDR_H  = 32    # passenger name row height (compressed after moving type label)
     PAX_GAP    = 0     # no gap — rows touch, divider separates them
 
     # Section label
@@ -834,10 +844,9 @@ def draw_ticket(c, data, include_fare=True):
         _draw_traveller_icon(c, M + 18, T - 8, size=8.5, col=NAVY)
 
         # Name + type
-        _txt(c, M + 34, T - 13, pname,            "Helvetica-Bold", 9, NAVY)
-        _txt(c, M + 34, T - 24, type_lbl.upper(), "Helvetica",      6, INF_LABEL)
+        _txt(c, M + 34, T - 13, f"{pname} ({type_lbl})", "Helvetica-Bold", 9, NAVY)
         if bag:
-            _txt(c, M + 34, T - 34, f"Baggage: {bag}", "Helvetica", 6.5, INF_LABEL)
+            _txt(c, M + 34, T - 24, f"Baggage: {bag}", "Helvetica", 6.5, INF_LABEL)
 
         # Ticket label + number right-aligned
         if ticket_no:
@@ -859,9 +868,9 @@ def draw_ticket(c, data, include_fare=True):
             lbl_x = M + 12
             lbl_y = cur_y - BC_H / 2 + 2   # vertically centred beside barcode
 
-            _txt(c, lbl_x, lbl_y + 6,  route,  "Helvetica-Bold", 7,   NAVY)
+            _txt(c, lbl_x, lbl_y + 6,  route,  "DejaVuSans-Bold" if _UNICODE_FONT_READY else "Helvetica-Bold", 7,   NAVY)
             if detail:
-                _txt(c, lbl_x, lbl_y - 4, detail, "Helvetica",     6.5, INF_LABEL)
+                _txt(c, lbl_x, lbl_y - 4, detail, "Helvetica",     6.5, INK)
 
             # Barcode — right-aligned, compact
             if bb:
