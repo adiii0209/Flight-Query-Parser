@@ -1950,6 +1950,7 @@ class FlightParser:
         if not data:
             Logger.warning("LLM returned no data, using fallback")
             fallback = self._empty_flight()
+            fallback["llm_error"] = True
             return self.post_processor.process(fallback, hints, processed_text)
 
         data["id"] = str(uuid.uuid4())

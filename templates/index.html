@@ -2008,7 +2008,7 @@
       transition: all 0.3s ease;
       z-index: 100;
     }
-    
+
     .menu-toggle:hover {
       background: rgba(255, 255, 255, 0.25);
       transform: scale(1.05);
@@ -3456,10 +3456,19 @@
       border-radius: 2px;
       transition: all 0.3s ease;
     }
+
     @keyframes btn-pop {
-      0% { transform: scale(1); }
-      40% { transform: scale(0.88); }
-      100% { transform: scale(1); }
+      0% {
+        transform: scale(1);
+      }
+
+      40% {
+        transform: scale(0.88);
+      }
+
+      100% {
+        transform: scale(1);
+      }
     }
 
     .btn-animate-click {
@@ -6286,7 +6295,7 @@
             const retList = document.getElementById(`fare-list-${unitId}_ret`);
             const label = card.querySelector('label')?.textContent || '';
             const sourceChk = document.getElementById(`chk-${sourceUniqueKey}`);
-            
+
             if (outList) outList.insertAdjacentHTML('beforeend', createFareCard(fareKey, label, unitId, sourceChk ? sourceChk.checked : true, '_out'));
             if (retList) retList.insertAdjacentHTML('beforeend', createFareCard(fareKey, label, unitId, sourceChk ? sourceChk.checked : true, '_ret'));
           }
@@ -7032,6 +7041,13 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
         const data = await response.json();
 
+        // If the LLM failed but fallback succeeded, we want to warn the user but STILL render the ticket
+        if (data.flights && Array.isArray(data.flights)) {
+          if (data.flights.some(f => f.llm_error === true)) {
+            showLLMErrorModal();
+          }
+        }
+
         if (!response.ok) {
           showNotification(data.error || 'Failed to parse flights', 'error');
           return;
@@ -7771,7 +7787,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const fares = flight && flight.fares ? flight.fares : {};
       const fareMU = (flight && flight.fare_mu) ? flight.fare_mu : {};
       const globalMU = (flight && flight.markup) ? flight.markup : 0;
-      
+
       const entries = Object.entries(fares).map(([type, base]) => {
         const mu = (fareMU[type] !== undefined) ? fareMU[type] : globalMU;
         return { type, base, total: base + mu };
@@ -8041,7 +8057,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       // We need to map the flightIndex to its unit by calculating the cumulative counts.
       let currentBaseIndex = 0;
       const units = Object.entries(unitFlights || {});
-      
+
       for (const [unitId, flightIds] of units) {
         const count = Array.isArray(flightIds) ? flightIds.length : 0;
         if (flightIndex >= currentBaseIndex && flightIndex < currentBaseIndex + count) {
@@ -8053,7 +8069,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         }
         currentBaseIndex += count;
       }
-      
+
       return [flightIndex];
     }
 
@@ -9234,11 +9250,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     function animateButton(btn, text, icon = '✅') {
       if (!btn) return;
       const originalHtml = btn.innerHTML;
-      
+
       // Visual feedback
       btn.classList.add('btn-animate-click');
       btn.innerHTML = `<span>${icon} ${text}</span>`;
-      
+
       // Green color theme for success
       btn.style.setProperty('background', '#10b981', 'important');
       btn.style.setProperty('border-color', '#10b981', 'important');
@@ -10373,6 +10389,32 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       }
     }
 
+    // --- LLM Error Modal ---
+    function showLLMErrorModal() {
+      let overlay = document.getElementById('llm-error-overlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'llm-error-overlay';
+        overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,0.8);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+        const modal = document.createElement('div');
+        modal.style.cssText = 'background:var(--bg-card);border:1px solid rgba(239, 68, 68, 0.4);border-radius:16px;padding:2rem;max-width:400px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.3);animation:slideDown 0.3s ease;';
+
+        modal.innerHTML = `
+          <div style="font-size:3rem;margin-bottom:1rem;color:#ef4444;">🚨</div>
+          <h2 style="color:var(--text-primary);margin-bottom:1rem;font-size:1.4rem;">LLM ERROR 911</h2>
+          <p style="color:var(--text-secondary);margin-bottom:1.5rem;line-height:1.5;font-size:1rem;">
+            There's some problem with the LLM API key or connection. Kindly summon your <b>legendary, outrageously overqualified, keyboard-smashing wizard, bug-destroying, caffeine-powered genius developer, Mr. Aditya</b>, to fix this before the system completely loses its will to live.
+          </p>
+          <button onclick="document.getElementById('llm-error-overlay').remove()" style="background:linear-gradient(135deg, #ef4444, #b91c1c);color:white;border:none;padding:0.75rem 1.5rem;border-radius:8px;font-weight:600;font-size:1rem;cursor:pointer;width:100%;transition:opacity 0.2s;">
+            I Understand
+          </button>
+        `;
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+      }
+    }
+
     // Close search results when clicking outside
     window.addEventListener('click', (e) => {
       // Billing search
@@ -10441,8 +10483,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     document.addEventListener('DOMContentLoaded', async () => {
       if (isRenderPreviewMode()) return;
-      
-       // --- Sidebar & Theme Logic ---
+
+      // --- Sidebar & Theme Logic ---
       const menuToggle = document.getElementById('menuToggle');
       const sidebar = document.getElementById('sidebar');
       const sidebarClose = document.getElementById('sidebarClose');
