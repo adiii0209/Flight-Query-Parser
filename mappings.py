@@ -12,7 +12,7 @@ AIRPORT_CODES = {
     "IMF": "Imphal", "DIB": "Dibrugarh", "JRH": "Jorhat", "IXJ": "Jammu", "ATQ": "Amritsar",
     "IXL": "Leh", "UDR": "Udaipur", "BDQ": "Vadodara", "RAJ": "Rajkot", "STV": "Surat",
     "PBD": "Porbandar", "BHJ": "Bhuj", "BHO": "Bhopal", "JLR": "Jabalpur", "GWL": "Gwalior",
-    "AGR": "Agra", "IXD": "Allahabad", "VDY": "Vadodara", "RJA": "Rajahmundry", "TIR": "Tirupati",
+    "AGR": "Agra", "IXD": "Allahabad", "VDY": "Vijaynagar", "RJA": "Rajahmundry", "TIR": "Tirupati",
     "BEP": "Bellary", "HBX": "Hubli", "IXG": "Belgaum", "GOP": "Gorakhpur", "DED": "Dehradun",
     "PGH": "Pantnagar", "TNI": "Satna", "KUU": "Kullu Manali", "SHL": "Shillong", "IXS": "Silchar",
     "AJL": "Aizawl", "IXA": "Agartala", "DMU": "Dimapur", "CBD": "Car Nicobar", "IXV": "Along", "NMI": "Navi Mumbai",

@@ -908,24 +908,20 @@ async function refreshEditedSegmentDerivedData() {
 }
 
 function hydrateUnreadTicketsFromCache() {
-    const cached = readCachedJson(UNREAD_TICKETS_CACHE_KEY);
-    unreadTicketIds = new Set(Array.isArray(cached?.ids) ? cached.ids.filter(Boolean) : []);
+    unreadTicketIds = new Set();
 }
 
 function hydrateUnreadSeenStateFromCache() {
-    const lastSeenRaw = Number(readCachedJson(TICKETS_LAST_SEEN_AT_KEY)?.ts || 0);
-    ticketsLastSeenAtMs = Number.isFinite(lastSeenRaw) ? lastSeenRaw : 0;
-    const readOverrides = readCachedJson(TICKETS_READ_OVERRIDES_KEY);
-    readOverrideTicketIds = new Set(Array.isArray(readOverrides?.ids) ? readOverrides.ids.filter(Boolean) : []);
+    ticketsLastSeenAtMs = 0;
+    readOverrideTicketIds = new Set();
 }
 
 function persistUnreadTickets() {
-    writeCachedJson(UNREAD_TICKETS_CACHE_KEY, { ids: Array.from(unreadTicketIds) });
+    return;
 }
 
 function persistUnreadSeenState() {
-    writeCachedJson(TICKETS_LAST_SEEN_AT_KEY, { ts: ticketsLastSeenAtMs });
-    writeCachedJson(TICKETS_READ_OVERRIDES_KEY, { ids: Array.from(readOverrideTicketIds) });
+    return;
 }
 
 function getTicketCreatedAtMs(ticket) {
@@ -941,60 +937,59 @@ function getNewestTicketTimestampMs(tickets = allTickets) {
 }
 
 function initializeTicketSeenBaseline(tickets = allTickets) {
-    if (ticketsLastSeenAtMs > 0) return;
-    const newestCreatedAtMs = getNewestTicketTimestampMs(tickets);
-    ticketsLastSeenAtMs = newestCreatedAtMs || Date.now();
-    persistUnreadSeenState();
+    return;
 }
 
 function advanceTicketsSeenBaseline(timestampMs = Date.now()) {
-    const nextMs = Number.isFinite(timestampMs) ? timestampMs : Date.now();
-    if (nextMs <= ticketsLastSeenAtMs) return;
-    ticketsLastSeenAtMs = nextMs;
-    readOverrideTicketIds.clear();
-    persistUnreadSeenState();
+    return;
 }
 
 function markTicketsUnread(ticketIds = []) {
-    let changed = false;
-    (ticketIds || []).forEach((ticketId) => {
-        if (!ticketId || unreadTicketIds.has(ticketId)) return;
-        unreadTicketIds.add(ticketId);
-        readOverrideTicketIds.delete(ticketId);
-        changed = true;
-    });
-    if (changed) {
-        persistUnreadTickets();
-        persistUnreadSeenState();
-    }
+    return;
 }
 
 function markTicketRead(ticketId) {
     if (!ticketId) return;
-    let changed = false;
-    if (unreadTicketIds.has(ticketId)) {
-        unreadTicketIds.delete(ticketId);
-        changed = true;
+    const applyReadState = (ticket) => {
+        if (!ticket || ticket.id !== ticketId) return;
+        ticket.is_unread = false;
+        ticket.read_at = ticket.read_at || new Date().toISOString();
+    };
+    applyReadState(currentTicket);
+    applyReadState(editedData);
+    allTickets.forEach((ticket) => {
+        if (ticket?.id === ticketId) {
+            applyReadState(ticket);
+        } else if (Array.isArray(ticket?.merged_ticket_ids) && ticket.merged_ticket_ids.includes(ticketId)) {
+            ticket.is_unread = false;
+            ticket.read_at = ticket.read_at || new Date().toISOString();
+        }
+    });
+    if (ticketDetailCache.has(ticketId)) {
+        const cached = ticketDetailCache.get(ticketId);
+        applyReadState(cached);
+        ticketDetailCache.set(ticketId, cached);
     }
-    if (!readOverrideTicketIds.has(ticketId)) {
-        readOverrideTicketIds.add(ticketId);
-        changed = true;
-    }
-    if (changed) {
-        persistUnreadTickets();
-        persistUnreadSeenState();
+}
+
+async function markTicketReadOnServer(ticketId) {
+    if (!ticketId) return null;
+    try {
+        const r = await fetch(`/api/tickets/${ticketId}/read`, { method: 'POST' });
+        if (!r.ok) return null;
+        return normalizeTicketFareData(await r.json());
+    } catch (e) {
+        console.error('Failed to persist ticket read state', e);
+        return null;
     }
 }
 
 function isTicketUnread(ticketOrId, createdAt = '') {
-    const ticketId = typeof ticketOrId === 'object' ? ticketOrId?.id : ticketOrId;
-    const createdAtMs = typeof ticketOrId === 'object'
-        ? getTicketCreatedAtMs(ticketOrId)
-        : getTicketCreatedAtMs({ created_at: createdAt });
-    if (!ticketId) return false;
-    if (readOverrideTicketIds.has(ticketId)) return false;
-    if (unreadTicketIds.has(ticketId)) return true;
-    return ticketsLastSeenAtMs > 0 && createdAtMs > ticketsLastSeenAtMs;
+    if (typeof ticketOrId === 'object') {
+        return !!ticketOrId?.is_unread;
+    }
+    const match = allTickets.find((ticket) => ticket?.id === ticketOrId);
+    return !!match?.is_unread;
 }
 
 function isWarningDismissed(warningKey) {
@@ -1195,9 +1190,8 @@ async function loadTickets(options = {}) {
         const incomingTickets = (d.tickets || []).map(normalizeTicketFareData);
         totalAvailableTickets = Number.isFinite(Number(d.total_count)) ? Number(d.total_count) : incomingTickets.length;
         if (notifyNewTickets && hasInitializedTicketFeed && offset === 0) {
-            const newTickets = incomingTickets.filter((ticket) => ticket && ticket.id && !knownTicketIds.has(ticket.id));
+            const newTickets = incomingTickets.filter((ticket) => ticket && ticket.id && ticket.is_unread && !knownTicketIds.has(ticket.id));
             if (newTickets.length > 0) {
-                markTicketsUnread(newTickets.map((ticket) => ticket.id));
                 const firstTicket = newTickets[0];
                 const title = (firstTicket.passenger_names || []).filter(Boolean).slice(0, 2).join(', ')
                     || firstTicket.pnr
@@ -1873,6 +1867,7 @@ async function openTicket(id, { syncUrl = true, replaceUrl = false } = {}) {
     try {
         markTicketRead(id);
         renderTicketCards();
+        const readSyncPromise = markTicketReadOnServer(id);
         pauseDashboardLiveUpdates();
         const cachedTicket = getCachedTicketDetail(id);
         if (cachedTicket) {
@@ -1886,6 +1881,20 @@ async function openTicket(id, { syncUrl = true, replaceUrl = false } = {}) {
             renderDetailView();
             showDetailView();
             if (syncUrl) updateTicketUrl(id, { replace: replaceUrl });
+            readSyncPromise.then((serverTicket) => {
+                if (!serverTicket) return;
+                cacheTicketDetail(serverTicket);
+                const idx = allTickets.findIndex((ticket) => ticket.id === serverTicket.id);
+                if (idx !== -1) allTickets[idx] = JSON.parse(JSON.stringify(serverTicket));
+                if (currentTicket?.id === serverTicket.id && !isDetailDirty && !isSaveInFlight) {
+                    currentTicket = JSON.parse(JSON.stringify(serverTicket));
+                    editedData = JSON.parse(JSON.stringify(serverTicket));
+                    setTicketEditBaseline(currentTicket);
+                    renderDetailView();
+                } else {
+                    renderTicketCards();
+                }
+            });
             void syncCurrentTicketFromServer();
             return;
         }
@@ -1908,6 +1917,20 @@ async function openTicket(id, { syncUrl = true, replaceUrl = false } = {}) {
         renderDetailView();
         showDetailView();
         if (syncUrl) updateTicketUrl(id, { replace: replaceUrl });
+        readSyncPromise.then((serverTicket) => {
+            if (!serverTicket) return;
+            cacheTicketDetail(serverTicket);
+            const idx = allTickets.findIndex((ticket) => ticket.id === serverTicket.id);
+            if (idx !== -1) allTickets[idx] = JSON.parse(JSON.stringify(serverTicket));
+            if (currentTicket?.id === serverTicket.id && !isDetailDirty && !isSaveInFlight) {
+                currentTicket = JSON.parse(JSON.stringify(serverTicket));
+                editedData = JSON.parse(JSON.stringify(serverTicket));
+                setTicketEditBaseline(currentTicket);
+                renderDetailView();
+            } else {
+                renderTicketCards();
+            }
+        });
     } catch (e) {
         console.error(e);
         showToast('Error loading ticket', 'error');
@@ -4485,6 +4508,9 @@ async function saveSegmentEdit(idx) {
 // ==================== SAVE & PDF ====================
 async function saveTicket(silent = false) {
     if (!currentTicket || !editedData) return;
+    const saveStartedAt = Date.now();
+    const ticketIdAtSaveStart = currentTicket.id;
+    const localSnapshotBeforeSave = JSON.parse(JSON.stringify(editedData));
     isSaveInFlight = true;
     try {
         const payload = {
@@ -4549,16 +4575,30 @@ async function saveTicket(silent = false) {
         clearTimeout(draftRetryHandle);
         draftRetryHandle = null;
         if (!silent) showToast('Ticket saved successfully!', 'success');
-        currentTicket = normalizeTicketFareData(
+        const savedTicket = normalizeTicketFareData(
             responsePayload.ticket
                 ? JSON.parse(JSON.stringify(responsePayload.ticket))
-                : JSON.parse(JSON.stringify(editedData))
+                : JSON.parse(JSON.stringify(localSnapshotBeforeSave))
         );
-        editedData = JSON.parse(JSON.stringify(currentTicket));
+        const editsChangedDuringSave = (
+            currentTicket?.id !== ticketIdAtSaveStart
+            || lastDetailInputAt > saveStartedAt
+            || JSON.stringify(editedData) !== JSON.stringify(localSnapshotBeforeSave)
+        );
+
+        currentTicket = savedTicket;
         fareFieldsTouched = false;
         setTicketEditBaseline(currentTicket);
         cacheTicketDetail(currentTicket);
-        clearTicketDraft(currentTicket.id);
+
+        if (editsChangedDuringSave) {
+            isDetailDirty = true;
+            persistTicketDraft();
+            triggerAutoSave();
+        } else {
+            editedData = JSON.parse(JSON.stringify(currentTicket));
+            clearTicketDraft(currentTicket.id);
+        }
 
         const idx = allTickets.findIndex(t => t.id === currentTicket.id);
         if (idx > -1) {
