@@ -33,6 +33,7 @@ from collections import OrderedDict
 from copy import deepcopy
 from urllib.parse import urlparse
 from werkzeug.utils import secure_filename
+from mappings import AIRLINE_CODES, AIRPORT_CODES
 
 import pytesseract
 try:
@@ -2560,7 +2561,7 @@ def _recalculate_segment_timing_data(segments):
             arr_airport,
             days_offset=explicit_days_offset or 0,
             flight_date=dep_date_obj,
-            check_ultra_long=True,
+            check_ultra_long=explicit_days_offset is None,
         )
         days_offset = explicit_days_offset if explicit_days_offset is not None else DayOffsetCalculator.calculate(
             dep_time,
@@ -2577,7 +2578,7 @@ def _recalculate_segment_timing_data(segments):
             arr_airport,
             days_offset=days_offset,
             flight_date=dep_date_obj,
-            check_ultra_long=True,
+            check_ultra_long=explicit_days_offset is None,
         )
 
         if seg_idx == 0:
@@ -3196,7 +3197,11 @@ def receive_ticket():
 @login_required
 def tickets_page():
     """Serve the tickets dashboard page"""
-    return render_template('tickets.html')
+    return render_template(
+        'tickets.html',
+        airline_codes=AIRLINE_CODES,
+        airport_codes=AIRPORT_CODES,
+    )
 
 
 @app.route("/settings")

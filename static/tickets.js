@@ -53,6 +53,8 @@ let lastDetailInputAt = 0;
 let unreadTicketIds = new Set();
 let readOverrideTicketIds = new Set();
 let ticketsLastSeenAtMs = 0;
+const AIRLINE_CODE_MAP = window.AIRLINE_CODE_MAP || {};
+const AIRPORT_CODE_MAP = window.AIRPORT_CODE_MAP || {};
 
 // ==================== SIDEBAR & THEME ====================
 function initializeSidebar() {
@@ -446,24 +448,146 @@ function formatDurationFromMinutes(totalMinutes) {
     return `${minutes}m`;
 }
 
+function parseFlexibleFlightDate(value) {
+    const raw = String(safe(value)).trim();
+    if (!raw) return null;
+
+    const monthMap = {
+        jan: 0, january: 0,
+        feb: 1, february: 1,
+        mar: 2, march: 2,
+        apr: 3, april: 3,
+        may: 4,
+        jun: 5, june: 5,
+        jul: 6, july: 6,
+        aug: 7, august: 7,
+        sep: 8, sept: 8, september: 8,
+        oct: 9, october: 9,
+        nov: 10, november: 10,
+        dec: 11, december: 11
+    };
+
+    const buildDate = (year, monthIndex, day) => {
+        const parsed = new Date(year, monthIndex, day);
+        if (
+            !Number.isFinite(parsed.getTime()) ||
+            parsed.getFullYear() !== year ||
+            parsed.getMonth() !== monthIndex ||
+            parsed.getDate() !== day
+        ) {
+            return null;
+        }
+        return parsed;
+    };
+
+    const normalizeYear = (yearText) => {
+        const year = Number.parseInt(yearText, 10);
+        if (!Number.isFinite(year)) return null;
+        if (yearText.length <= 2) return year >= 70 ? 1900 + year : 2000 + year;
+        return year;
+    };
+
+    const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoMatch) {
+        return buildDate(Number.parseInt(isoMatch[1], 10), Number.parseInt(isoMatch[2], 10) - 1, Number.parseInt(isoMatch[3], 10));
+    }
+
+    const numericMatch = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+    if (numericMatch) {
+        return buildDate(
+            normalizeYear(numericMatch[3]),
+            Number.parseInt(numericMatch[2], 10) - 1,
+            Number.parseInt(numericMatch[1], 10)
+        );
+    }
+
+    const dayMonthTextMatch = raw.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{2,4})$/);
+    if (dayMonthTextMatch) {
+        const monthIndex = monthMap[dayMonthTextMatch[2].toLowerCase()];
+        if (monthIndex !== undefined) {
+            return buildDate(
+                normalizeYear(dayMonthTextMatch[3]),
+                monthIndex,
+                Number.parseInt(dayMonthTextMatch[1], 10)
+            );
+        }
+    }
+
+    const monthDayTextMatch = raw.match(/^([A-Za-z]+)\s+(\d{1,2})\s+(\d{2,4})$/);
+    if (monthDayTextMatch) {
+        const monthIndex = monthMap[monthDayTextMatch[1].toLowerCase()];
+        if (monthIndex !== undefined) {
+            return buildDate(
+                normalizeYear(monthDayTextMatch[3]),
+                monthIndex,
+                Number.parseInt(monthDayTextMatch[2], 10)
+            );
+        }
+    }
+
+    const fallback = new Date(raw);
+    return Number.isFinite(fallback.getTime()) ? fallback : null;
+}
+
+function parseFlexibleFlightTime(value) {
+    const raw = String(safe(value)).trim();
+    if (!raw) return null;
+    const match = raw.match(/^(\d{1,2}):(\d{2})(?:\s*([AaPp][Mm]))?$/);
+    if (!match) return null;
+    let hours = Number.parseInt(match[1], 10);
+    const minutes = Number.parseInt(match[2], 10);
+    const meridiem = (match[3] || '').toLowerCase();
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes) || minutes < 0 || minutes > 59) return null;
+    if (meridiem) {
+        if (hours < 1 || hours > 12) return null;
+        if (meridiem === 'pm' && hours < 12) hours += 12;
+        if (meridiem === 'am' && hours === 12) hours = 0;
+    }
+    if (hours < 0 || hours > 23) return null;
+    return { hours, minutes };
+}
+
+function formatFlightDateForInput(value) {
+    const parsed = parseFlexibleFlightDate(value);
+    if (!parsed) return '';
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function formatFlightDateForStorage(value) {
+    const parsed = parseFlexibleFlightDate(value);
+    if (!parsed) return String(safe(value)).trim();
+    const day = String(parsed.getDate()).padStart(2, '0');
+    const month = parsed.toLocaleString('en-US', { month: 'short' });
+    const year = String(parsed.getFullYear()).slice(-2);
+    return `${day} ${month} ${year}`;
+}
+
+function formatTerminalDisplay(value) {
+    const terminal = String(safe(value)).trim();
+    if (!terminal || terminal === 'N/A') return '';
+    if (/^terminal\b/i.test(terminal)) return terminal;
+    if (/^t[\s-]?\w+/i.test(terminal)) return terminal;
+    return `Terminal ${terminal}`;
+}
+
 function parseFlightDateTime(point) {
     if (!point || typeof point !== 'object') return null;
-    const date = String(safe(point.date)).trim();
-    const time = String(safe(point.time)).trim();
-    if (!date || !time) return null;
-
-    const candidates = [
-        `${date} ${time}`,
-        `${date}T${time}`,
-        `${date.replace(/\//g, '-')} ${time}`
-    ];
-
-    for (const candidate of candidates) {
-        const parsed = new Date(candidate);
-        const value = parsed.getTime();
-        if (Number.isFinite(value)) return value;
-    }
-    return null;
+    const datePart = parseFlexibleFlightDate(point.date);
+    const timePart = parseFlexibleFlightTime(point.time);
+    if (!datePart || !timePart) return null;
+    const combined = new Date(
+        datePart.getFullYear(),
+        datePart.getMonth(),
+        datePart.getDate(),
+        timePart.hours,
+        timePart.minutes,
+        0,
+        0
+    );
+    return Number.isFinite(combined.getTime()) ? combined.getTime() : null;
 }
 
 function getElapsedMinutes(startPoint, endPoint) {
@@ -484,7 +608,7 @@ function getSegmentDurationMinutes(segment) {
 function doesSegmentDurationNeedWarning(segment) {
     const durationMinutes = getSegmentDurationMinutes(segment);
     if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return false;
-    return durationMinutes < 10 || durationMinutes > (24 * 60);
+    return durationMinutes < 30 || durationMinutes > (20 * 60);
 }
 
 function doesSegmentDateOrderNeedWarning(segment) {
@@ -513,6 +637,115 @@ function getSegmentWarningKey(segIdx, kind, segment) {
     const arr = segment?.arrival || {};
     const duration = getSegmentDurationValue(segment);
     return `segment:${segIdx}:${kind}:${safe(dep.date)}:${safe(dep.time)}:${safe(arr.date)}:${safe(arr.time)}:${safe(duration)}`;
+}
+
+function normalizeAirlineName(value) {
+    return safe(value, '')
+        .toString()
+        .toLowerCase()
+        .replace(/&/g, 'and')
+        .replace(/air\s+lines?/g, 'airline')
+        .replace(/[^a-z0-9]/g, '');
+}
+
+function getFlightNumberAirlineCode(flightNumber) {
+    const normalized = safe(flightNumber, '').toString().trim().toUpperCase();
+    if (!normalized) return '';
+    const match = normalized.match(/^([0-9A-Z]{2,3})\s*-?\s*\d+/);
+    return match ? match[1] : '';
+}
+
+function doesFlightNumberAirlineNeedWarning(segment) {
+    const airlineName = safe(segment?.airline, '').toString().trim();
+    const flightCode = getFlightNumberAirlineCode(segment?.flight_number);
+    if (!airlineName || !flightCode) return false;
+    const mappedAirlineName = AIRLINE_CODE_MAP[flightCode];
+    if (!mappedAirlineName) return false;
+    return normalizeAirlineName(mappedAirlineName) !== normalizeAirlineName(airlineName);
+}
+
+function getPassengerNameWarningKey(index, value) {
+    return `passenger-name:${index}:${String(value || '').trim().toLowerCase()}`;
+}
+
+function doesPassengerNameNeedWarning(value) {
+    return safe(value, '').toString().trim().toLowerCase() === 'passenger';
+}
+
+function normalizeCityName(value) {
+    return safe(value, '')
+        .toString()
+        .toLowerCase()
+        .replace(/international|airport|airfield|metro|city/g, ' ')
+        .replace(/[^a-z0-9]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function cityNamesMatch(leftCityName, rightCityName) {
+    const normalizedLeft = normalizeCityName(leftCityName);
+    const normalizedRight = normalizeCityName(rightCityName);
+    if (!normalizedLeft || !normalizedRight) return false;
+    return (
+        normalizedLeft === normalizedRight ||
+        normalizedLeft.includes(normalizedRight) ||
+        normalizedRight.includes(normalizedLeft)
+    );
+}
+
+function isKnownMappedCityName(cityName) {
+    if (!cityName) return false;
+    return Object.values(AIRPORT_CODE_MAP).some((mappedCityName) => cityNamesMatch(cityName, mappedCityName));
+}
+
+function getAirportCityValidation(point) {
+    const airportCode = safe(point?.airport, '').toString().trim().toUpperCase();
+    const cityName = safe(point?.city, '').toString().trim();
+    const mappedCityName = airportCode ? AIRPORT_CODE_MAP[airportCode] : '';
+    const airportKnown = !!mappedCityName;
+    const cityKnown = !!cityName && isKnownMappedCityName(cityName);
+    const pairMatches = airportKnown && cityName ? cityNamesMatch(cityName, mappedCityName) : false;
+
+    let airportMessage = '';
+    let cityMessage = '';
+
+    if (airportCode && !airportKnown) {
+        airportMessage = cityKnown
+            ? `Airport code ${airportCode} does not match city ${cityName} and is not in our database.`
+            : cityName
+            ? `Airport code ${airportCode} is not in our database.`
+            : `Airport code ${airportCode} is not in our database.`;
+
+        if (cityName) {
+            cityMessage = cityKnown
+                ? `City name ${cityName} does not match airport code ${airportCode}. Airport code ${airportCode} is not in our database.`
+                : `City name ${cityName} should be reviewed because airport code ${airportCode} is not in our database.`;
+        }
+    }
+
+    if (cityName && !cityKnown && !cityMessage) {
+        cityMessage = airportKnown
+            ? `City name ${cityName} is not in our database for airport code ${airportCode}. ${airportCode} maps to ${mappedCityName}.`
+            : airportCode
+            ? `City name ${cityName} is not in our database.`
+            : `City name ${cityName} is not in our database.`;
+    }
+
+    if (airportKnown && cityKnown && cityName && !pairMatches) {
+        airportMessage = `Airport code ${airportCode} does not match city ${cityName}. ${airportCode} maps to ${mappedCityName}.`;
+        cityMessage = `City name ${cityName} does not match airport code ${airportCode}. ${airportCode} maps to ${mappedCityName}.`;
+    }
+
+    return {
+        airportCode,
+        cityName,
+        mappedCityName,
+        airportKnown,
+        cityKnown,
+        pairMatches,
+        airportMessage,
+        cityMessage
+    };
 }
 
 function getJourneyLayoverMap(journey) {
@@ -3099,18 +3332,31 @@ function renderSegmentsSection() {
             const seg = segments[segIdx];
             const dep = seg.departure || {};
             const arr = seg.arrival || {};
+            const departureLocationValidation = getAirportCityValidation(dep);
+            const arrivalLocationValidation = getAirportCityValidation(arr);
             const duration = getSegmentDurationValue(seg);
             const hasDurationWarning = doesSegmentDurationNeedWarning(seg);
             const hasDateOrderWarning = doesSegmentDateOrderNeedWarning(seg);
+            const hasAirlineCodeWarning = doesFlightNumberAirlineNeedWarning(seg);
             const durationWarningKey = getSegmentWarningKey(segIdx, 'duration', seg);
             const dateOrderWarningKey = getSegmentWarningKey(segIdx, 'date-order', seg);
+            const airlineCodeWarningKey = getSegmentWarningKey(segIdx, 'airline-code', seg);
+            const departureAirportWarningKey = getSegmentWarningKey(segIdx, 'departure-airport', seg);
+            const arrivalAirportWarningKey = getSegmentWarningKey(segIdx, 'arrival-airport', seg);
+            const departureCityWarningKey = getSegmentWarningKey(segIdx, 'departure-city', seg);
+            const arrivalCityWarningKey = getSegmentWarningKey(segIdx, 'arrival-city', seg);
             const showDurationWarning = hasDurationWarning && !isWarningDismissed(durationWarningKey);
             const showDateOrderWarning = hasDateOrderWarning && !isWarningDismissed(dateOrderWarningKey);
+            const showAirlineCodeWarning = hasAirlineCodeWarning && !isWarningDismissed(airlineCodeWarningKey);
+            const showDepartureAirportWarning = !!departureLocationValidation.airportMessage && !isWarningDismissed(departureAirportWarningKey);
+            const showArrivalAirportWarning = !!arrivalLocationValidation.airportMessage && !isWarningDismissed(arrivalAirportWarningKey);
+            const showDepartureCityWarning = !!departureLocationValidation.cityMessage && !isWarningDismissed(departureCityWarningKey);
+            const showArrivalCityWarning = !!arrivalLocationValidation.cityMessage && !isWarningDismissed(arrivalCityWarningKey);
             const hasTimingWarning = showDurationWarning || showDateOrderWarning;
             const warningMessages = [];
             const warningKeys = [];
             if (showDurationWarning) {
-                warningMessages.push('Flight duration looks unusual: less than 10 minutes or more than 24 hours');
+                warningMessages.push('Flight duration looks unusual: less than 30 minutes or more than 20 hours');
                 warningKeys.push(durationWarningKey);
             }
             if (showDateOrderWarning) {
@@ -3119,6 +3365,37 @@ function renderSegmentsSection() {
             }
             const durationWarningBadge = hasTimingWarning
                 ? buildWarningBadge(warningKeys.join('||'), warningMessages.join(' | '))
+                : '';
+            const airlineCode = getFlightNumberAirlineCode(seg.flight_number);
+            const airlineCodeWarningBadge = showAirlineCodeWarning
+                ? buildWarningBadge(
+                    airlineCodeWarningKey,
+                    `Flight number code does not match airline mapping. ${safe(airlineCode)} maps to ${safe(AIRLINE_CODE_MAP[airlineCode])}.`
+                )
+                : '';
+            const departureAirportWarningBadge = showDepartureAirportWarning
+                ? buildWarningBadge(
+                    departureAirportWarningKey,
+                    departureLocationValidation.airportMessage
+                )
+                : '';
+            const arrivalAirportWarningBadge = showArrivalAirportWarning
+                ? buildWarningBadge(
+                    arrivalAirportWarningKey,
+                    arrivalLocationValidation.airportMessage
+                )
+                : '';
+            const departureCityWarningBadge = showDepartureCityWarning
+                ? buildWarningBadge(
+                    departureCityWarningKey,
+                    departureLocationValidation.cityMessage
+                )
+                : '';
+            const arrivalCityWarningBadge = showArrivalCityWarning
+                ? buildWarningBadge(
+                    arrivalCityWarningKey,
+                    arrivalLocationValidation.cityMessage
+                )
                 : '';
             if (posInLeg > 0) {
                 const prevSegIdx = legIndices[posInLeg - 1];
@@ -3136,27 +3413,49 @@ function renderSegmentsSection() {
             const isEditingSegment = activeSegmentEditIdx === segIdx;
             const cabinOptions = ['', 'Economy', 'Premium Economy', 'Business', 'First'];
             const inlineInputStyle = 'background:var(--bg-card); color:var(--text-primary); border:1px solid var(--border); border-radius:8px; padding:0.25rem 0.4rem; font:inherit; min-width:0; box-sizing:border-box;';
+            const timingFieldStyle = hasTimingWarning ? 'color:#dc2626; font-weight:800;' : '';
+            const timingInputStyle = hasTimingWarning
+                ? 'color:#dc2626; border-color:rgba(220,38,38,0.45); box-shadow:0 0 0 2px rgba(220,38,38,0.08);'
+                : '';
+            const departureAirportFieldStyle = showDepartureAirportWarning ? 'color:#dc2626; font-weight:800;' : '';
+            const departureAirportInputStyle = showDepartureAirportWarning
+                ? 'color:#dc2626; border-color:rgba(220,38,38,0.45); box-shadow:0 0 0 2px rgba(220,38,38,0.08);'
+                : '';
+            const arrivalAirportFieldStyle = showArrivalAirportWarning ? 'color:#dc2626; font-weight:800;' : '';
+            const arrivalAirportInputStyle = showArrivalAirportWarning
+                ? 'color:#dc2626; border-color:rgba(220,38,38,0.45); box-shadow:0 0 0 2px rgba(220,38,38,0.08);'
+                : '';
+            const departureCityHasAnyWarning = showDepartureCityWarning;
+            const arrivalCityHasAnyWarning = showArrivalCityWarning;
+            const departureCityFieldStyle = departureCityHasAnyWarning ? 'color:#dc2626; font-weight:800;' : '';
+            const departureCityInputStyle = departureCityHasAnyWarning
+                ? 'color:#dc2626; border-color:rgba(220,38,38,0.45); box-shadow:0 0 0 2px rgba(220,38,38,0.08);'
+                : '';
+            const arrivalCityFieldStyle = arrivalCityHasAnyWarning ? 'color:#dc2626; font-weight:800;' : '';
+            const arrivalCityInputStyle = arrivalCityHasAnyWarning
+                ? 'color:#dc2626; border-color:rgba(220,38,38,0.45); box-shadow:0 0 0 2px rgba(220,38,38,0.08);'
+                : '';
             const segmentHeaderMainHtml = isEditingSegment
-                ? `<input class="segment-airline-v2" style="${inlineInputStyle}; width:150px; font-weight:700;" id="seg-airline-${segIdx}" value="${safe(seg.airline)}"><input class="segment-fltnum-v2" style="${inlineInputStyle}; width:95px; font-weight:700;" id="seg-fltnum-${segIdx}" value="${safe(seg.flight_number)}"><select class="seg-class-chip" style="${inlineInputStyle}; width:150px; font-size:0.72rem;" id="seg-class-${segIdx}">${cabinOptions.map(option => `<option value="${option}" ${bkClassStr === option ? 'selected' : ''}>${option || 'Hidden'}</option>`).join('')}</select>`
-                : `<span class="segment-airline-v2">${safe(seg.airline, 'Airline')}</span><span class="segment-fltnum-v2">${safe(seg.flight_number)}</span>${showCabinClass ? `<span class="seg-class-chip">${bkClassStr}</span>` : ''}`;
+                ? `<input class="segment-airline-v2" style="${inlineInputStyle}; width:150px; font-weight:700;" id="seg-airline-${segIdx}" value="${safe(seg.airline)}"><input class="segment-fltnum-v2" style="${inlineInputStyle}; width:95px; font-weight:700; ${showAirlineCodeWarning ? 'color:#dc2626; border-color:rgba(220,38,38,0.45); box-shadow:0 0 0 2px rgba(220,38,38,0.08);' : ''}" id="seg-fltnum-${segIdx}" value="${safe(seg.flight_number)}">${airlineCodeWarningBadge}<select class="seg-class-chip" style="${inlineInputStyle}; width:150px; font-size:0.72rem;" id="seg-class-${segIdx}">${cabinOptions.map(option => `<option value="${option}" ${bkClassStr === option ? 'selected' : ''}>${option || 'Hidden'}</option>`).join('')}</select>`
+                : `<span class="segment-airline-v2">${safe(seg.airline, 'Airline')}</span><span class="segment-fltnum-v2" style="${showAirlineCodeWarning ? 'color:#dc2626; font-weight:800;' : ''}">${safe(seg.flight_number)}</span>${showAirlineCodeWarning ? airlineCodeWarningBadge : ''}${showCabinClass ? `<span class="seg-class-chip">${bkClassStr}</span>` : ''}`;
             const depLocationHtml = isEditingSegment
-                ? `<input class="tl-code" style="${inlineInputStyle}; width:68px; font-weight:800; text-transform:uppercase; text-align:center;" id="seg-dep-apt-${segIdx}" value="${safe(dep.airport)}"><input class="tl-city" style="${inlineInputStyle}; width:112px; font-size:0.75rem;" id="seg-dep-city-${segIdx}" value="${safe(dep.city)}">`
-                : `<span class="tl-code">${safe(dep.airport, '---')}</span>${dep.city ? `<span class="tl-city" style="font-size:0.75rem; color:var(--text-secondary);">(${safe(dep.city)})</span>` : ''}`;
+                ? `<input class="tl-code" style="${inlineInputStyle}; width:68px; font-weight:800; text-transform:uppercase; text-align:center; ${departureAirportInputStyle}" id="seg-dep-apt-${segIdx}" value="${safe(dep.airport)}">${departureAirportWarningBadge}<input class="tl-city" style="${inlineInputStyle}; width:112px; font-size:0.75rem; ${departureCityInputStyle}" id="seg-dep-city-${segIdx}" value="${safe(dep.city)}">${departureCityWarningBadge}`
+                : `<span class="tl-code" style="${departureAirportFieldStyle}">${safe(dep.airport, '---')}</span>${showDepartureAirportWarning ? departureAirportWarningBadge : ''}${dep.city ? `<span class="tl-city" style="font-size:0.75rem; color:var(--text-secondary); ${departureCityFieldStyle}">(${safe(dep.city)})</span>${departureCityHasAnyWarning ? departureCityWarningBadge : ''}` : ''}`;
             const depDateTimeHtml = isEditingSegment
-                ? `<input class="tl-time" style="${inlineInputStyle}; width:68px; font-weight:700; text-align:center;" id="seg-dep-time-${segIdx}" value="${safe(dep.time)}"><input class="tl-date" style="${inlineInputStyle}; width:104px; font-size:0.72rem;" id="seg-dep-date-${segIdx}" value="${safe(dep.date)}">`
-                : `<span class="tl-time">${safe(dep.time, '--:--')}</span><span class="tl-date">${safe(dep.date)}</span>`;
+                ? `<input class="tl-time" style="${inlineInputStyle}; width:68px; font-weight:700; text-align:center; ${timingInputStyle}" id="seg-dep-time-${segIdx}" value="${safe(dep.time)}"><input type="date" class="tl-date" style="${inlineInputStyle}; width:138px; font-size:0.72rem; ${timingInputStyle}" id="seg-dep-date-${segIdx}" value="${formatFlightDateForInput(dep.date)}">`
+                : `<span class="tl-time" style="${timingFieldStyle}">${safe(dep.time, '--:--')}</span><span class="tl-date" style="${timingFieldStyle}">${safe(dep.date)}</span>`;
             const depTerminalHtml = isEditingSegment
-                ? `<input class="tl-terminal" style="${inlineInputStyle}; width:96px; margin-top:0.25rem; font-size:0.72rem;" id="seg-dep-term-${segIdx}" placeholder="Terminal" value="${safe(dep.terminal)}">`
-                : `${dep.terminal && dep.terminal !== 'N/A' ? `<span class="tl-terminal">Terminal ${dep.terminal}</span>` : ''}`;
+                ? `<input class="tl-terminal tl-terminal-input" style="${inlineInputStyle}; width:110px; margin-top:0.35rem; font-size:0.72rem; font-weight:700;" id="seg-dep-term-${segIdx}" placeholder="Terminal" value="${safe(dep.terminal)}">`
+                : `${formatTerminalDisplay(dep.terminal) ? `<span class="tl-terminal">${safe(formatTerminalDisplay(dep.terminal))}</span>` : ''}`;
             const arrLocationHtml = isEditingSegment
-                ? `<input class="tl-code" style="${inlineInputStyle}; width:68px; font-weight:800; text-transform:uppercase; text-align:center;" id="seg-arr-apt-${segIdx}" value="${safe(arr.airport)}"><input class="tl-city" style="${inlineInputStyle}; width:112px; font-size:0.75rem;" id="seg-arr-city-${segIdx}" value="${safe(arr.city)}">`
-                : `<span class="tl-code">${safe(arr.airport, '---')}</span>${arr.city ? `<span class="tl-city" style="font-size:0.75rem; color:var(--text-secondary);">(${safe(arr.city)})</span>` : ''}`;
+                ? `<input class="tl-code" style="${inlineInputStyle}; width:68px; font-weight:800; text-transform:uppercase; text-align:center; ${arrivalAirportInputStyle}" id="seg-arr-apt-${segIdx}" value="${safe(arr.airport)}">${arrivalAirportWarningBadge}<input class="tl-city" style="${inlineInputStyle}; width:112px; font-size:0.75rem; ${arrivalCityInputStyle}" id="seg-arr-city-${segIdx}" value="${safe(arr.city)}">${arrivalCityWarningBadge}`
+                : `<span class="tl-code" style="${arrivalAirportFieldStyle}">${safe(arr.airport, '---')}</span>${showArrivalAirportWarning ? arrivalAirportWarningBadge : ''}${arr.city ? `<span class="tl-city" style="font-size:0.75rem; color:var(--text-secondary); ${arrivalCityFieldStyle}">(${safe(arr.city)})</span>${arrivalCityHasAnyWarning ? arrivalCityWarningBadge : ''}` : ''}`;
             const arrDateTimeHtml = isEditingSegment
-                ? `<input class="tl-time" style="${inlineInputStyle}; width:68px; font-weight:700; text-align:center;" id="seg-arr-time-${segIdx}" value="${safe(arr.time)}"><input class="tl-date" style="${inlineInputStyle}; width:104px; font-size:0.72rem;" id="seg-arr-date-${segIdx}" value="${safe(arr.date)}">`
-                : `<span class="tl-time">${safe(arr.time, '--:--')}</span><span class="tl-date">${safe(arr.date)}</span>`;
+                ? `<input class="tl-time" style="${inlineInputStyle}; width:68px; font-weight:700; text-align:center; ${timingInputStyle}" id="seg-arr-time-${segIdx}" value="${safe(arr.time)}"><input type="date" class="tl-date" style="${inlineInputStyle}; width:138px; font-size:0.72rem; ${timingInputStyle}" id="seg-arr-date-${segIdx}" value="${formatFlightDateForInput(arr.date)}">`
+                : `<span class="tl-time" style="${timingFieldStyle}">${safe(arr.time, '--:--')}</span><span class="tl-date" style="${timingFieldStyle}">${safe(arr.date)}</span>`;
             const arrTerminalHtml = isEditingSegment
-                ? `<input class="tl-terminal" style="${inlineInputStyle}; width:96px; margin-top:0.25rem; font-size:0.72rem;" id="seg-arr-term-${segIdx}" placeholder="Terminal" value="${safe(arr.terminal)}">`
-                : `${arr.terminal && arr.terminal !== 'N/A' ? `<span class="tl-terminal">Terminal ${arr.terminal}</span>` : ''}`;
+                ? `<input class="tl-terminal tl-terminal-input" style="${inlineInputStyle}; width:110px; margin-top:0.35rem; font-size:0.72rem; font-weight:700;" id="seg-arr-term-${segIdx}" placeholder="Terminal" value="${safe(arr.terminal)}">`
+                : `${formatTerminalDisplay(arr.terminal) ? `<span class="tl-terminal">${safe(formatTerminalDisplay(arr.terminal))}</span>` : ''}`;
             const durationHtml = isEditingSegment
                 ? `<div style="position:absolute; top:-30px; left:50%; transform:translateX(-50%); z-index:3; display:flex; align-items:center; gap:0.35rem;"><input style="${inlineInputStyle}; width:98px; text-align:center; font-size:0.72rem; background:var(--bg-card); color:${hasTimingWarning ? '#dc2626' : 'var(--text-primary)'}; border-color:${hasTimingWarning ? 'rgba(220,38,38,0.4)' : 'var(--border)'};" id="seg-duration-${segIdx}" value="${safe(duration)}">${durationWarningBadge}</div>`
                 : `${duration ? `<span class="timeline-duration" style="${hasTimingWarning ? 'color:#dc2626; font-weight:800; display:inline-flex; align-items:center; gap:0.35rem;' : 'display:inline-flex; align-items:center; gap:0.35rem;'}">${duration}${hasTimingWarning ? durationWarningBadge : ''}</span>` : ''}`;
@@ -3274,6 +3573,8 @@ function renderPassengersSection() {
         const paxType = getPaxLabel(p.pax_type || p.type);
         const typeClass = paxType.toLowerCase();
         const seats = p.seats || [];
+        const passengerNameWarningKey = getPassengerNameWarningKey(i, p.name);
+        const showPassengerNameWarning = doesPassengerNameNeedWarning(p.name) && !isWarningDismissed(passengerNameWarningKey);
 
         const isChecked = selectedPaxIndices.has(i);
         const accent = passengerCardAccents[i % passengerCardAccents.length];
@@ -3291,7 +3592,13 @@ function renderPassengersSection() {
                 </div>
             </div>
             <div class="field-grid">
-                <div class="field-item"><label>Name</label><input type="text" value="${safe(p.name)}" oninput="updatePassengerField(${i}, 'name', this.value)" onchange="updatePassengerField(${i}, 'name', this.value)"></div>
+                <div class="field-item ${showPassengerNameWarning ? 'warning' : ''}" id="pax-name-field-${i}">
+                    <div class="field-label-row">
+                        <label>Name</label>
+                        ${showPassengerNameWarning ? buildWarningBadge(passengerNameWarningKey, 'Passenger name is still the placeholder "Passenger"') : ''}
+                    </div>
+                    <input type="text" value="${safe(p.name)}" oninput="updatePassengerField(${i}, 'name', this.value)" onchange="updatePassengerField(${i}, 'name', this.value)">
+                </div>
                 <div class="field-item"><label>Pax Type</label>
                     <select onchange="updatePassengerField(${i}, 'pax_type', this.value)">
                         <option value="ADT" ${(p.pax_type || '').toUpperCase() === 'ADT' ? 'selected' : ''}>Adult</option>
@@ -3977,11 +4284,31 @@ function syncPassengerNamesToVisibleUi(index) {
         allTickets[ticketIndex].passengers = JSON.parse(JSON.stringify(editedData.passengers || []));
     }
 
+    syncPassengerNameWarningUi(index);
+
     if (passengerSortMode === 'name') {
         renderPassengersSection();
     }
     renderFareSection();
     renderTicketCards();
+}
+
+function syncPassengerNameWarningUi(index) {
+    const field = document.getElementById(`pax-name-field-${index}`);
+    if (!field) return;
+    const passengerName = editedData?.passengers?.[index]?.name;
+    const warningKey = getPassengerNameWarningKey(index, passengerName);
+    const needsWarning = doesPassengerNameNeedWarning(passengerName) && !isWarningDismissed(warningKey);
+    field.classList.toggle('warning', needsWarning);
+
+    let badge = field.querySelector('.field-warning-badge');
+    if (needsWarning && !badge) {
+        const labelRow = field.querySelector('.field-label-row');
+        if (!labelRow) return;
+        labelRow.insertAdjacentHTML('beforeend', buildWarningBadge(warningKey, 'Passenger name is still the placeholder "Passenger"'));
+    } else if (!needsWarning && badge) {
+        badge.remove();
+    }
 }
 
 function doesTicketNumberNeedWarning(value) {
@@ -4123,14 +4450,14 @@ async function saveSegmentEdit(idx) {
     if (!seg.departure) seg.departure = {};
     seg.departure.airport = getValue('seg-dep-apt');
     seg.departure.city = getValue('seg-dep-city');
-    seg.departure.date = getValue('seg-dep-date');
+    seg.departure.date = formatFlightDateForStorage(getValue('seg-dep-date'));
     seg.departure.time = getValue('seg-dep-time');
     seg.departure.terminal = getValue('seg-dep-term');
 
     if (!seg.arrival) seg.arrival = {};
     seg.arrival.airport = getValue('seg-arr-apt');
     seg.arrival.city = getValue('seg-arr-city');
-    seg.arrival.date = getValue('seg-arr-date');
+    seg.arrival.date = formatFlightDateForStorage(getValue('seg-arr-date'));
     seg.arrival.time = getValue('seg-arr-time');
     seg.arrival.terminal = getValue('seg-arr-term');
 

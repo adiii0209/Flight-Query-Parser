@@ -862,10 +862,25 @@
         }
 
         .tl-terminal {
-            font-size: 0.68rem;
-            color: var(--primary);
-            font-weight: 600;
-            margin-top: 2px;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            width: fit-content;
+            font-size: 0.72rem;
+            color: #92400e;
+            font-weight: 800;
+            margin-top: 0.35rem;
+            padding: 0.18rem 0.55rem;
+            border-radius: 999px;
+            border: 1px solid rgba(245, 158, 11, 0.35);
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(249, 115, 22, 0.14));
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.12);
+        }
+
+        .tl-terminal-input {
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.16), rgba(249, 115, 22, 0.08)) !important;
+            border-color: rgba(245, 158, 11, 0.45) !important;
+            box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.08) !important;
         }
 
         .timeline-connector {
@@ -2547,7 +2562,11 @@
     </div>
 
     <div id="tsparticles" style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:-10;"></div>
-<script src="{{ url_for('static', filename='tickets.js') }}?v=20260420a"></script>
+<script>
+    window.AIRLINE_CODE_MAP = {{ airline_codes|tojson }};
+    window.AIRPORT_CODE_MAP = {{ airport_codes|tojson }};
+</script>
+<script src="{{ url_for('static', filename='tickets.js') }}?v=20260420b"></script>
 </body>
 
 </html>

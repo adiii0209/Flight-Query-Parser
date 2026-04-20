@@ -322,7 +322,7 @@ def draw_ticket(c, data, include_fare=True):
     logo_x = RIGHT - LOGO_W - 25
 
     try:
-        c.drawImage(ImageReader(logo), logo_x, HDR_Y + 30, width=LOGO_W + 25, height=25, mask="auto")
+        c.drawImage(ImageReader(logo), logo_x, HDR_Y + 30, width=LOGO_W + 25, height=20, mask="auto")
     except Exception: pass
 
     _txt(c, M, HDR_Y + 44, "E-TICKET", "Helvetica-Bold", 14, NAVY, "left")
