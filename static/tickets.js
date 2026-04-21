@@ -341,7 +341,7 @@ function inferDuplicatedConsolidatedFareFromPassengers(passengers) {
 function normalizeTicketFareData(ticket) {
     if (!ticket || typeof ticket !== 'object') return ticket;
     const normalized = JSON.parse(JSON.stringify(ticket));
-    normalized.currency = safe(normalized.currency, 'INR');
+    normalized.currency = normalizeCurrencyCode(normalized.currency);
     normalized.grand_total = parseMoneyValue(normalized.grand_total);
     if (normalized.journey) {
         normalized.journey.global_markup = parseMoneyValue(normalized.journey.global_markup);
@@ -380,8 +380,27 @@ function normalizeTicketFareData(ticket) {
     });
     return normalized;
 }
+
+const KNOWN_CURRENCY_CODES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD', 'THB'];
+
+function normalizeCurrencyCode(value) {
+    return safe(value, 'INR').toString().trim().toUpperCase() || 'INR';
+}
+
+function isKnownCurrencyCode(value) {
+    return KNOWN_CURRENCY_CODES.includes(normalizeCurrencyCode(value));
+}
+
+function getTicketCurrencyOptionState(value) {
+    const normalized = normalizeCurrencyCode(value);
+    if (isKnownCurrencyCode(normalized)) {
+        return { value: normalized, isCustom: false, customCode: '' };
+    }
+    return { value: normalized, isCustom: true, customCode: normalized };
+}
+
 function formatCurrency(n, curr) {
-    let currencyCode = curr || 'INR';
+    let currencyCode = normalizeCurrencyCode(curr);
     if (currencyCode === 'N/A' || currencyCode === 'Not Specified') currencyCode = 'INR';
     const currencySymbols = {
         INR: '\u20B9',
@@ -573,6 +592,10 @@ function formatTerminalDisplay(value) {
     return `Terminal ${terminal}`;
 }
 
+function doesTerminalNeedConfirmation(value) {
+    return !!formatTerminalDisplay(value);
+}
+
 function parseFlightDateTime(point) {
     if (!point || typeof point !== 'object') return null;
     const datePart = parseFlexibleFlightDate(point.date);
@@ -624,6 +647,10 @@ function getPnrWarningKey(value) {
     return `pnr:${String(value || '').trim()}`;
 }
 
+function getBookingDateWarningKey(value) {
+    return `booking-date:${String(value || '').trim()}`;
+}
+
 function getPhoneWarningKey(value) {
     return `phone:${String(value || '').trim()}`;
 }
@@ -636,7 +663,47 @@ function getSegmentWarningKey(segIdx, kind, segment) {
     const dep = segment?.departure || {};
     const arr = segment?.arrival || {};
     const duration = getSegmentDurationValue(segment);
-    return `segment:${segIdx}:${kind}:${safe(dep.date)}:${safe(dep.time)}:${safe(arr.date)}:${safe(arr.time)}:${safe(duration)}`;
+    let detail = '';
+    switch (kind) {
+        case 'flight-number':
+        case 'airline-code':
+            detail = `${safe(segment?.airline)}:${safe(segment?.flight_number)}`;
+            break;
+        case 'departure-airport':
+            detail = `${safe(dep.airport)}:${safe(dep.city)}`;
+            break;
+        case 'arrival-airport':
+            detail = `${safe(arr.airport)}:${safe(arr.city)}`;
+            break;
+        case 'departure-city':
+            detail = `${safe(dep.city)}:${safe(dep.airport)}`;
+            break;
+        case 'arrival-city':
+            detail = `${safe(arr.city)}:${safe(arr.airport)}`;
+            break;
+        case 'departure-terminal':
+            detail = `${safe(dep.terminal)}`;
+            break;
+        case 'arrival-terminal':
+            detail = `${safe(arr.terminal)}`;
+            break;
+        default:
+            detail = `${safe(dep.date)}:${safe(dep.time)}:${safe(arr.date)}:${safe(arr.time)}:${safe(duration)}`;
+            break;
+    }
+    return `segment:${segIdx}:${kind}:${detail}`;
+}
+
+function parseSegmentWarningKey(warningKey) {
+    const raw = String(warningKey || '');
+    const parts = raw.split(':');
+    if (parts.length < 3 || parts[0] !== 'segment') return null;
+    const segIdx = Number(parts[1]);
+    if (!Number.isInteger(segIdx)) return null;
+    return {
+        segIdx,
+        kind: parts[2]
+    };
 }
 
 function normalizeAirlineName(value) {
@@ -648,20 +715,110 @@ function normalizeAirlineName(value) {
         .replace(/[^a-z0-9]/g, '');
 }
 
-function getFlightNumberAirlineCode(flightNumber) {
+function parseFlightNumber(flightNumber) {
     const normalized = safe(flightNumber, '').toString().trim().toUpperCase();
-    if (!normalized) return '';
-    const match = normalized.match(/^([0-9A-Z]{2,3})\s*-?\s*\d+/);
-    return match ? match[1] : '';
+    if (!normalized) return { raw: normalized, airlineCode: '', numberPart: '', isExactMatch: false };
+    const match = normalized.match(/^([0-9A-Z]{2,3})\s*-?\s*(\d{1,4}[A-Z]?)$/);
+    return {
+        raw: normalized,
+        airlineCode: match ? match[1] : '',
+        numberPart: match ? match[2] : '',
+        isExactMatch: !!match
+    };
+}
+
+function formatFlightNumberValue(flightNumber) {
+    const parsed = parseFlightNumber(flightNumber);
+    if (parsed.isExactMatch && parsed.airlineCode && parsed.numberPart) {
+        return `${parsed.airlineCode} ${parsed.numberPart}`;
+    }
+    return safe(flightNumber, '').toString().trim().toUpperCase();
+}
+
+function getFlightNumberAirlineCode(flightNumber) {
+    return parseFlightNumber(flightNumber).airlineCode;
+}
+
+function getAirlineCodeForName(airlineName) {
+    const normalizedAirlineName = normalizeAirlineName(airlineName);
+    if (!normalizedAirlineName) return '';
+    const match = Object.entries(AIRLINE_CODE_MAP).find(([, mappedAirlineName]) =>
+        normalizeAirlineName(mappedAirlineName) === normalizedAirlineName
+    );
+    return match ? match[0] : '';
+}
+
+function createAirlineUpdateSuggestion(mappedAirlineName) {
+    if (!mappedAirlineName) return null;
+    return {
+        label: 'Yes',
+        action: 'update-airline',
+        value: mappedAirlineName
+    };
+}
+
+function createFlightNumberPromptSuggestion(expectedAirlineCode) {
+    if (!expectedAirlineCode) return null;
+    return {
+        label: 'Yes',
+        action: 'prompt-flight-number',
+        airlineCode: expectedAirlineCode
+    };
+}
+
+function getFlightNumberWarningMessage(segment) {
+    const airlineName = safe(segment?.airline, '').toString().trim();
+    const parsedFlightNumber = parseFlightNumber(segment?.flight_number);
+    if (!parsedFlightNumber.raw) {
+        const airlineCode = getAirlineCodeForName(airlineName);
+        const mappedAirlineName = airlineCode ? AIRLINE_CODE_MAP[airlineCode] : '';
+        return createWarningPayload(
+            'Flight number is required.',
+            airlineCode ? {
+                suggestionText: `Should we add/update the correct flight number ${airlineCode} for ${mappedAirlineName || airlineName}?`,
+                suggestion: createFlightNumberPromptSuggestion(airlineCode)
+            } : {}
+        );
+    }
+    if (!parsedFlightNumber.isExactMatch) {
+        const airlineCode = getAirlineCodeForName(airlineName);
+        const mappedAirlineName = airlineCode ? AIRLINE_CODE_MAP[airlineCode] : '';
+        return createWarningPayload(
+            'Flight number format looks wrong.',
+            airlineCode ? {
+                suggestionText: `Should we add/update the correct flight number ${airlineCode} for ${mappedAirlineName || airlineName}?`,
+                suggestion: createFlightNumberPromptSuggestion(airlineCode)
+            } : {}
+        );
+    }
+    const flightCode = parsedFlightNumber.airlineCode;
+    if (!airlineName || !flightCode) return null;
+    const mappedAirlineName = AIRLINE_CODE_MAP[flightCode];
+    if (!mappedAirlineName) {
+        const expectedAirlineCode = getAirlineCodeForName(airlineName);
+        const expectedAirlineName = expectedAirlineCode ? AIRLINE_CODE_MAP[expectedAirlineCode] : airlineName;
+        return createWarningPayload(
+            `Flight number code ${flightCode} is not in our airline database.`,
+            expectedAirlineCode ? {
+                suggestionText: `Should we add/update the correct flight number ${expectedAirlineCode} for ${expectedAirlineName}?`,
+                suggestion: createFlightNumberPromptSuggestion(expectedAirlineCode)
+            } : {}
+        );
+    }
+    if (normalizeAirlineName(mappedAirlineName) !== normalizeAirlineName(airlineName)) {
+        return createWarningPayload(
+            `Flight number code ${flightCode} belongs to ${mappedAirlineName}.`,
+            {
+                suggestionText: `Should we update airline name to "${mappedAirlineName}"?`,
+                suggestion: createAirlineUpdateSuggestion(mappedAirlineName)
+            }
+        );
+    }
+    return null;
 }
 
 function doesFlightNumberAirlineNeedWarning(segment) {
-    const airlineName = safe(segment?.airline, '').toString().trim();
-    const flightCode = getFlightNumberAirlineCode(segment?.flight_number);
-    if (!airlineName || !flightCode) return false;
-    const mappedAirlineName = AIRLINE_CODE_MAP[flightCode];
-    if (!mappedAirlineName) return false;
-    return normalizeAirlineName(mappedAirlineName) !== normalizeAirlineName(airlineName);
+    return !!getFlightNumberWarningMessage(segment);
 }
 
 function getPassengerNameWarningKey(index, value) {
@@ -686,16 +843,54 @@ function cityNamesMatch(leftCityName, rightCityName) {
     const normalizedLeft = normalizeCityName(leftCityName);
     const normalizedRight = normalizeCityName(rightCityName);
     if (!normalizedLeft || !normalizedRight) return false;
-    return (
-        normalizedLeft === normalizedRight ||
-        normalizedLeft.includes(normalizedRight) ||
-        normalizedRight.includes(normalizedLeft)
-    );
+    return normalizedLeft === normalizedRight;
 }
 
 function isKnownMappedCityName(cityName) {
     if (!cityName) return false;
     return Object.values(AIRPORT_CODE_MAP).some((mappedCityName) => cityNamesMatch(cityName, mappedCityName));
+}
+
+function getAirportCodeForCityName(cityName) {
+    const normalizedCityName = normalizeCityName(cityName);
+    if (!normalizedCityName) return '';
+    const match = Object.entries(AIRPORT_CODE_MAP).find(([, mappedCityName]) =>
+        normalizeCityName(mappedCityName) === normalizedCityName
+    );
+    return match ? match[0] : '';
+}
+
+function doesBookingDateNeedWarning(value) {
+    const normalized = safe(value, '').toString().trim();
+    const warningKey = getBookingDateWarningKey(normalized);
+    const invalid = !normalized;
+    if (!invalid) clearDismissedWarning(warningKey);
+    return invalid && !isWarningDismissed(warningKey);
+}
+
+function createCityUpdateSuggestion(mappedCityName) {
+    if (!mappedCityName) return null;
+    return {
+        label: 'Yes',
+        action: 'update-city',
+        value: mappedCityName
+    };
+}
+
+function createAirportUpdateSuggestion(airportCode) {
+    if (!airportCode) return null;
+    return {
+        label: 'Yes',
+        action: 'update-airport',
+        value: airportCode
+    };
+}
+
+function createDismissWarningSuggestion() {
+    return {
+        label: 'Yes',
+        action: 'dismiss-warning'
+    };
 }
 
 function getAirportCityValidation(point) {
@@ -704,42 +899,74 @@ function getAirportCityValidation(point) {
     const mappedCityName = airportCode ? AIRPORT_CODE_MAP[airportCode] : '';
     const airportKnown = !!mappedCityName;
     const cityKnown = !!cityName && isKnownMappedCityName(cityName);
+    const mappedAirportCode = cityName ? getAirportCodeForCityName(cityName) : '';
     const pairMatches = airportKnown && cityName ? cityNamesMatch(cityName, mappedCityName) : false;
 
-    let airportMessage = '';
-    let cityMessage = '';
+    let airportMessage = null;
+    let cityMessage = null;
 
     if (airportCode && !airportKnown) {
-        airportMessage = cityKnown
-            ? `Airport code ${airportCode} does not match city ${cityName} and is not in our database.`
-            : cityName
-            ? `Airport code ${airportCode} is not in our database.`
-            : `Airport code ${airportCode} is not in our database.`;
+        airportMessage = createWarningPayload(
+            cityName
+                ? `${airportCode} is not in our airport database for "${cityName}".`
+                : `${airportCode} is not in our airport database.`
+        );
 
         if (cityName) {
-            cityMessage = cityKnown
-                ? `City name ${cityName} does not match airport code ${airportCode}. Airport code ${airportCode} is not in our database.`
-                : `City name ${cityName} should be reviewed because airport code ${airportCode} is not in our database.`;
+            cityMessage = createWarningPayload(
+                cityKnown
+                    ? `"${cityName}" does not match airport code ${airportCode}, and ${airportCode} is not in our database.`
+                    : `"${cityName}" should be reviewed because ${airportCode} is not in our airport database.`
+            );
         }
     }
 
+    if (airportCode && !airportKnown && cityKnown && mappedAirportCode) {
+        airportMessage = createWarningPayload(
+            `"${cityName}" does not match airport code ${airportCode}.`,
+            {
+                suggestionText: `Should we update to "${mappedAirportCode}"?`,
+                suggestion: createAirportUpdateSuggestion(mappedAirportCode)
+            }
+        );
+    }
+
     if (cityName && !cityKnown && !cityMessage) {
-        cityMessage = airportKnown
-            ? `City name ${cityName} is not in our database for airport code ${airportCode}. ${airportCode} maps to ${mappedCityName}.`
-            : airportCode
-            ? `City name ${cityName} is not in our database.`
-            : `City name ${cityName} is not in our database.`;
+        cityMessage = createWarningPayload(
+            airportKnown
+                ? `"${cityName}" does not match ${airportCode}.`
+                : airportCode
+                ? `"${cityName}" is not in our city database.`
+                : `"${cityName}" is not in our city database.`,
+            airportKnown ? {
+                suggestionText: `Should we update to "${mappedCityName}"?`,
+                suggestion: createCityUpdateSuggestion(mappedCityName)
+            } : {}
+        );
     }
 
     if (airportKnown && cityKnown && cityName && !pairMatches) {
-        airportMessage = `Airport code ${airportCode} does not match city ${cityName}. ${airportCode} maps to ${mappedCityName}.`;
-        cityMessage = `City name ${cityName} does not match airport code ${airportCode}. ${airportCode} maps to ${mappedCityName}.`;
+        airportMessage = createWarningPayload(
+            `${airportCode} is mapped to "${mappedCityName}", not "${cityName}".`,
+            {
+                suggestionText: `Should we update to "${mappedCityName}"?`,
+                suggestion: createCityUpdateSuggestion(mappedCityName)
+            }
+        );
+        cityMessage = createWarningPayload(
+            `"${cityName}" does not match ${airportCode}.`,
+            {
+                suggestionText: `Should we update to "${mappedCityName}"?`,
+                suggestion: createCityUpdateSuggestion(mappedCityName)
+            }
+        );
     }
 
     return {
         airportCode,
         cityName,
         mappedCityName,
+        mappedAirportCode,
         airportKnown,
         cityKnown,
         pairMatches,
@@ -1011,6 +1238,36 @@ function clearDismissedWarning(warningKey) {
     dismissedWarningKeys.delete(warningKey);
 }
 
+function createWarningPayload(message, options = {}) {
+    return {
+        text: String(message || ''),
+        suggestionText: options.suggestionText ? String(options.suggestionText) : '',
+        suggestion: options.suggestion || null
+    };
+}
+
+function parseWarningPayload(rawMessage) {
+    if (rawMessage && typeof rawMessage === 'object') {
+        return {
+            text: String(rawMessage.text || ''),
+            suggestionText: String(rawMessage.suggestionText || ''),
+            suggestion: rawMessage.suggestion || null
+        };
+    }
+    const raw = String(rawMessage || '');
+    try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && ('text' in parsed || 'suggestion' in parsed)) {
+            return {
+                text: String(parsed.text || ''),
+                suggestionText: String(parsed.suggestionText || ''),
+                suggestion: parsed.suggestion || null
+            };
+        }
+    } catch (e) { }
+    return { text: raw, suggestionText: '', suggestion: null };
+}
+
 function escapeHtmlAttribute(value) {
     return String(value || '')
         .replace(/&/g, '&amp;')
@@ -1021,8 +1278,10 @@ function escapeHtmlAttribute(value) {
 
 function buildWarningBadge(warningKey, message) {
     const safeKey = JSON.stringify(String(warningKey || ''));
-    const safeMessage = JSON.stringify(String(message || ''));
-    const title = escapeHtmlAttribute(message);
+    const payload = parseWarningPayload(message);
+    const serializedMessage = typeof message === 'string' ? message : JSON.stringify(payload);
+    const safeMessage = JSON.stringify(String(serializedMessage || ''));
+    const title = escapeHtmlAttribute(payload.text || serializedMessage);
     return `<button type="button" class="field-warning-badge" title="${title}" onclick='event.stopPropagation(); openWarningReviewModal(${safeKey}, ${safeMessage})'>&#9888;</button>`;
 }
 
@@ -1059,6 +1318,20 @@ function getSegmentBookingClassValue(segment) {
         return '';
     }
     return normalized;
+}
+
+const KNOWN_CABIN_CLASSES = ['Economy', 'Premium Economy', 'Business', 'First'];
+
+function getCabinClassOptionState(segment) {
+    const bookingClassValue = getSegmentBookingClassValue(segment);
+    if (!bookingClassValue) {
+        return { selectValue: '', customValue: '', isCustom: false };
+    }
+    const knownMatch = KNOWN_CABIN_CLASSES.find((option) => option.toLowerCase() === bookingClassValue.toLowerCase());
+    if (knownMatch) {
+        return { selectValue: knownMatch, customValue: '', isCustom: false };
+    }
+    return { selectValue: '__custom__', customValue: bookingClassValue, isCustom: true };
 }
 
 // ==================== LEG GROUPING ====================
@@ -3021,7 +3294,7 @@ function renderActionsSection() {
 function renderDetailView() {
     const t = editedData;
     if (!t) return;
-    if (!t.currency) t.currency = 'INR';
+    t.currency = normalizeCurrencyCode(t.currency);
     const segments = t.segments || [];
     const journey = t.journey || {};
 
@@ -3107,9 +3380,12 @@ function renderBookingSection() {
     if (!t.raw_data.gst_details) t.raw_data.gst_details = {};
     const gst = t.raw_data.gst_details;
     const pnrNeedsWarning = doesPnrNeedWarning(t.pnr);
+    const bookingDateNeedsWarning = doesBookingDateNeedWarning(t.booking_date);
     const phoneNeedsWarning = doesPhoneNeedWarning(t.phone);
     const pnrWarningKey = getPnrWarningKey(t.pnr);
+    const bookingDateWarningKey = getBookingDateWarningKey(t.booking_date);
     const phoneWarningKey = getPhoneWarningKey(t.phone);
+    const currencyState = getTicketCurrencyOptionState(t.currency);
 
     const gstHtml = `
         <div style="margin-top:1rem; padding:1rem; background:var(--bg-main); border-radius:10px; border:1px solid var(--border);">
@@ -3139,7 +3415,13 @@ function renderBookingSection() {
                 </div>
                 <input type="text" id="ticketPnrInput" value="${safe(t.pnr)}" oninput="updateTicketPnr(this.value)" onchange="updateTicketPnr(this.value)">
             </div>
-            <div class="field-item"><label>Booking Date</label><input type="text" value="${safe(t.booking_date)}" oninput="editedData.booking_date=this.value; triggerAutoSave()" onchange="editedData.booking_date=this.value; triggerAutoSave()"></div>
+            <div class="field-item ${bookingDateNeedsWarning ? 'warning' : ''}" id="ticketBookingDateField">
+                <div class="field-label-row">
+                    <label>Booking Date</label>
+                    ${bookingDateNeedsWarning ? buildWarningBadge(bookingDateWarningKey, 'Booking date is required') : ''}
+                </div>
+                <input type="text" id="ticketBookingDateInput" value="${safe(t.booking_date)}" oninput="updateTicketBookingDate(this.value)" onchange="updateTicketBookingDate(this.value)">
+            </div>
             <div class="field-item ${phoneNeedsWarning ? 'warning' : ''}" id="ticketPhoneField">
                 <div class="field-label-row">
                     <label>Phone</label>
@@ -3149,13 +3431,14 @@ function renderBookingSection() {
             </div>
             <div class="field-item"><label>Currency</label>
                 <select onchange="setTicketCurrency(this.value)">
-                    <option value="INR" ${(t.currency || 'INR') === 'INR' ? 'selected' : ''}>INR</option>
-                    <option value="USD" ${t.currency === 'USD' ? 'selected' : ''}>USD</option>
-                    <option value="EUR" ${t.currency === 'EUR' ? 'selected' : ''}>EUR</option>
-                    <option value="GBP" ${t.currency === 'GBP' ? 'selected' : ''}>GBP</option>
-                    <option value="AED" ${t.currency === 'AED' ? 'selected' : ''}>AED</option>
-                    <option value="SGD" ${t.currency === 'SGD' ? 'selected' : ''}>SGD</option>
-                    <option value="THB" ${t.currency === 'THB' ? 'selected' : ''}>THB</option>
+                    <option value="INR" ${currencyState.value === 'INR' ? 'selected' : ''}>INR</option>
+                    <option value="USD" ${currencyState.value === 'USD' ? 'selected' : ''}>USD</option>
+                    <option value="EUR" ${currencyState.value === 'EUR' ? 'selected' : ''}>EUR</option>
+                    <option value="GBP" ${currencyState.value === 'GBP' ? 'selected' : ''}>GBP</option>
+                    <option value="AED" ${currencyState.value === 'AED' ? 'selected' : ''}>AED</option>
+                    <option value="SGD" ${currencyState.value === 'SGD' ? 'selected' : ''}>SGD</option>
+                    <option value="THB" ${currencyState.value === 'THB' ? 'selected' : ''}>THB</option>
+                    ${currencyState.isCustom ? `<option value="${escapeHtmlAttribute(currencyState.customCode)}" selected>Custom (${escapeHtmlAttribute(currencyState.customCode)})</option>` : ''}
                 </select>
             </div>
             <div class="field-item"><label>Trip Type</label>
@@ -3226,6 +3509,29 @@ function syncPhoneWarningUi() {
     } else if (!needsWarning && badge) {
         badge.remove();
     }
+}
+
+function syncBookingDateWarningUi() {
+    const bookingDateField = document.getElementById('ticketBookingDateField');
+    if (!bookingDateField) return;
+    const needsWarning = doesBookingDateNeedWarning(editedData.booking_date);
+    const warningKey = getBookingDateWarningKey(editedData.booking_date);
+    bookingDateField.classList.toggle('warning', needsWarning);
+
+    let badge = bookingDateField.querySelector('.field-warning-badge');
+    if (needsWarning && !badge) {
+        const labelRow = bookingDateField.querySelector('.field-label-row');
+        if (!labelRow) return;
+        labelRow.insertAdjacentHTML('beforeend', buildWarningBadge(warningKey, 'Booking date is required'));
+    } else if (!needsWarning && badge) {
+        badge.remove();
+    }
+}
+
+function updateTicketBookingDate(value) {
+    editedData.booking_date = value;
+    syncBookingDateWarningUi();
+    triggerAutoSave();
 }
 
 function updateTicketPhone(value) {
@@ -3337,14 +3643,17 @@ function renderSegmentsSection() {
             const duration = getSegmentDurationValue(seg);
             const hasDurationWarning = doesSegmentDurationNeedWarning(seg);
             const hasDateOrderWarning = doesSegmentDateOrderNeedWarning(seg);
-            const hasAirlineCodeWarning = doesFlightNumberAirlineNeedWarning(seg);
+            const flightNumberWarningMessage = getFlightNumberWarningMessage(seg);
+            const hasAirlineCodeWarning = !!flightNumberWarningMessage;
             const durationWarningKey = getSegmentWarningKey(segIdx, 'duration', seg);
             const dateOrderWarningKey = getSegmentWarningKey(segIdx, 'date-order', seg);
-            const airlineCodeWarningKey = getSegmentWarningKey(segIdx, 'airline-code', seg);
+            const airlineCodeWarningKey = getSegmentWarningKey(segIdx, 'flight-number', seg);
             const departureAirportWarningKey = getSegmentWarningKey(segIdx, 'departure-airport', seg);
             const arrivalAirportWarningKey = getSegmentWarningKey(segIdx, 'arrival-airport', seg);
             const departureCityWarningKey = getSegmentWarningKey(segIdx, 'departure-city', seg);
             const arrivalCityWarningKey = getSegmentWarningKey(segIdx, 'arrival-city', seg);
+            const departureTerminalWarningKey = getSegmentWarningKey(segIdx, 'departure-terminal', seg);
+            const arrivalTerminalWarningKey = getSegmentWarningKey(segIdx, 'arrival-terminal', seg);
             const showDurationWarning = hasDurationWarning && !isWarningDismissed(durationWarningKey);
             const showDateOrderWarning = hasDateOrderWarning && !isWarningDismissed(dateOrderWarningKey);
             const showAirlineCodeWarning = hasAirlineCodeWarning && !isWarningDismissed(airlineCodeWarningKey);
@@ -3352,6 +3661,8 @@ function renderSegmentsSection() {
             const showArrivalAirportWarning = !!arrivalLocationValidation.airportMessage && !isWarningDismissed(arrivalAirportWarningKey);
             const showDepartureCityWarning = !!departureLocationValidation.cityMessage && !isWarningDismissed(departureCityWarningKey);
             const showArrivalCityWarning = !!arrivalLocationValidation.cityMessage && !isWarningDismissed(arrivalCityWarningKey);
+            const showDepartureTerminalWarning = doesTerminalNeedConfirmation(dep.terminal) && !isWarningDismissed(departureTerminalWarningKey);
+            const showArrivalTerminalWarning = doesTerminalNeedConfirmation(arr.terminal) && !isWarningDismissed(arrivalTerminalWarningKey);
             const hasTimingWarning = showDurationWarning || showDateOrderWarning;
             const warningMessages = [];
             const warningKeys = [];
@@ -3366,36 +3677,85 @@ function renderSegmentsSection() {
             const durationWarningBadge = hasTimingWarning
                 ? buildWarningBadge(warningKeys.join('||'), warningMessages.join(' | '))
                 : '';
-            const airlineCode = getFlightNumberAirlineCode(seg.flight_number);
             const airlineCodeWarningBadge = showAirlineCodeWarning
                 ? buildWarningBadge(
                     airlineCodeWarningKey,
-                    `Flight number code does not match airline mapping. ${safe(airlineCode)} maps to ${safe(AIRLINE_CODE_MAP[airlineCode])}.`
+                    flightNumberWarningMessage?.suggestion
+                        ? {
+                            ...flightNumberWarningMessage,
+                            suggestion: {
+                                ...flightNumberWarningMessage.suggestion,
+                                segIdx
+                            }
+                        }
+                        : flightNumberWarningMessage
                 )
                 : '';
             const departureAirportWarningBadge = showDepartureAirportWarning
                 ? buildWarningBadge(
                     departureAirportWarningKey,
-                    departureLocationValidation.airportMessage
+                    departureLocationValidation.airportMessage?.suggestion
+                        ? {
+                            ...departureLocationValidation.airportMessage,
+                            suggestion: {
+                                ...departureLocationValidation.airportMessage.suggestion,
+                                segIdx,
+                                field: 'departure'
+                            }
+                        }
+                        : departureLocationValidation.airportMessage
                 )
                 : '';
             const arrivalAirportWarningBadge = showArrivalAirportWarning
                 ? buildWarningBadge(
                     arrivalAirportWarningKey,
-                    arrivalLocationValidation.airportMessage
+                    arrivalLocationValidation.airportMessage?.suggestion
+                        ? {
+                            ...arrivalLocationValidation.airportMessage,
+                            suggestion: {
+                                ...arrivalLocationValidation.airportMessage.suggestion,
+                                segIdx,
+                                field: 'arrival'
+                            }
+                        }
+                        : arrivalLocationValidation.airportMessage
                 )
                 : '';
             const departureCityWarningBadge = showDepartureCityWarning
                 ? buildWarningBadge(
                     departureCityWarningKey,
-                    departureLocationValidation.cityMessage
+                    departureLocationValidation.cityMessage?.suggestion
+                        ? {
+                            ...departureLocationValidation.cityMessage,
+                            suggestion: {
+                                ...departureLocationValidation.cityMessage.suggestion,
+                                segIdx,
+                                field: 'departure'
+                            }
+                        }
+                        : departureLocationValidation.cityMessage
                 )
                 : '';
             const arrivalCityWarningBadge = showArrivalCityWarning
                 ? buildWarningBadge(
                     arrivalCityWarningKey,
-                    arrivalLocationValidation.cityMessage
+                    arrivalLocationValidation.cityMessage?.suggestion
+                        ? {
+                            ...arrivalLocationValidation.cityMessage,
+                            suggestion: {
+                                ...arrivalLocationValidation.cityMessage.suggestion,
+                                segIdx,
+                                field: 'arrival'
+                            }
+                        }
+                        : arrivalLocationValidation.cityMessage
                 )
+                : '';
+            const departureTerminalWarningBadge = showDepartureTerminalWarning
+                ? `<div style="display:flex; align-items:center; gap:0.35rem; margin-top:0.2rem;"><span style="font-size:0.7rem; color:#b45309; font-weight:700;">Is this terminal okay?</span><button type="button" class="field-warning-badge" style="padding:0 0.28rem; min-width:1.1rem;" title="Confirm terminal" onclick='event.stopPropagation(); confirmWarningOkay(${JSON.stringify(String(departureTerminalWarningKey || ""))})'>&#10003;</button></div>`
+                : '';
+            const arrivalTerminalWarningBadge = showArrivalTerminalWarning
+                ? `<div style="display:flex; align-items:center; gap:0.35rem; margin-top:0.2rem;"><span style="font-size:0.7rem; color:#b45309; font-weight:700;">Is this terminal okay?</span><button type="button" class="field-warning-badge" style="padding:0 0.28rem; min-width:1.1rem;" title="Confirm terminal" onclick='event.stopPropagation(); confirmWarningOkay(${JSON.stringify(String(arrivalTerminalWarningKey || ""))})'>&#10003;</button></div>`
                 : '';
             if (posInLeg > 0) {
                 const prevSegIdx = legIndices[posInLeg - 1];
@@ -3411,7 +3771,8 @@ function renderSegmentsSection() {
             const depDateTimeClass = showCabinClass ? 'tl-datetime has-cabin-class' : 'tl-datetime';
             const arrDateTimeClass = showCabinClass ? 'tl-datetime has-cabin-class' : 'tl-datetime';
             const isEditingSegment = activeSegmentEditIdx === segIdx;
-            const cabinOptions = ['', 'Economy', 'Premium Economy', 'Business', 'First'];
+            const cabinState = getCabinClassOptionState(seg);
+            const cabinOptions = [...KNOWN_CABIN_CLASSES, '__custom__'];
             const inlineInputStyle = 'background:var(--bg-card); color:var(--text-primary); border:1px solid var(--border); border-radius:8px; padding:0.25rem 0.4rem; font:inherit; min-width:0; box-sizing:border-box;';
             const timingFieldStyle = hasTimingWarning ? 'color:#dc2626; font-weight:800;' : '';
             const timingInputStyle = hasTimingWarning
@@ -3436,7 +3797,7 @@ function renderSegmentsSection() {
                 ? 'color:#dc2626; border-color:rgba(220,38,38,0.45); box-shadow:0 0 0 2px rgba(220,38,38,0.08);'
                 : '';
             const segmentHeaderMainHtml = isEditingSegment
-                ? `<input class="segment-airline-v2" style="${inlineInputStyle}; width:150px; font-weight:700;" id="seg-airline-${segIdx}" value="${safe(seg.airline)}"><input class="segment-fltnum-v2" style="${inlineInputStyle}; width:95px; font-weight:700; ${showAirlineCodeWarning ? 'color:#dc2626; border-color:rgba(220,38,38,0.45); box-shadow:0 0 0 2px rgba(220,38,38,0.08);' : ''}" id="seg-fltnum-${segIdx}" value="${safe(seg.flight_number)}">${airlineCodeWarningBadge}<select class="seg-class-chip" style="${inlineInputStyle}; width:150px; font-size:0.72rem;" id="seg-class-${segIdx}">${cabinOptions.map(option => `<option value="${option}" ${bkClassStr === option ? 'selected' : ''}>${option || 'Hidden'}</option>`).join('')}</select>`
+                ? `<input class="segment-airline-v2" style="${inlineInputStyle}; width:150px; font-weight:700;" id="seg-airline-${segIdx}" value="${safe(seg.airline)}"><input class="segment-fltnum-v2" style="${inlineInputStyle}; width:95px; font-weight:700; ${showAirlineCodeWarning ? 'color:#dc2626; border-color:rgba(220,38,38,0.45); box-shadow:0 0 0 2px rgba(220,38,38,0.08);' : ''}" id="seg-fltnum-${segIdx}" value="${safe(seg.flight_number)}">${airlineCodeWarningBadge}<select class="seg-class-chip" style="${inlineInputStyle}; width:150px; font-size:0.72rem;" id="seg-class-${segIdx}" onchange="toggleCustomCabinClassField(${segIdx}, this.value)"><option value="" ${!cabinState.selectValue ? 'selected' : ''}>Select cabin</option>${cabinOptions.map(option => `<option value="${option}" ${cabinState.selectValue === option ? 'selected' : ''}>${option === '__custom__' ? 'Custom' : option}</option>`).join('')}</select><input class="seg-class-custom" style="${inlineInputStyle}; width:140px; font-size:0.72rem; display:${cabinState.isCustom ? 'inline-block' : 'none'};" id="seg-class-custom-${segIdx}" value="${safe(cabinState.customValue)}" placeholder="Enter custom class">`
                 : `<span class="segment-airline-v2">${safe(seg.airline, 'Airline')}</span><span class="segment-fltnum-v2" style="${showAirlineCodeWarning ? 'color:#dc2626; font-weight:800;' : ''}">${safe(seg.flight_number)}</span>${showAirlineCodeWarning ? airlineCodeWarningBadge : ''}${showCabinClass ? `<span class="seg-class-chip">${bkClassStr}</span>` : ''}`;
             const depLocationHtml = isEditingSegment
                 ? `<input class="tl-code" style="${inlineInputStyle}; width:68px; font-weight:800; text-transform:uppercase; text-align:center; ${departureAirportInputStyle}" id="seg-dep-apt-${segIdx}" value="${safe(dep.airport)}">${departureAirportWarningBadge}<input class="tl-city" style="${inlineInputStyle}; width:112px; font-size:0.75rem; ${departureCityInputStyle}" id="seg-dep-city-${segIdx}" value="${safe(dep.city)}">${departureCityWarningBadge}`
@@ -3445,8 +3806,8 @@ function renderSegmentsSection() {
                 ? `<input class="tl-time" style="${inlineInputStyle}; width:68px; font-weight:700; text-align:center; ${timingInputStyle}" id="seg-dep-time-${segIdx}" value="${safe(dep.time)}"><input type="date" class="tl-date" style="${inlineInputStyle}; width:138px; font-size:0.72rem; ${timingInputStyle}" id="seg-dep-date-${segIdx}" value="${formatFlightDateForInput(dep.date)}">`
                 : `<span class="tl-time" style="${timingFieldStyle}">${safe(dep.time, '--:--')}</span><span class="tl-date" style="${timingFieldStyle}">${safe(dep.date)}</span>`;
             const depTerminalHtml = isEditingSegment
-                ? `<input class="tl-terminal tl-terminal-input" style="${inlineInputStyle}; width:110px; margin-top:0.35rem; font-size:0.72rem; font-weight:700;" id="seg-dep-term-${segIdx}" placeholder="Terminal" value="${safe(dep.terminal)}">`
-                : `${formatTerminalDisplay(dep.terminal) ? `<span class="tl-terminal">${safe(formatTerminalDisplay(dep.terminal))}</span>` : ''}`;
+                ? `<div style="display:flex; flex-direction:column; align-items:flex-start; margin-top:0.35rem;"><input class="tl-terminal tl-terminal-input" style="${inlineInputStyle}; width:110px; font-size:0.72rem; font-weight:700; ${showDepartureTerminalWarning ? 'color:#dc2626; border-color:rgba(220,38,38,0.45); box-shadow:0 0 0 2px rgba(220,38,38,0.08);' : ''}" id="seg-dep-term-${segIdx}" placeholder="Terminal" value="${safe(dep.terminal)}">${departureTerminalWarningBadge}</div>`
+                : `${formatTerminalDisplay(dep.terminal) ? `<div style="display:flex; flex-direction:column; align-items:flex-start; margin-top:0.35rem;"><span class="tl-terminal" style="${showDepartureTerminalWarning ? 'color:#dc2626; font-weight:800;' : ''}">${safe(formatTerminalDisplay(dep.terminal))}</span>${departureTerminalWarningBadge}</div>` : ''}`;
             const arrLocationHtml = isEditingSegment
                 ? `<input class="tl-code" style="${inlineInputStyle}; width:68px; font-weight:800; text-transform:uppercase; text-align:center; ${arrivalAirportInputStyle}" id="seg-arr-apt-${segIdx}" value="${safe(arr.airport)}">${arrivalAirportWarningBadge}<input class="tl-city" style="${inlineInputStyle}; width:112px; font-size:0.75rem; ${arrivalCityInputStyle}" id="seg-arr-city-${segIdx}" value="${safe(arr.city)}">${arrivalCityWarningBadge}`
                 : `<span class="tl-code" style="${arrivalAirportFieldStyle}">${safe(arr.airport, '---')}</span>${showArrivalAirportWarning ? arrivalAirportWarningBadge : ''}${arr.city ? `<span class="tl-city" style="font-size:0.75rem; color:var(--text-secondary); ${arrivalCityFieldStyle}">(${safe(arr.city)})</span>${arrivalCityHasAnyWarning ? arrivalCityWarningBadge : ''}` : ''}`;
@@ -3454,8 +3815,8 @@ function renderSegmentsSection() {
                 ? `<input class="tl-time" style="${inlineInputStyle}; width:68px; font-weight:700; text-align:center; ${timingInputStyle}" id="seg-arr-time-${segIdx}" value="${safe(arr.time)}"><input type="date" class="tl-date" style="${inlineInputStyle}; width:138px; font-size:0.72rem; ${timingInputStyle}" id="seg-arr-date-${segIdx}" value="${formatFlightDateForInput(arr.date)}">`
                 : `<span class="tl-time" style="${timingFieldStyle}">${safe(arr.time, '--:--')}</span><span class="tl-date" style="${timingFieldStyle}">${safe(arr.date)}</span>`;
             const arrTerminalHtml = isEditingSegment
-                ? `<input class="tl-terminal tl-terminal-input" style="${inlineInputStyle}; width:110px; margin-top:0.35rem; font-size:0.72rem; font-weight:700;" id="seg-arr-term-${segIdx}" placeholder="Terminal" value="${safe(arr.terminal)}">`
-                : `${formatTerminalDisplay(arr.terminal) ? `<span class="tl-terminal">${safe(formatTerminalDisplay(arr.terminal))}</span>` : ''}`;
+                ? `<div style="display:flex; flex-direction:column; align-items:flex-start; margin-top:0.35rem;"><input class="tl-terminal tl-terminal-input" style="${inlineInputStyle}; width:110px; font-size:0.72rem; font-weight:700; ${showArrivalTerminalWarning ? 'color:#dc2626; border-color:rgba(220,38,38,0.45); box-shadow:0 0 0 2px rgba(220,38,38,0.08);' : ''}" id="seg-arr-term-${segIdx}" placeholder="Terminal" value="${safe(arr.terminal)}">${arrivalTerminalWarningBadge}</div>`
+                : `${formatTerminalDisplay(arr.terminal) ? `<div style="display:flex; flex-direction:column; align-items:flex-start; margin-top:0.35rem;"><span class="tl-terminal" style="${showArrivalTerminalWarning ? 'color:#dc2626; font-weight:800;' : ''}">${safe(formatTerminalDisplay(arr.terminal))}</span>${arrivalTerminalWarningBadge}</div>` : ''}`;
             const durationHtml = isEditingSegment
                 ? `<div style="position:absolute; top:-30px; left:50%; transform:translateX(-50%); z-index:3; display:flex; align-items:center; gap:0.35rem;"><input style="${inlineInputStyle}; width:98px; text-align:center; font-size:0.72rem; background:var(--bg-card); color:${hasTimingWarning ? '#dc2626' : 'var(--text-primary)'}; border-color:${hasTimingWarning ? 'rgba(220,38,38,0.4)' : 'var(--border)'};" id="seg-duration-${segIdx}" value="${safe(duration)}">${durationWarningBadge}</div>`
                 : `${duration ? `<span class="timeline-duration" style="${hasTimingWarning ? 'color:#dc2626; font-weight:800; display:inline-flex; align-items:center; gap:0.35rem;' : 'display:inline-flex; align-items:center; gap:0.35rem;'}">${duration}${hasTimingWarning ? durationWarningBadge : ''}</span>` : ''}`;
@@ -3493,7 +3854,7 @@ function setPassengerSortMode(mode) {
 }
 
 function setTicketCurrency(currency) {
-    editedData.currency = currency || 'INR';
+    editedData.currency = normalizeCurrencyCode(currency);
     isDetailDirty = true;
     if (currentTicket && currentTicket.id === editedData.id) {
         currentTicket.currency = editedData.currency;
@@ -4435,28 +4796,42 @@ function cancelSegmentEdit() {
     renderSegmentsSection();
 }
 
+function toggleCustomCabinClassField(segIdx, selectedValue) {
+    const customInput = document.getElementById(`seg-class-custom-${segIdx}`);
+    if (!customInput) return;
+    const showCustom = selectedValue === '__custom__';
+    customInput.style.display = showCustom ? 'inline-block' : 'none';
+    if (showCustom) {
+        customInput.focus();
+    } else {
+        customInput.value = '';
+    }
+}
+
 async function saveSegmentEdit(idx) {
     const seg = editedData.segments[idx];
     const originalSegment = JSON.parse(JSON.stringify(seg || {}));
     const getValue = (id) => document.getElementById(`${id}-${idx}`)?.value || '';
 
-    seg.airline = getValue('seg-airline');
-    seg.flight_number = getValue('seg-fltnum');
+    seg.airline = getValue('seg-airline').trim();
+    seg.flight_number = formatFlightNumberValue(getValue('seg-fltnum'));
     const selectedCabinClass = getValue('seg-class').trim();
-    seg.show_booking_class = !!selectedCabinClass;
-    if (selectedCabinClass) seg.booking_class = selectedCabinClass;
+    const customCabinClass = getValue('seg-class-custom').trim();
+    const finalCabinClass = selectedCabinClass === '__custom__' ? customCabinClass : selectedCabinClass;
+    seg.show_booking_class = !!finalCabinClass;
+    if (finalCabinClass) seg.booking_class = finalCabinClass;
     else delete seg.booking_class;
 
     if (!seg.departure) seg.departure = {};
-    seg.departure.airport = getValue('seg-dep-apt').toUpperCase();
-    seg.departure.city = getValue('seg-dep-city');
+    seg.departure.airport = getValue('seg-dep-apt').trim().toUpperCase();
+    seg.departure.city = getValue('seg-dep-city').trim();
     seg.departure.date = formatFlightDateForStorage(getValue('seg-dep-date'));
     seg.departure.time = getValue('seg-dep-time');
     seg.departure.terminal = getValue('seg-dep-term');
 
     if (!seg.arrival) seg.arrival = {};
-    seg.arrival.airport = getValue('seg-arr-apt').toUpperCase();
-    seg.arrival.city = getValue('seg-arr-city');
+    seg.arrival.airport = getValue('seg-arr-apt').trim().toUpperCase();
+    seg.arrival.city = getValue('seg-arr-city').trim();
     seg.arrival.date = formatFlightDateForStorage(getValue('seg-arr-date'));
     seg.arrival.time = getValue('seg-arr-time');
     seg.arrival.terminal = getValue('seg-arr-term');
@@ -5014,7 +5389,305 @@ function _closeModal() {
     if (m) m.remove();
 }
 
+function applyWarningSuggestion(warningKey, suggestion) {
+    if (typeof suggestion === 'string') {
+        try {
+            suggestion = JSON.parse(suggestion);
+        } catch (e) {
+            suggestion = null;
+        }
+    }
+    if (!suggestion) return;
+    if (suggestion.action === 'dismiss-warning') {
+        confirmWarningOkay(warningKey);
+        return;
+    }
+    if (suggestion.action === 'update-city') {
+        const segIdx = Number(suggestion.segIdx);
+        const field = suggestion.field;
+        const nextValue = safe(suggestion.value, '').toString().trim();
+        if (!Number.isInteger(segIdx) || !nextValue || !['departure', 'arrival'].includes(field)) return;
+        if (!editedData.segments || !editedData.segments[segIdx]) return;
+        if (!editedData.segments[segIdx][field]) editedData.segments[segIdx][field] = {};
+
+        editedData.segments[segIdx][field].city = nextValue;
+        clearDismissedWarning(warningKey);
+        _closeModal();
+        renderDetailView();
+        triggerAutoSave();
+        return;
+    }
+    if (suggestion.action === 'update-airport') {
+        const segIdx = Number(suggestion.segIdx);
+        const field = suggestion.field;
+        const nextValue = safe(suggestion.value, '').toString().trim().toUpperCase();
+        if (!Number.isInteger(segIdx) || !nextValue || !['departure', 'arrival'].includes(field)) return;
+        if (!editedData.segments || !editedData.segments[segIdx]) return;
+        if (!editedData.segments[segIdx][field]) editedData.segments[segIdx][field] = {};
+
+        editedData.segments[segIdx][field].airport = nextValue;
+        clearDismissedWarning(warningKey);
+        _closeModal();
+        renderDetailView();
+        triggerAutoSave();
+        return;
+    }
+    if (suggestion.action === 'update-airline') {
+        const segIdx = Number(suggestion.segIdx);
+        const nextValue = safe(suggestion.value, '').toString().trim();
+        if (!Number.isInteger(segIdx) || !nextValue) return;
+        if (!editedData.segments || !editedData.segments[segIdx]) return;
+
+        editedData.segments[segIdx].airline = nextValue;
+        clearDismissedWarning(warningKey);
+        _closeModal();
+        renderDetailView();
+        triggerAutoSave();
+        return;
+    }
+    if (suggestion.action === 'prompt-flight-number') {
+        openFlightNumberPrompt(warningKey, suggestion);
+        return;
+    }
+}
+
+function saveSuggestedFlightNumber(warningKey, suggestion) {
+    if (typeof suggestion === 'string') {
+        try {
+            suggestion = JSON.parse(suggestion);
+        } catch (e) {
+            suggestion = null;
+        }
+    }
+    if (!suggestion || suggestion.action !== 'prompt-flight-number') return;
+    const segIdx = Number(suggestion.segIdx);
+    const airlineCode = safe(suggestion.airlineCode, '').toString().trim().toUpperCase();
+    const numberInput = document.getElementById('suggested-flight-number-input');
+    const numberPart = safe(numberInput?.value, '').toString().trim().toUpperCase();
+    if (!Number.isInteger(segIdx) || !airlineCode || !numberPart) return;
+    if (!/^\d{1,4}[A-Z]?$/.test(numberPart)) {
+        showToast('Enter only the flight number part, without the airline code.', 'warning');
+        if (numberInput) numberInput.focus();
+        return;
+    }
+    if (!editedData.segments || !editedData.segments[segIdx]) return;
+
+    editedData.segments[segIdx].flight_number = `${airlineCode} ${numberPart}`;
+    clearDismissedWarning(warningKey);
+    _closeModal();
+    renderDetailView();
+    triggerAutoSave();
+}
+
+function openFlightNumberPrompt(warningKey, suggestion) {
+    if (typeof suggestion === 'string') {
+        try {
+            suggestion = JSON.parse(suggestion);
+        } catch (e) {
+            suggestion = null;
+        }
+    }
+    if (!suggestion || suggestion.action !== 'prompt-flight-number') return;
+    const airlineCode = safe(suggestion.airlineCode, '').toString().trim().toUpperCase();
+    const segIdx = Number(suggestion.segIdx);
+    const currentFlightNumber = safe(editedData?.segments?.[segIdx]?.flight_number, '').toString().trim().toUpperCase();
+    const parsedCurrent = parseFlightNumber(currentFlightNumber);
+    const initialValue = parsedCurrent.numberPart || '';
+    _closeModal();
+    const html = `
+        <div style="max-width:380px;">
+            <div style="font-weight:800; font-size:1rem; color:var(--text-primary); margin-bottom:0.85rem;">Correct Flight Number</div>
+            <div style="color:var(--text-secondary); font-size:0.92rem; line-height:1.5; margin-bottom:0.85rem;">
+                Enter the correct flight number without the airline code.
+            </div>
+            <div style="color:var(--text-primary); font-size:0.92rem; font-weight:600; line-height:1.5; margin-bottom:0.75rem;">
+                Airline code <strong>${escapeHtmlAttribute(airlineCode)}</strong> will be added automatically.
+            </div>
+            <input id="suggested-flight-number-input" type="text" value="${escapeHtmlAttribute(initialValue)}" placeholder="e.g. 1234" style="width:100%; padding:0.7rem 0.85rem; border:1px solid var(--border); border-radius:10px; background:var(--bg-main); color:var(--text-primary); font:inherit; margin-bottom:1rem; box-sizing:border-box;">
+            <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+                <button class="btn-action secondary" onclick="_closeModal()">Cancel</button>
+                <button class="btn-action primary" onclick='saveSuggestedFlightNumber(${JSON.stringify(String(warningKey || ""))}, ${JSON.stringify(suggestion)})'>Save</button>
+            </div>
+        </div>`;
+    _createModalOverlay(html);
+    requestAnimationFrame(() => {
+        const input = document.getElementById('suggested-flight-number-input');
+        if (input) input.focus();
+    });
+}
+
+function getTerminalWarningContext(warningKey) {
+    const parsed = parseSegmentWarningKey(warningKey);
+    if (!parsed || !['departure-terminal', 'arrival-terminal'].includes(parsed.kind)) return null;
+    const segment = editedData?.segments?.[parsed.segIdx];
+    if (!segment) return null;
+    return {
+        segIdx: parsed.segIdx,
+        activeField: parsed.kind === 'departure-terminal' ? 'departure' : 'arrival',
+        departure: {
+            airportCode: safe(segment?.departure?.airport, '---').toString().trim().toUpperCase() || '---',
+            terminalValue: safe(segment?.departure?.terminal, '').toString().trim()
+        },
+        arrival: {
+            airportCode: safe(segment?.arrival?.airport, '---').toString().trim().toUpperCase() || '---',
+            terminalValue: safe(segment?.arrival?.terminal, '').toString().trim()
+        }
+    };
+}
+
+let selectedTerminalSwapField = '';
+
+function renderTerminalWarningModal(warningKey) {
+    const context = getTerminalWarningContext(warningKey);
+    if (!context) return '';
+    const renderRow = (field, label, data) => {
+        const hasTerminal = !!data.terminalValue;
+        const isDropTarget = selectedTerminalSwapField && selectedTerminalSwapField !== field;
+        return `
+            <div ondragover="handleTerminalDragOver(event)" ondrop='handleTerminalDrop(event, "${field}", ${JSON.stringify(String(warningKey || ""))})' style="display:grid; grid-template-columns:86px 1fr auto; gap:0.7rem; align-items:center; padding:0.75rem 0.85rem; border:1px solid ${isDropTarget ? 'rgba(37,99,235,0.35)' : context.activeField === field ? 'rgba(245,158,11,0.35)' : 'var(--border)'}; border-radius:12px; background:${isDropTarget ? 'rgba(37,99,235,0.06)' : context.activeField === field ? 'rgba(245,158,11,0.08)' : 'var(--bg-main)'}; margin-bottom:0.75rem;">
+                <div style="display:flex; flex-direction:column; gap:0.28rem;">
+                    <div style="font-size:0.68rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">${label}</div>
+                    <div style="font-size:1rem; color:var(--text-primary); font-weight:800; letter-spacing:0.04em;">${escapeHtmlAttribute(data.airportCode)}</div>
+                </div>
+                <div style="min-width:0; display:flex; flex-direction:column; gap:0.32rem;">
+                    <div style="font-size:0.68rem; color:var(--text-secondary); font-weight:700; text-transform:uppercase;">Terminal</div>
+                    <div draggable="${hasTerminal ? 'true' : 'false'}" ondragstart='handleTerminalDragStart(event, "${field}", ${JSON.stringify(String(warningKey || ""))})' ondragend="handleTerminalDragEnd()" style="font-size:0.92rem; color:${hasTerminal ? 'var(--text-primary)' : 'var(--text-secondary)'}; font-weight:${hasTerminal ? '700' : '500'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border:1px dashed ${hasTerminal ? 'rgba(37,99,235,0.28)' : 'var(--border)'}; border-radius:10px; padding:0.45rem 0.6rem; background:${hasTerminal ? 'rgba(37,99,235,0.05)' : 'transparent'}; cursor:${hasTerminal ? 'grab' : 'default'};">
+                        ${escapeHtmlAttribute(hasTerminal ? formatTerminalDisplay(data.terminalValue) : 'No terminal')}
+                    </div>
+                    ${selectedTerminalSwapField === field ? `<div style="font-size:0.72rem; color:var(--primary); font-weight:700;">Dragging...</div>` : ''}
+                    ${isDropTarget ? `<div style="font-size:0.72rem; color:var(--primary); font-weight:700;">Drop here to swap</div>` : ''}
+                </div>
+                <div style="display:flex; align-items:center; gap:0.3rem; flex-wrap:wrap; justify-content:flex-end;">
+                    <button class="btn-action secondary" title="${hasTerminal ? 'Edit terminal' : 'Add terminal'}" style="padding:0.28rem 0.42rem; min-height:auto; font-size:0.82rem;" onclick='editTerminalValue(${JSON.stringify(String(warningKey || ""))}, "${field}")'>${hasTerminal ? '✎' : '+'}</button>
+                    ${hasTerminal ? `<button class="btn-action secondary" title="Delete terminal" style="padding:0.28rem 0.42rem; min-height:auto; font-size:0.82rem;" onclick='deleteTerminalValue(${JSON.stringify(String(warningKey || ""))}, "${field}")'>🗑</button>` : ''}
+                </div>
+            </div>`;
+    };
+    return `
+        <div style="max-width:560px;">
+            <div style="font-weight:800; font-size:1rem; color:var(--text-primary); margin-bottom:0.9rem;">Terminal Check</div>
+            ${renderRow('departure', 'From', context.departure)}
+            ${renderRow('arrival', 'To', context.arrival)}
+            <div style="display:flex; justify-content:flex-end; margin-top:0.2rem;">
+                <button class="btn-action secondary" onclick="_closeModal()">Close</button>
+            </div>
+        </div>`;
+}
+
+function openTerminalWarningModal(warningKey) {
+    const context = getTerminalWarningContext(warningKey);
+    if (!context) return false;
+    selectedTerminalSwapField = '';
+    const html = renderTerminalWarningModal(warningKey);
+    _createModalOverlay(html);
+    return true;
+}
+
+function rerenderTerminalWarningModal(warningKey) {
+    const modal = document.getElementById('cancel-change-modal');
+    const container = modal?.querySelector('div[onclick="event.stopPropagation()"]');
+    if (!container) return;
+    container.innerHTML = renderTerminalWarningModal(warningKey);
+}
+
+function handleTerminalDragStart(event, field, warningKey) {
+    selectedTerminalSwapField = field;
+    if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', field);
+    }
+    rerenderTerminalWarningModal(warningKey);
+}
+
+function handleTerminalDragOver(event) {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+}
+
+function handleTerminalDragEnd() {
+    selectedTerminalSwapField = '';
+}
+
+function handleTerminalDrop(event, targetField, warningKey) {
+    event.preventDefault();
+    const sourceField = event.dataTransfer?.getData('text/plain') || selectedTerminalSwapField;
+    if (!sourceField) return;
+    selectedTerminalSwapField = sourceField;
+    swapPickedTerminal(targetField, warningKey);
+}
+
+function swapPickedTerminal(targetField, warningKey) {
+    const context = getTerminalWarningContext(warningKey);
+    if (!context || !selectedTerminalSwapField || selectedTerminalSwapField === targetField) return;
+    if (!editedData?.segments?.[context.segIdx]) return;
+    const segment = editedData.segments[context.segIdx];
+    if (!segment.departure) segment.departure = {};
+    if (!segment.arrival) segment.arrival = {};
+    const sourceField = selectedTerminalSwapField;
+    const sourceValue = safe(segment[sourceField]?.terminal, '').toString();
+    const targetValue = safe(segment[targetField]?.terminal, '').toString();
+    segment[sourceField].terminal = targetValue;
+    segment[targetField].terminal = sourceValue;
+    selectedTerminalSwapField = '';
+    clearDismissedWarning(getSegmentWarningKey(context.segIdx, 'departure-terminal', segment));
+    clearDismissedWarning(getSegmentWarningKey(context.segIdx, 'arrival-terminal', segment));
+    _closeModal();
+    renderDetailView();
+    triggerAutoSave();
+}
+
+function deleteTerminalValue(warningKey, fieldOverride = '') {
+    const context = getTerminalWarningContext(warningKey);
+    const field = fieldOverride || context?.activeField;
+    if (!context || !field || !editedData?.segments?.[context.segIdx]?.[field]) return;
+    editedData.segments[context.segIdx][field].terminal = '';
+    clearDismissedWarning(warningKey);
+    _closeModal();
+    renderDetailView();
+    triggerAutoSave();
+}
+
+function saveTerminalValue(warningKey, fieldOverride = '') {
+    const context = getTerminalWarningContext(warningKey);
+    const input = document.getElementById('terminal-warning-input');
+    const nextValue = safe(input?.value, '').toString().trim();
+    const field = fieldOverride || context?.activeField;
+    if (!context || !field || !editedData?.segments?.[context.segIdx]) return;
+    if (!editedData.segments[context.segIdx][field]) editedData.segments[context.segIdx][field] = {};
+    editedData.segments[context.segIdx][field].terminal = nextValue;
+    clearDismissedWarning(warningKey);
+    _closeModal();
+    renderDetailView();
+    triggerAutoSave();
+}
+
+function editTerminalValue(warningKey, fieldOverride = '') {
+    const context = getTerminalWarningContext(warningKey);
+    const field = fieldOverride || context?.activeField;
+    const point = context?.[field];
+    if (!context || !field || !point) return;
+    const html = `
+        <div style="max-width:340px;">
+            <div style="font-weight:800; font-size:1rem; color:var(--text-primary); margin-bottom:0.85rem;">${point.terminalValue ? 'Edit Terminal' : 'Add Terminal'}</div>
+            <div style="color:var(--text-primary); font-size:0.95rem; font-weight:700; margin-bottom:0.75rem;">${escapeHtmlAttribute(point.airportCode)}</div>
+            <input id="terminal-warning-input" type="text" value="${escapeHtmlAttribute(point.terminalValue)}" placeholder="Enter terminal" style="width:100%; padding:0.7rem 0.85rem; border:1px solid var(--border); border-radius:10px; background:var(--bg-main); color:var(--text-primary); font:inherit; margin-bottom:1rem; box-sizing:border-box;">
+            <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+                <button class="btn-action secondary" onclick='openTerminalWarningModal(${JSON.stringify(String(warningKey || ""))})'>Back</button>
+                <button class="btn-action primary" onclick='saveTerminalValue(${JSON.stringify(String(warningKey || ""))}, "${field}")'>Save</button>
+            </div>
+        </div>`;
+    _closeModal();
+    _createModalOverlay(html);
+    requestAnimationFrame(() => {
+        const input = document.getElementById('terminal-warning-input');
+        if (input) input.focus();
+    });
+}
+
 function openWarningReviewModal(warningKey, warningMessage) {
+    if (openTerminalWarningModal(warningKey)) return;
+    const payload = parseWarningPayload(warningMessage);
+    const suggestion = payload.suggestion;
     const html = `
         <div style="max-width:360px;">
             <div style="display:flex; align-items:center; gap:0.65rem; margin-bottom:0.9rem;">
@@ -5022,12 +5695,19 @@ function openWarningReviewModal(warningKey, warningMessage) {
                 <div style="font-weight:800; font-size:1rem; color:var(--text-primary);">Warning Check</div>
             </div>
             <div style="color:var(--text-secondary); font-size:0.92rem; line-height:1.5; margin-bottom:1rem;">
-                ${escapeHtmlAttribute(warningMessage)}
+                ${escapeHtmlAttribute(payload.text)}
             </div>
-            <div style="font-weight:700; color:var(--text-primary); margin-bottom:1rem;">Is this warning okay or wrong?</div>
+            ${payload.suggestionText ? `
+            <div style="color:var(--text-primary); font-size:0.92rem; font-weight:600; line-height:1.5; margin-bottom:0.75rem;">
+                ${escapeHtmlAttribute(payload.suggestionText)}
+            </div>` : ''}
+            ${suggestion?.label ? `
+            <div style="display:flex; justify-content:flex-start; margin-bottom:1rem;">
+                <button class="btn-action secondary" style="padding:0.35rem 0.65rem; min-height:auto;" onclick='applyWarningSuggestion(${JSON.stringify(String(warningKey || ""))}, ${JSON.stringify(suggestion)})'>${escapeHtmlAttribute(suggestion.label)}</button>
+            </div>` : ''}
             <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
-                <button class="btn-action secondary" onclick="_closeModal()">Wrong</button>
-                <button class="btn-action primary" onclick='confirmWarningOkay(${JSON.stringify(String(warningKey || ""))})'>OK</button>
+                <button class="btn-action secondary" onclick="_closeModal()">Keep Warning</button>
+                <button class="btn-action primary" onclick='confirmWarningOkay(${JSON.stringify(String(warningKey || ""))})'>Dismiss</button>
             </div>
         </div>`;
     _createModalOverlay(html);
