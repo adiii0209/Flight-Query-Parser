@@ -4479,12 +4479,17 @@ async function saveSegmentEdit(idx) {
 
     activeSegmentEditIdx = null;
     renderSegmentsSection();
-    triggerAutoSave();
+    isDetailDirty = true;
+    persistTicketDraft();
+    await queueSave(true);
     showToast('Segment updated', 'success');
 }
 // ==================== SAVE & PDF ====================
 async function saveTicket(silent = false) {
     if (!currentTicket || !editedData) return;
+    const saveStartedAt = Date.now();
+    const ticketIdAtSaveStart = currentTicket.id;
+    const localSnapshotBeforeSave = JSON.parse(JSON.stringify(editedData));
     isSaveInFlight = true;
     try {
         const payload = {
@@ -4549,16 +4554,30 @@ async function saveTicket(silent = false) {
         clearTimeout(draftRetryHandle);
         draftRetryHandle = null;
         if (!silent) showToast('Ticket saved successfully!', 'success');
-        currentTicket = normalizeTicketFareData(
+        const savedTicket = normalizeTicketFareData(
             responsePayload.ticket
                 ? JSON.parse(JSON.stringify(responsePayload.ticket))
-                : JSON.parse(JSON.stringify(editedData))
+                : JSON.parse(JSON.stringify(localSnapshotBeforeSave))
         );
-        editedData = JSON.parse(JSON.stringify(currentTicket));
+        const editsChangedDuringSave = (
+            currentTicket?.id !== ticketIdAtSaveStart
+            || lastDetailInputAt > saveStartedAt
+            || JSON.stringify(editedData) !== JSON.stringify(localSnapshotBeforeSave)
+        );
+
+        currentTicket = savedTicket;
         fareFieldsTouched = false;
         setTicketEditBaseline(currentTicket);
         cacheTicketDetail(currentTicket);
-        clearTicketDraft(currentTicket.id);
+
+        if (editsChangedDuringSave) {
+            isDetailDirty = true;
+            persistTicketDraft();
+            triggerAutoSave();
+        } else {
+            editedData = JSON.parse(JSON.stringify(currentTicket));
+            clearTicketDraft(currentTicket.id);
+        }
 
         const idx = allTickets.findIndex(t => t.id === currentTicket.id);
         if (idx > -1) {
@@ -4603,6 +4622,7 @@ function shouldIgnoreDetailAutoSaveTarget(target) {
     if (inputType === 'checkbox' || inputType === 'radio') return true;
     if (target.id === 'ledgerAggSelect' || target.id === 'paxSelectAll') return true;
     if ((target.id || '').startsWith('paxCheck-')) return true;
+    if ((target.id || '').startsWith('seg-')) return true;
     if (target.classList && target.classList.contains('pax-checkbox')) return true;
     const inlineHandler = `${target.getAttribute?.('onchange') || ''} ${target.getAttribute?.('oninput') || ''}`;
     if (inlineHandler.includes('setPassengerSortMode')) return true;
