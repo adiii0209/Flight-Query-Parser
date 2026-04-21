@@ -75,6 +75,7 @@ AIRPORT_CODES = {
     "FNC": "Funchal Madeira", "PDL": "Ponta Delgada", "CAG": "Cagliari", "CTA": "Catania",
     "PMO": "Palermo", "BRI": "Bari", "RHO": "Rhodes", "HER": "Heraklion", "CFU": "Corfu",
     "CHQ": "Chania", "JTR": "Santorini", "ZTH": "Zakynthos", "KGS": "Kos",
+    "KEF": "Reykjavik Keflavik", "RKV": "Reykjavik Domestic",
     
     # ===== MIDDLE EAST (Major hubs first) =====
     "DXB": "Dubai International", "DWC": "Dubai Al Maktoum", "DOH": "Doha Hamad", "AUH": "Zayed International", "JED": "Jeddah",
@@ -242,10 +243,13 @@ AIRLINE_CODES = {
     "SN": "Brussels Airlines", "SK": "SAS Scandinavian Airlines", "AY": "Finnair",
     "TP": "TAP Air Portugal", "LO": "LOT Polish Airlines", "OK": "Czech Airlines",
     "RO": "Tarom", "JU": "Air Serbia", "OU": "Croatia Airlines", "A3": "Aegean Airlines",
-    "FR": "Ryanair", "U2": "easyJet", "W6": "Wizz Air", "VY": "Vueling", "TO": "Transavia",
-    "EW": "Eurowings", "DE": "Condor", "X3": "TUI fly", "BY": "TUI Airways",
-    "W4": "Wizz Air Malta", "W9": "Wizz Air UK", "MT": "Thomas Cook Airlines",
-    "LS": "Jet2.com", "EI": "Aer Lingus", "WX": "CityJet", "BE": "Flybe",
+    "FR": "Ryanair", "U2": "easyJet", "EC": "easyJet Europe", "DS": "easyJet Switzerland",
+    "RK": "Ryanair UK", "RR": "Buzz (Ryanair)", "W6": "Wizz Air", "VY": "Vueling Airlines", 
+    "TO": "Transavia", "HV": "Transavia Holland", "EW": "Eurowings", "DE": "Condor", 
+    "DY": "Norwegian Air", "D8": "Norwegian Air International", "V7": "Volotea",
+    "X3": "TUI fly", "BY": "TUI Airways", "W4": "Wizz Air Malta", "W9": "Wizz Air UK", 
+    "MT": "Thomas Cook Airlines", "LS": "Jet2.com", "EI": "Aer Lingus", "WX": "CityJet", 
+    "BE": "Flybe", "FI": "Icelandair", "OG": "PLAY Airlines",
     
     # ===== MIDDLE EAST =====
     "EK": "Emirates", "QR": "Qatar Airways", "EY": "Etihad Airways", "WY": "Oman Air",
@@ -318,6 +322,7 @@ MEAL_CODES = {
     # ── Standard IATA Meal Codes ────────────────────────────────────────────
     "VGML": "Veg Meal",
     "VCSW": "Veg Sandwich + Beverage",
+    "NUSW": "Non-Veg Sandwich + Beverage",
     "NVML": "Non-Veg Meal",
     "CPML": "Complimentary Meal",
     "AVML": "Asian Vegetarian Meal",
@@ -636,6 +641,7 @@ AIRPORT_TZ_MAP = {
     "ZAG": "Europe/Zagreb", "LJU": "Europe/Ljubljana", "SPU": "Europe/Belgrade", "DBV": "Europe/Belgrade",
     "VNO": "Europe/Vilnius", "RIX": "Europe/Riga", "TLL": "Europe/Tallinn",
     "LED": "Europe/Moscow", "SVO": "Europe/Moscow", "DME": "Europe/Moscow",
+    "KEF": "Atlantic/Reykjavik", "RKV": "Atlantic/Reykjavik",
     "LYX": "Asia/Nicosia", "PFO": "Asia/Nicosia",
     
     # ===== MIDDLE EAST =====
