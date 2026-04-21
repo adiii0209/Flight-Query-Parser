@@ -4448,14 +4448,14 @@ async function saveSegmentEdit(idx) {
     else delete seg.booking_class;
 
     if (!seg.departure) seg.departure = {};
-    seg.departure.airport = getValue('seg-dep-apt');
+    seg.departure.airport = getValue('seg-dep-apt').toUpperCase();
     seg.departure.city = getValue('seg-dep-city');
     seg.departure.date = formatFlightDateForStorage(getValue('seg-dep-date'));
     seg.departure.time = getValue('seg-dep-time');
     seg.departure.terminal = getValue('seg-dep-term');
 
     if (!seg.arrival) seg.arrival = {};
-    seg.arrival.airport = getValue('seg-arr-apt');
+    seg.arrival.airport = getValue('seg-arr-apt').toUpperCase();
     seg.arrival.city = getValue('seg-arr-city');
     seg.arrival.date = formatFlightDateForStorage(getValue('seg-arr-date'));
     seg.arrival.time = getValue('seg-arr-time');
@@ -5751,6 +5751,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const detailView = document.getElementById('detailView');
     if (detailView) {
         detailView.addEventListener('input', (e) => {
+            if (e.target.classList && e.target.classList.contains('tl-code')) {
+                e.target.value = e.target.value.toUpperCase();
+            }
             if (!shouldIgnoreDetailAutoSaveTarget(e.target)) {
                 lastDetailInputAt = Date.now();
             }

@@ -3072,6 +3072,28 @@ def receive_ticket():
             final_class = booking.get("class_of_travel", "Economy").title()
 
         _ensure_passenger_internal_ids(passengers)
+        
+        # Normalize terminals (strip 'T' or 'Terminal' if it's like T1, Terminal 2) and Airport Codes
+        for seg in segments:
+            for point_key in ["departure", "arrival"]:
+                point = seg.get(point_key)
+                if isinstance(point, dict):
+                    # Normalize Airport Code to Uppercase
+                    if point.get("airport"):
+                        point["airport"] = str(point["airport"]).strip().upper()
+                        
+                    # Normalize Terminal
+                    if point.get("terminal"):
+                        t_val = str(point["terminal"]).strip()
+                        # case-insensitive check for 'Terminal ' or 'T' prefixes followed by digits
+                        cleaned_t = t_val
+                        if t_val.lower().startswith("terminal "):
+                            cleaned_t = t_val[9:].strip()
+                        elif t_val.upper().startswith("T") and len(t_val) > 1 and t_val[1:].isdigit():
+                            cleaned_t = t_val[1:]
+                        
+                        if cleaned_t.isdigit():
+                            point["terminal"] = cleaned_t
 
         # Create ticket
         ticket = Ticket(

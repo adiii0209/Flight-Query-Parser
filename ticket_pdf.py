@@ -1,4 +1,4 @@
-﻿"""
+"""
 Time Tours – Professional E-Ticket
 Clean, minimal airline-style layout. White background, coloured section
 headings, no heavy fill bars (except a thin accent stripe in the header).
@@ -356,7 +356,6 @@ def draw_ticket(c, data, include_fare=True):
 
     # PNR gets ~40% of width, rest split between remaining cells
     other_cells = []
-    if cotv: other_cells.append(("CLASS OF TRAVEL", cotv, "Helvetica-Bold", 9, NAVY))
     other_cells.append(("TRIP TYPE", tdsp, "Helvetica-Bold", 10, NAVY))
     other_cells.append(("PASSENGERS", str(n_pax), "Helvetica-Bold", 13, NAVY))
     if ref: other_cells.append(("REFERENCE NO.", ref, "Helvetica", 8.5, INF_LABEL))
