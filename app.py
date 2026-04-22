@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 import hashlib
 from query_parser import extract_flight, extract_multiple_flights
@@ -29,11 +29,12 @@ import threading
 import queue
 import asyncio
 import hashlib
+import pytz
 from collections import OrderedDict
 from copy import deepcopy
 from urllib.parse import urlparse
 from werkzeug.utils import secure_filename
-from mappings import AIRLINE_CODES, AIRPORT_CODES
+from mappings import AIRLINE_CODES, AIRPORT_CODES, AIRPORT_TZ_MAP
 
 import pytesseract
 try:
@@ -1167,13 +1168,39 @@ def _build_legs_from_data(segments, journey=None):
     if not segments:
         return []
 
+    max_connection_layover_minutes = 24 * 60
+
+    def _should_share_leg(prev_segment, current_segment):
+        prev_arr = (prev_segment.get("arrival") or {}).get("airport", "").strip().upper()
+        curr_dep = (current_segment.get("departure") or {}).get("airport", "").strip().upper()
+        if not prev_arr or not curr_dep or prev_arr != curr_dep:
+            return False
+
+        prev_arr_time = (prev_segment.get("arrival") or {}).get("time", "")
+        curr_dep_time = (current_segment.get("departure") or {}).get("time", "")
+        prev_arr_date = (prev_segment.get("arrival") or {}).get("date") or prev_segment.get("arrival_date")
+        curr_dep_date = (current_segment.get("departure") or {}).get("date") or current_segment.get("departure_date")
+        prev_point = {"date": prev_arr_date, "time": prev_arr_time}
+        curr_point = {"date": curr_dep_date, "time": curr_dep_time}
+        layover_minutes = _elapsed_minutes_between_points(prev_point, curr_point)
+        if layover_minutes and layover_minutes > 0:
+            return layover_minutes <= max_connection_layover_minutes
+
+        layover_text = (current_segment.get("layover_duration") or current_segment.get("layover") or "").strip()
+        if not layover_text or layover_text == "N/A":
+            return True
+        layover_match = re.search(r"(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?", layover_text.lower())
+        if not layover_match:
+            return True
+        hours = int(layover_match.group(1) or 0)
+        minutes = int(layover_match.group(2) or 0)
+        total_minutes = hours * 60 + minutes
+        return total_minutes <= max_connection_layover_minutes if total_minutes > 0 else True
+
     legs = []
     current_leg = [0]
     for idx in range(1, len(segments)):
-        prev_arr = (segments[idx - 1].get("arrival") or {}).get("airport", "").strip().upper()
-        curr_dep = (segments[idx].get("departure") or {}).get("airport", "").strip().upper()
-        has_layover = segments[idx].get("layover_duration") and segments[idx].get("layover_duration") != "N/A"
-        if (prev_arr and curr_dep and prev_arr == curr_dep) or has_layover:
+        if _should_share_leg(segments[idx - 1], segments[idx]):
             current_leg.append(idx)
         else:
             legs.append(current_leg)
@@ -2532,11 +2559,84 @@ def _parse_flexible_flight_date(raw_value):
         return None
 
 
+def _parse_flexible_flight_time(raw_value):
+    text_value = (raw_value or "").strip() if isinstance(raw_value, str) else str(raw_value or "").strip()
+    if not text_value or text_value in {"N/A", "Not Specified"}:
+        return None
+    match = re.match(r"^(\d{1,2}):(\d{2})(?:\s*([AaPp][Mm]))?$", text_value)
+    if not match:
+        return None
+    hours = int(match.group(1))
+    minutes = int(match.group(2))
+    meridiem = (match.group(3) or "").lower()
+    if meridiem:
+        if hours < 1 or hours > 12:
+            return None
+        if meridiem == "pm" and hours < 12:
+            hours += 12
+        if meridiem == "am" and hours == 12:
+            hours = 0
+    if hours < 0 or hours > 23 or minutes < 0 or minutes > 59:
+        return None
+    return hours, minutes
+
+
+def _format_duration_minutes(total_minutes):
+    if not total_minutes or total_minutes <= 0:
+        return "N/A"
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    return f"{hours}h {minutes}m"
+
+
+def _localize_airport_datetime(local_dt, airport_code):
+    timezone_name = AIRPORT_TZ_MAP.get((airport_code or "").strip().upper())
+    if not timezone_name:
+        return None
+    try:
+        timezone = pytz.timezone(timezone_name)
+        try:
+            return timezone.localize(local_dt, is_dst=None)
+        except pytz.AmbiguousTimeError:
+            return timezone.localize(local_dt, is_dst=False)
+        except pytz.NonExistentTimeError:
+            return timezone.localize(local_dt + timedelta(hours=1), is_dst=True)
+    except Exception:
+        return None
+
+
+def _elapsed_minutes_between_points(start_point, end_point, start_airport=None, end_airport=None):
+    start_date = _parse_flexible_flight_date((start_point or {}).get("date"))
+    end_date = _parse_flexible_flight_date((end_point or {}).get("date"))
+    start_time = _parse_flexible_flight_time((start_point or {}).get("time"))
+    end_time = _parse_flexible_flight_time((end_point or {}).get("time"))
+    if not start_date or not end_date or not start_time or not end_time:
+        return 0
+    start_dt = datetime(
+        start_date.year, start_date.month, start_date.day, start_time[0], start_time[1]
+    )
+    end_dt = datetime(
+        end_date.year, end_date.month, end_date.day, end_time[0], end_time[1]
+    )
+    start_code = start_airport or (start_point or {}).get("airport")
+    end_code = end_airport or (end_point or {}).get("airport")
+    start_zoned = _localize_airport_datetime(start_dt, start_code)
+    end_zoned = _localize_airport_datetime(end_dt, end_code)
+    if start_zoned and end_zoned:
+        diff_minutes = int(round((end_zoned.astimezone(pytz.utc) - start_zoned.astimezone(pytz.utc)).total_seconds() / 60.0))
+    else:
+        diff_minutes = int(round((end_dt - start_dt).total_seconds() / 60.0))
+    if diff_minutes <= 0:
+        diff_minutes += 1440
+    return diff_minutes if diff_minutes > 0 else 0
+
+
 def _recalculate_segment_timing_data(segments):
     from query_parser import DurationCalculator, DayOffsetCalculator
 
     recalculated_segments = _clone_json(segments or [])
     layovers = []
+    adjustments = []
     current_cumulative_days = 0
 
     for seg_idx, seg in enumerate(recalculated_segments):
@@ -2554,31 +2654,15 @@ def _recalculate_segment_timing_data(segments):
         if dep_date_obj and arr_date_obj:
             explicit_days_offset = max((arr_date_obj.date() - dep_date_obj.date()).days, 0)
 
-        preview_duration = DurationCalculator.calculate(
-            dep_time,
-            arr_time,
-            dep_airport,
-            arr_airport,
-            days_offset=explicit_days_offset or 0,
-            flight_date=dep_date_obj,
-            check_ultra_long=explicit_days_offset is None,
-        )
+        duration_minutes = _elapsed_minutes_between_points(departure, arrival, dep_airport, arr_airport)
+        duration_text = _format_duration_minutes(duration_minutes)
         days_offset = explicit_days_offset if explicit_days_offset is not None else DayOffsetCalculator.calculate(
             dep_time,
             arr_time,
-            preview_duration,
+            duration_text,
             dep_airport,
             arr_airport,
             dep_date_obj,
-        )
-        duration_text = DurationCalculator.calculate(
-            dep_time,
-            arr_time,
-            dep_airport,
-            arr_airport,
-            days_offset=days_offset,
-            flight_date=dep_date_obj,
-            check_ultra_long=explicit_days_offset is None,
         )
 
         if seg_idx == 0:
@@ -2602,13 +2686,8 @@ def _recalculate_segment_timing_data(segments):
                 except Exception:
                     days_between = 0
 
-            layover_text = DurationCalculator.calculate_layover(
-                prev_arr_time,
-                dep_time,
-                dep_airport,
-                days_between,
-                dep_date_obj,
-            )
+            layover_minutes = _elapsed_minutes_between_points(prev_arrival, departure, prev_arrival.get("airport") or prev_seg.get("arrival_airport"), dep_airport)
+            layover_text = _format_duration_minutes(layover_minutes)
             seg["layover_duration"] = layover_text
             seg["layover"] = layover_text
             layovers.append({
@@ -2630,6 +2709,7 @@ def _recalculate_segment_timing_data(segments):
     return {
         "segments": recalculated_segments,
         "layovers": layovers,
+        "adjustments": adjustments,
     }
 
 
@@ -2945,22 +3025,8 @@ def receive_ticket():
         seg_count = len(segments)
         
         # First, group segments into logical legs (a leg = direct or layover flight)
-        legs = []
-        current_leg_start = 0
-        for i in range(1, seg_count):
-            prev_arr = segments[i-1].get("arrival", {}).get("airport", "").strip().upper()
-            curr_dep = segments[i].get("departure", {}).get("airport", "").strip().upper()
-            # Also check layover_duration field from parser
-            has_layover_info = segments[i].get("layover_duration") and segments[i].get("layover_duration") != "N/A"
-            
-            if prev_arr and curr_dep and prev_arr == curr_dep or has_layover_info:
-                # This is a layover/connection, same leg continues
-                continue
-            else:
-                # New leg starts here
-                legs.append(segments[current_leg_start:i])
-                current_leg_start = i
-        legs.append(segments[current_leg_start:])
+        leg_indices = _build_legs_from_data(segments, journey)
+        legs = [[segments[idx] for idx in indices] for indices in leg_indices if indices]
         
         # Also check journey data from parser for trip_type hint
         journey_trip_type = journey.get("trip_type", "").lower() if journey else ""
@@ -3223,6 +3289,7 @@ def tickets_page():
         'tickets.html',
         airline_codes=AIRLINE_CODES,
         airport_codes=AIRPORT_CODES,
+        airport_tz_map=AIRPORT_TZ_MAP,
     )
 
 

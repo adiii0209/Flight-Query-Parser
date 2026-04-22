@@ -2565,8 +2565,9 @@
 <script>
     window.AIRLINE_CODE_MAP = {{ airline_codes|tojson }};
     window.AIRPORT_CODE_MAP = {{ airport_codes|tojson }};
+    window.AIRPORT_TZ_MAP = {{ airport_tz_map|tojson }};
 </script>
-<script src="{{ url_for('static', filename='tickets.js') }}?v=20260420b"></script>
+<script src="{{ url_for('static', filename='tickets.js') }}?v=20260422a"></script>
 </body>
 
 </html>
