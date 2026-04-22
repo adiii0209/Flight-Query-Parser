@@ -719,17 +719,30 @@ def draw_ticket(c, data, include_fare=True):
         row_y = T - PAX_ROW_H
         _rect(c, M, row_y, IW, PAX_ROW_H, fill=row_fill, stroke=CARD_BOR, lw=0.4, radius=4)
 
-        # Initial circle
-        initial = pname.strip()[0].upper() if pname.strip() else "?"
-        circ_cx = M + 16
-        circ_cy = T - PAX_ROW_H / 2
-        c.saveState()
-        c.setFillColor(NAVY)
-        c.circle(circ_cx, circ_cy, 8, fill=1, stroke=0)
-        c.setFillColor(WHITE)
-        c.setFont("Helvetica-Bold", 8)
-        c.drawCentredString(circ_cx, circ_cy - 3, initial)
-        c.restoreState()
+        # Traveler Icon
+        icon_drawn = False
+        icon_path = os.path.join(_DIR, "user.png")
+        if os.path.isfile(icon_path):
+            try:
+                circ_cx = M + 16
+                circ_cy = T - PAX_ROW_H / 2
+                c.drawImage(ImageReader(icon_path), circ_cx - 8, circ_cy - 5, width=12, height=12, mask="auto")
+                icon_drawn = True
+            except Exception:
+                pass
+
+        if not icon_drawn:
+            # Fallback: Initial circle
+            initial = pname.strip()[0].upper() if pname.strip() else "?"
+            circ_cx = M + 16
+            circ_cy = T - PAX_ROW_H / 2
+            c.saveState()
+            c.setFillColor(NAVY)
+            c.circle(circ_cx, circ_cy, 8, fill=1, stroke=0)
+            c.setFillColor(WHITE)
+            c.setFont("Helvetica-Bold", 8)
+            c.drawCentredString(circ_cx, circ_cy - 3, initial)
+            c.restoreState()
 
         # Name + type
         _txt(c, M + 30, T - 10, pname,            "Helvetica-Bold", 8.5, NAVY)
