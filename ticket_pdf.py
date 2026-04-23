@@ -861,11 +861,18 @@ def draw_ticket(c, data, include_fare=True):
             _txt(c, M + 34, T - 24, f"Baggage: {bag}", "Helvetica", 6.5, INF_LABEL)
 
         # Ticket label + number right-aligned
-        if ticket_no:
-            _txt(c, RIGHT - 12, T - 11,
-                 "TICKET NO.", "Helvetica", 6, INF_LABEL, align="right")
-            _txt(c, RIGHT - 12, T - 22,
-                 ticket_no, "Helvetica-Bold", 7.5, NAVY, align="right")
+        if ticket_no and ff_no:
+            _txt(c, RIGHT - 12, T - 11, "TICKET NO.", "Helvetica", 6, INF_LABEL, align="right")
+            _txt(c, RIGHT - 12, T - 22, ticket_no, "Helvetica-Bold", 7.5, NAVY, align="right")
+            
+            _txt(c, RIGHT - 120, T - 11, "FFN", "Helvetica", 6, INF_LABEL, align="right")
+            _txt(c, RIGHT - 120, T - 22, ff_no, "Helvetica-Bold", 7.5, NAVY, align="right")
+        elif ticket_no:
+            _txt(c, RIGHT - 12, T - 11, "TICKET NO.", "Helvetica", 6, INF_LABEL, align="right")
+            _txt(c, RIGHT - 12, T - 22, ticket_no, "Helvetica-Bold", 7.5, NAVY, align="right")
+        elif ff_no:
+            _txt(c, RIGHT - 12, T - 11, "FFN", "Helvetica", 6, INF_LABEL, align="right")
+            _txt(c, RIGHT - 12, T - 22, ff_no, "Helvetica-Bold", 7.5, NAVY, align="right")
 
         # Thin rule under name row
         _hline(c, M, T - PAX_HDR_H, IW, CARD_BOR, 0.3)

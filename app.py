@@ -71,6 +71,10 @@ def _resolve_database_uri():
 
 app.config["SQLALCHEMY_DATABASE_URI"] = _resolve_database_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_pre_ping": True,
+    "pool_recycle": 280,
+}
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 # 🔐 Shared secret for ticket parser
 API_KEY ="timetours@1978"

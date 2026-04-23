@@ -451,6 +451,14 @@
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
         }
 
+        /* Make placeholders noticeably lighter than actual text */
+        .field-item input::placeholder,
+        .seat-field input::placeholder {
+            color: var(--text-tertiary) !important;
+            opacity: 0.65 !important;
+            font-weight: 400 !important;
+        }
+
         .field-item.warning label {
             color: #b91c1c;
         }

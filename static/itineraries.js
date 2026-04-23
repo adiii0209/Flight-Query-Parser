@@ -2123,26 +2123,119 @@ async function copyItineraryImage() {
     await loadHtml2Canvas();
   }
 
-  const flightCard = document.querySelector('#flightOptionsContainer .itinerary-flight-card.selected') ||
-    document.querySelector('#flightOptionsContainer .itinerary-flight-card');
+  const container = document.getElementById('flightOptionsContainer');
+  if (!container) {
+    showToast('No flight container found', 'error');
+    return;
+  }
 
-  if (!flightCard) {
+  const selectedCards = container.querySelectorAll('.itinerary-flight-card.selected');
+  let captureTarget = null;
+  
+  if (selectedCards.length === 1) {
+    captureTarget = selectedCards[0];
+  } else {
+    const allCards = container.querySelectorAll('.itinerary-flight-card');
+    if (allCards.length === 1) {
+      captureTarget = allCards[0];
+    } else {
+      captureTarget = container;
+    }
+  }
+
+  if (!captureTarget) {
     showToast('No flight card found to copy', 'error');
     return;
   }
 
   try {
     showToast('Preparing image...', 'info');
-    const canvas = await html2canvas(flightCard, {
-      scale: 2,
+
+    // Wait for all images in the target to load
+    const images = Array.from(captureTarget.querySelectorAll('img'));
+    await Promise.all(images.map(img => {
+      if (img.complete) return Promise.resolve();
+      return new Promise(resolve => {
+        img.onload = img.onerror = resolve;
+      });
+    }));
+
+    // Stabilize view - ensure fonts are loaded
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+    }
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    captureTarget.setAttribute('data-export-capture-target', 'true');
+
+    const rect = captureTarget.getBoundingClientRect();
+    const captureWidth = Math.ceil(rect.width || captureTarget.offsetWidth || 1);
+    const captureHeight = Math.ceil(rect.height || captureTarget.offsetHeight || 1);
+
+    const canvas = await html2canvas(captureTarget, {
+      backgroundColor: '#ffffff',
+      scale: 2, // High resolution
       useCORS: true,
       logging: false,
-      backgroundColor: document.documentElement.getAttribute('data-theme') === 'dark' ? '#0f172a' : '#f8fafc',
-      windowWidth: flightCard.scrollWidth,
-      windowHeight: flightCard.scrollHeight,
-      scrollX: 0,
-      scrollY: 0
+      imageTimeout: 15000,
+      width: captureWidth,
+      height: captureHeight,
+      windowWidth: Math.ceil(document.documentElement.clientWidth || window.innerWidth || captureWidth),
+      windowHeight: Math.ceil(document.documentElement.clientHeight || window.innerHeight || captureHeight),
+      scrollX: -window.scrollX,
+      scrollY: -window.scrollY,
+      onclone: (clonedDoc) => {
+        const cloneHtml = clonedDoc.documentElement;
+        if (cloneHtml) cloneHtml.style.background = '#ffffff';
+
+        // Hide UI elements in cloned document
+        [
+          '.itinerary-flight-card-actions',
+          '.expand-icon',
+          '.btn-action',
+          '.notification',
+          '.toast',
+          '#sidebar',
+          '#sidebarOverlay',
+          '#menuToggle',
+          '#tsparticles'
+        ].forEach((selector) => {
+          clonedDoc.querySelectorAll(selector).forEach((node) => {
+            node.style.setProperty('display', 'none', 'important');
+          });
+        });
+
+        const clonedTarget = clonedDoc.querySelector('[data-export-capture-target="true"]');
+        if (clonedTarget) {
+          clonedTarget.style.margin = '0';
+          clonedTarget.style.padding = '0';
+          clonedTarget.style.background = '#ffffff';
+          clonedTarget.style.transform = 'none';
+          clonedTarget.style.transition = 'none';
+          clonedTarget.style.animation = 'none';
+          clonedTarget.style.boxShadow = 'none';
+          clonedTarget.style.borderRadius = '0';
+          clonedTarget.style.width = `${captureWidth}px`;
+          
+          // Ensure container doesn't have grid gap or anything that adds extra space
+          if (clonedTarget === clonedDoc.getElementById('flightOptionsContainer')) {
+            clonedTarget.style.display = 'flex';
+            clonedTarget.style.flexDirection = 'column';
+            clonedTarget.style.gap = '1rem';
+          }
+        }
+
+        clonedDoc.querySelectorAll('.itinerary-flight-card, .flight-timeline-container, .expand-icon').forEach((node) => {
+          node.style.transition = 'none';
+          node.style.animation = 'none';
+          node.style.transform = 'none';
+        });
+      }
     });
+
+    captureTarget.removeAttribute('data-export-capture-target');
 
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
     if (!blob) {
@@ -2162,8 +2255,10 @@ async function copyItineraryImage() {
 
     const fileName = buildItineraryImageName();
     downloadImageFromCanvas(canvas, fileName);
+    showToast('Clipboard blocked, image downloaded.', 'warning');
   } catch (err) {
     console.error(err);
+    if (captureTarget) captureTarget.removeAttribute('data-export-capture-target');
     showToast('Failed to copy image', 'error');
   }
 }
