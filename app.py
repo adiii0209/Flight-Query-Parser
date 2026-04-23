@@ -73,7 +73,10 @@ app.config["SQLALCHEMY_DATABASE_URI"] = _resolve_database_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_pre_ping": True,
-    "pool_recycle": 280,
+    "pool_recycle": 300,
+    "pool_size": 5,
+    "max_overflow": 10,
+    "pool_timeout": 30
 }
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 # 🔐 Shared secret for ticket parser
@@ -3352,6 +3355,22 @@ def tickets_stream():
         return "", 204
 
     user_id = session["user_id"]
+    
+    # Fetch data first, outside the generator, to avoid holding a DB connection open
+    try:
+        notifications_data = _ticket_notifications_payload(user_id)
+    except Exception:
+        db.session.rollback()
+        notifications_data = {}
+    finally:
+        # Explicit clean-up before entering the long-lived generator
+        db.session.remove()
+        try:
+            from extensions_v2 import db_session
+            db_session.remove()
+        except Exception:
+            pass
+
     listener = queue.Queue(maxsize=32)
     with _ticket_dashboard_streams_lock:
         _ticket_dashboard_streams.setdefault(user_id, []).append(listener)
@@ -3360,7 +3379,7 @@ def tickets_stream():
         initial_payload = {
             "event": "connected",
             "timestamp": datetime.utcnow().isoformat() + "Z",
-            "notifications": _ticket_notifications_payload(user_id),
+            "notifications": notifications_data,
         }
         yield f"data: {json.dumps(initial_payload)}\n\n"
         try:
@@ -4953,6 +4972,33 @@ def init_db():
 
 with app.app_context():
     ensure_schema_compatibility()
+
+def apply_global_db_retry(app_instance):
+    """Wraps all view functions to automatically retry on transient database OperationalError."""
+    from sqlalchemy.exc import OperationalError
+    from functools import wraps
+
+    def retry_db(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            try:
+                return f(*args, **kwargs)
+            except OperationalError:
+                app_instance.logger.warning("Caught OperationalError, attempting a single retry with rollback.")
+                db.session.rollback()
+                try:
+                    from extensions_v2 import db_session
+                    db_session.rollback()
+                except Exception:
+                    pass
+                return f(*args, **kwargs)
+        return decorated
+
+    for endpoint, view_func in app_instance.view_functions.items():
+        if endpoint != "static":
+            app_instance.view_functions[endpoint] = retry_db(view_func)
+
+apply_global_db_retry(app)
 
 if __name__ == "__main__":
     init_db()
