@@ -3342,9 +3342,11 @@ def get_ticket_notifications():
 
 
 @app.route("/api/tickets/stream", methods=["GET"])
-@login_required
 def tickets_stream():
-    """Stream dashboard updates to the browser so the page doesn't need tight polling."""
+    """Stream dashboard updates to the browser. Returns 204 if unauthorized to stop SSE retry loops."""
+    if "user_id" not in session:
+        return "", 204
+
     user_id = session["user_id"]
     listener = queue.Queue(maxsize=32)
     with _ticket_dashboard_streams_lock:

@@ -156,7 +156,7 @@
             console.error('Invalid ticket notification payload:', e);
           }
         };
-        stream.onerror = () => {
+        stream.onerror = async () => {
           try {
             stream.close();
           } catch (e) {
@@ -165,6 +165,16 @@
           if (ticketNotificationStreamState.source === stream) {
             ticketNotificationStreamState.source = null;
           }
+
+          // Check if session is actually active before retrying
+          try {
+            const authCheck = await fetch('/api/tickets/notifications');
+            if (authCheck.status === 401) {
+              console.warn('Ticket stream stopped: User is not authenticated.');
+              return; // Stop retrying
+            }
+          } catch (e) {}
+
           scheduleTicketNotificationStreamReconnect();
         };
         ticketNotificationStreamState.source = stream;

@@ -8,7 +8,7 @@
     <meta name="description"
         content="Manage your flight itineraries - view, edit, approve, and track all your travel plans.">
     <link rel="icon" type="image/png" href="/static/ticket-flight.png">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/itineraries.css">
     <link rel="stylesheet" href="/static/dashboard.css">
     <link rel="stylesheet" href="/static/sidebar.css">
@@ -46,11 +46,21 @@
     {% include 'components/sidebar.html' %}
 
     <!-- Top Header -->
-    <header class="top-header">
-        <button class="menu-toggle" id="menuToggle">☰</button>
+    <header class="app-header">
         <div class="header-content">
-            <h1>📋 Itineraries</h1>
-            <p>Manage your flight itineraries</p>
+            <button class="menu-toggle" id="menuToggle" aria-label="Open Menu">
+                <span class="menu-bar"></span>
+                <span class="menu-bar"></span>
+                <span class="menu-bar"></span>
+                <span class="menu-badge" id="menuNotificationBadge">0</span>
+            </button>
+
+            <div class="header-brand">
+                <div class="brand-name">Time <span>Tours</span> Itineraries</div>
+                <div class="brand-sub">Manage flight plans</div>
+            </div>
+
+            <div class="header-actions" style="display:flex !important;"></div>
         </div>
     </header>
 
@@ -65,11 +75,36 @@
                         oninput="renderItineraryCards()">
                 </div>
                 <div class="filter-bar">
-                    <button class="tab active" onclick="filterByStatus('all', this)">All</button>
-                    <button class="tab" onclick="filterByStatus('draft', this)">📝 Draft</button>
-                    <button class="tab" onclick="filterByStatus('approved', this)">✅ Approved</button>
-                    <button class="tab" onclick="filterByStatus('on_hold', this)">⏸️ On Hold</button>
-                    <button class="tab" onclick="filterByStatus('issued', this)">🎫 Issued</button>
+                    <button class="tab active" onclick="filterByStatus('all', this)">
+                        <span class="tab-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>
+                        </span>
+                        <span>All</span>
+                    </button>
+                    <button class="tab" onclick="filterByStatus('draft', this)">
+                        <span class="tab-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                        </span>
+                        <span>Draft</span>
+                    </button>
+                    <button class="tab" onclick="filterByStatus('approved', this)">
+                        <span class="tab-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+                        </span>
+                        <span>Approved</span>
+                    </button>
+                    <button class="tab" onclick="filterByStatus('on_hold', this)">
+                        <span class="tab-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8"></path><path d="M8 20h8"></path><path d="M8 4v4a4 4 0 0 0 1.2 2.8L12 13l2.8-2.2A4 4 0 0 0 16 8V4"></path><path d="M16 20v-4a4 4 0 0 0-1.2-2.8L12 11l-2.8 2.2A4 4 0 0 0 8 16v4"></path></svg>
+                        </span>
+                        <span>On Hold</span>
+                    </button>
+                    <button class="tab" onclick="filterByStatus('issued', this)">
+                        <span class="tab-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7a2 2 0 0 0 2-2h12a2 2 0 0 0 2 2v2a2 2 0 0 1 0 4v2a2 2 0 0 0-2 2H6a2 2 0 0 0-2-2v-2a2 2 0 0 1 0-4V7Z"></path><path d="M9 8h6"></path><path d="M9 16h6"></path></svg>
+                        </span>
+                        <span>Issued</span>
+                    </button>
                 </div>
             </div>
             <div id="itineraryCards" class="itin-grid">
@@ -82,21 +117,25 @@
 
         <!-- ===== DETAIL VIEW ===== -->
         <div id="detailView" style="display:none;">
-            <!-- Back Button -->
-            <button class="btn-action secondary" onclick="showListView()" style="margin-bottom:1rem;">← Back to All
-                Itineraries</button>
+            <!-- Back Button + Status Timeline -->
+            <div class="detail-topbar">
+                <button class="btn-action secondary detail-back-btn" onclick="showListView()">← Back to All
+                    Itineraries</button>
+                <div id="progressBar"></div>
+            </div>
 
             <!-- Detail Header -->
             <div class="detail-header">
                 <div>
-                    <h1 id="detailTitle">Itinerary Details</h1>
+                    <div class="detail-title-row">
+                        <h1 id="detailTitle">Itinerary Details</h1>
+                        <button type="button" class="rename-title-btn" onclick="renameItineraryTitle()"
+                            aria-label="Rename itinerary title" title="Rename itinerary title">✎</button>
+                    </div>
                     <div class="detail-subtitle" id="detailSubtitle"></div>
                 </div>
                 <div class="detail-actions" id="detailActions"></div>
             </div>
-
-            <!-- Progress Bar -->
-            <div id="progressBar"></div>
 
             <!-- Info Cards -->
             <div class="info-grid" id="infoCards"></div>
@@ -144,6 +183,31 @@
                     </div>
                 </div>
                 <div id="supplierContainer"></div>
+            </div>
+
+            <!-- Output Panels -->
+            <div class="output-panels">
+                <div class="section-card output-panel">
+                    <div class="section-header-row">
+                        <div>
+                            <h2>Final Output</h2>
+                            <div class="output-panel-subtitle">Passenger-ready text</div>
+                        </div>
+                        <button class="btn-action small secondary" type="button" onclick="copyOutputText('final')">Copy</button>
+                    </div>
+                    <textarea id="finalOutputBox" class="output-textbox" readonly></textarea>
+                </div>
+
+                <div class="section-card output-panel">
+                    <div class="section-header-row">
+                        <div>
+                            <h2>Supplier Output</h2>
+                            <div class="output-panel-subtitle">GDS Amadeus format</div>
+                        </div>
+                        <button class="btn-action small secondary" type="button" onclick="copyOutputText('supplier')">Copy</button>
+                    </div>
+                    <textarea id="supplierOutputBox" class="output-textbox" readonly></textarea>
+                </div>
             </div>
         </div>
     </div>

@@ -240,46 +240,147 @@ body {
 }
 
 /* ===================== HEADER ===================== */
-.top-header {
-  background: linear-gradient(135deg, #1e40af, #3b82f6);
+.app-header {
+  background: #04060e;
   color: white;
-  padding: 1.5rem 2rem;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
+  z-index: 1000;
 }
 
-.top-header .menu-toggle {
-  background: rgba(255, 255, 255, 0.15) !important;
-  border: 1px solid rgba(255, 255, 255, 0.3) !important;
-  color: white !important;
+.app-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(96, 165, 250, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(96, 165, 250, 0.1) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  z-index: 0;
+}
+
+.app-header::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(rgba(96, 165, 250, 0.08) 50%, transparent 50%);
+  background-size: 100% 4px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  z-index: 1;
+}
+
+[data-theme="dark"] .app-header::before {
+  opacity: 1;
+  animation: grid-move 60s linear infinite;
+  transform: perspective(500px) rotateX(25deg) scale(2);
+}
+
+[data-theme="dark"] .app-header::after {
+  opacity: 1;
+  animation: scanline 8s linear infinite;
+}
+
+@keyframes grid-move {
+  from { background-position: 0 0; }
+  to { background-position: 400px 400px; }
+}
+
+@keyframes scanline {
+  from { background-position: 0 0; }
+  to { background-position: 0 100%; }
+}
+
+.app-header .header-content {
+  position: relative;
+  z-index: 2;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 3rem;
+}
+
+.header-brand {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.brand-name {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: #ffffff;
+  text-transform: uppercase;
+  line-height: 1;
+  text-shadow: 0 0 30px rgba(147, 197, 253, 0.3);
+}
+
+.brand-name span {
+  background: linear-gradient(90deg, #60a5fa 0%, #38bdf8 50%, #67e8f9 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.brand-sub {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-top: 0.2rem;
+}
+
+.app-header .menu-toggle {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
   width: 42px;
   height: 42px;
   border-radius: 10px;
-  font-size: 1.3rem;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex !important;
-  flex-direction: row !important;
-  /* Override dashboard.css column layout */
-  align-items: center;
+  display: flex;
+  flex-direction: column;
   justify-content: center;
-  box-shadow: none !important;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  z-index: 100;
+  position: relative;
 }
 
-.top-header .menu-toggle:hover {
-  background: rgba(255, 255, 255, 0.25) !important;
+.app-header .menu-toggle:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.05);
 }
 
-.header-content h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
+.app-header .menu-bar {
+  width: 22px;
+  height: 2px;
+  background: white;
+  border-radius: 2px;
+  transition: all 0.3s ease;
 }
 
-.header-content p {
-  font-size: 0.9rem;
-  opacity: 0.85;
-  font-weight: 300;
+@media (max-width: 600px) {
+  .brand-name { font-size: 1.2rem; }
+  .brand-sub { font-size: 0.6rem; letter-spacing: 0.08em; }
+  .app-header { padding: 1rem; }
 }
 
 /* ===================== CONTAINER ===================== */
@@ -364,7 +465,6 @@ body {
 .itin-card-top.issued {
   background: #22c55e;
 }
-
 .itin-card-top.reverted {
   background: #f59e0b;
 }
@@ -379,6 +479,13 @@ body {
   align-items: flex-start;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
+}
+
+#flightOptionsContainer {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
 }
 
 .itin-card-header h3 {
@@ -525,104 +632,182 @@ body {
 }
 
 /* ===================== DETAIL VIEW ===================== */
+.detail-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.detail-back-btn {
+  min-height: 42px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.detail-topbar #progressBar {
+  display: flex;
+  justify-content: flex-end;
+  flex: 0 1 auto;
+  margin-left: auto;
+  min-width: 0;
+}
+
 .detail-header {
-  background: linear-gradient(135deg, #1e40af, #3b82f6);
-  color: white;
-  padding: 1.5rem 2rem;
-  border-radius: 16px;
-  margin-bottom: 1.5rem;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+  color: var(--text-primary);
+  padding: 1rem 1.1rem;
+  border-radius: 18px;
+  margin-bottom: 1.25rem;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   flex-wrap: wrap;
   gap: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.04);
 }
 
 .detail-header h1 {
-  font-size: 1.3rem;
+  margin: 0 0 0.45rem;
+  font-size: clamp(1.2rem, 1.9vw, 1.65rem);
   font-weight: 700;
-  margin: 0;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  color: #0f172a;
+}
+
+.detail-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.rename-title-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.8rem;
+  line-height: 1;
+  transform: scaleX(-1);
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.08);
+}
+
+.rename-title-btn:hover {
+  background: rgba(37, 99, 235, 0.14);
+  border-color: rgba(37, 99, 235, 0.28);
+  transform: scaleX(-1) translateY(-1px);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.12);
+}
+
+.rename-title-btn:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
 }
 
 .detail-subtitle {
-  font-size: 0.9rem;
-  opacity: 0.9;
-  margin-top: 0.3rem;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
   flex-wrap: wrap;
+  line-height: 1.45;
+  color: #64748b;
+  font-size: 0.9rem;
 }
 
 .detail-actions {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 /* Progress steps */
 .progress-steps {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 1.5rem;
-  margin-bottom: 1rem;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  padding: 0.32rem 0.45rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.88));
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  backdrop-filter: blur(10px);
+  min-height: 42px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.progress-caption {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  font-weight: 700;
+  flex: 0 0 auto;
 }
 
 .progress-step {
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0;
+  padding: 0 0.72rem;
+  border-radius: 999px;
+  min-height: 28px;
+  white-space: nowrap;
+  background: transparent;
   position: relative;
-  min-width: 70px;
 }
 
-.progress-step::after {
+.progress-step:not(:last-child)::after {
   content: '';
-  position: absolute;
-  top: 18px;
-  left: calc(50% + 20px);
-  width: calc(100% - 40px);
-  height: 2px;
-  background: var(--border);
+  width: 0.8rem;
+  height: 1px;
+  margin-left: 0.45rem;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.22), rgba(37, 99, 235, 0.18));
 }
 
-.progress-step:last-child::after {
-  display: none;
+.progress-step.done {
+  color: var(--success);
+  background: rgba(16, 185, 129, 0.08);
 }
 
-.step-circle {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-main);
-  border: 2px solid var(--border);
-  font-size: 0.9rem;
-  z-index: 1;
-}
-
-.step-circle.done {
-  background: var(--success);
-  border-color: var(--success);
-  color: white;
-  font-weight: 700;
-}
-
-.step-circle.active {
-  border-color: var(--primary);
-  background: rgba(37, 99, 235, 0.1);
+.progress-step.active {
   color: var(--primary);
+  background: rgba(37, 99, 235, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.08);
+}
+
+.progress-step.pending {
+  color: var(--text-secondary);
 }
 
 .step-label {
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   color: var(--text-secondary);
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .step-label.done {
@@ -1182,6 +1367,48 @@ body {
   gap: 0.75rem;
 }
 
+.output-panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.output-panel {
+  margin-bottom: 0;
+}
+
+.output-panel .section-header-row {
+  align-items: flex-start;
+}
+
+.output-panel-subtitle {
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.output-textbox {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.9), rgba(255, 255, 255, 0.98));
+  color: var(--text-primary);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.output-textbox:focus {
+  outline: none;
+  border-color: rgba(37, 99, 235, 0.35);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
 .billing-item {
   padding: 0.75rem 1rem;
   background: var(--bg-main);
@@ -1388,6 +1615,23 @@ body {
     flex-direction: column;
   }
 
+  .detail-topbar {
+    align-items: flex-start;
+  }
+
+  .detail-topbar #progressBar {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .progress-steps {
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-right: 0.5rem;
+  }
+
   .detail-actions {
     width: 100%;
   }
@@ -1407,6 +1651,10 @@ body {
   .billing-grid {
     grid-template-columns: 1fr;
   }
+
+  .output-panels {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ===================== FLIGHT CARD STYLES (MATCHING HOME PAGE) ===================== */
@@ -1418,7 +1666,12 @@ body {
   border: 1px solid var(--border);
   transition: all 0.3s ease;
   position: relative;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.itinerary-flight-card {
+  width: min(100%, 700px);
+  margin: 0 0 1rem;
 }
 
 .flight-card:hover {
@@ -1432,22 +1685,45 @@ body {
   box-shadow: 0 0 0 2px var(--success);
 }
 
+.itinerary-flight-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem 0.25rem;
+}
+
+.itinerary-flight-card-head .option-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--primary);
+}
+
+.itinerary-flight-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 /* Sort out summary layout */
 .flight-summary {
-  padding: 1rem 1.25rem;
+  padding: 0.75rem 0.85rem;
   border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   align-items: center;
   background: var(--bg-card);
   cursor: pointer;
-  min-height: 80px;
+  min-height: 72px;
 }
 
 .summary-main {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.7rem;
   flex: 1;
 }
 
@@ -1455,7 +1731,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  min-width: 100px;
+  min-width: 96px;
 }
 
 .airline-name {
@@ -1475,7 +1751,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 1rem;
+  gap: 0.65rem;
+  min-width: 0;
 }
 
 .time-group {
@@ -1502,8 +1779,8 @@ body {
   flex-direction: column;
   align-items: center;
   position: relative;
-  min-width: 60px;
-  max-width: 150px;
+  min-width: 90px;
+  max-width: 180px;
 }
 
 .duration-text {
@@ -1512,15 +1789,15 @@ body {
   margin-bottom: 0.2rem;
 }
 
-.route-line {
+.summary-route-line {
   width: 100%;
   height: 2px;
-  background: #cbd5e1;
+  background: linear-gradient(to right, var(--primary), var(--secondary));
   position: relative;
   border-radius: 2px;
 }
 
-.route-line::before {
+.summary-route-line::before {
   content: '';
   position: absolute;
   top: 50%;
@@ -1528,13 +1805,13 @@ body {
   width: 6px;
   height: 6px;
   background: #fff;
-  border: 2px solid #cbd5e1;
+  border: 2px solid var(--primary);
   border-radius: 50%;
   transform: translate(-50%, -50%);
   z-index: 1;
 }
 
-.route-line::after {
+.summary-route-line::after {
   content: '';
   position: absolute;
   top: 50%;
@@ -1708,31 +1985,31 @@ body {
 /* Fares Footer */
 .card-footer-fares {
   background: var(--bg-card);
-  padding: 0.75rem 1.25rem;
-  border-top: 1px solid var(--border);
+  padding: 0.6rem 0.85rem;
+  border-top: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.55rem;
 }
 
 .footer-fare-item {
   display: flex;
   flex-direction: column;
-  padding: 0.4rem 0.75rem;
+  padding: 0.35rem 0.6rem;
   background: var(--bg-main);
   border-radius: 8px;
-  min-width: 80px;
+  min-width: 72px;
 }
 
 .footer-fare-label {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   color: var(--text-secondary);
   font-weight: 600;
 }
 
 .footer-fare-price {
-  font-size: 1rem;
+  font-size: 0.92rem;
   font-weight: 700;
   color: var(--primary);
 }
@@ -1814,6 +2091,94 @@ body {
   font-family: 'JetBrains Mono', monospace;
 }
 
+.summary-passengers {
+  padding: 0 1rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.itinerary-passengers {
+  margin: 0 0 0.65rem 0;
+  width: 100%;
+  max-width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(37, 99, 235, 0.12);
+  background: rgba(37, 99, 235, 0.04);
+  border-radius: 10px;
+  text-align: left;
+}
+
+.itinerary-passengers-footer {
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+}
+
+.itinerary-card-footer-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.45rem;
+  padding: 0 0.75rem 0.75rem;
+}
+
+.itinerary-card-body {
+  padding-bottom: 0.25rem;
+}
+
+.itinerary-card-footer-row .card-footer-fares {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.itinerary-card-footer-row .itinerary-passengers-footer {
+  flex: 0 0 auto;
+  align-self: stretch;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: 0;
+}
+
+.itinerary-passengers-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  margin-bottom: 0.35rem;
+}
+
+.itinerary-passengers-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-start;
+}
+
+.passenger-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.itinerary-passengers-more {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
 /* ===================== SEARCH BAR ===================== */
 .search-container {
   margin-bottom: 1.5rem;
@@ -1873,18 +2238,21 @@ body {
   flex-direction: column;
   gap: 1.5rem;
   margin-bottom: 2rem;
+  align-items: center;
+}
+
+.list-header-controls .search-wrapper {
+  width: min(100%, 420px);
+  margin: 0 auto;
 }
 
 @media (min-width: 768px) {
   .list-header-controls {
-    flex-direction: row;
+    flex-direction: column;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
   }
 
-  .list-header-controls .search-wrapper {
-    width: 350px;
-  }
 }
 
 .filter-bar {
@@ -1892,21 +2260,26 @@ body {
   gap: 0.5rem;
   overflow-x: auto;
   padding-bottom: 4px;
+  justify-content: center;
+  width: 100%;
 }
 
 .tab {
-  padding: 0.6rem 1.25rem;
-  border-radius: 50px;
-  border: 1px solid transparent;
+  padding: 0.58rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
   background: var(--bg-card);
   color: var(--text-secondary);
-  font-family: inherit;
+  font-family: 'Outfit', sans-serif;
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
 }
 
 .tab:hover {
@@ -1919,6 +2292,29 @@ body {
   background: var(--primary);
   color: white;
   box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3);
+}
+
+.tab-icon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.tab-icon svg,
+.action-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.action-icon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
 }
 
 /* ===================== PASSENGER DETAIL MODAL (TABS) ===================== */

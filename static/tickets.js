@@ -1769,13 +1769,22 @@ function startTicketsRealtime() {
                 console.error('Invalid realtime payload', e);
             }
         };
-        stream.onerror = () => {
+        stream.onerror = async () => {
             try {
                 stream.close();
             } catch (e) {
                 console.error('Failed to close realtime stream', e);
             }
             ticketsEventSource = null;
+
+            // Check if session is actually active before retrying
+            try {
+                const authCheck = await fetch('/api/tickets/notifications');
+                if (authCheck.status === 401) {
+                    console.warn('Realtime stream stopped: User is not authenticated.');
+                    return; // Stop retrying
+                }
+            } catch (e) {}
             scheduleTicketsRealtimeRetry();
         };
         ticketsEventSource = stream;

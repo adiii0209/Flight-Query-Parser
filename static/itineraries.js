@@ -135,6 +135,86 @@ function showToast(msg, type = 'info') {
 function getTripTypeLabel(t) {
   switch (t) { case 'round_trip': return 'Round Trip'; case 'multi_city': return 'Multi-City'; default: return 'One Way'; }
 }
+
+function getItineraryPassengerNames(it = currentItinerary) {
+  let passengers = [];
+  if (!it) return passengers;
+
+  if (Array.isArray(it.passengers_data)) {
+    passengers = it.passengers_data;
+  } else if (typeof it.passengers_data === 'string') {
+    try {
+      const parsed = JSON.parse(it.passengers_data);
+      if (Array.isArray(parsed)) passengers = parsed;
+    } catch (_) {
+      passengers = [];
+    }
+  } else if (Array.isArray(it.passengers)) {
+    passengers = it.passengers;
+  }
+
+  return passengers
+    .map(p => (p && (p.name || p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim())) || '')
+    .map(name => name.trim())
+    .filter(Boolean);
+}
+
+function getItineraryPassengerLabel(it = currentItinerary) {
+  const names = getItineraryPassengerNames(it);
+  if (!names.length) return '';
+  const preview = names.slice(0, 3).join(' • ');
+  const suffix = names.length > 3 ? ` +${names.length - 3}` : '';
+  return { names, preview, suffix, count: names.length };
+}
+
+function getActionIcon(name) {
+  const icons = {
+    copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>',
+    link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 1 0-7l1.5-1.5a5 5 0 0 1 7.1 7.1L17.5 13"></path><path d="M14 11a5 5 0 0 1 0 7L12.5 19.5a5 5 0 0 1-7.1-7.1L6.5 11"></path></svg>',
+    image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m3 15 5-5 4 4 3-3 6 6"></path><circle cx="9" cy="10" r="1.2"></circle></svg>',
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>',
+    approve: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>',
+    delete: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"></path><path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>',
+    hold: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8"></path><path d="M8 20h8"></path><path d="M8 4v4a4 4 0 0 0 1.2 2.8L12 13l2.8-2.2A4 4 0 0 0 16 8V4"></path><path d="M16 20v-4a4 4 0 0 0-1.2-2.8L12 11l-2.8 2.2A4 4 0 0 0 8 16v4"></path></svg>',
+    issue: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9a2 2 0 0 0 2-2 2 2 0 0 0-2-2"></path><path d="M3 19a2 2 0 0 0 2-2 2 2 0 0 0-2-2"></path><path d="M21 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1 0-4h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2H5a2 2 0 0 1 0-4h14a2 2 0 0 1 2 2Z"></path></svg>',
+    revert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h11a5 5 0 0 1 0 10H10"></path></svg>',
+    ticket: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7a2 2 0 0 0 2-2h12a2 2 0 0 0 2 2v2a2 2 0 0 1 0 4v2a2 2 0 0 0-2 2H6a2 2 0 0 0-2-2v-2a2 2 0 0 1 0-4V7Z"></path><path d="M9 8h6"></path><path d="M9 16h6"></path></svg>'
+  };
+  return `<span class="action-icon" aria-hidden="true">${icons[name] || ''}</span>`;
+}
+
+async function copyTextToClipboard(text) {
+  const value = String(text || '');
+  if (!value) return false;
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch (err) {
+      console.warn('Async clipboard copy failed, using fallback', err);
+    }
+  }
+
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.setAttribute('readonly', 'readonly');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (err) {
+    console.error('Fallback clipboard copy failed', err);
+    return false;
+  }
+}
+
 function getStatusIcon(s) {
   switch (s) {
     case 'draft': return '📝';
@@ -434,8 +514,7 @@ function renderDetailView() {
 
   document.getElementById('detailTitle').textContent = it.title || it.reference_number || 'Itinerary Details';
   document.getElementById('detailSubtitle').innerHTML = `
-    <span class="status-badge ${it.status}">${getStatusIcon(it.status)} ${(it.status === 'confirmed' || it.status === 'issued') ? 'Issued' : (it.status || '').replace('_', ' ')}</span>
-    &nbsp;${it.reference_number ? 'Ref: ' + it.reference_number : ''} &nbsp;•&nbsp; ${getTripTypeLabel(it.trip_type)}
+    ${it.reference_number ? 'Ref: ' + it.reference_number : ''} ${it.reference_number ? '&nbsp;•&nbsp;' : ''} ${getTripTypeLabel(it.trip_type)}
   `;
 
   renderActions();
@@ -445,38 +524,260 @@ function renderDetailView() {
   renderPassengers();
   renderBilling();
   renderSupplier();
+  renderOutputBoxes();
   updateHoldTimers();
+}
+
+function getItineraryFinalOutputText(it = currentItinerary) {
+  if (!it) return '';
+  const savedText = [it.parser_output_text, it.final_text]
+    .find(value => typeof value === 'string' && value.trim()) || '';
+  const selectedFlightGroup = getSelectedFlightForOutput(it);
+  const flightLegs = flattenFlightLegsForOutput(selectedFlightGroup, it);
+  const passengerNames = getItineraryPassengerNames(it);
+  const flightLines = savedText.trim() || (flightLegs.length > 0
+    ? flightLegs.map(leg => formatReadableFinalLine(leg)).filter(Boolean).join('\n')
+    : 'No selected flight option available');
+
+  const passengerLines = passengerNames.length > 0
+    ? '\n\nPassengers:\n' + passengerNames.map((name, index) => `${index + 1}. ${name}`).join('\n')
+    : '';
+
+  return [
+    'Kindly check and confirm to issue',
+    '',
+    flightLines || 'No selected flight option available',
+    passengerLines
+  ].join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function formatAmadeusPassengerName(name) {
+  const cleanName = (name || '').trim();
+  if (!cleanName) return 'NM1UNKNOWN/UNKNOWN';
+
+  const parts = cleanName.split(/\s+/).filter(Boolean);
+  const firstName = parts.shift() || 'UNKNOWN';
+  const surname = parts.length > 0 ? parts.pop() : 'UNKNOWN';
+  const givenNames = [firstName, ...parts].filter(Boolean).join(' ');
+  return `NM1${surname.toUpperCase()}/${givenNames.toUpperCase()}`;
+}
+
+function formatAmadeusDate(dateValue) {
+  if (!dateValue) return 'DDMMM';
+  const parsed = new Date(dateValue);
+  if (Number.isNaN(parsed.getTime())) return 'DDMMM';
+
+  const day = String(parsed.getDate()).padStart(2, '0');
+  const month = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][parsed.getMonth()];
+  return `${day}${month}`;
+}
+
+function formatPassengerReadyFlightLine(leg) {
+  const airlineCode = (leg.airline_code || leg.carrier_code || leg.airline || 'XX').toString().trim().replace(/\s+/g, '').slice(0, 3).toUpperCase();
+  const flightNumber = (leg.flight_number || '').toString().trim();
+  const dateCode = formatAmadeusDate(leg.departure_date);
+  const from = (leg.departure_airport || 'DEP').toString().toUpperCase();
+  const to = (leg.arrival_airport || 'ARR').toString().toUpperCase();
+  const depTime = formatAmadeusTime(leg.departure_time);
+  const arrTime = `${formatAmadeusTime(leg.arrival_time)}${Number(leg.days_offset) > 0 ? `+${Number(leg.days_offset)}` : ''}`;
+
+  return `${airlineCode}${flightNumber} ${dateCode} ${from}${to} ${depTime} ${arrTime}`.trim();
+}
+
+function formatReadableFinalLine(leg) {
+  const airline = (leg.airline || 'Airline').toString().trim();
+  const flightNumber = (leg.flight_number || '').toString().trim();
+  const dateValue = leg.departure_date ? formatDate(leg.departure_date) : '';
+  const from = (leg.departure_airport || 'DEP').toString().toUpperCase();
+  const to = (leg.arrival_airport || 'ARR').toString().toUpperCase();
+  const depTime = (leg.departure_time || '').toString().trim();
+  const arrTime = `${(leg.arrival_time || '').toString().trim()}${Number(leg.days_offset) > 0 ? `+${Number(leg.days_offset)}` : ''}`.trim();
+
+  return [
+    airline + (flightNumber ? ` ${flightNumber}` : ''),
+    dateValue,
+    `${from} to ${to}`,
+    depTime && arrTime ? `${depTime} - ${arrTime}` : ''
+  ].filter(Boolean).join(' • ');
+}
+
+function formatAmadeusTime(timeValue) {
+  if (!timeValue) return '0000';
+  const text = timeValue.toString().trim();
+  const match = text.match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = match[2];
+    const period = match[3] ? match[3].toUpperCase() : '';
+    if (period === 'PM' && hours < 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    return `${String(hours).padStart(2, '0')}${minutes}`;
+  }
+
+  const digits = text.replace(/\D/g, '');
+  if (digits.length >= 4) return digits.slice(-4);
+  return digits.padStart(4, '0').slice(-4);
+}
+
+function flattenFlightLegsForOutput(selectedFlightGroup, itinerary = currentItinerary) {
+  const groupFlights = selectedFlightGroup?.flights || itinerary?.flights || [];
+  const legs = [];
+
+  groupFlights.forEach(flight => {
+    const segments = Array.isArray(flight.segments) && flight.segments.length > 0 ? flight.segments : [flight];
+    segments.forEach(segment => {
+      legs.push({
+        airline: segment.airline || flight.airline || 'Airline',
+        flight_number: segment.flight_number || flight.flight_number || '',
+        departure_date: segment.departure_date || flight.departure_date || itinerary?.departure_date || '',
+        departure_airport: segment.departure_airport || segment.departure_code || flight.departure_airport || flight.departure_code || 'DEP',
+        arrival_airport: segment.arrival_airport || segment.arrival_code || flight.arrival_airport || flight.arrival_code || 'ARR',
+        departure_time: segment.departure_time || flight.departure_time || '--:--',
+        arrival_time: segment.arrival_time || flight.arrival_time || '--:--',
+        days_offset: segment.days_offset || segment.accumulated_arr_days || flight.days_offset || flight.arrival_days_offset || 0,
+        booking_class: segment.booking_class || flight.booking_class || flight.cabin_class || 'Y'
+      });
+    });
+  });
+
+  return legs;
+}
+
+function formatAmadeusFlightLine(leg) {
+  const airlineCode = (leg.airline_code || leg.carrier_code || leg.airline || 'XX').toString().trim().replace(/\s+/g, '').slice(0, 3).toUpperCase();
+  const flightNumber = (leg.flight_number || '').toString().trim();
+  const dateCode = formatAmadeusDate(leg.departure_date);
+  const route = `${(leg.departure_airport || 'DEP').toString().toUpperCase()}${(leg.arrival_airport || 'ARR').toString().toUpperCase()}`;
+  const depTime = formatAmadeusTime(leg.departure_time);
+  const arrTime = `${formatAmadeusTime(leg.arrival_time)}${Number(leg.days_offset) > 0 ? `+${Number(leg.days_offset)}` : ''}`;
+  return `${airlineCode}${flightNumber} ${dateCode} ${route} ${depTime} ${arrTime}`.trim();
+}
+
+function getSelectedFlightForOutput(it = currentItinerary) {
+  if (!it) return null;
+
+  const flights = it.flights || [];
+  if (flights.length === 0) return null;
+
+  const options = groupFlightsIntoOptions(flights, it.trip_type, it.raw_input_data);
+  const selectedIndex = Number.isInteger(it.selected_flight_option)
+    ? it.selected_flight_option
+    : (it.selected_flight_option !== null && it.selected_flight_option !== undefined ? Number(it.selected_flight_option) : null);
+
+  const safeIndex = selectedIndex !== null && !Number.isNaN(selectedIndex) ? selectedIndex : 0;
+  return options[safeIndex] || options[0] || null;
+}
+
+function getItinerarySupplierOutputText(it = currentItinerary) {
+  if (!it) return '';
+
+  const selectedFlightGroup = getSelectedFlightForOutput(it);
+  const flightLegs = flattenFlightLegsForOutput(selectedFlightGroup, it);
+  const passengerNames = getItineraryPassengerNames(it);
+
+  const passengerLines = passengerNames.length > 0
+    ? passengerNames.map(formatAmadeusPassengerName)
+    : ['NM1UNKNOWN/UNKNOWN'];
+
+  return [
+    flightLegs.map(formatAmadeusFlightLine).filter(Boolean).join('\n'),
+    '',
+    passengerLines.join('\n')
+  ].join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function renderOutputBoxes() {
+  const finalBox = document.getElementById('finalOutputBox');
+  const supplierBox = document.getElementById('supplierOutputBox');
+
+  if (finalBox) {
+    finalBox.value = getItineraryFinalOutputText();
+  }
+
+  if (supplierBox) {
+    supplierBox.value = getItinerarySupplierOutputText();
+  }
+}
+
+function copyOutputText(kind) {
+  const box = kind === 'supplier' ? document.getElementById('supplierOutputBox') : document.getElementById('finalOutputBox');
+  if (!box || !box.value.trim()) {
+    showToast('No text available to copy', 'error');
+    return;
+  }
+
+  copyTextToClipboard(box.value)
+    .then(ok => showToast(ok ? 'Copied to clipboard!' : 'Copy failed', ok ? 'success' : 'error'))
+    .catch(() => showToast('Copy failed', 'error'));
+}
+
+async function renameItineraryTitle() {
+  const it = currentItinerary;
+  if (!it) return;
+
+  const currentTitle = it.title || '';
+  const fallbackTitle = it.reference_number ? `Itinerary - ${it.reference_number}` : 'Itinerary Details';
+  const nextTitle = prompt('Rename itinerary title', currentTitle || fallbackTitle);
+
+  if (nextTitle === null) return;
+
+  const trimmedTitle = nextTitle.trim();
+  if (!trimmedTitle) {
+    showToast('Title cannot be empty', 'error');
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/v2/itineraries/' + it.id, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: trimmedTitle })
+    });
+
+    if (r.ok) {
+      const d = await r.json();
+      currentItinerary = d.itinerary;
+      renderDetailView();
+      renderItineraryCards();
+      showToast('Itinerary title updated', 'success');
+    } else {
+      const err = await r.json().catch(() => ({}));
+      showToast(err.error || 'Failed to update title', 'error');
+    }
+  } catch (e) {
+    showToast('Error updating title', 'error');
+  }
 }
 
 function renderActions() {
   const it = currentItinerary; const el = document.getElementById('detailActions');
   let html = '';
-  html += `<button class="btn-action small secondary" onclick="copyItinerary()">📋 Copy</button>`;
+  html += `<button class="btn-action small secondary" onclick="copyItinerary()">${getActionIcon('copy')}<span>Copy</span></button>`;
 
   if (navigator.share) {
-    html += `<button class="btn-action small secondary" onclick="shareItinerary()">🔗 Link</button>`;
+    html += `<button class="btn-action small secondary" onclick="shareItinerary()">${getActionIcon('link')}<span>Link</span></button>`;
   }
-  html += `<button class="btn-action small secondary" onclick="shareItineraryImage()">📸 Image</button>`;
+  html += `<button class="btn-action small secondary" onclick="copyItineraryImage()" title="Copy the itinerary card as an image to your clipboard">${getActionIcon('image')}<span>Copy Card Image</span></button>`;
 
   if (it.status === 'draft') {
-    html += `<button class="btn-action small primary" onclick="editInParser()">✏️ Edit</button>`;
+    html += `<button class="btn-action small primary" onclick="editInParser()">${getActionIcon('edit')}<span>Edit</span></button>`;
     const flights = it.flights || [];
     // Show approve only if a flight option is selected (or only 1 option exists)
   const numOpts = getFlightOptionCount(flights, it.trip_type, it.raw_input_data);
     if (numOpts === 1 || it.selected_flight_option !== null) {
-      html += `<button class="btn-action small success" onclick="approveItinerary()">✅ Approve</button>`;
+      html += `<button class="btn-action small success" onclick="approveItinerary()">${getActionIcon('approve')}<span>Approve</span></button>`;
     }
-    html += `<button class="btn-action small danger" onclick="deleteItinerary()">🗑️ Delete</button>`;
+    html += `<button class="btn-action small danger" onclick="deleteItinerary()">${getActionIcon('delete')}<span>Delete</span></button>`;
   } else if (it.status === 'approved') {
-    html += `<button class="btn-action small primary" onclick="editInParser()">✏️ Edit</button>`;
-    html += `<button class="btn-action small warning" onclick="holdItinerary()">⏸️ Hold</button>`;
-    html += `<button class="btn-action small success" onclick="confirmItinerary()">🎫 Issue</button>`;
+    html += `<button class="btn-action small primary" onclick="editInParser()">${getActionIcon('edit')}<span>Edit</span></button>`;
+    html += `<button class="btn-action small warning" onclick="holdItinerary()">${getActionIcon('hold')}<span>Hold</span></button>`;
+    html += `<button class="btn-action small success" onclick="confirmItinerary()">${getActionIcon('issue')}<span>Issue</span></button>`;
   } else if (it.status === 'on_hold') {
-    html += `<button class="btn-action small success" onclick="confirmItinerary()">🎫 Issue</button>`;
-    html += `<button class="btn-action small secondary" onclick="revertItinerary()">🔄 Revert</button>`;
+    html += `<button class="btn-action small success" onclick="confirmItinerary()">${getActionIcon('issue')}<span>Issue</span></button>`;
+    html += `<button class="btn-action small secondary" onclick="revertItinerary()">${getActionIcon('revert')}<span>Revert</span></button>`;
   } else if (it.status === 'confirmed' || it.status === 'issued') {
-    html += `<button class="btn-action small secondary" onclick="revertItinerary()">🔄 Revert</button>`;
-    html += `<button class="btn-action small primary" onclick="generateTicket()">🎟️ Generate Ticket</button>`;
+    html += `<button class="btn-action small secondary" onclick="revertItinerary()">${getActionIcon('revert')}<span>Revert</span></button>`;
+    html += `<button class="btn-action small primary" onclick="generateTicket()">${getActionIcon('ticket')}<span>Generate Ticket</span></button>`;
   }
   el.innerHTML = html;
 }
@@ -485,12 +786,17 @@ function renderProgressBar() {
   const it = currentItinerary;
   const statusOrder = { 'draft': 0, 'approved': 1, 'on_hold': 2, 'confirmed': 2, 'issued': 2, 'reverted': 1 };
   const current = statusOrder[it.status] || 0;
-  let html = '<div class="progress-steps">';
-  // Changed "Finalized" to "Issued" as requested
-  const labels = [{ icon: '📝', name: 'Draft' }, { icon: '✅', name: 'Approved' }, { icon: '🎫', name: 'Issued' }];
+  const lastLabel = (it.status === 'on_hold') ? 'On Hold' : 'Issued';
+  const labels = [
+    { name: 'Draft' },
+    { name: 'Approved' },
+    { name: lastLabel }
+  ];
+  let html = '<div class="progress-steps" aria-label="Itinerary status timeline"><span class="progress-caption">Status</span>';
   labels.forEach((s, i) => {
-    const done = i < current; const active = i === current;
-    html += `<div class="progress-step"><div class="step-circle ${done ? 'done' : active ? 'active' : ''}">${done ? '✓' : s.icon}</div><div class="step-label ${done ? 'done' : active ? 'active' : ''}">${s.name}</div></div>`;
+    const done = i < current;
+    const active = i === current;
+    html += `<span class="progress-step ${done ? 'done' : active ? 'active' : 'pending'}"><span class="step-label ${done ? 'done' : active ? 'active' : ''}">${s.name}</span></span>`;
   });
   html += '</div>';
   document.getElementById('progressBar').innerHTML = html;
@@ -675,7 +981,10 @@ function groupFlightsIntoOptions(flights, tripType, rawInputData) {
 function renderFlightSection() {
   const it = currentItinerary;
   const flights = it.flights || [];
-  const isApprovedOrBeyond = ['approved', 'on_hold', 'confirmed'].includes(it.status);
+  const selectedIndex = Number.isInteger(it.selected_flight_option)
+    ? it.selected_flight_option
+    : (it.selected_flight_option !== null && it.selected_flight_option !== undefined ? Number(it.selected_flight_option) : null);
+  const isFinalized = ['approved', 'on_hold', 'confirmed', 'issued'].includes(it.status);
 
   const section = document.getElementById('flightOptionsSection');
   const container = document.getElementById('flightOptionsContainer');
@@ -690,12 +999,13 @@ function renderFlightSection() {
   const options = groupFlightsIntoOptions(flights, it.trip_type, it.raw_input_data);
 
   // After approval: show ONLY the selected flight, with finalized details
-  if (isApprovedOrBeyond && it.selected_flight_option !== null) {
-    const selectedOpt = options[it.selected_flight_option] || options[0];
+  if (isFinalized && options.length > 0) {
+    const finalizedIndex = selectedIndex !== null && !Number.isNaN(selectedIndex) ? selectedIndex : 0;
+    const selectedOpt = options[finalizedIndex] || options[0];
     document.querySelector('#flightOptionsSection .section-header-row h2').textContent = '✈️ Selected Flight';
     document.getElementById('flightOptionsBadge').textContent = '';
 
-    container.innerHTML = renderFlightOptionCard(selectedOpt, it.selected_flight_option, true, false, it.trip_type);
+    container.innerHTML = renderFlightOptionCard(selectedOpt, finalizedIndex, true, false, it.trip_type);
     return;
   }
 
@@ -705,7 +1015,7 @@ function renderFlightSection() {
   document.getElementById('flightOptionsBadge').textContent = options.length;
 
   container.innerHTML = options.map((opt, idx) => {
-    const isSelected = it.selected_flight_option === idx;
+    const isSelected = selectedIndex === idx;
     return renderFlightOptionCard(opt, idx, isSelected, showSelectionBtns, it.trip_type);
   }).join('');
 }
@@ -715,9 +1025,12 @@ function renderFlightSection() {
 function renderFlightOptionCard(option, idx, isSelected, showSelectBtn, tripType) {
   // Use advanced rendering logic similar to index.html
   const uniqueId = `opt-${idx}`;
+  const passengerLabel = getItineraryPassengerLabel(currentItinerary);
+  const optionLabel = showSelectBtn ? (isSelected ? 'Selected' : option.label) : '';
 
   // Decide layout based on trip type
   let contentHtml = '';
+  let footerHtml = '';
 
   if (tripType === 'round_trip' && option.flights.length === 2) {
     const outbound = option.flights[0];
@@ -738,13 +1051,12 @@ function renderFlightOptionCard(option, idx, isSelected, showSelectBtn, tripType
           <div class="combined-label">Outbound</div>
           ${outSummary}
           ${outTimeline}
-          ${outFares}
           <div class="flight-divider"></div>
           <div class="combined-label" style="background:var(--secondary);">Return</div>
           ${retSummary}
           ${retTimeline}
-          ${retFares}
       `;
+      footerHtml += `${outFares}${retFares}`;
     } else {
       const combinedFares = generateFaresFooterHTML(outbound); // Share outbound fares
       contentHtml += `
@@ -755,8 +1067,8 @@ function renderFlightOptionCard(option, idx, isSelected, showSelectBtn, tripType
           <div class="combined-label" style="background:var(--secondary);">Return</div>
           ${retSummary}
           ${retTimeline}
-          ${combinedFares}
       `;
+      footerHtml += combinedFares;
     }
   } else if (tripType === 'multi_city') {
     option.flights.forEach((f, fi) => {
@@ -767,27 +1079,45 @@ function renderFlightOptionCard(option, idx, isSelected, showSelectBtn, tripType
       contentHtml += generateFlightTimelineHTML(f, idx, subId);
     });
     // Multi-city uses fares from first flight of the option by default
-    contentHtml += generateFaresFooterHTML(option.flights[0]);
+    footerHtml += generateFaresFooterHTML(option.flights[0]);
   } else {
     // One way
     option.flights.forEach((f, fi) => {
       const subId = `${uniqueId}-${fi}`;
       contentHtml += generateFlightSummaryHTML(f, idx, subId);
       contentHtml += generateFlightTimelineHTML(f, idx, subId);
-      contentHtml += generateFaresFooterHTML(f);
+      footerHtml += generateFaresFooterHTML(f);
     });
   }
 
   const selectBtnHtml = showSelectBtn ?
     `<button class="option-select-btn ${isSelected ? 'selected' : ''}" onclick="event.stopPropagation();selectFlightOption(${idx})">${isSelected ? '✓ Selected' : 'Select'}</button>` : '';
 
+  const passengerFooterHtml = passengerLabel && passengerLabel.count ? `
+    <div class="itinerary-passengers itinerary-passengers-footer">
+      <div class="itinerary-passengers-label">Passengers</div>
+      <div class="itinerary-passengers-names">
+        ${passengerLabel.names.map(name => `<span class="passenger-chip">${name}</span>`).join('')}
+      </div>
+      ${passengerLabel.suffix ? `<div class="itinerary-passengers-more">+${passengerLabel.count - 3} more</div>` : ''}
+    </div>
+  ` : '';
+
   return `
-    <div class="flight-card ${isSelected ? 'selected' : ''}" style="margin-bottom: 1.5rem; position: relative; padding-top: 2.5rem;">
-         <div style="position: absolute; top: 0.75rem; right: 0.75rem; z-index: 10;">
+    <div class="flight-card itinerary-flight-card ${isSelected ? 'selected' : ''}">
+         <div class="itinerary-flight-card-head">
+           <div>${optionLabel ? `<div class="option-label">${optionLabel}</div>` : ''}</div>
+           <div class="itinerary-flight-card-actions">
              ${selectBtnHtml}
+           </div>
          </div>
-         <div class="option-label" style="position: absolute; top: 0.75rem; left: 0.75rem;">${option.label}</div>
-         ${contentHtml}
+         <div class="itinerary-card-body">
+           ${contentHtml}
+         </div>
+         <div class="itinerary-card-footer-row">
+           ${footerHtml}
+           ${passengerFooterHtml}
+         </div>
     </div>
   `;
 }
@@ -855,7 +1185,7 @@ function generateFlightSummaryHTML(flight, index, uniqueId) {
                 
                 <div class="duration-line-container">
                     <div class="duration-text">${duration}</div>
-                    <div class="route-line"></div>
+                    <div class="summary-route-line"></div>
                     <div class="stops-text ${isDirect ? 'direct' : ''}">${displayStops}</div>
                 </div>
                 
@@ -1218,7 +1548,7 @@ function renderPassengers() {
 
   const container = document.getElementById('passengersContainer');
   if (pax.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="icon">👥</div><p>No passengers added</p></div>';
+    container.innerHTML = '<div style="padding:0.75rem 0.25rem;color:var(--text-secondary);font-size:0.9rem;line-height:1.4;">Not added yet.</div>';
     return;
   }
 
@@ -1647,6 +1977,12 @@ function renderBilling() {
     document.getElementById('editBillingBtn').style.display = isFinal ? 'none' : '';
   }
 
+  const hasBillingData = !!(it.billing_account || it.bill_to_name || it.bill_to_company || it.bill_to_email || it.bill_to_phone || it.bill_to_address || it.bill_to_gst);
+  if (!hasBillingData) {
+    document.getElementById('billingContainer').innerHTML = '<div style="padding:0.75rem 0.25rem;color:var(--text-secondary);font-size:0.9rem;line-height:1.4;">Not added yet.</div>';
+    return;
+  }
+
   let accountInfo = '';
   if (it.billing_account) {
     accountInfo = `<div class="billing-item" style="grid-column:1/-1;"><div class="label">Billing Account</div><div class="value" style="color:var(--primary);font-weight:600;">📎 ${it.billing_account.display_name} (${it.billing_account.account_type})</div></div>`;
@@ -1769,27 +2105,81 @@ function generateTicket() { showToast('🎟️ Ticket generation coming soon!', 
 
 // ==================== COPY & SHARE ====================
 function copyItinerary() {
-  const it = currentItinerary; const flights = it.flights || [];
-  let text = `📋 ITINERARY: ${it.title || it.reference_number || 'Untitled'}\n`;
-  text += `Status: ${(it.status || '').replace('_', ' ')}\n`;
-  text += `Trip Type: ${getTripTypeLabel(it.trip_type)}\n`;
-  if (it.reference_number) text += `Reference: ${it.reference_number}\n`;
-  text += `Amount: ${formatCurrency(getEffectiveTotal(it))}\n\n`;
+  const it = currentItinerary || {};
+  let text = getItineraryFinalOutputText(it);
 
-  const options = groupFlightsIntoOptions(flights, it.trip_type, it.raw_input_data);
-  options.forEach((opt, idx) => {
-    if (it.selected_flight_option !== null && it.selected_flight_option !== idx) return;
-    text += `--- ${opt.label} ---\n`;
-    opt.flights.forEach(f => {
-      const segs = f.segments && f.segments.length > 0 ? f.segments : [f];
-      segs.forEach(s => {
-        text += `${s.airline || ''} ${s.flight_number || ''}\n`;
-        text += `${s.departure_code || s.departure_airport || ''} ${s.departure_time || ''} → ${s.arrival_code || s.arrival_airport || ''} ${s.arrival_time || ''}\n`;
-      });
+  if (!text.trim()) {
+    showToast('No saved itinerary text found for this itinerary', 'error');
+    return;
+  }
+
+  copyTextToClipboard(text)
+    .then(ok => showToast(ok ? 'Copied to clipboard!' : 'Copy failed', ok ? 'success' : 'error'))
+    .catch(() => showToast('Copy failed', 'error'));
+}
+
+async function copyItineraryImage() {
+  if (typeof html2canvas === 'undefined') {
+    await loadHtml2Canvas();
+  }
+
+  const flightCard = document.querySelector('#flightOptionsContainer .itinerary-flight-card.selected') ||
+    document.querySelector('#flightOptionsContainer .itinerary-flight-card');
+
+  if (!flightCard) {
+    showToast('No flight card found to copy', 'error');
+    return;
+  }
+
+  try {
+    showToast('Preparing image...', 'info');
+    const canvas = await html2canvas(flightCard, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: document.documentElement.getAttribute('data-theme') === 'dark' ? '#0f172a' : '#f8fafc',
+      windowWidth: flightCard.scrollWidth,
+      windowHeight: flightCard.scrollHeight,
+      scrollX: 0,
+      scrollY: 0
     });
-  });
 
-  navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard!', 'success')).catch(() => showToast('Copy failed', 'error'));
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) {
+      showToast('Failed to create image', 'error');
+      return;
+    }
+
+    if (navigator.clipboard && window.ClipboardItem) {
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        showToast('Image copied to clipboard', 'success');
+        return;
+      } catch (err) {
+        console.warn('Clipboard image copy failed, falling back to download', err);
+      }
+    }
+
+    const fileName = buildItineraryImageName();
+    downloadImageFromCanvas(canvas, fileName);
+  } catch (err) {
+    console.error(err);
+    showToast('Failed to copy image', 'error');
+  }
+}
+
+function buildItineraryImageName() {
+  const it = currentItinerary || {};
+  const flights = it.flights || [];
+  if (!flights.length) return 'Itinerary.png';
+
+  const firstFlight = flights[0];
+  const dep = firstFlight.departure_airport || firstFlight.departure_code || 'DEP';
+  const arr = firstFlight.arrival_airport || firstFlight.arrival_code || 'ARR';
+  const routeStr = `${dep} - ${arr}`;
+  const typeStr = (it.trip_type || 'one_way').replace('_', ' ').toUpperCase();
+  const dateStr = (firstFlight.departure_date || '').replace(/[\/\\]/g, '-').trim() || 'DATE';
+  return `${routeStr} (${typeStr}) ${dateStr}.png`.replace(/[<>:"/\\|?*]/g, '_');
 }
 
 function shareItinerary() {
@@ -1967,7 +2357,9 @@ async function updateItineraryPassengers(pax) {
       const d = await r.json();
       currentItinerary = d.itinerary;
       renderPassengers();
+      renderFlightSection();
       renderInfoCards();
+      renderOutputBoxes();
       showToast('Passengers updated', 'success');
     } else {
       showToast('Failed to update itinerary', 'error');
@@ -1983,7 +2375,7 @@ async function removePassenger(idx) {
   pax.splice(idx, 1);
   try {
     const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passengers_data: pax, num_passengers: Math.max(pax.length, 1) }) });
-    if (r.ok) { const d = await r.json(); currentItinerary = d.itinerary; renderPassengers(); renderInfoCards(); showToast('Passenger removed', 'success'); }
+    if (r.ok) { const d = await r.json(); currentItinerary = d.itinerary; renderPassengers(); renderFlightSection(); renderInfoCards(); renderOutputBoxes(); showToast('Passenger removed', 'success'); }
   } catch (e) { showToast('Error', 'error'); }
 }
 
@@ -2229,6 +2621,7 @@ async function updateItineraryBilling(data) {
       renderBilling();
       renderSupplier();
       renderInfoCards();
+      renderOutputBoxes();
       showToast('Billing updated', 'success');
     } else {
       showToast('Failed to update billing', 'error');
@@ -2243,6 +2636,12 @@ async function updateItineraryBilling(data) {
 function renderSupplier() {
   const it = currentItinerary;
   if (!it) return;
+
+  const hasSupplierData = !!(it.supplier_account || it.supplier_name || it.supplier_company || it.supplier_email || it.supplier_phone || it.supplier_address || it.supplier_gst);
+  if (!hasSupplierData) {
+    document.getElementById('supplierContainer').innerHTML = '<div style="padding:0.75rem 0.25rem;color:var(--text-secondary);font-size:0.9rem;line-height:1.4;">Not added yet.</div>';
+    return;
+  }
 
   let accountInfo = '';
   if (it.supplier_account) {
@@ -2427,6 +2826,7 @@ async function updateItinerarySupplier(data) {
       currentItinerary = d.itinerary;
       renderSupplier();
       renderInfoCards(); // maybe not needed but safe
+      renderOutputBoxes();
       showToast('Supplier updated', 'success');
     } else {
       showToast('Failed to update supplier', 'error');
