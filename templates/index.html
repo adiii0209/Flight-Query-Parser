@@ -3645,7 +3645,7 @@
           <h2>Flight Details</h2>
         </div>
       </div>
-      <img src="/static/logo.png" alt="Logo"
+      <img src="/static/logo.png" alt="Logo" loading="lazy" decoding="async" fetchpriority="low"
         style="position: absolute; top: 3.25rem; transform: translateY(-50%); right: 2rem; width: 150px; height: 140px; object-fit: contain; pointer-events: none;">
 
       <div style="margin-bottom: 1.5rem;">
@@ -4368,7 +4368,6 @@
         return;
       }
       await checkAuth();
-      await loadCustomers();
       initializeTripType();
       initializeDarkMode();
       initializeSidebar();
@@ -4604,13 +4603,29 @@
       handleTripType();
     }
 
+    async function getSharedUserProfile({ force = false } = {}) {
+      if (!force && window.__sharedUserProfile) return window.__sharedUserProfile;
+      if (!force && window.__sharedUserProfilePromise) return window.__sharedUserProfilePromise;
+      window.__sharedUserProfilePromise = (async () => {
+        try {
+          const response = await fetch('/api/user');
+          if (!response.ok) return null;
+          const data = await response.json();
+          window.__sharedUserProfile = data;
+          return data;
+        } catch (error) {
+          return null;
+        } finally {
+          window.__sharedUserProfilePromise = null;
+        }
+      })();
+      return window.__sharedUserProfilePromise;
+    }
+
     async function checkAuth() {
       try {
-        const response = await fetch('/api/user');
-        if (response.ok) {
-          const data = await response.json();
-          updateAuthUI(data);
-        }
+        const data = await getSharedUserProfile();
+        if (data) updateAuthUI(data);
       } catch (error) {
         // Not logged in, that's ok
       }
@@ -10135,9 +10150,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     async function checkSidebarAuthStatus() {
       try {
-        const response = await fetch('/api/user');
-        if (response.ok) {
-          const user = await response.json();
+        const user = await getSharedUserProfile();
+        if (user) {
           document.getElementById('sidebarUserName').textContent = user.full_name || user.username || 'Guest User';
           const handleEl = document.getElementById('sidebarUserHandle');
           if (handleEl) handleEl.textContent = user.username ? '@' + user.username : '';

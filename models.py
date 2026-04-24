@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from sqlalchemy import UniqueConstraint
 from werkzeug.security import generate_password_hash, check_password_hash
 from extensions import db
 
@@ -12,6 +13,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     full_name = db.Column(db.String(120))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_ticket_seen_at = db.Column(db.DateTime, nullable=True)
     itineraries = db.relationship('Itinerary', backref='user', lazy=True, cascade='all, delete-orphan')
 
     def set_password(self, password):
@@ -95,6 +97,19 @@ class Ticket(db.Model):
 
     # Relationship for split tickets
     children = db.relationship('Ticket', backref=db.backref('parent', remote_side='Ticket.id'), lazy=True)
+
+
+class TicketRead(db.Model):
+    __table_args__ = (
+        UniqueConstraint('user_id', 'ticket_id', name='uq_ticket_read_user_ticket'),
+        db.Index('ix_ticket_read_user_id', 'user_id'),
+        db.Index('ix_ticket_read_ticket_id', 'ticket_id'),
+    )
+
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
+    ticket_id = db.Column(db.String, db.ForeignKey('ticket.id'), nullable=False)
 
 class Aggregator(db.Model):
     id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))

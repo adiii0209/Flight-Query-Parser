@@ -84,6 +84,7 @@
       retryHandle: null
     };
     window.__ticketNotificationStreamState = ticketNotificationStreamState;
+    const TICKET_BADGE_CACHE_KEY = 'sidebar.ticketNotificationBadges.v1';
 
     function applyTicketNotificationBadges(data = {}) {
       const totalAlerts = (data.merge_count || 0) + (data.duplicate_count || 0);
@@ -106,7 +107,26 @@
       }
 
       window.__lastTicketNotificationPayload = data;
+      try {
+        localStorage.setItem(TICKET_BADGE_CACHE_KEY, JSON.stringify({
+          cached_at: Date.now(),
+          data
+        }));
+      } catch (e) {}
       document.dispatchEvent(new CustomEvent('ticket-notifications:updated', { detail: data }));
+    }
+
+    function hydrateTicketNotificationBadgesFromCache() {
+      try {
+        const raw = localStorage.getItem(TICKET_BADGE_CACHE_KEY);
+        if (!raw) return false;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.data) return false;
+        applyTicketNotificationBadges(parsed.data);
+        return true;
+      } catch (e) {
+        return false;
+      }
     }
 
     async function updateNotificationBadges() {
@@ -192,8 +212,25 @@
 
     if (typeof isRenderPreviewMode === 'undefined' || !isRenderPreviewMode()) {
        document.addEventListener('DOMContentLoaded', () => {
-         updateNotificationBadges();
-         initializeTicketNotificationStream();
+         hydrateTicketNotificationBadgesFromCache();
+         const startBadgeWork = () => {
+           updateNotificationBadges();
+           initializeTicketNotificationStream();
+         };
+         const startWhenPageSettles = () => {
+           if ('requestIdleCallback' in window) {
+             requestIdleCallback(startBadgeWork, { timeout: 1500 });
+           } else {
+             setTimeout(startBadgeWork, 800);
+           }
+         };
+         if (window.location.pathname === '/itineraries') {
+           window.addEventListener('load', () => {
+             setTimeout(startWhenPageSettles, 600);
+           }, { once: true });
+         } else {
+           startWhenPageSettles();
+         }
        });
     }
 

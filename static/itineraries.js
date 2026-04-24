@@ -12,6 +12,11 @@ let dbCorporates = [];
 let airlines = [];
 let currentPassenger = null;
 let unifiedBillingResults = [];
+let dbPassengersPromise = null;
+let dbBillingAccountsPromise = null;
+let dbSupplierAccountsPromise = null;
+let dbCorporatesPromise = null;
+let airlinesPromise = null;
 
 // ==================== SIDEBAR & THEME ====================
 function initializeSidebar() {
@@ -282,32 +287,85 @@ function checkHoldNotifications() {
 }
 
 async function loadDBPassengers() {
+  if (dbPassengersPromise) return dbPassengersPromise;
+  dbPassengersPromise = (async () => {
   try {
     const r = await fetch('/api/v2/passengers'); if (!r.ok) return;
     const d = await r.json(); dbPassengers = d.passengers || [];
   } catch (e) { console.error('Load passengers error:', e); }
+  })();
+  return dbPassengersPromise;
 }
 
 
 async function loadDBSuppliers() {
+  if (dbSupplierAccountsPromise) return dbSupplierAccountsPromise;
+  dbSupplierAccountsPromise = (async () => {
   try {
     const r = await fetch('/api/v2/supplier-accounts');
     if (r.ok) { const d = await r.json(); dbSupplierAccounts = d.supplier_accounts || []; }
   } catch (e) { }
+  })();
+  return dbSupplierAccountsPromise;
 }
 
 async function loadDBBillingAccounts() {
+  if (dbBillingAccountsPromise) return dbBillingAccountsPromise;
+  dbBillingAccountsPromise = (async () => {
   try {
     const r = await fetch('/api/v2/billing-accounts'); if (!r.ok) return;
     const d = await r.json(); dbBillingAccounts = d.billing_accounts || [];
   } catch (e) { console.error('Load billing accounts error:', e); }
+  })();
+  return dbBillingAccountsPromise;
 }
 
 async function loadDBCorporates() {
+  if (dbCorporatesPromise) return dbCorporatesPromise;
+  dbCorporatesPromise = (async () => {
   try {
     const r = await fetch('/api/v2/corporates'); if (!r.ok) return;
     const d = await r.json(); dbCorporates = d.corporates || [];
   } catch (e) { console.error('Load corporates error:', e); }
+  })();
+  return dbCorporatesPromise;
+}
+
+function scheduleItineraryBackgroundHydration() {
+  const hydrate = () => {
+    void loadDBPassengers();
+    void loadDBBillingAccounts();
+    void loadDBSuppliers();
+    void loadDBCorporates();
+    void loadAirlines();
+  };
+
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(hydrate, { timeout: 2000 });
+  } else {
+    setTimeout(hydrate, 1000);
+  }
+}
+
+async function ensurePassengerDirectoryLoaded() {
+  if (dbPassengers.length > 0) return dbPassengers;
+  await loadDBPassengers();
+  return dbPassengers;
+}
+
+async function ensureBillingDirectoryLoaded() {
+  const tasks = [];
+  if (dbBillingAccounts.length === 0) tasks.push(loadDBBillingAccounts());
+  if (dbPassengers.length === 0) tasks.push(loadDBPassengers());
+  if (dbCorporates.length === 0) tasks.push(loadDBCorporates());
+  if (tasks.length > 0) await Promise.all(tasks);
+  return { billingAccounts: dbBillingAccounts, passengers: dbPassengers, corporates: dbCorporates };
+}
+
+async function ensureSupplierDirectoryLoaded() {
+  if (dbSupplierAccounts.length > 0) return dbSupplierAccounts;
+  await loadDBSuppliers();
+  return dbSupplierAccounts;
 }
 
 // ==================== FILTER & CARDS ====================
@@ -1596,6 +1654,8 @@ function renderPassengers() {
 
 // ==================== PASSENGER MANAGEMENT (MODAL) ====================
 async function loadAirlines() {
+  if (airlinesPromise) return airlinesPromise;
+  airlinesPromise = (async () => {
   try {
     const response = await fetch('/api/v2/airlines');
     if (response.ok) {
@@ -1606,6 +1666,8 @@ async function loadAirlines() {
   } catch (e) {
     console.error('Failed to load airlines:', e);
   }
+  })();
+  return airlinesPromise;
 }
 
 function populateAirlineDropdowns() {
@@ -1668,6 +1730,7 @@ async function handlePassengerClick(idx) {
   }
 
   try {
+    await loadAirlines();
     const response = await fetch(`/api/v2/passengers/${pId}`);
     if (!response.ok) throw new Error('Failed to load passenger');
 
@@ -2307,7 +2370,8 @@ function closeModal() {
 }
 
 // ---- Unified Passenger Search & Add ----
-function openUnifiedPassengerModal() {
+async function openUnifiedPassengerModal() {
+  await ensurePassengerDirectoryLoaded();
   const searchInput = document.getElementById('itinPassengerSearch');
   searchInput.value = '';
   document.getElementById('itinPassengerResults').style.display = 'none';
@@ -2475,7 +2539,8 @@ async function removePassenger(idx) {
 }
 
 // ---- Unified Billing Search & Add ----
-function openUnifiedBillingModal() {
+async function openUnifiedBillingModal() {
+  await ensureBillingDirectoryLoaded();
   const searchInput = document.getElementById('itinBillingSearch');
   searchInput.value = '';
   document.getElementById('itinBillingResults').style.display = 'none';
@@ -2761,7 +2826,8 @@ function renderSupplier() {
   </div>`;
 }
 
-function openUnifiedSupplierModal() {
+async function openUnifiedSupplierModal() {
+  await ensureSupplierDirectoryLoaded();
   const searchInput = document.getElementById('itinSupplierSearch');
   searchInput.value = '';
   document.getElementById('itinSupplierResults').style.display = 'none';
@@ -2936,7 +3002,8 @@ async function updateItinerarySupplier(data) {
 document.addEventListener('DOMContentLoaded', async () => {
   initializeSidebar();
   await checkAuth();
-  await Promise.all([loadItineraries(), loadDBPassengers(), loadDBBillingAccounts(), loadDBSuppliers(), loadDBCorporates(), loadAirlines()]);
+  await loadItineraries();
+  scheduleItineraryBackgroundHydration();
 });
 
 // ==================== IMAGE SHARING ====================

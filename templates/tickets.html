@@ -300,8 +300,11 @@
             letter-spacing: 0.5px;
         }
 
-        .itin-card.ticket-unread {
+        .itin-card {
             position: relative;
+        }
+
+        .itin-card.ticket-unread {
             background:
                 linear-gradient(135deg, rgba(16, 185, 129, 0.16), rgba(34, 197, 94, 0.08) 42%, rgba(255, 255, 255, 0.96) 100%);
             border-color: rgba(16, 185, 129, 0.28);
@@ -340,6 +343,148 @@
         .itin-card.ticket-unread .airline-tag {
             background: rgba(5, 150, 105, 0.12);
             color: #047857;
+        }
+
+        .itin-card.ticket-selected {
+            border-color: rgba(37, 99, 235, 0.42);
+            box-shadow: 0 12px 28px rgba(37, 99, 235, 0.12);
+        }
+
+        .ticket-select-toggle {
+            position: absolute;
+            top: 0.9rem;
+            right: 0.9rem;
+            z-index: 12;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.35rem;
+            height: 1.35rem;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.96);
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            cursor: pointer;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.18s ease, transform 0.18s ease;
+            transform: scale(0.96);
+        }
+
+        body.ticket-selection-mode .ticket-select-toggle,
+        .itin-card.ticket-selected .ticket-select-toggle {
+            opacity: 1;
+            pointer-events: auto;
+            transform: scale(1);
+        }
+
+        .ticket-select-toggle input {
+            position: absolute;
+            opacity: 0;
+            inset: 0;
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .ticket-select-toggle span {
+            width: 0.62rem;
+            height: 0.62rem;
+            border-radius: 999px;
+            border: 2px solid rgba(100, 116, 139, 0.65);
+            background: transparent;
+            transition: all 0.2s ease;
+        }
+
+        .ticket-select-toggle input:checked + span {
+            border-color: #2563eb;
+            background: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+        }
+
+        .ticket-selection-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.45rem;
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+
+        .ticket-selection-toolbar .btn-action {
+            padding: 0.34rem 0.62rem;
+            font-size: 0.72rem;
+            min-height: 30px;
+        }
+
+        .ticket-selection-toolbar .btn-icon {
+            width: 30px;
+            min-width: 30px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            line-height: 1;
+        }
+
+        .search-toolbar-main {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .ticket-selection-secondary {
+            display: none;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.45rem;
+            margin-top: 0.18rem;
+        }
+
+        body.ticket-selection-mode .ticket-selection-secondary {
+            display: flex;
+        }
+
+        .ticket-selection-summary {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.32rem 0.65rem;
+            border-radius: 999px;
+            background: rgba(37, 99, 235, 0.08);
+            color: var(--primary);
+            font-size: 0.74rem;
+            font-weight: 700;
+        }
+
+        .ticket-selection-actions {
+            display: flex;
+            gap: 0.4rem;
+            align-items: center;
+        }
+
+        .ticket-selection-actions .btn-action {
+            padding: 0.45rem 0.72rem;
+            font-size: 0.74rem;
+            min-height: 32px;
+        }
+
+        .ticket-selection-actions .btn-icon {
+            width: 32px;
+            min-width: 32px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            line-height: 1;
+        }
+
+        .ticket-selection-actions .btn-action.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
         }
 
         .ticket-card-pax {
@@ -1271,6 +1416,19 @@
             justify-content: flex-end;
         }
 
+        .ticket-toolbar-row {
+            display: flex;
+            justify-content: flex-end;
+            width: 100%;
+            margin-top: -0.5rem;
+        }
+
+        .ticket-toolbar-row,
+        .ticket-selection-secondary {
+            width: max-content;
+            margin-left: auto;
+        }
+
         .detail-header {
             display: flex;
             justify-content: space-between;
@@ -1773,6 +1931,17 @@
             .list-header-controls>.search-toolbar {
                 flex-direction: column !important;
                 align-items: stretch !important;
+            }
+
+            .search-toolbar-main {
+                width: 100%;
+            }
+
+            .ticket-selection-toolbar,
+            .ticket-selection-secondary {
+                width: 100%;
+                justify-content: flex-end;
+                margin-left: 0;
             }
 
             #processingIndicator {
@@ -2546,6 +2715,21 @@
                     <button class="tab" onclick="switchToMergedView(this)">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg> Merged
                     </button>
+                </div>
+                <div class="ticket-toolbar-row">
+                    <div class="ticket-selection-toolbar">
+                        <button class="btn-action secondary" onclick="markAllTicketsSeen()">Mark All Seen</button>
+                        <button class="btn-action secondary" id="toggleAllTicketSelectionBtn" onclick="toggleTicketSelectionMode()">Select</button>
+                        <button class="btn-action secondary btn-icon" id="closeTicketSelectionBtn" onclick="closeTicketSelectionMode()" style="display:none;" aria-label="Close selection mode">&times;</button>
+                    </div>
+                </div>
+                <div class="ticket-selection-secondary">
+                    <div id="ticketSelectionSummary" class="ticket-selection-summary" style="display:none;"></div>
+                    <div class="ticket-selection-actions">
+                        <button class="btn-action secondary" id="markSelectedSeenBtn" onclick="markSelectedTicketsSeen()" disabled style="display:none;">Seen</button>
+                        <button class="btn-action secondary" id="markSelectedUnreadBtn" onclick="markSelectedTicketsUnread()" disabled style="display:none;">Unread</button>
+                        <button class="btn-action danger" id="deleteSelectedTicketsBtn" onclick="deleteSelectedTickets()" disabled style="display:none;">Delete</button>
+                    </div>
                 </div>
             </div>
             <div id="ticketCards" class="itin-grid">

@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 import hashlib
 from query_parser import extract_flight, extract_multiple_flights
-from models import User, Customer, Itinerary, Ticket, Aggregator, LedgerEntry, TicketOperation, OperationLedgerLink, BookingGroup
+from models import User, Customer, Itinerary, Ticket, TicketRead, Aggregator, LedgerEntry, TicketOperation, OperationLedgerLink, BookingGroup
 from extensions import db
 
 import gspread
@@ -1716,6 +1716,80 @@ def _serialize_ticket_model(ticket):
     }
 
 
+def _db_now():
+    value = db.session.execute(text("SELECT CURRENT_TIMESTAMP")).scalar()
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            pass
+    return datetime.utcnow()
+
+
+def _iso_or_none(value):
+    return value.isoformat() if isinstance(value, datetime) else None
+
+
+def _ticket_unread_for_state(ticket, last_seen_at, read_ticket_ids):
+    created_at = getattr(ticket, "created_at", None)
+    if not isinstance(created_at, datetime):
+        return False
+    if ticket.id in (read_ticket_ids or set()):
+        return False
+    if not isinstance(last_seen_at, datetime):
+        return True
+    return created_at > last_seen_at
+
+
+def _ticket_read_ticket_ids(user_id, ticket_ids):
+    normalized_ids = [ticket_id for ticket_id in set(ticket_ids or []) if ticket_id]
+    if not normalized_ids:
+        return set()
+    rows = db.session.query(TicketRead.ticket_id).filter(
+        TicketRead.user_id == user_id,
+        TicketRead.ticket_id.in_(normalized_ids),
+    ).all()
+    return {row[0] for row in rows if row and row[0]}
+
+
+def _expand_ticket_scope(ticket):
+    if ticket.booking_group_id and ticket.booking_group:
+        grouped_tickets = _booking_group_sorted_tickets(ticket.booking_group)
+        if grouped_tickets:
+            return grouped_tickets
+    return [ticket]
+
+
+def _resolve_ticket_scope_from_ids(user_id, ticket_ids):
+    resolved = []
+    seen_ids = set()
+    for ticket_id in ticket_ids or []:
+        if not ticket_id:
+            continue
+        ticket = Ticket.query.filter_by(id=ticket_id, user_id=user_id).first()
+        if not ticket:
+            continue
+        for scoped_ticket in _expand_ticket_scope(ticket):
+            if scoped_ticket.id in seen_ids:
+                continue
+            seen_ids.add(scoped_ticket.id)
+            resolved.append(scoped_ticket)
+    return resolved
+
+
+def _upsert_ticket_reads(user_id, ticket_ids):
+    added_any = False
+    for ticket_id in {ticket_id for ticket_id in (ticket_ids or []) if ticket_id}:
+        exists = TicketRead.query.filter_by(user_id=user_id, ticket_id=ticket_id).first()
+        if exists:
+            continue
+        db.session.add(TicketRead(user_id=user_id, ticket_id=ticket_id))
+        added_any = True
+    return added_any
+
+
 def _restore_ticket_snapshot(snapshot, user_id):
     ticket = Ticket.query.filter_by(id=snapshot["id"], user_id=user_id).first()
     if not ticket:
@@ -1865,6 +1939,7 @@ def _collect_ticket_delete_side_effects(ticket, user_id):
 
 def _delete_ticket_record(ticket, user_id):
     agg_ids = _collect_ticket_delete_side_effects(ticket, user_id)
+    TicketRead.query.filter_by(user_id=user_id, ticket_id=ticket.id).delete(synchronize_session=False)
     db.session.delete(ticket)
     return agg_ids
 
@@ -2004,7 +2079,8 @@ def _add_column_if_missing(table_name, column_name, column_sql):
     existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
     if column_name in existing_columns:
         return
-    db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}"))
+    quoted_table_name = f'"{table_name}"' if table_name.lower() == "user" else table_name
+    db.session.execute(text(f"ALTER TABLE {quoted_table_name} ADD COLUMN {column_name} {column_sql}"))
     db.session.commit()
 
 
@@ -2018,6 +2094,10 @@ def _create_indexes_if_missing():
         "CREATE INDEX IF NOT EXISTS ix_booking_group_user_id ON booking_group (user_id)",
         "CREATE INDEX IF NOT EXISTS ix_booking_group_pnr ON booking_group (pnr)",
         "CREATE INDEX IF NOT EXISTS ix_ticket_booking_group_id ON ticket (booking_group_id)",
+        "CREATE INDEX IF NOT EXISTS ix_ticket_user_created_at ON ticket (user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_ticket_read_user_id ON ticket_read (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_ticket_read_ticket_id ON ticket_read (ticket_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_ticket_read_user_ticket ON ticket_read (user_id, ticket_id)",
     ]
     for statement in statements:
         db.session.execute(text(statement))
@@ -2042,6 +2122,7 @@ def ensure_schema_compatibility():
     _add_column_if_missing("ticket", "booking_group_id", "VARCHAR")
     _add_column_if_missing("ticket", "duplicate_status", "VARCHAR(20)")
     _add_column_if_missing("ticket", "duplicate_of_id", "VARCHAR")
+    _add_column_if_missing("user", "last_ticket_seen_at", "TIMESTAMP")
 
     _add_column_if_missing("operation_ledger_link", "created_at", "TIMESTAMP")
     _add_column_if_missing("operation_ledger_link", "user_id", "VARCHAR")
@@ -3776,11 +3857,15 @@ def delete_pnr_group_tickets(pnr):
         db.session.rollback()
         return jsonify({"error": f"Failed to delete selected tickets: {str(e)}"}), 500
 
+@app.route("/api/tickets", methods=["GET"])
 @app.route("/api/tickets/list", methods=["GET"])
 @login_required
 def get_tickets():
     """Get all tickets for the logged-in user"""
     from sqlalchemy import or_
+    user = User.query.get(session['user_id'])
+    last_seen_at = user.last_ticket_seen_at if user else None
+    server_now = _db_now()
     query = Ticket.query.filter(
         Ticket.user_id == session['user_id'],
         or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status == 'approved'),
@@ -3802,6 +3887,7 @@ def get_tickets():
     tickets = tickets_query.all()
     
     result = []
+    ticket_scope_ids = []
     seen_booking_groups = set()
     for t in tickets:
         if t.booking_group_id:
@@ -3811,11 +3897,14 @@ def get_tickets():
             grouped_tickets = _booking_group_sorted_tickets(t.booking_group)
             lead_ticket = grouped_tickets[0] if grouped_tickets else t
             payload = _merged_ticket_dict(t.booking_group, lead_ticket)
+            scope_tickets = grouped_tickets or [t]
         else:
             payload = _ticket_dict_with_children(t)
+            scope_tickets = [t]
         passengers = payload["passengers"]
         segments = payload["segments"]
         journey = payload["journey"]
+        ticket_scope_ids.extend(item.id for item in scope_tickets if item and item.id)
         
         # Group segments into logical legs (handling layovers)
         legs = _build_legs_from_data(segments, journey)
@@ -3840,7 +3929,24 @@ def get_tickets():
             "passenger_names": [p.get("name", "") for p in passengers],
         })
         result.append(payload)
-    
+
+    read_ticket_ids = _ticket_read_ticket_ids(session['user_id'], ticket_scope_ids)
+    result_by_id = {item["id"]: item for item in result if item.get("id")}
+    for t in tickets:
+        if t.booking_group_id:
+            grouped_tickets = _booking_group_sorted_tickets(t.booking_group) or [t]
+            lead_ticket = grouped_tickets[0]
+            payload = result_by_id.get(lead_ticket.id)
+            if payload is not None:
+                payload["is_unread"] = any(
+                    _ticket_unread_for_state(grouped_ticket, last_seen_at, read_ticket_ids)
+                    for grouped_ticket in grouped_tickets
+                )
+        else:
+            payload = result_by_id.get(t.id)
+            if payload is not None:
+                payload["is_unread"] = _ticket_unread_for_state(t, last_seen_at, read_ticket_ids)
+
     returned_count = len(result)
     return jsonify({
         "tickets": result,
@@ -3848,6 +3954,8 @@ def get_tickets():
         "offset": offset,
         "returned_count": returned_count,
         "has_more": (offset + returned_count) < total_count,
+        "last_seen_at": _iso_or_none(last_seen_at),
+        "server_now": _iso_or_none(server_now),
     })
 
 
@@ -3901,6 +4009,7 @@ def delete_account():
     # Optional: Delete associated data if cascade isn't fully covering everything
     # But User model has cascade='all, delete-orphan' for itineraries
     # Tickets and other models should also be cleaned up
+    TicketRead.query.filter_by(user_id=user.id).delete()
     Ticket.query.filter_by(user_id=user.id).delete()
     Aggregator.query.filter_by(user_id=user.id).delete()
     LedgerEntry.query.filter_by(user_id=user.id).delete()
@@ -3915,6 +4024,8 @@ def delete_account():
 @login_required
 def get_ticket(ticket_id):
     """Get a specific ticket with full data"""
+    user = User.query.get(session['user_id'])
+    last_seen_at = user.last_ticket_seen_at if user else None
     ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
     if not ticket:
         return jsonify({"error": "Ticket not found"}), 404
@@ -3935,9 +4046,168 @@ def get_ticket(ticket_id):
     if ticket.booking_group_id and ticket.booking_group:
         grouped_tickets = _booking_group_sorted_tickets(ticket.booking_group)
         lead_ticket = grouped_tickets[0] if grouped_tickets else ticket
-        return jsonify(_merged_ticket_dict(ticket.booking_group, lead_ticket))
+        payload = _merged_ticket_dict(ticket.booking_group, lead_ticket)
+        read_ticket_ids = _ticket_read_ticket_ids(session['user_id'], [grouped_ticket.id for grouped_ticket in grouped_tickets])
+        payload["is_unread"] = any(
+            _ticket_unread_for_state(grouped_ticket, last_seen_at, read_ticket_ids)
+            for grouped_ticket in grouped_tickets
+        )
+        return jsonify(payload)
 
-    return jsonify(_ticket_dict_with_children(ticket))
+    payload = _ticket_dict_with_children(ticket)
+    payload["is_unread"] = _ticket_unread_for_state(
+        ticket,
+        last_seen_at,
+        _ticket_read_ticket_ids(session['user_id'], [ticket.id]),
+    )
+    return jsonify(payload)
+
+
+@app.route("/api/tickets/<ticket_id>/read", methods=["POST"])
+@login_required
+def mark_ticket_read(ticket_id):
+    user = User.query.get(session['user_id'])
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    scoped_tickets = _resolve_ticket_scope_from_ids(session['user_id'], [ticket_id])
+    if not scoped_tickets:
+        return jsonify({"error": "Ticket not found"}), 404
+
+    scoped_ids = [ticket.id for ticket in scoped_tickets]
+    existing_read_ids = _ticket_read_ticket_ids(session['user_id'], scoped_ids)
+    last_seen_at = user.last_ticket_seen_at
+    inserted_ids = []
+    deleted_any = False
+    for scoped_ticket in scoped_tickets:
+        if isinstance(last_seen_at, datetime) and scoped_ticket.created_at and scoped_ticket.created_at <= last_seen_at:
+            if scoped_ticket.id in existing_read_ids:
+                TicketRead.query.filter_by(user_id=session['user_id'], ticket_id=scoped_ticket.id).delete(synchronize_session=False)
+                deleted_any = True
+            continue
+        if scoped_ticket.id not in existing_read_ids:
+            db.session.add(TicketRead(user_id=session['user_id'], ticket_id=scoped_ticket.id))
+            inserted_ids.append(scoped_ticket.id)
+
+    if inserted_ids or deleted_any:
+        db.session.commit()
+
+    return jsonify({
+        "message": "Marked as read",
+        "ticket_ids": scoped_ids,
+        "inserted_ticket_ids": inserted_ids,
+        "last_seen_at": _iso_or_none(last_seen_at),
+        "server_now": _iso_or_none(_db_now()),
+    })
+
+
+@app.route("/api/tickets/mark-all-seen", methods=["POST"])
+@login_required
+def mark_all_tickets_seen():
+    user = User.query.get(session['user_id'])
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    seen_at = _db_now()
+    user.last_ticket_seen_at = seen_at
+    TicketRead.query.filter_by(user_id=session['user_id']).delete(synchronize_session=False)
+    db.session.commit()
+
+    return jsonify({
+        "message": "All tickets marked seen",
+        "last_seen_at": _iso_or_none(seen_at),
+        "server_now": _iso_or_none(seen_at),
+    })
+
+
+@app.route("/api/tickets/mark-unread", methods=["POST"])
+@login_required
+def mark_selected_tickets_unread():
+    user = User.query.get(session['user_id'])
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    data = request.get_json() or {}
+    scoped_tickets = _resolve_ticket_scope_from_ids(session['user_id'], data.get("ticket_ids") or [])
+    if not scoped_tickets:
+        return jsonify({"error": "No tickets selected"}), 400
+
+    scoped_ids = [ticket.id for ticket in scoped_tickets]
+    existing_last_seen_at = user.last_ticket_seen_at
+    earliest_created_at = min(
+        (ticket.created_at for ticket in scoped_tickets if isinstance(ticket.created_at, datetime)),
+        default=None,
+    )
+
+    if isinstance(existing_last_seen_at, datetime) and isinstance(earliest_created_at, datetime):
+        target_last_seen_at = earliest_created_at - timedelta(microseconds=1)
+        if target_last_seen_at < existing_last_seen_at:
+            preserved_rows = Ticket.query.filter(
+                Ticket.user_id == session['user_id'],
+                Ticket.created_at > target_last_seen_at,
+                Ticket.created_at <= existing_last_seen_at,
+                ~Ticket.id.in_(scoped_ids),
+            ).all()
+            preserved_ids = [ticket.id for ticket in preserved_rows if ticket.id]
+            _upsert_ticket_reads(session['user_id'], preserved_ids)
+            user.last_ticket_seen_at = target_last_seen_at
+
+    TicketRead.query.filter(
+        TicketRead.user_id == session['user_id'],
+        TicketRead.ticket_id.in_(scoped_ids),
+    ).delete(synchronize_session=False)
+    db.session.commit()
+
+    return jsonify({
+        "message": f"Marked {len(scoped_ids)} ticket{'' if len(scoped_ids) == 1 else 's'} as unread",
+        "ticket_ids": scoped_ids,
+        "last_seen_at": _iso_or_none(user.last_ticket_seen_at),
+        "server_now": _iso_or_none(_db_now()),
+    })
+
+
+@app.route("/api/tickets/bulk-delete", methods=["POST"])
+@login_required
+def bulk_delete_tickets():
+    data = request.get_json() or {}
+    scoped_tickets = _resolve_ticket_scope_from_ids(session['user_id'], data.get("ticket_ids") or [])
+    if not scoped_tickets:
+        return jsonify({"error": "No tickets selected"}), 400
+
+    try:
+        agg_ids = set()
+        deleted_count = 0
+        processed_group_ids = set()
+        processed_ticket_ids = set()
+        for ticket in scoped_tickets:
+            if ticket.id in processed_ticket_ids:
+                continue
+            if ticket.booking_group_id and ticket.booking_group_id not in processed_group_ids:
+                processed_group_ids.add(ticket.booking_group_id)
+                grouped_tickets = _booking_group_sorted_tickets(ticket.booking_group)
+                processed_ticket_ids.update(grouped_ticket.id for grouped_ticket in grouped_tickets)
+                group_agg_ids, group_deleted = _delete_booking_group_records(ticket.booking_group, session['user_id'])
+                agg_ids.update(group_agg_ids)
+                deleted_count += group_deleted
+            elif not ticket.booking_group_id:
+                processed_ticket_ids.add(ticket.id)
+                agg_ids.update(_delete_ticket_record(ticket, session['user_id']))
+                deleted_count += 1
+
+        db.session.commit()
+        for agg_id in agg_ids:
+            _recalc_running_balance(agg_id, session['user_id'])
+        _publish_ticket_dashboard_event(
+            session["user_id"],
+            event_type="ticket_deleted",
+        )
+        return jsonify({
+            "message": f"Deleted {deleted_count} ticket{'' if deleted_count == 1 else 's'}",
+            "deleted_count": deleted_count,
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Failed to delete selected tickets: {str(e)}"}), 500
 
 
 @app.route("/api/tickets/<ticket_id>", methods=["PUT"])

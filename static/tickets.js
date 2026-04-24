@@ -2,6 +2,8 @@
 let allTickets = [];
 let currentTicket = null;
 let currentFilter = 'all';
+let selectedTicketIds = new Set();
+let ticketSelectionMode = false;
 let editedData = {};
 let changeAttachmentState = { token: '', filename: '' };
 let selectedPaxIndices = new Set();
@@ -43,10 +45,17 @@ const INITIAL_TICKETS_BATCH_SIZE = 6;
 const DUPLICATES_BATCH_SIZE = 6;
 const TICKETS_CACHE_KEY = 'ticketsDashboard.topCache.v1';
 const DUPLICATES_CACHE_KEY = 'ticketsDashboard.duplicatesCache.v1';
+const TICKETS_NOTIFICATIONS_CACHE_KEY = 'ticketsDashboard.notificationsCache.v1';
+const TICKETS_AGGREGATORS_CACHE_KEY = 'ticketsDashboard.aggregatorsCache.v1';
 const TICKET_DRAFT_CACHE_PREFIX = 'ticketsDashboard.ticketDraft.';
 const UNREAD_TICKETS_CACHE_KEY = 'ticketsDashboard.unreadTickets.v1';
 const TICKETS_LAST_SEEN_AT_KEY = 'ticketsDashboard.lastSeenAt.v1';
 const TICKETS_READ_OVERRIDES_KEY = 'ticketsDashboard.readOverrides.v1';
+const TICKETS_BOOT_CACHE_TTL_MS = 60 * 1000;
+const TICKETS_AGGREGATORS_CACHE_TTL_MS = 5 * 60 * 1000;
+let aggregatorsCache = [];
+let aggregatorsCacheFetchedAt = 0;
+let aggregatorsCachePromise = null;
 const ACTIVE_FIELD_AUTOSAVE_IDLE_MS = 1200;
 const TICKETS_REALTIME_RETRY_MS = 5000;
 let lastDetailInputAt = 0;
@@ -292,6 +301,88 @@ function hydrateUserFromCache() {
     const avatarEl = document.getElementById('sidebarAvatar');
     const avatarSource = cachedUser.full_name || cachedUser.username || '';
     if (avatarEl && avatarSource) avatarEl.textContent = avatarSource.charAt(0).toUpperCase();
+}
+
+function getCachedTicketsMeta() {
+    return readCachedJson(TICKETS_CACHE_KEY) || {};
+}
+
+function hasFreshTicketsCache(maxAgeMs = TICKETS_BOOT_CACHE_TTL_MS) {
+    const cachedAt = Number(getCachedTicketsMeta()?.cached_at || 0);
+    return cachedAt > 0 && (Date.now() - cachedAt) <= maxAgeMs;
+}
+
+function hydrateNotificationsFromCache() {
+    const cached = readCachedJson(TICKETS_NOTIFICATIONS_CACHE_KEY);
+    if (!cached || typeof cached !== 'object') return false;
+    _notifData = {
+        merge_count: parseMoneyValue(cached.merge_count),
+        merge_groups: Array.isArray(cached.merge_groups) ? cached.merge_groups : [],
+        duplicate_count: parseMoneyValue(cached.duplicate_count),
+        processing_count: parseMoneyValue(cached.processing_count),
+        processing_batches: Array.isArray(cached.processing_batches) ? cached.processing_batches : []
+    };
+    _updateNotifBadges();
+    return true;
+}
+
+function hydrateAggregatorsFromCache() {
+    const cached = readCachedJson(TICKETS_AGGREGATORS_CACHE_KEY);
+    const fetchedAt = Number(cached?.cached_at || 0);
+    const items = Array.isArray(cached?.aggregators) ? cached.aggregators : [];
+    if (!fetchedAt || !items.length) return false;
+    if ((Date.now() - fetchedAt) > TICKETS_AGGREGATORS_CACHE_TTL_MS) return false;
+    aggregatorsCache = items;
+    aggregatorsCacheFetchedAt = fetchedAt;
+    return true;
+}
+
+function hasFreshAggregatorsCache() {
+    return Array.isArray(aggregatorsCache)
+        && aggregatorsCache.length > 0
+        && aggregatorsCacheFetchedAt > 0
+        && (Date.now() - aggregatorsCacheFetchedAt) <= TICKETS_AGGREGATORS_CACHE_TTL_MS;
+}
+
+async function getAggregatorsCached({ force = false } = {}) {
+    if (!force && hasFreshAggregatorsCache()) {
+        return aggregatorsCache;
+    }
+    if (!force && aggregatorsCachePromise) {
+        return aggregatorsCachePromise;
+    }
+    aggregatorsCachePromise = (async () => {
+        try {
+            const r = await fetch('/api/aggregators');
+            if (!r.ok) return aggregatorsCache;
+            const d = await r.json();
+            aggregatorsCache = Array.isArray(d.aggregators) ? d.aggregators : [];
+            aggregatorsCacheFetchedAt = Date.now();
+            writeCachedJson(TICKETS_AGGREGATORS_CACHE_KEY, {
+                cached_at: aggregatorsCacheFetchedAt,
+                aggregators: aggregatorsCache
+            });
+            return aggregatorsCache;
+        } catch (e) {
+            console.error('Failed to load aggregators', e);
+            return aggregatorsCache;
+        } finally {
+            aggregatorsCachePromise = null;
+        }
+    })();
+    return aggregatorsCachePromise;
+}
+
+async function populateAggregatorSelect(selectId, emptyLabel = 'Select aggregator') {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+    const items = await getAggregatorsCached();
+    if (!document.getElementById(selectId)) return;
+    let html = `<option value="">${emptyLabel}</option>`;
+    (items || []).forEach(a => {
+        html += `<option value="${a.id}">${a.name}</option>`;
+    });
+    sel.innerHTML = html;
 }
 
 const safe = (val, fallback = '') => {
@@ -1301,18 +1392,20 @@ function getNewestTicketTimestampMs(tickets = allTickets) {
     return (tickets || []).reduce((max, ticket) => Math.max(max, getTicketCreatedAtMs(ticket)), 0);
 }
 
-function initializeTicketSeenBaseline(tickets = allTickets) {
-    if (ticketsLastSeenAtMs > 0) return;
-    const newestCreatedAtMs = getNewestTicketTimestampMs(tickets);
-    ticketsLastSeenAtMs = newestCreatedAtMs || Date.now();
+function syncUnreadStateFromServer(meta = {}) {
+    const serverLastSeenMs = getTicketCreatedAtMs({ created_at: meta?.last_seen_at || '' });
+    if (Number.isFinite(serverLastSeenMs) && serverLastSeenMs > 0) {
+        ticketsLastSeenAtMs = serverLastSeenMs;
+    }
     persistUnreadSeenState();
 }
 
-function advanceTicketsSeenBaseline(timestampMs = Date.now()) {
-    const nextMs = Number.isFinite(timestampMs) ? timestampMs : Date.now();
-    if (nextMs <= ticketsLastSeenAtMs) return;
-    ticketsLastSeenAtMs = nextMs;
-    readOverrideTicketIds.clear();
+function clearUnreadOverrides({ clearReadOverrides = false } = {}) {
+    unreadTicketIds.clear();
+    if (clearReadOverrides) {
+        readOverrideTicketIds.clear();
+    }
+    persistUnreadTickets();
     persistUnreadSeenState();
 }
 
@@ -1353,9 +1446,55 @@ function isTicketUnread(ticketOrId, createdAt = '') {
         ? getTicketCreatedAtMs(ticketOrId)
         : getTicketCreatedAtMs({ created_at: createdAt });
     if (!ticketId) return false;
-    if (readOverrideTicketIds.has(ticketId)) return false;
     if (unreadTicketIds.has(ticketId)) return true;
+    if (readOverrideTicketIds.has(ticketId)) return false;
+    if (typeof ticketOrId === 'object' && typeof ticketOrId?.is_unread === 'boolean') {
+        return ticketOrId.is_unread;
+    }
     return ticketsLastSeenAtMs > 0 && createdAtMs > ticketsLastSeenAtMs;
+}
+
+async function postTicketRead(ticketId) {
+    if (!ticketId) return null;
+    try {
+        const response = await fetch(`/api/tickets/${ticketId}/read`, { method: 'POST' });
+        if (!response.ok) return null;
+        const payload = await response.json();
+        syncUnreadStateFromServer(payload);
+        (payload.ticket_ids || []).forEach((id) => {
+            unreadTicketIds.delete(id);
+        });
+        persistUnreadTickets();
+        persistUnreadSeenState();
+        allTickets = allTickets.map((ticket) => {
+            if ((payload.ticket_ids || []).includes(ticket.id)) {
+                return { ...ticket, is_unread: false };
+            }
+            return ticket;
+        });
+        return payload;
+    } catch (e) {
+        console.error('Failed to mark ticket read', e);
+        return null;
+    }
+}
+
+async function markAllTicketsSeen({ silent = false, render = true } = {}) {
+    try {
+        const response = await fetch('/api/tickets/mark-all-seen', { method: 'POST' });
+        if (!response.ok) return null;
+        const payload = await response.json();
+        syncUnreadStateFromServer(payload);
+        clearUnreadOverrides({ clearReadOverrides: true });
+        allTickets = allTickets.map((ticket) => ({ ...ticket, is_unread: false }));
+        if (render) renderTicketCards();
+        if (!silent) showToast('All tickets marked seen', 'success');
+        return payload;
+    } catch (e) {
+        console.error('Failed to mark all tickets seen', e);
+        if (!silent) showToast('Failed to mark all tickets seen', 'error');
+        return null;
+    }
 }
 
 function isWarningDismissed(warningKey) {
@@ -1608,6 +1747,7 @@ function hydrateTicketsFromCache() {
         return false;
     }
     allTickets = cachedTickets;
+    totalAvailableTickets = Number.isFinite(Number(cached?.total_count)) ? Number(cached.total_count) : cachedTickets.length;
     knownTicketIds = new Set(cachedTickets.map((ticket) => ticket.id).filter(Boolean));
     renderTicketCards();
     return true;
@@ -1630,19 +1770,23 @@ async function loadTickets(options = {}) {
         if (limit > 0) params.set('limit', String(limit));
         if (offset > 0) params.set('offset', String(offset));
         const query = params.toString();
-        const r = await fetch(`/api/tickets/list${query ? `?${query}` : ''}`);
+        const r = await fetch(`/api/tickets${query ? `?${query}` : ''}`);
         if (r.status === 401) {
             window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
             return null;
         }
         if (!r.ok) return null;
         const d = await r.json();
+        syncUnreadStateFromServer(d);
+        unreadTicketIds.clear();
+        readOverrideTicketIds.clear();
+        persistUnreadTickets();
+        persistUnreadSeenState();
         const incomingTickets = (d.tickets || []).map(normalizeTicketFareData);
         totalAvailableTickets = Number.isFinite(Number(d.total_count)) ? Number(d.total_count) : incomingTickets.length;
         if (notifyNewTickets && hasInitializedTicketFeed && offset === 0) {
             const newTickets = incomingTickets.filter((ticket) => ticket && ticket.id && !knownTicketIds.has(ticket.id));
             if (newTickets.length > 0) {
-                markTicketsUnread(newTickets.map((ticket) => ticket.id));
                 const firstTicket = newTickets[0];
                 const title = (firstTicket.passenger_names || []).filter(Boolean).slice(0, 2).join(', ')
                     || firstTicket.pnr
@@ -1669,15 +1813,13 @@ async function loadTickets(options = {}) {
         }
         knownTicketIds = new Set(allTickets.map((ticket) => ticket.id).filter(Boolean));
         allTickets.forEach(cacheTicketDetail);
-        if (allTickets.length > 0) {
-            writeCachedJson(TICKETS_CACHE_KEY, {
-                cached_at: Date.now(),
-                tickets: allTickets.slice(0, INITIAL_TICKETS_BATCH_SIZE)
-            });
-        }
+        writeCachedJson(TICKETS_CACHE_KEY, {
+            cached_at: Date.now(),
+            total_count: totalAvailableTickets,
+            tickets: allTickets.slice(0, INITIAL_TICKETS_BATCH_SIZE)
+        });
         hasInitializedTicketFeed = true;
         if (render) {
-            initializeTicketSeenBaseline(allTickets);
             renderTicketCards();
         }
         return {
@@ -1731,7 +1873,11 @@ async function syncCurrentTicketFromServer() {
 function scheduleRealtimeRefresh(payload = {}) {
     if (payload.notifications) {
         _notifData = payload.notifications;
+        writeCachedJson(TICKETS_NOTIFICATIONS_CACHE_KEY, _notifData);
         _updateNotifBadges();
+    }
+    if (payload.event === 'connected') {
+        return;
     }
     if (payload.ticket_id && currentTicket && currentTicket.id === payload.ticket_id) {
         if (!isDetailDirty && !isSaveInFlight && Date.now() >= suppressRealtimeUntil) {
@@ -2020,6 +2166,168 @@ function getVisibleTicketItems() {
     return items;
 }
 
+function updateTicketSelectionToolbar() {
+    const count = selectedTicketIds.size;
+    const summary = document.getElementById('ticketSelectionSummary');
+    const toggleBtn = document.getElementById('toggleAllTicketSelectionBtn');
+    const closeBtn = document.getElementById('closeTicketSelectionBtn');
+    const deleteBtn = document.getElementById('deleteSelectedTicketsBtn');
+    const unreadBtn = document.getElementById('markSelectedUnreadBtn');
+    const seenBtn = document.getElementById('markSelectedSeenBtn');
+    if (summary) {
+        summary.textContent = count > 0 ? `${count} selected` : '';
+        summary.style.display = count > 0 ? 'inline-flex' : 'none';
+    }
+    if (toggleBtn) {
+        const visibleIds = getVisibleTicketItems().map((ticket) => ticket.id).filter(Boolean);
+        const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((ticketId) => selectedTicketIds.has(ticketId));
+        toggleBtn.textContent = !ticketSelectionMode ? 'Select' : (allVisibleSelected ? 'Clear All' : 'Select All');
+        toggleBtn.classList.toggle('active', ticketSelectionMode);
+    }
+    const showSelectionActions = ticketSelectionMode && count > 0;
+    if (closeBtn) closeBtn.style.display = ticketSelectionMode ? 'inline-flex' : 'none';
+    if (deleteBtn) deleteBtn.style.display = showSelectionActions ? 'inline-flex' : 'none';
+    if (unreadBtn) unreadBtn.style.display = showSelectionActions ? 'inline-flex' : 'none';
+    if (seenBtn) seenBtn.style.display = showSelectionActions ? 'inline-flex' : 'none';
+    if (deleteBtn) deleteBtn.disabled = count === 0;
+    if (unreadBtn) unreadBtn.disabled = count === 0;
+    if (seenBtn) seenBtn.disabled = count === 0;
+}
+
+function clearTicketSelection({ render = true } = {}) {
+    selectedTicketIds.clear();
+    updateTicketSelectionToolbar();
+    if (render) renderTicketCards();
+}
+
+function setTicketSelectionMode(enabled, { clearSelection = false, render = true } = {}) {
+    ticketSelectionMode = !!enabled;
+    if (!ticketSelectionMode || clearSelection) {
+        selectedTicketIds.clear();
+    }
+    document.body.classList.toggle('ticket-selection-mode', ticketSelectionMode);
+    updateTicketSelectionToolbar();
+    if (render) renderTicketCards();
+}
+
+function closeTicketSelectionMode() {
+    setTicketSelectionMode(false, { clearSelection: true });
+}
+
+function toggleTicketSelectionMode() {
+    const visibleIds = getVisibleTicketItems().map((ticket) => ticket.id).filter(Boolean);
+    if (!ticketSelectionMode) {
+        setTicketSelectionMode(true, { clearSelection: true });
+        return;
+    }
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((ticketId) => selectedTicketIds.has(ticketId));
+    if (allVisibleSelected) {
+        selectedTicketIds.clear();
+    } else {
+        visibleIds.forEach((ticketId) => selectedTicketIds.add(ticketId));
+    }
+    updateTicketSelectionToolbar();
+    renderTicketCards();
+}
+
+function toggleTicketSelection(ticketId, shouldSelect, { render = true } = {}) {
+    if (!ticketId) return;
+    ticketSelectionMode = true;
+    if (shouldSelect) selectedTicketIds.add(ticketId);
+    else selectedTicketIds.delete(ticketId);
+    updateTicketSelectionToolbar();
+    if (render) renderTicketCards();
+}
+
+function handleTicketCardClick(ticketId) {
+    if (!ticketId) return;
+    if (ticketSelectionMode) {
+        toggleTicketSelection(ticketId, !selectedTicketIds.has(ticketId));
+        return;
+    }
+    void openTicket(ticketId);
+}
+
+function toggleAllVisibleTicketSelection() {
+    const visibleIds = getVisibleTicketItems().map((ticket) => ticket.id).filter(Boolean);
+    if (!visibleIds.length) return;
+    const allVisibleSelected = visibleIds.every((ticketId) => selectedTicketIds.has(ticketId));
+    visibleIds.forEach((ticketId) => {
+        if (allVisibleSelected) selectedTicketIds.delete(ticketId);
+        else selectedTicketIds.add(ticketId);
+    });
+    updateTicketSelectionToolbar();
+    renderTicketCards();
+}
+
+async function deleteSelectedTickets() {
+    const ticketIds = Array.from(selectedTicketIds);
+    if (!ticketIds.length) return;
+    if (!confirm(`Delete ${ticketIds.length} selected ticket${ticketIds.length === 1 ? '' : 's'}?`)) return;
+    try {
+        const response = await fetch('/api/tickets/bulk-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticket_ids: ticketIds })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            showToast(payload.error || 'Failed to delete selected tickets', 'error');
+            return;
+        }
+        setTicketSelectionMode(false, { clearSelection: true, render: false });
+        await loadTickets({ render: true, notifyNewTickets: false });
+        showToast(payload.message || 'Selected tickets deleted', 'success');
+    } catch (e) {
+        console.error('Delete selected tickets failed', e);
+        showToast('Failed to delete selected tickets', 'error');
+    }
+}
+
+async function markSelectedTicketsUnread() {
+    const ticketIds = Array.from(selectedTicketIds);
+    if (!ticketIds.length) return;
+    try {
+        const response = await fetch('/api/tickets/mark-unread', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticket_ids: ticketIds })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            showToast(payload.error || 'Failed to mark selected tickets unread', 'error');
+            return;
+        }
+        (payload.ticket_ids || ticketIds).forEach((ticketId) => {
+            unreadTicketIds.add(ticketId);
+            readOverrideTicketIds.delete(ticketId);
+        });
+        syncUnreadStateFromServer(payload);
+        persistUnreadTickets();
+        persistUnreadSeenState();
+        setTicketSelectionMode(false, { clearSelection: true, render: false });
+        await loadTickets({ render: true, notifyNewTickets: false });
+        showToast(payload.message || 'Selected tickets marked unread', 'success');
+    } catch (e) {
+        console.error('Mark selected tickets unread failed', e);
+        showToast('Failed to mark selected tickets unread', 'error');
+    }
+}
+
+async function markSelectedTicketsSeen() {
+    const ticketIds = Array.from(selectedTicketIds);
+    if (!ticketIds.length) return;
+    try {
+        await Promise.all(ticketIds.map((ticketId) => postTicketRead(ticketId)));
+        setTicketSelectionMode(false, { clearSelection: true, render: false });
+        await loadTickets({ render: true, notifyNewTickets: false });
+        showToast('Selected tickets marked seen', 'success');
+    } catch (e) {
+        console.error('Mark selected tickets seen failed', e);
+        showToast('Failed to mark selected tickets seen', 'error');
+    }
+}
+
 function buildEmptyTicketsStateHtml() {
     const searchInput = document.getElementById('ticketSearch');
     const emptyMsg = _mergedViewActive
@@ -2107,9 +2415,15 @@ function buildTicketCardHtml(t) {
     });
     const grandTotal = parseMoneyValue(t.grand_total);
     const displayTotal = grandTotal > 0 ? grandTotal : calculatedTotal;
+    const isSelected = selectedTicketIds.has(t.id);
+    const selectedClass = isSelected ? ' ticket-selected' : '';
 
-    return `<div class="itin-card${unreadClass}" data-ticket-id="${safe(t.id)}" onclick="openTicket('${t.id}')">
+    return `<div class="itin-card${unreadClass}${selectedClass}" data-ticket-id="${safe(t.id)}" onclick="handleTicketCardClick('${t.id}')">
         ${unreadStrip}
+        <label class="ticket-select-toggle" onclick="event.stopPropagation()">
+            <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleTicketSelection('${t.id}', this.checked)">
+            <span></span>
+        </label>
         <div class="itin-card-top ${statusClass}"></div>
         <div class="itin-card-body">
             <div class="itin-card-header">
@@ -2276,9 +2590,15 @@ function buildTicketCardHtml(t) {
     });
     const grandTotal = parseMoneyValue(t.grand_total);
     const displayTotal = grandTotal > 0 ? grandTotal : calculatedTotal;
+    const isSelected = selectedTicketIds.has(t.id);
+    const selectedClass = isSelected ? ' ticket-selected' : '';
 
-    return `<div class="itin-card${unreadClass}" data-ticket-id="${safe(t.id)}" onclick="openTicket('${t.id}')">
+    return `<div class="itin-card${unreadClass}${selectedClass}" data-ticket-id="${safe(t.id)}" onclick="handleTicketCardClick('${t.id}')">
         ${unreadStrip}
+        <label class="ticket-select-toggle" onclick="event.stopPropagation()">
+            <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleTicketSelection('${t.id}', this.checked)">
+            <span></span>
+        </label>
         <div class="itin-card-top ${statusClass}"></div>
         <div class="itin-card-body">
             <div class="itin-card-header">
@@ -2314,7 +2634,12 @@ function buildTicketCardHtml(t) {
 }
 
 function renderTicketCards() {
+    updateTicketSelectionToolbar();
     patchTicketCards(getVisibleTicketItems());
+}
+
+function findTicketById(ticketId) {
+    return (allTickets || []).find((ticket) => ticket && ticket.id === ticketId) || null;
 }
 
 // ==================== OPEN TICKET DETAIL ====================
@@ -2325,10 +2650,18 @@ async function openTicket(id, { syncUrl = true, replaceUrl = false } = {}) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
     try {
-        markTicketRead(id);
+        ticketSelectionMode = false;
+        selectedTicketIds.clear();
+        const listedTicket = findTicketById(id);
+        const cachedTicket = getCachedTicketDetail(id);
+        const shouldMarkAsRead = isTicketUnread(cachedTicket || listedTicket || { id });
+        if (shouldMarkAsRead) {
+            markTicketRead(id);
+            allTickets = allTickets.map((ticket) => ticket.id === id ? { ...ticket, is_unread: false } : ticket);
+            void postTicketRead(id);
+        }
         renderTicketCards();
         pauseDashboardLiveUpdates();
-        const cachedTicket = getCachedTicketDetail(id);
         if (cachedTicket) {
             currentTicket = cachedTicket;
             fareFieldsTouched = false;
@@ -2401,6 +2734,7 @@ async function loadNotifications() {
             ? _notifData.processing_batches.reduce((sum, batch) => sum + parseMoneyValue(batch.pending_count), 0)
             : parseMoneyValue(_notifData.processing_count);
         _notifData = await r.json();
+        writeCachedJson(TICKETS_NOTIFICATIONS_CACHE_KEY, _notifData);
         const nextDuplicateCount = parseMoneyValue(_notifData.duplicate_count);
         const nextActiveProcessingCount = Array.isArray(_notifData.processing_batches)
             ? _notifData.processing_batches.reduce((sum, batch) => sum + parseMoneyValue(batch.pending_count), 0)
@@ -4626,18 +4960,7 @@ function renderActionsSection() {
 }
 
 async function loadLedgerAggregators() {
-    try {
-        const r = await fetch('/api/aggregators');
-        if (!r.ok) return;
-        const d = await r.json();
-        const sel = document.getElementById('ledgerAggSelect');
-        if (!sel) return;
-        let html = '<option value="">Select aggregator</option>';
-        (d.aggregators || []).forEach(a => {
-            html += `<option value="${a.id}">${a.name}</option>`;
-        });
-        sel.innerHTML = html;
-    } catch (e) { }
+    await populateAggregatorSelect('ledgerAggSelect', 'Select aggregator');
 }
 
 async function addToLedger(bookingBy) {
@@ -5543,8 +5866,14 @@ async function deleteTicket() {
         const r = await fetch('/api/tickets/' + currentTicket.id, { method: 'DELETE' });
         if (!r.ok) { showToast('Delete failed', 'error'); return; }
         ticketDetailCache.delete(currentTicket.id);
+        selectedTicketIds.delete(currentTicket.id);
+        unreadTicketIds.delete(currentTicket.id);
+        readOverrideTicketIds.delete(currentTicket.id);
         allTickets = allTickets.filter((ticket) => ticket.id !== currentTicket.id);
         knownTicketIds = new Set(allTickets.map((ticket) => ticket.id).filter(Boolean));
+        updateTicketSelectionToolbar();
+        persistUnreadTickets();
+        persistUnreadSeenState();
         showToast('Ticket deleted', 'success');
         await showListView();
         renderTicketCards();
@@ -6559,18 +6888,7 @@ async function _executeChange(selectedPax, perPersonFares) {
 
 
 async function _loadAggregatorsIntoSelect(selectId) {
-    try {
-        const r = await fetch('/api/aggregators');
-        if (!r.ok) return;
-        const d = await r.json();
-        const sel = document.getElementById(selectId);
-        if (!sel) return;
-        let html = '<option value="">No ledger entry</option>';
-        (d.aggregators || []).forEach(a => {
-            html += `<option value="${a.id}">${a.name}</option>`;
-        });
-        sel.innerHTML = html;
-    } catch (e) { }
+    await populateAggregatorSelect(selectId, 'No ledger entry');
 }
 
 async function _executeCancel(selectedPax, isFullCancel, perPersonFares, sectorIndices, sectorFares) {
@@ -6635,21 +6953,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     hydrateUserFromCache();
     hydrateUnreadTicketsFromCache();
     hydrateUnreadSeenStateFromCache();
+    hydrateNotificationsFromCache();
+    hydrateAggregatorsFromCache();
     hydrateTicketsFromCache();
+    updateTicketSelectionToolbar();
     void checkAuth();
-    await loadNotifications();
-    await loadTickets({
-        limit: INITIAL_TICKETS_BATCH_SIZE,
-        showLoading: allTickets.length === 0,
-        render: !initialTicketId
-    });
+    const hasWarmTicketsCache = allTickets.length > 0 && hasFreshTicketsCache();
+    if (!hasWarmTicketsCache || initialTicketId) {
+        await loadNotifications();
+        await loadTickets({
+            limit: INITIAL_TICKETS_BATCH_SIZE,
+            showLoading: allTickets.length === 0,
+            render: false
+        });
+    } else {
+        void loadNotifications();
+    }
+    renderTicketCards();
+    if (!initialTicketId && (hasWarmTicketsCache || allTickets.length < totalAvailableTickets || totalAvailableTickets === 0)) {
+        void syncAllTicketsInBackground();
+    }
     if (initialTicketId) {
         await openTicket(initialTicketId, { syncUrl: false, replaceUrl: true });
     }
     if (!startTicketsRealtime() && 'EventSource' in window) {
         scheduleTicketsRealtimeRetry();
     }
-    void syncAllTicketsInBackground();
+    if (!('EventSource' in window)) {
+        void syncAllTicketsInBackground();
+    }
 
     const detailView = document.getElementById('detailView');
     if (detailView) {
@@ -6686,7 +7018,7 @@ window.addEventListener('popstate', async () => {
 });
 
 window.addEventListener('beforeunload', () => {
-    advanceTicketsSeenBaseline(Math.max(Date.now(), getNewestTicketTimestampMs()));
+    persistUnreadSeenState();
     if (ticketsEventSource) {
         ticketsEventSource.close();
         ticketsEventSource = null;
@@ -6698,7 +7030,7 @@ window.addEventListener('beforeunload', () => {
 });
 
 window.addEventListener('pagehide', () => {
-    advanceTicketsSeenBaseline(Math.max(Date.now(), getNewestTicketTimestampMs()));
+    persistUnreadSeenState();
 });
 
 window.addEventListener('online', () => {
