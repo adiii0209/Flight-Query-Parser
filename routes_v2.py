@@ -1054,6 +1054,14 @@ def get_itineraries():
     status_filter = request.args.get('status')
     passenger_id = request.args.get('passenger_id')
     corporate_id = request.args.get('corporate_id')
+    try:
+        limit = max(int(request.args.get('limit', 0) or 0), 0)
+    except (TypeError, ValueError):
+        limit = 0
+    try:
+        offset = max(int(request.args.get('offset', 0) or 0), 0)
+    except (TypeError, ValueError):
+        offset = 0
     
     query = db_session.query(Itinerary).filter_by(user_id=session['user_id'])
     
@@ -1064,10 +1072,19 @@ def get_itineraries():
     if corporate_id:
         query = query.filter_by(corporate_id=corporate_id)
     
-    itineraries = query.order_by(Itinerary.created_at.desc()).all()
+    query = query.order_by(Itinerary.created_at.desc())
+    total_count = query.count()
+    itineraries_query = query.offset(offset)
+    if limit:
+        itineraries_query = itineraries_query.limit(limit)
+    itineraries = itineraries_query.all()
     
     return jsonify({
-        "itineraries": [it.to_dict(include_flights=True) for it in itineraries]
+        "itineraries": [it.to_dict(include_flights=True) for it in itineraries],
+        "total_count": total_count,
+        "offset": offset,
+        "returned_count": len(itineraries),
+        "has_more": (offset + len(itineraries)) < total_count,
     })
 
 

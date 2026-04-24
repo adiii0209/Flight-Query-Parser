@@ -4932,7 +4932,12 @@
         delete document.getElementById('saveModal').dataset.currentlyEditingId;
       }
 
-      // Load Data
+      // Show Modal first so the UI paints before any directory fetches begin
+      document.getElementById('saveModal').classList.add('active');
+      goToStep(1);
+      await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+
+      // Load Data after modal is visible
       await Promise.all([loadBillingAccounts(), loadCustomers(), loadSupplierAccounts()]);
 
       // If editing, pre-fill saved data
@@ -5039,9 +5044,6 @@
         if (saveBtnText) saveBtnText.textContent = '💾 Save Itinerary';
       }
 
-      // Show Modal
-      document.getElementById('saveModal').classList.add('active');
-      goToStep(1);
     }
 
     function closeSaveModal() {
@@ -7646,11 +7648,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
                         </div>
                         <div class="flight-info-block">
                             <div class="info-row">
-                                 <div class="info-icon"><img src="${expandedPlaneIcon}" alt=""></div>
+                                <div class="info-icon"><img src="${expandedPlaneIcon}" alt="" loading="lazy" decoding="async" fetchpriority="low"></div>
                                  <span style="font-weight: 600; color: var(--text-primary);">${sAir} ${sNum}</span>
                             </div>
                             <div class="info-row" style="flex-wrap: wrap; gap: 0.5rem 1.25rem;">
-                                 <div class="info-icon"><img src="${watchIcon}" alt=""></div>
+                                <div class="info-icon"><img src="${watchIcon}" alt="" loading="lazy" decoding="async" fetchpriority="low"></div>
                                  <span>${sDur}</span>
                             </div>
                         </div>
@@ -7675,9 +7677,9 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             html += `
                         <div class="layover-container">
                             <div class="layover-icon-box" title="Layover">
-                                <img src="${layoverIcon}" alt="Airport">
+                               <img src="${layoverIcon}" alt="Airport" loading="lazy" decoding="async" fetchpriority="low">
                             </div>
-                            <div class="layover-pill"><span class="layover-pill-icon"><img src="${watchIcon}" alt=""></span><span>${lText} in ${lDC} &bull; ${dText}</span></div>
+                            <div class="layover-pill"><span class="layover-pill-icon"><img src="${watchIcon}" alt="" loading="lazy" decoding="async" fetchpriority="low"></span><span>${lText} in ${lDC} &bull; ${dText}</span></div>
                         </div>
                     `;
           }
@@ -7695,7 +7697,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
                              <div class="info-icon"><img class="timeline-plane-icon" src="${timelinePlaneIcon}" alt=""></div>
                              <span style="font-weight: 600; color: var(--text-primary);">${airlineName} ${flightNumber}</span>
                         </div>
-                        ${duration && duration !== '--' ? `<div class="info-row"><div class="info-icon"><img src="${watchIcon}" alt=""></div><span>${duration}</span></div>` : ''}
+                        ${duration && duration !== '--' ? `<div class="info-row"><div class="info-icon"><img src="${watchIcon}" alt="" loading="lazy" decoding="async" fetchpriority="low"></div><span>${duration}</span></div>` : ''}
                     </div>
 
                     <div class="t-dot arrival"></div>
@@ -7743,7 +7745,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       let extraClass = '';
       if (variant === 'outbound') extraClass = ' fare-footer-outbound';
       else if (variant === 'return') extraClass = ' fare-footer-return';
-      const rupeeIcon = '<span class="currency-icon"><img src="/icons/rupee.png" alt="Rs"></span>';
+      const rupeeIcon = '<span class="currency-icon"><img src="/icons/rupee.png" alt="Rs" loading="lazy" decoding="async" fetchpriority="low"></span>';
       const numFares = Object.keys(flight.fares || {}).length;
       const orderedFareEntries = getOrderedFareEntries(flight);
 
@@ -9379,10 +9381,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     function inlineFlightAssetMarkup(html) {
       if (!html) return '';
-      const timelinePlanePng = '<img class="timeline-plane-icon" src="/icons/timeline%20plane.png" alt="">';
-      const expandedPlanePng = '<img src="/icons/expanded%20plane.png" alt="">';
-      const watchPng = '<img src="/icons/watch.png" alt="">';
-      const layoverPng = '<img src="/static/travel.png" alt="Airport">';
+      const timelinePlanePng = '<img class="timeline-plane-icon" src="/icons/timeline%20plane.png" alt="" loading="lazy" decoding="async" fetchpriority="low">';
+      const expandedPlanePng = '<img src="/icons/expanded%20plane.png" alt="" loading="lazy" decoding="async" fetchpriority="low">';
+      const watchPng = '<img src="/icons/watch.png" alt="" loading="lazy" decoding="async" fetchpriority="low">';
+      const layoverPng = '<img src="/static/travel.png" alt="Airport" loading="lazy" decoding="async" fetchpriority="low">';
 
       return html
         .replace(/<img class="timeline-plane-icon"[^>]*>/g, timelinePlanePng)
@@ -10209,14 +10211,122 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     }
 
     // --- Draft Management ---
+    function snapshotCurrentFareStateForDraft() {
+      if (!Array.isArray(currentFlights) || currentFlights.length === 0) {
+        return Array.isArray(currentFlights) ? JSON.parse(JSON.stringify(currentFlights)) : [];
+      }
+
+      const clonedFlights = JSON.parse(JSON.stringify(currentFlights));
+      let baseFlightIndex = 0;
+
+      Object.entries(unitFlights || {}).forEach(([unitId, flightIds]) => {
+        const unitFlightCount = Array.isArray(flightIds) ? flightIds.length : 0;
+        if (unitFlightCount === 0) return;
+
+        const collectDraftFares = (suffix = '') => {
+          const fares = {};
+          const mus = {};
+          const svcs = {};
+          const fareExtras = {};
+          const fareOrder = [];
+          const fareLabels = {};
+          const fareCards = document.querySelectorAll(`#fare-list-${unitId}${suffix} .fare-card`);
+
+          fareCards.forEach(card => {
+            const checkbox = card.querySelector('.fare-card-header input[type="checkbox"]');
+            if (!checkbox || !checkbox.checked) return;
+
+            const fareKey = card.dataset.fareKey;
+            const uniqueKey = `${fareKey}-unit-${unitId}${suffix}`;
+            const fareLabel = (card.querySelector('.fare-card-header label')?.textContent || fareKey).trim();
+            fareOrder.push(fareKey);
+            fareLabels[fareKey] = fareLabel;
+
+            const fareInput = card.querySelector(`.fare-${uniqueKey}`);
+            const muInput = card.querySelector(`.mu-${uniqueKey}`);
+            const svcInput = card.querySelector(`.svc-${uniqueKey}`);
+            const cabinInp = card.querySelector(`.fare-cabin-${uniqueKey}`);
+            const checkinInp = card.querySelector(`.fare-checkin-${uniqueKey}`);
+            const pcsInp = card.querySelector(`.fare-pcs-${uniqueKey}`);
+            const seatInp = card.querySelector(`.fare-seat-${uniqueKey}`);
+            const mealInp = card.querySelector(`.fare-meal-${uniqueKey}`);
+            const cancelInp = card.querySelector(`.fare-cancellation-${uniqueKey}`);
+            const penInp = card.querySelector(`.fare-penalty-${uniqueKey}`);
+
+            const fareValue = fareInput?.value?.trim();
+            if (fareKey === 'saver') {
+              fares[fareKey] = fareValue !== '' && fareValue !== undefined ? Number(fareValue) : null;
+            } else if (fareValue !== '' && fareValue !== undefined) {
+              fares[fareKey] = Number(fareValue);
+            }
+
+            const muValue = muInput?.value?.trim();
+            if (muValue !== '' && muValue !== undefined) {
+              mus[fareKey] = Number(muValue);
+            }
+
+            const svcValue = svcInput?.value?.trim();
+            if (svcValue !== '' && svcValue !== undefined) {
+              svcs[fareKey] = Number(svcValue);
+            }
+
+            const extraDetails = {
+              baggage_cabin: cabinInp?.value?.trim() || '',
+              baggage_checkin: checkinInp?.value?.trim() || '',
+              baggage_pcs: pcsInp?.value?.trim() || '',
+              seat: seatInp?.value?.trim() || '',
+              meal: mealInp?.value?.trim() || '',
+              cancellation_charges: cancelInp?.value?.trim() || '',
+              penalty_charges: penInp?.value?.trim() || ''
+            };
+
+            if (Object.values(extraDetails).some(Boolean)) {
+              fareExtras[fareKey] = extraDetails;
+            }
+          });
+
+          return { fares, mus, svcs, fareExtras, fareOrder, fareLabels };
+        };
+
+        const isSplit = !!document.getElementById(`split-fares-toggle-${unitId}`)?.checked;
+        const sharedData = (!isSplit || unitFlightCount !== 2) ? collectDraftFares('') : null;
+        const outboundData = (isSplit && unitFlightCount === 2) ? collectDraftFares('_out') : null;
+        const returnData = (isSplit && unitFlightCount === 2) ? collectDraftFares('_ret') : null;
+
+        for (let idx = 0; idx < unitFlightCount; idx += 1) {
+          const targetFlight = clonedFlights[baseFlightIndex + idx];
+          if (!targetFlight) continue;
+
+          const sourceData = (isSplit && unitFlightCount === 2)
+            ? (idx === 0 ? outboundData : returnData)
+            : sharedData;
+
+          if (sourceData) {
+            targetFlight.fares = sourceData.fares;
+            targetFlight.fare_mu = sourceData.mus;
+            targetFlight.fare_svc = sourceData.svcs;
+            targetFlight.fare_extra_details = sourceData.fareExtras;
+            targetFlight.fare_order = sourceData.fareOrder;
+            targetFlight.fare_labels = sourceData.fareLabels;
+          }
+          targetFlight.is_split = isSplit;
+        }
+
+        baseFlightIndex += unitFlightCount;
+      });
+
+      return clonedFlights;
+    }
+
     function saveDraft() {
+      const currentFlightsSnapshot = snapshotCurrentFareStateForDraft();
       const draft = {
         tripType: currentTripType,
         markup: document.getElementById('markup').value,
         serviceCharge: document.getElementById('serviceCharge').value,
         units: [],
         // Save parsed state
-        currentFlights: currentFlights,
+        currentFlights: currentFlightsSnapshot,
         currentFinalText: currentFinalText,
         unitFlights: unitFlights
       };

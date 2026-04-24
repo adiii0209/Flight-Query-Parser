@@ -1813,13 +1813,14 @@ def _apply_ticket_payload(ticket, payload):
     )
 
 
-def _ticket_dict_with_children(ticket):
+def _ticket_dict_with_children(ticket, include_barcodes=True):
     passengers = json.loads(ticket.passengers_data) if ticket.passengers_data else []
     segments = json.loads(ticket.segments_data) if ticket.segments_data else []
     journey = json.loads(ticket.journey_data) if ticket.journey_data else {}
     raw = json.loads(ticket.raw_data) if ticket.raw_data else {}
     _ensure_passenger_internal_ids(passengers)
-    segments = _segments_with_barcodes(ticket, passengers, segments, raw)
+    if include_barcodes:
+        segments = _segments_with_barcodes(ticket, passengers, segments, raw)
     return {
         "id": ticket.id,
         "created_at": ticket.created_at.isoformat(),
@@ -1867,8 +1868,8 @@ def _is_booking_group_lead(ticket):
     return bool(ordered and ordered[0].id == ticket.id)
 
 
-def _merged_ticket_dict(booking_group, lead_ticket):
-    lead_payload = _ticket_dict_with_children(lead_ticket)
+def _merged_ticket_dict(booking_group, lead_ticket, include_barcodes=True):
+    lead_payload = _ticket_dict_with_children(lead_ticket, include_barcodes=include_barcodes)
     merged_passengers = []
     merged_total = 0.0
     merged_ticket_ids = []
@@ -3896,10 +3897,10 @@ def get_tickets():
             seen_booking_groups.add(t.booking_group_id)
             grouped_tickets = _booking_group_sorted_tickets(t.booking_group)
             lead_ticket = grouped_tickets[0] if grouped_tickets else t
-            payload = _merged_ticket_dict(t.booking_group, lead_ticket)
+            payload = _merged_ticket_dict(t.booking_group, lead_ticket, include_barcodes=False)
             scope_tickets = grouped_tickets or [t]
         else:
-            payload = _ticket_dict_with_children(t)
+            payload = _ticket_dict_with_children(t, include_barcodes=False)
             scope_tickets = [t]
         passengers = payload["passengers"]
         segments = payload["segments"]

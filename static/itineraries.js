@@ -17,6 +17,11 @@ let dbBillingAccountsPromise = null;
 let dbSupplierAccountsPromise = null;
 let dbCorporatesPromise = null;
 let airlinesPromise = null;
+let totalAvailableItineraries = 0;
+let fullItinerariesSyncPromise = null;
+const INITIAL_ITINERARIES_BATCH_SIZE = 6;
+const ITINERARIES_CACHE_KEY = 'itinerariesDashboard.topCache.v1';
+const ITINERARIES_CACHE_TTL_MS = 60 * 1000;
 
 // ==================== SIDEBAR & THEME ====================
 function initializeSidebar() {
@@ -242,11 +247,103 @@ const safe = (val, fallback = '') => {
 // ==================== LOAD DATA ====================
 let notifiedHoldIds = new Set();
 
-async function loadItineraries() {
+function readCachedJson(key) {
   try {
-    const r = await fetch('/api/v2/itineraries'); if (!r.ok) return;
-    const d = await r.json(); allItineraries = d.itineraries || [];
-    renderItineraryCards();
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function writeCachedJson(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.warn('Failed to cache itinerary data', e);
+  }
+}
+
+function hasFreshItinerariesCache(maxAgeMs = ITINERARIES_CACHE_TTL_MS) {
+  const cached = readCachedJson(ITINERARIES_CACHE_KEY);
+  const cachedAt = Number(cached && cached.cached_at);
+  return Number.isFinite(cachedAt) && (Date.now() - cachedAt) <= maxAgeMs;
+}
+
+function renderItinerarySkeletons(count = INITIAL_ITINERARIES_BATCH_SIZE) {
+  const container = document.getElementById('itineraryCards');
+  if (!container) return;
+  container.innerHTML = Array.from({ length: count }).map(() => `
+    <div class="itin-card" style="pointer-events:none;opacity:0.92;">
+      <div class="itin-card-top draft"></div>
+      <div class="itin-card-body">
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;margin-bottom:0.8rem;">
+          <div style="flex:1;">
+            <div style="height:14px;width:150px;border-radius:999px;background:rgba(148,163,184,0.18);margin-bottom:0.7rem;"></div>
+            <div style="height:18px;width:210px;border-radius:999px;background:rgba(148,163,184,0.16);"></div>
+          </div>
+          <div style="height:28px;width:72px;border-radius:8px;background:rgba(148,163,184,0.18);"></div>
+        </div>
+        <div style="display:grid;gap:0.55rem;margin-bottom:1rem;">
+          <div style="height:12px;width:82%;border-radius:999px;background:rgba(148,163,184,0.14);"></div>
+          <div style="height:12px;width:68%;border-radius:999px;background:rgba(148,163,184,0.14);"></div>
+          <div style="height:12px;width:56%;border-radius:999px;background:rgba(148,163,184,0.14);"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="height:18px;width:96px;border-radius:999px;background:rgba(148,163,184,0.18);"></div>
+          <div style="height:12px;width:74px;border-radius:999px;background:rgba(148,163,184,0.14);"></div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function hydrateItinerariesFromCache() {
+  const cached = readCachedJson(ITINERARIES_CACHE_KEY);
+  const cachedItineraries = Array.isArray(cached && cached.itineraries) ? cached.itineraries : [];
+  if (!cachedItineraries.length) {
+    renderItinerarySkeletons();
+    return false;
+  }
+  allItineraries = cachedItineraries;
+  totalAvailableItineraries = Number.isFinite(Number(cached && cached.total_count))
+    ? Number(cached.total_count)
+    : cachedItineraries.length;
+  renderItineraryCards();
+  return true;
+}
+
+async function loadItineraries(options = {}) {
+  const {
+    limit = 0,
+    offset = 0,
+    showLoading = false,
+    render = true
+  } = options;
+  try {
+    if (showLoading && allItineraries.length === 0) {
+      renderItinerarySkeletons();
+    }
+    const params = new URLSearchParams();
+    if (limit > 0) params.set('limit', String(limit));
+    if (offset > 0) params.set('offset', String(offset));
+    const query = params.toString();
+    const r = await fetch(`/api/v2/itineraries${query ? `?${query}` : ''}`);
+    if (!r.ok) return null;
+    const d = await r.json();
+    const incomingItineraries = Array.isArray(d.itineraries) ? d.itineraries : [];
+    totalAvailableItineraries = Number.isFinite(Number(d.total_count))
+      ? Number(d.total_count)
+      : incomingItineraries.length;
+    allItineraries = incomingItineraries;
+    writeCachedJson(ITINERARIES_CACHE_KEY, {
+      cached_at: Date.now(),
+      total_count: totalAvailableItineraries,
+      itineraries: allItineraries.slice(0, INITIAL_ITINERARIES_BATCH_SIZE)
+    });
+    if (render) {
+      renderItineraryCards();
+    }
 
     // Start hold checker if not running
     if (!holdInterval) {
@@ -259,12 +356,23 @@ async function loadItineraries() {
       countdownInterval = setInterval(updateHoldTimers, 1000);
     }
 
-    if (window.location.hash) {
-      const id = window.location.hash.substring(1);
-      const it = allItineraries.find(i => i.id === id);
-      if (it) openItinerary(id, true); // Don't scroll on background refresh
-    }
+    return {
+      totalCount: totalAvailableItineraries,
+      returnedCount: incomingItineraries.length,
+      hasMore: Boolean(d.has_more)
+    };
   } catch (e) { console.error('Load error:', e); }
+  return null;
+}
+
+async function syncAllItinerariesInBackground() {
+  if (fullItinerariesSyncPromise) return fullItinerariesSyncPromise;
+  fullItinerariesSyncPromise = (async () => {
+    await loadItineraries({ render: true });
+  })().finally(() => {
+    fullItinerariesSyncPromise = null;
+  });
+  return fullItinerariesSyncPromise;
 }
 
 function checkHoldNotifications() {
@@ -563,7 +671,8 @@ function showListView() {
   document.getElementById('listView').style.display = 'block';
   window.location.hash = '';
   currentItinerary = null;
-  loadItineraries();
+  renderItineraryCards();
+  void syncAllItinerariesInBackground();
 }
 
 // ==================== RENDER DETAIL VIEW ====================
@@ -3002,8 +3111,24 @@ async function updateItinerarySupplier(data) {
 document.addEventListener('DOMContentLoaded', async () => {
   initializeSidebar();
   await checkAuth();
-  await loadItineraries();
-  scheduleItineraryBackgroundHydration();
+  const initialItineraryId = window.location.hash ? window.location.hash.substring(1) : '';
+  hydrateItinerariesFromCache();
+  const hasWarmItinerariesCache = allItineraries.length > 0 && hasFreshItinerariesCache();
+  if (!hasWarmItinerariesCache) {
+    await loadItineraries({
+      limit: INITIAL_ITINERARIES_BATCH_SIZE,
+      showLoading: allItineraries.length === 0,
+      render: true
+    });
+  } else {
+    renderItineraryCards();
+  }
+  if (allItineraries.length < totalAvailableItineraries || totalAvailableItineraries === 0 || hasWarmItinerariesCache) {
+    void syncAllItinerariesInBackground();
+  }
+  if (initialItineraryId) {
+    await openItinerary(initialItineraryId, true);
+  }
 });
 
 // ==================== IMAGE SHARING ====================
