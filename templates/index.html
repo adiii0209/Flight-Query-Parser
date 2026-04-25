@@ -1109,6 +1109,22 @@
       background: linear-gradient(135deg, var(--primary), var(--secondary));
     }
 
+    .card-watermark-img {
+      position: absolute;
+      bottom: 0.6rem;
+      right: 0.6rem;
+      width: 60px;
+      height: 15px;
+      opacity: 0.9;
+      pointer-events: none;
+      z-index: 5;
+      background-image: url('/static/logo.png');
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: bottom right;
+    }
+
+
     .flight-card:hover {
       transform: translateY(-4px);
       box-shadow: 0 8px 24px var(--shadow-lg);
@@ -1880,6 +1896,116 @@
     .flight-unit-header button:hover {
       background: #dc2626;
       transform: translateY(-2px);
+    }
+
+
+    /* GDS Mode Toggle Switch */
+    .gds-switch-container {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      margin-bottom: 0.5rem;
+      width: 100%;
+    }
+
+    .gds-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+    }
+
+    .gds-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute;
+    }
+
+    .gds-switch .slider {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+      background-color: var(--border);
+      border-radius: 24px;
+      transition: .4s;
+    }
+
+    .gds-switch .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      border-radius: 50%;
+      transition: .4s;
+    }
+
+    .gds-switch input:checked+.slider {
+      background: linear-gradient(135deg, #FFD700, #DAA520);
+      box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+    }
+
+    .gds-switch input:checked+.slider:before {
+      transform: translateX(20px);
+    }
+
+    .gds-switch-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      transition: color 0.3s;
+    }
+
+    .gds-switch input:checked~.gds-switch-label {
+      color: #DAA520;
+    }
+
+    .gds-input-container {
+      width: 100%;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .gds-input-container textarea {
+      width: 100%;
+      min-height: 160px;
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      border: 2px solid #DAA520;
+      border-radius: 8px;
+      resize: vertical;
+      transition: all 0.3s ease;
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+
+    .gds-input-container textarea:focus {
+      outline: none;
+      border-color: #FFD700;
+      box-shadow: 0 0 0 3px rgba(255, 215, 0, 0.2);
+    }
+
+    .gds-input-container .gds-label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: #DAA520;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .gds-input-container .gds-hint {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      margin-top: 0.4rem;
+      font-family: 'Outfit', sans-serif;
     }
 
     .shared-fare-section {
@@ -3645,8 +3771,7 @@
           <h2>Flight Details</h2>
         </div>
       </div>
-      <img src="/static/logo.png" alt="Logo" loading="lazy" decoding="async" fetchpriority="low"
-        style="position: absolute; top: 3.25rem; transform: translateY(-50%); right: 2rem; width: 150px; height: 140px; object-fit: contain; pointer-events: none;">
+
 
       <div style="margin-bottom: 1.5rem;">
         <label class="input-label">Trip Type</label>
@@ -6266,8 +6391,26 @@
       const returnId = ++flightCount;
       unitFlights[unitId] = [outboundId, returnId];
 
+      const gdsToggleHTML = `
+        <div class="gds-switch-container">
+          <label class="gds-switch">
+            <input type="checkbox" id="gds-toggle-${unitId}" onchange="toggleGdsMode(${unitId})">
+            <span class="slider round"></span>
+            <span class="gds-switch-label">GDS Mode</span>
+          </label>
+        </div>
+      `;
+
+      const gdsInputHTML = `
+        <div class="gds-input-container" id="gds-input-container-${unitId}" style="display:none; width:100%;">
+          <textarea id="gds-textarea-${unitId}" placeholder="Paste GDS text here...&#10;&#10;Example:&#10; EK 513 Y 10JUN DELDXB  0415 0645&#10; EK 201 Y 10JUN DXBJFK  0845 1420&#10; EK 202 Y 20JUN JFKDXB  2310 1950&#10; EK 512 Y 22JUN DXBDEL  0910 1415&#10;&#10;Supports: Amadeus, Sabre, Galileo formats"></textarea>
+        </div>
+      `;
+
       return `
     ${unitId > 1 ? `<div class="flight-unit-header"><h3>Option ${unitId}</h3><button type="button" onclick="removeUnit(${unitId})">🗑️ Remove Option</button></div>` : ''}
+    ${gdsToggleHTML}
+    ${gdsInputHTML}
     ${createFlightBox(outboundId, 'Outbound Flight')}
     ${createFlightBox(returnId, 'Return Flight')}
     
@@ -6355,8 +6498,26 @@
       unitFlights[unitId] = [flightId];
       unitFlightCounts[unitId] = 1;
 
+      const gdsToggleHTML = `
+        <div class="gds-switch-container">
+          <label class="gds-switch">
+            <input type="checkbox" id="gds-toggle-${unitId}" onchange="toggleGdsMode(${unitId})">
+            <span class="slider round"></span>
+            <span class="gds-switch-label">GDS Mode</span>
+          </label>
+        </div>
+      `;
+
+      const gdsInputHTML = `
+        <div class="gds-input-container" id="gds-input-container-${unitId}" style="display:none; width:100%;">
+          <textarea id="gds-textarea-${unitId}" placeholder="Paste GDS text here...&#10;&#10;Example:&#10; 6E 2341 S 30DEC CCU LKO 0600 0730&#10; 6E 1234 S 30DEC LKO DEL 0900 1030&#10;&#10;Supports: Amadeus, Sabre, Galileo formats"></textarea>
+        </div>
+      `;
+
       return `
     <div class="flight-unit-header"><h3>Option ${unitId}</h3><button type="button" onclick="addCityToUnit(${unitId})">➕ Add City</button>${unitId > 1 ? `<button type="button" onclick="removeUnit(${unitId})">🗑️ Remove Option</button>` : ''}</div>
+    ${gdsToggleHTML}
+    ${gdsInputHTML}
     <div id="unit-${unitId}-flights" style="display: contents;">
       ${createFlightBox(flightId, `City 1`)}
     </div>
@@ -6751,6 +6912,104 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       }
     }
 
+
+    // ==================== GDS MODE ====================
+    let gdsActiveUnits = new Set(); // Track which units are in GDS mode
+
+    function toggleGdsMode(unitId) {
+      const btn = document.getElementById(`gds-toggle-${unitId}`);
+      const gdsContainer = document.getElementById(`gds-input-container-${unitId}`);
+      const unit = document.querySelector(`.flight-unit[data-unit-id="${unitId}"]`);
+      if (!btn || !gdsContainer || !unit) return;
+
+      const isActive = btn.checked;
+
+      if (!isActive) {
+        // Deactivate GDS mode
+        gdsActiveUnits.delete(unitId);
+        gdsContainer.style.display = 'none';
+
+        // Show normal flight blocks
+        unit.querySelectorAll('.flight-block').forEach(b => b.style.display = '');
+
+        // Show fare split control if round trip
+        const splitControl = unit.querySelector('.fare-split-control');
+        if (splitControl) splitControl.style.display = '';
+
+        // Switch back default fare to saver
+        switchDefaultFareForUnit(unitId, 'saver');
+      } else {
+        // Activate GDS mode
+        gdsActiveUnits.add(unitId);
+        gdsContainer.style.display = 'block';
+
+        // Hide normal flight blocks
+        unit.querySelectorAll('.flight-block').forEach(b => b.style.display = 'none');
+
+        // Hide fare split control if round trip (GDS handles legs automatically)
+        const splitControl = unit.querySelector('.fare-split-control');
+        if (splitControl) splitControl.style.display = 'none';
+
+        // Switch default fare to economy
+        switchDefaultFareForUnit(unitId, 'economy');
+      }
+    }
+
+    function switchDefaultFareForUnit(unitId, fareType) {
+      // Find the saver checkbox and the target fare type
+      const fareList = document.getElementById(`fare-list-${unitId}`);
+      if (!fareList) return;
+
+      const saverCard = fareList.querySelector('[data-fare-key="saver"]');
+      const saverChk = saverCard ? saverCard.querySelector('input[type="checkbox"]') : null;
+
+      if (fareType === 'economy') {
+        // Hide and uncheck saver
+        if (saverCard) {
+          saverCard.style.display = 'none';
+          if (saverChk && saverChk.checked) {
+            saverChk.checked = false;
+            toggleFareCard(saverChk, 'saver', unitId, '');
+          }
+        }
+        // Check if economy card exists, if not add it
+        let econCard = fareList.querySelector('[data-fare-key="economy"]');
+        if (!econCard) {
+          appendFareRow(unitId, 'economy', 'Economy', '');
+          econCard = fareList.querySelector('[data-fare-key="economy"]');
+        }
+        // Show and ensure economy is checked
+        if (econCard) {
+          econCard.style.display = 'block';
+          const econChk = econCard.querySelector('input[type="checkbox"]');
+          if (econChk && !econChk.checked) {
+            econChk.checked = true;
+            toggleFareCard(econChk, 'economy', unitId, '');
+          }
+        }
+      } else if (fareType === 'saver') {
+        // Show and Re-enable saver if it was unchecked by GDS mode
+        if (saverCard) {
+          saverCard.style.display = 'block';
+          if (saverChk && !saverChk.checked) {
+            saverChk.checked = true;
+            toggleFareCard(saverChk, 'saver', unitId, '');
+          }
+        }
+
+        // Hide and Uncheck economy
+        const econCard = fareList.querySelector('[data-fare-key="economy"]');
+        if (econCard) {
+          econCard.style.display = 'none';
+          const econChk = econCard.querySelector('input[type="checkbox"]');
+          if (econChk && econChk.checked) {
+            econChk.checked = false;
+            toggleFareCard(econChk, 'economy', unitId, '');
+          }
+        }
+      }
+    }
+
     async function parseFlights() {
       if (isParsing) {
         showNotification('Parsing already in progress', 'warning');
@@ -6814,6 +7073,78 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       // Actually, looking at code in 2388+, we iterate Object.entries(unitFlights).
 
       Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
+        // Check if this unit is in GDS mode
+        if (gdsActiveUnits.has(Number(unitId))) {
+          const gdsTextarea = document.getElementById(`gds-textarea-${unitId}`);
+          const gdsText = gdsTextarea ? gdsTextarea.value.trim() : '';
+          if (!gdsText) {
+            showNotification(`Please paste GDS text for Option ${unitId}`, 'error');
+            if (gdsTextarea) gdsTextarea.focus();
+            hasError = true;
+            return;
+          }
+
+          // Collect fares for this unit (same logic as normal mode)
+          const collectGdsFares = (suffix) => {
+            const fares = {};
+            const mus = {};
+            const svcs = {};
+            const fareExtras = {};
+            const fareOrder = [];
+            const fareLabels = {};
+            const fareCards = document.querySelectorAll(`#fare-list-${unitId}${suffix} .fare-card`);
+
+            fareCards.forEach(card => {
+              const checkbox = card.querySelector('.fare-card-header input[type="checkbox"]');
+              if (!checkbox || !checkbox.checked) return;
+              const fareKey = card.dataset.fareKey;
+              const uniqueKey = `${fareKey}-unit-${unitId}${suffix}`;
+              const fareLabel = (card.querySelector('.fare-card-header label')?.textContent || fareKey).trim();
+              fareOrder.push(fareKey);
+              fareLabels[fareKey] = fareLabel;
+              const fareInput = card.querySelector(`.fare-${uniqueKey}`);
+              const muInput = card.querySelector(`.mu-${uniqueKey}`);
+              const svcInput = card.querySelector(`.svc-${uniqueKey}`);
+              if (fareInput && fareInput.value && fareInput.value.trim() !== '') {
+                fares[fareKey] = Number(fareInput.value);
+              }
+              if (muInput && muInput.value && muInput.value.trim() !== '') {
+                mus[fareKey] = Number(muInput.value);
+              }
+              if (svcInput && svcInput.value && svcInput.value.trim() !== '') {
+                svcs[fareKey] = Number(svcInput.value);
+              }
+            });
+
+            if (Object.keys(fares).length === 0) {
+              // It's fine, we will let the backend handle it or default to 0
+            }
+            return { fares, mus, svcs, fareExtras, fareOrder, fareLabels };
+          };
+
+          const gdsFareData = collectGdsFares('');
+
+          // Store GDS unit data for processing after the loop
+          flightTexturesByUnit[unitId] = [gdsText];
+
+          // Push a special GDS marker flight entry
+          flights.push({
+            text: gdsText,
+            fares: gdsFareData.fares,
+            fare_mu: gdsFareData.mus,
+            fare_svc: gdsFareData.svcs,
+            fare_extra_details: {},
+            fare_order: gdsFareData.fareOrder,
+            fare_labels: gdsFareData.fareLabels,
+            has_layover: true,
+            is_multiple: false,
+            is_split: false,
+            is_gds: true,
+            unitId: unitId
+          });
+          return; // Skip normal flight processing for this unit
+        }
+
         // Helper to collect fares from a specific list (suffix)
         const collectFares = (suffix) => {
           const fares = {};
@@ -7038,6 +7369,114 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       activeCabinEditorFlights = new Set();
 
       try {
+        // Handle GDS mode flights separately
+        const gdsFlights = flights.filter(f => f.is_gds);
+        const normalFlights = flights.filter(f => !f.is_gds);
+        let allParsedFlights = [];
+
+        // Process GDS flights first
+        for (const gdsFlight of gdsFlights) {
+          try {
+            const gdsResp = await fetch("/api/parse-gds", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: gdsFlight.text })
+            });
+            const gdsData = await gdsResp.json();
+            if (!gdsResp.ok) {
+              showNotification(gdsData.error || 'Failed to parse GDS text', 'error');
+              isParsing = false;
+              parseBtn.disabled = false;
+              parseIcon.innerHTML = '&#10024;';
+              parseBtnText.textContent = 'Parse Flights';
+              return;
+            }
+            // Apply fares/markup to each parsed GDS flight
+            (gdsData.flights || []).forEach(flight => {
+              flight.fares = gdsFlight.fares || {};
+              flight.markup = Number(markup);
+              flight.fare_mu = gdsFlight.fare_mu || {};
+              flight.fare_svc = gdsFlight.fare_svc || {};
+              flight.fare_extra_details = {};
+              flight.fare_order = gdsFlight.fare_order || [];
+              flight.fare_labels = gdsFlight.fare_labels || {};
+              flight.service_charge = svcValue;
+              flight.gst = svcValue > 0 ? Math.round(svcValue * 0.18) : 0;
+              flight.is_editable = true;
+              flight.unitId = gdsFlight.unitId;
+              // Remove saver_fare if present (it's in fares now)
+              if (flight.saver_fare !== undefined) {
+                if (!flight.fares.economy && flight.saver_fare) {
+                  flight.fares.economy = flight.saver_fare;
+                }
+                delete flight.saver_fare;
+              }
+              if (Object.keys(flight.fares).length === 0) {
+                flight.fares = { economy: 0 };
+              }
+              allParsedFlights.push(flight);
+            });
+          } catch (e) {
+            console.error('GDS parse error:', e);
+            showNotification('GDS parsing failed: ' + e.message, 'error');
+            isParsing = false;
+            parseBtn.disabled = false;
+            parseIcon.innerHTML = '&#10024;';
+            parseBtnText.textContent = 'Parse Flights';
+            return;
+          }
+        }
+
+        // If there are no normal flights, skip the /parse call
+        if (normalFlights.length === 0 && allParsedFlights.length > 0) {
+          // Skip to rendering with GDS-parsed flights
+          const data = { flights: allParsedFlights };
+          (data.flights || []).forEach(flight => {
+            if (!flight || typeof flight !== 'object') return;
+            flight.show_cabin_class = false;
+            (flight.segments || []).forEach(segment => {
+              if (!segment || typeof segment !== 'object') return;
+              segment.show_booking_class = false;
+            });
+          });
+
+          // Build unitFlights mapping for GDS results
+          const gdsUnitMap = {};
+          let gdsIdx = 0;
+          for (const gdsFlight of gdsFlights) {
+            const uid = gdsFlight.unitId;
+            gdsUnitMap[uid] = gdsUnitMap[uid] || [];
+            // Count how many flights this GDS unit produced
+            const gdsResp2 = data.flights.filter(f => f.unitId === uid);
+            gdsResp2.forEach(() => {
+              gdsUnitMap[uid].push(gdsIdx);
+              gdsIdx++;
+            });
+          }
+          unitFlights = gdsUnitMap;
+
+          currentFlights = applyUnitMetadataToFlights(data.flights);
+
+          // Handle fare_order and fare_labels
+          for (const gdsFlight of gdsFlights) {
+            const uid = gdsFlight.unitId;
+            const idxArr = gdsUnitMap[uid] || [];
+            idxArr.forEach(i => {
+              if (currentFlights[i]) {
+                currentFlights[i].fare_order = gdsFlight.fare_order;
+                currentFlights[i].fare_labels = gdsFlight.fare_labels;
+              }
+            });
+          }
+
+          renderResults(currentFlights);
+          isParsing = false;
+          parseBtn.disabled = false;
+          parseIcon.innerHTML = '&#10024;';
+          parseBtnText.textContent = 'Parse Flights';
+          return;
+        }
+
         // Send flight texts and their selected fares
         // If saver is checked but empty, parser will try to extract it from text
         const response = await fetch("/parse", {
@@ -7737,7 +8176,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         inlineEditorPlaceholder = `<div id="inline-editor-${index}" class="inline-fare-editor" style="display: none;"></div>`;
       }
 
-      card.innerHTML = optionLabelHTML + dateHeaderHTML + summaryHTML + timelineHTML + faresHTML + inlineEditorPlaceholder;
+      card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="">` + optionLabelHTML + dateHeaderHTML + summaryHTML + timelineHTML + faresHTML + inlineEditorPlaceholder;
       return card;
     }
 
@@ -7890,7 +8329,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (outbound.is_editable) html += `<div id="inline-editor-${index}" class="inline-fare-editor" style="display: none;"></div>`;
       if (returnFlight.is_editable) html += `<div id="inline-editor-${index + 1}" class="inline-fare-editor" style="display: none;"></div>`;
 
-      card.innerHTML = html;
+      card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="">` + html;
       return card;
     }
 
@@ -7956,7 +8395,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         if (f.is_editable) editorHTML += `<div id="inline-editor-${startIndex + i}" class="inline-fare-editor" style="display: none;"></div>`;
       });
 
-      card.innerHTML = contentHTML + faresHTML + editorHTML;
+      card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="">` + contentHTML + faresHTML + editorHTML;
       return card;
     }
 

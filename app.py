@@ -1091,6 +1091,49 @@ def _clone_json(value):
     return json.loads(json.dumps(value))
 
 
+def _sync_segment_schedule_fields(segment):
+    if not isinstance(segment, dict):
+        return segment
+
+    departure = segment.get("departure")
+    if not isinstance(departure, dict):
+        departure = {}
+        segment["departure"] = departure
+
+    arrival = segment.get("arrival")
+    if not isinstance(arrival, dict):
+        arrival = {}
+        segment["arrival"] = arrival
+
+    field_pairs = (
+        ("airport", "departure_airport", departure),
+        ("city", "departure_city", departure),
+        ("date", "departure_date", departure),
+        ("time", "departure_time", departure),
+        ("terminal", "departure_terminal", departure),
+        ("airport", "arrival_airport", arrival),
+        ("city", "arrival_city", arrival),
+        ("date", "arrival_date", arrival),
+        ("time", "arrival_time", arrival),
+        ("terminal", "arrival_terminal", arrival),
+    )
+
+    for nested_key, flat_key, point in field_pairs:
+        nested_value = point.get(nested_key)
+        flat_value = segment.get(flat_key)
+        if nested_value in (None, "") and flat_value not in (None, ""):
+            point[nested_key] = flat_value
+            nested_value = flat_value
+        if nested_value not in (None, ""):
+            segment[flat_key] = nested_value
+
+    departure_date = departure.get("date") or segment.get("departure_date")
+    if departure_date not in (None, ""):
+        segment["date"] = departure_date
+
+    return segment
+
+
 _MISSING = object()
 
 
@@ -1423,6 +1466,7 @@ def _sanitize_segments_for_storage(segments):
         if isinstance(segment_copy, dict):
             segment_copy.pop("barcode_data", None)
             segment_copy.pop("barcode_image", None)
+            _sync_segment_schedule_fields(segment_copy)
         cleaned_segments.append(segment_copy)
     return cleaned_segments
 
@@ -2469,6 +2513,40 @@ def get_customer(customer_id):
 
 # ==================== ITINERARY ROUTES ====================
 
+@app.route("/api/parse-gds", methods=["POST"])
+def parse_gds_text():
+    """Parse GDS terminal text using the regex-based GDS parser.
+    
+    Accepts raw GDS text, parses all segments, auto-detects trip structure
+    (round-trip with layovers, multi-city, etc.), and returns structured
+    flight data ready for card rendering.
+    """
+    try:
+        payload = request.get_json()
+        if not payload:
+            return jsonify({"error": "No data provided"}), 400
+
+        raw_text = payload.get("text", "").strip()
+        if not raw_text:
+            return jsonify({"error": "No GDS text provided"}), 400
+
+        from gds_parser import GDSParser
+        parser = GDSParser()
+        flights = parser.parse(raw_text)
+
+        if not flights:
+            return jsonify({"error": "Could not parse any flights from the GDS text. Check the format."}), 400
+
+        print(f"[GDS-API] Parsed {len(flights)} flight(s) from GDS text")
+        return jsonify({"flights": flights})
+
+    except Exception as e:
+        print(f"[ERROR] GDS parse endpoint: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Failed to parse GDS text: " + str(e)}), 500
+
+
 @app.route("/parse", methods=["POST"])
 def parse():
     """Parse flight information (public endpoint for initial parsing)"""
@@ -2729,6 +2807,7 @@ def _recalculate_segment_timing_data(segments):
     current_cumulative_days = 0
 
     for seg_idx, seg in enumerate(recalculated_segments):
+        _sync_segment_schedule_fields(seg)
         departure = seg.setdefault("departure", {})
         arrival = seg.setdefault("arrival", {})
 
@@ -2794,6 +2873,7 @@ def _recalculate_segment_timing_data(segments):
         seg["accumulated_dep_days"] = current_cumulative_days
         current_cumulative_days += days_offset
         seg["accumulated_arr_days"] = current_cumulative_days
+        _sync_segment_schedule_fields(seg)
 
     return {
         "segments": recalculated_segments,

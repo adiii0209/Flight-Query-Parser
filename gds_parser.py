@@ -504,29 +504,75 @@ class GDSParser:
 
         Logger.debug(f"GDS sections: {len(sections)}, trip: {ttype}")
 
+        from query_parser import DurationCalculator
         flights: List[Dict] = []
         for section in sections:
             su = section.upper()
-            raw = (
-                self._parse_amadeus(su, ref_year)
-                or self._parse_slash(su, ref_year)
-                or self._parse_galileo(su, ref_year)
-                or self._parse_generic(su, ref_year)
-            )
+            raw = []
+            for line in su.split('\n'):
+                line_raw = (
+                    self._parse_amadeus(line, ref_year)
+                    or self._parse_slash(line, ref_year)
+                    or self._parse_galileo(line, ref_year)
+                    or self._parse_generic(line, ref_year)
+                )
+                if line_raw:
+                    raw.extend(line_raw)
+            
             if not raw:
                 continue
 
-            stitched = _stitch_segments(raw)
-            flight   = _assemble_flight(stitched, ttype, pnr)
-            if not flight:
-                continue
+            # Auto-split into logical legs
+            stitched_test = _stitch_segments(raw)
+            legs = []
+            curr_leg = [raw[0]]
+            
+            for i in range(1, len(raw)):
+                prev_raw = raw[i-1]
+                curr_raw = raw[i]
+                curr_stitched = stitched_test[i]
+                
+                is_gap = curr_raw['departure_airport'] != prev_raw['arrival_airport']
+                
+                is_long = False
+                d1 = prev_raw.get('_dep_date_obj')
+                d2 = curr_raw.get('_dep_date_obj')
+                if d1 and d2:
+                    from datetime import timedelta
+                    _p_arr = DurationCalculator.parse_time(prev_raw['arrival_time'])
+                    _p_dep = DurationCalculator.parse_time(prev_raw['departure_time'])
+                    _c_dep = DurationCalculator.parse_time(curr_raw['departure_time'])
+                    
+                    if _p_arr is not None and _p_dep is not None and _c_dep is not None:
+                        crossed = 1 if _p_arr < _p_dep else 0
+                        prev_arr_date = d1 + timedelta(days=crossed)
+                        
+                        gap_days = (d2 - prev_arr_date).days
+                        if gap_days > 1:
+                            is_long = True
+                        elif gap_days == 1:
+                            if _c_dep >= _p_arr:
+                                is_long = True
+                
+                if is_gap or is_long:
+                    legs.append(curr_leg)
+                    curr_leg = [curr_raw]
+                else:
+                    curr_leg.append(curr_raw)
+            legs.append(curr_leg)
 
-            if baggage:
-                flight["baggage"] = baggage
-            if fare is not None:
-                flight["saver_fare"] = fare
+            for leg in legs:
+                stitched = _stitch_segments(leg)
+                flight   = _assemble_flight(stitched, ttype, pnr)
+                if not flight:
+                    continue
 
-            flights.append(flight)
+                if baggage:
+                    flight["baggage"] = baggage
+                if fare is not None:
+                    flight["saver_fare"] = fare
+
+                flights.append(flight)
 
         return flights
 

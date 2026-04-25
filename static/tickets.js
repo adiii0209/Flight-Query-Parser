@@ -1244,9 +1244,51 @@ function getJourneyTotalDurationValue(legs, segments, journey) {
     return formatDurationFromMinutes(totalMinutes);
 }
 
+function syncSegmentScheduleFields(segment = {}) {
+    if (!segment || typeof segment !== 'object') return segment;
+
+    if (!segment.departure || typeof segment.departure !== 'object') {
+        segment.departure = {};
+    }
+    if (!segment.arrival || typeof segment.arrival !== 'object') {
+        segment.arrival = {};
+    }
+
+    const fieldPairs = [
+        ['departure', 'airport', 'departure_airport'],
+        ['departure', 'city', 'departure_city'],
+        ['departure', 'date', 'departure_date'],
+        ['departure', 'time', 'departure_time'],
+        ['departure', 'terminal', 'departure_terminal'],
+        ['arrival', 'airport', 'arrival_airport'],
+        ['arrival', 'city', 'arrival_city'],
+        ['arrival', 'date', 'arrival_date'],
+        ['arrival', 'time', 'arrival_time'],
+        ['arrival', 'terminal', 'arrival_terminal']
+    ];
+
+    fieldPairs.forEach(([pointKey, nestedKey, flatKey]) => {
+        const point = segment[pointKey];
+        const nestedValue = safe(point?.[nestedKey]).trim();
+        const flatValue = safe(segment?.[flatKey]).trim();
+        const resolvedValue = nestedValue || flatValue;
+        if (resolvedValue) {
+            point[nestedKey] = resolvedValue;
+            segment[flatKey] = resolvedValue;
+        } else {
+            point[nestedKey] = '';
+            segment[flatKey] = '';
+        }
+    });
+
+    segment.date = safe(segment.departure?.date || segment.departure_date).trim();
+    return segment;
+}
+
 function cloneSegmentScheduleSnapshot(segment) {
-    const departure = segment?.departure || {};
-    const arrival = segment?.arrival || {};
+    const normalizedSegment = syncSegmentScheduleFields(JSON.parse(JSON.stringify(segment || {})));
+    const departure = normalizedSegment?.departure || {};
+    const arrival = normalizedSegment?.arrival || {};
     return {
         departure_airport: safe(departure.airport).trim(),
         departure_date: safe(departure.date).trim(),
@@ -1313,6 +1355,7 @@ function recalculateSegmentsLocally(segments = []) {
     const adjustments = [];
 
     updatedSegments.forEach((segment, index) => {
+        syncSegmentScheduleFields(segment);
         const durationMinutes = getElapsedMinutes(segment?.departure, segment?.arrival);
         const durationText = formatDurationFromMinutes(durationMinutes) || getSegmentDurationValue(segment) || 'N/A';
         const explicitDayOffset = deriveDayOffsetFromDates(segment);
@@ -1330,6 +1373,7 @@ function recalculateSegmentsLocally(segments = []) {
         }
 
         const prevSegment = updatedSegments[index - 1] || {};
+        syncSegmentScheduleFields(prevSegment);
         const layoverText = formatDurationFromMinutes(getElapsedMinutes(prevSegment?.arrival, segment?.departure)) || 'N/A';
         segment.layover_duration = layoverText;
         segment.layover = layoverText;
@@ -5361,6 +5405,7 @@ async function saveSegmentEdit(idx) {
     seg.arrival.date = formatFlightDateForStorage(getValue('seg-arr-date'));
     seg.arrival.time = getValue('seg-arr-time');
     seg.arrival.terminal = getValue('seg-arr-term');
+    syncSegmentScheduleFields(seg);
 
     const editedDuration = getValue('seg-duration');
     if (didSegmentScheduleChange(originalSegment, seg)) {
@@ -5627,7 +5672,7 @@ function getPersistableSegments(segments = []) {
         const clean = JSON.parse(JSON.stringify(segment || {}));
         delete clean.barcode_data;
         delete clean.barcode_image;
-        return clean;
+        return syncSegmentScheduleFields(clean);
     });
 }
 

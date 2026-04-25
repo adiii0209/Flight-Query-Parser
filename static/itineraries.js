@@ -1272,6 +1272,7 @@ function renderFlightOptionCard(option, idx, isSelected, showSelectBtn, tripType
 
   return `
     <div class="flight-card itinerary-flight-card ${isSelected ? 'selected' : ''}">
+         <div class="card-watermark"></div>
          <div class="itinerary-flight-card-head">
            <div>${optionLabel ? `<div class="option-label">${optionLabel}</div>` : ''}</div>
            <div class="itinerary-flight-card-actions">

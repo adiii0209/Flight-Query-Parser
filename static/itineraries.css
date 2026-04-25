@@ -290,13 +290,23 @@ body {
 }
 
 @keyframes grid-move {
-  from { background-position: 0 0; }
-  to { background-position: 400px 400px; }
+  from {
+    background-position: 0 0;
+  }
+
+  to {
+    background-position: 400px 400px;
+  }
 }
 
 @keyframes scanline {
-  from { background-position: 0 0; }
-  to { background-position: 0 100%; }
+  from {
+    background-position: 0 0;
+  }
+
+  to {
+    background-position: 0 100%;
+  }
 }
 
 .app-header .header-content {
@@ -378,9 +388,18 @@ body {
 }
 
 @media (max-width: 600px) {
-  .brand-name { font-size: 1.2rem; }
-  .brand-sub { font-size: 0.6rem; letter-spacing: 0.08em; }
-  .app-header { padding: 1rem; }
+  .brand-name {
+    font-size: 1.2rem;
+  }
+
+  .brand-sub {
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+  }
+
+  .app-header {
+    padding: 1rem;
+  }
 }
 
 /* ===================== CONTAINER ===================== */
@@ -465,6 +484,7 @@ body {
 .itin-card-top.issued {
   background: #22c55e;
 }
+
 .itin-card-top.reverted {
   background: #f59e0b;
 }
@@ -1700,6 +1720,21 @@ body {
   border-radius: 999px;
   background: rgba(37, 99, 235, 0.08);
   color: var(--primary);
+}
+
+.card-watermark {
+  position: absolute;
+  bottom: 0.6rem;
+  right: 0.6rem;
+  width: 60px;
+  height: 30px;
+  opacity: 0.9;
+  pointer-events: none;
+  z-index: 5;
+  background-image: url('/static/logo.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: bottom right;
 }
 
 .itinerary-flight-card-actions {
