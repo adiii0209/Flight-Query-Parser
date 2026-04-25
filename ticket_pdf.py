@@ -105,6 +105,34 @@ def _hline(c, x, y, w, col=None, lw=0.5):
 
 
 
+def _calculate_time_diff(t1, t2):
+    """Helper to calculate time difference in minutes and return formatted string."""
+    def parse_t(t):
+        if not t: return None
+        import re
+        m = re.search(r'(\d+):(\d+)\s*(AM|PM)?', str(t), re.I)
+        if not m: return None
+        h, mins = int(m.group(1)), int(m.group(2))
+        p = m.group(3).upper() if m.group(3) else None
+        if p == 'PM' and h < 12: h += 12
+        if p == 'AM' and h == 12: h = 0
+        return h * 60 + mins
+
+    m1, m2 = parse_t(t1), parse_t(t2)
+    if m1 is None or m2 is None: return None
+    diff = m2 - m1
+    if diff < 0: diff += 1440
+    hrs, mins = divmod(diff, 60)
+    text = ""
+    if hrs > 0: text += f"{hrs}h "
+    if mins > 0: text += f"{mins}m"
+    return {"text": text.strip(), "minutes": diff}
+
+def _get_layover_label(minutes):
+    if minutes < 60: return "Short Layover"
+    if minutes > 300: return "Long Wait"
+    return "Layover"
+
 def _vline(c, x, y1, y2, col=None, lw=0.5):
     c.saveState()
     c.setStrokeColor(col or RULE)
@@ -457,23 +485,34 @@ def draw_ticket(c, data, include_fare=True):
                         if isinstance(lo, dict) and lo.get("after_segment") == global_seg_idx:
                             lay_dur = _t(lo.get("duration"))
                             break
+                
+                # Dashboard sync: calculate if still missing
+                l_label = "Layover"
+                if not lay_dur:
+                    diff_data = _calculate_time_diff(seg.get("arrival", {}).get("time"), 
+                                                   next_seg.get("departure", {}).get("time"))
+                    if diff_data:
+                        lay_dur = diff_data["text"]
+                        l_label = _get_layover_label(diff_data["minutes"])
+                elif "h" in lay_dur or "m" in lay_dur:
+                    # Try to extract minutes to get proper label
+                    import re
+                    m_match = re.search(r'(?:(\d+)h)?\s*(?:(\d+)m?)?', lay_dur)
+                    if m_match:
+                        try:
+                            hrs = int(m_match.group(1) or 0)
+                            mns = int(m_match.group(2) or 0)
+                            l_label = _get_layover_label(hrs * 60 + mns)
+                        except: pass
+
                 lay_city = (_t(next_seg.get("departure", {}).get("city")) or
                             _t(next_seg.get("departure", {}).get("airport")))
                 nxt_term = _t(next_seg.get("departure", {}).get("terminal"))
 
-                # If lay_dur already contains full layover string, use it directly
-                if lay_dur and ("layover" in lay_dur.lower() or "in " in lay_dur.lower()):
-                    lay_text = lay_dur
-
-
-
-                else:
-                    parts = []
-                    if lay_dur: parts.append(lay_dur)
-                    parts.append("layover in")
-                    if lay_city: parts.append(lay_city)
-                    if nxt_term: parts.append(f"·  Terminal {nxt_term}")
-                    lay_text = " ".join(parts) if parts else ""
+                if lay_dur:
+                    lay_text = f"{l_label} in {lay_city}"
+                    if nxt_term: lay_text += f" (T{nxt_term})"
+                    lay_text += f"  •  {lay_dur}"
 
             # Dynamic card height — taller when terminal info is present
             has_term = bool(_t(seg.get("departure", {}).get("terminal")) or
