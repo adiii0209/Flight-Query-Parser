@@ -62,6 +62,7 @@ let lastDetailInputAt = 0;
 let unreadTicketIds = new Set();
 let readOverrideTicketIds = new Set();
 let ticketsLastSeenAtMs = 0;
+let fareQuickFillDraft = '';
 const AIRLINE_CODE_MAP = window.AIRLINE_CODE_MAP || {};
 const AIRPORT_CODE_MAP = window.AIRPORT_CODE_MAP || {};
 const AIRPORT_TZ_MAP = window.AIRPORT_TZ_MAP || {};
@@ -4791,6 +4792,70 @@ function updateOverrideGrandTotal(value, currencyCode) {
     triggerAutoSave();
 }
 
+function updateFareQuickFillDraft(value) {
+    fareQuickFillDraft = String(value || '');
+}
+
+function parseFareQuickFillValue(value) {
+    const matches = String(value || '').match(/-?\d+(?:\.\d+)?/g) || [];
+    if (matches.length === 0) return null;
+    return {
+        base: matches.length > 0 ? parseMoneyValue(matches[0]) : 0,
+        k3: matches.length > 1 ? parseMoneyValue(matches[1]) : 0,
+        other: matches.length > 2 ? parseMoneyValue(matches[2]) : 0,
+        markup: matches.length > 3 ? parseMoneyValue(matches[3]) : 0
+    };
+}
+
+function applyFareQuickFill(rawValue) {
+    const parsed = parseFareQuickFillValue(rawValue);
+    if (!parsed) {
+        showToast('Enter fare amounts in order: base, k3, other, markup', 'error');
+        return;
+    }
+
+    fareFieldsTouched = true;
+    if (!editedData.journey) editedData.journey = {};
+    if (!editedData.journey.consolidated_fare) {
+        editedData.journey.consolidated_fare = { base_fare: 0, k3_gst: 0, other_taxes: 0 };
+    }
+
+    const passengers = editedData.passengers || [];
+    const passengerCount = passengers.length || 1;
+    const fareMode = editedData.journey.fare_display || (passengers.length <= 1 ? 'per_passenger' : 'consolidated');
+    const isConsolidated = fareMode === 'consolidated';
+
+    fareQuickFillDraft = String(rawValue || '').trim();
+
+    if (isConsolidated) {
+        editedData.journey.consolidated_fare.base_fare = parsed.base;
+        editedData.journey.consolidated_fare.k3_gst = parsed.k3;
+        editedData.journey.consolidated_fare.other_taxes = parsed.other;
+        editedData.journey.global_markup = parsed.markup / passengerCount;
+    } else {
+        passengers.forEach((passenger) => {
+            if (!passenger.fare) passenger.fare = {};
+            passenger.fare.base_fare = parsed.base;
+            passenger.fare.k3_gst = parsed.k3;
+            passenger.fare.other_taxes = parsed.other;
+        });
+        editedData.journey.consolidated_fare.base_fare = parsed.base * passengerCount;
+        editedData.journey.consolidated_fare.k3_gst = parsed.k3 * passengerCount;
+        editedData.journey.consolidated_fare.other_taxes = parsed.other * passengerCount;
+        editedData.journey.global_markup = parsed.markup;
+    }
+
+    recalcFareGlobal(false);
+    renderFareSection();
+    triggerAutoSave();
+    showToast(
+        isConsolidated
+            ? 'Quick fare fill applied to consolidated fare'
+            : 'Quick fare fill applied to all passenger fare rows',
+        'success'
+    );
+}
+
 function switchFareDisplay(nextMode) {
     if (!editedData.journey) editedData.journey = {};
     const passengers = editedData.passengers || [];
@@ -4850,6 +4915,22 @@ function renderFareSection() {
         <button class="btn-action small secondary" onclick="switchFareDisplay('${isConsolidated ? 'per_passenger' : 'consolidated'}')">
             🔄 Show ${isConsolidated ? 'Per Passenger' : 'Consolidated'}
         </button>
+    </div>`;
+
+    html += `<div style="margin:0 0 0.75rem; padding:0.6rem 0.7rem; border:1px solid rgba(37,99,235,0.12); border-radius:12px; background:rgba(37,99,235,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; flex-wrap:wrap; margin-bottom:0.35rem;">
+            <div style="font-size:0.7rem; font-weight:800; color:var(--primary); letter-spacing:0.05em; text-transform:uppercase;">Quick Fill</div>
+        </div>
+        <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+            <input type="text"
+                id="fare-quick-fill"
+                value="${safe(fareQuickFillDraft)}"
+                placeholder="Base K3 Other Markup"
+                oninput="updateFareQuickFillDraft(this.value)"
+                onkeydown="if(event.key === 'Enter'){ event.preventDefault(); applyFareQuickFill(this.value); }"
+                style="flex:1; min-width:220px; padding:0.62rem 0.75rem; border-radius:10px; border:1px solid rgba(37,99,235,0.14); background:rgba(255,255,255,0.96); color:var(--text-secondary); font-weight:400; font-size:0.86rem;">
+            <button class="btn-action small primary" onclick="applyFareQuickFill(document.getElementById('fare-quick-fill').value)" style="padding:0.62rem 0.9rem; border-radius:10px; min-width:84px;">Apply</button>
+        </div>
     </div>`;
 
     if (isConsolidated) {

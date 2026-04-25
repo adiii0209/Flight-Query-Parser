@@ -2882,6 +2882,31 @@ def _recalculate_segment_timing_data(segments):
     }
 
 
+def _prepare_pdf_schedule_snapshot(segments, journey=None):
+    prepared_segments = _sanitize_segments_for_storage(segments or [])
+    recalculated = _recalculate_segment_timing_data(prepared_segments)
+    prepared_segments = recalculated.get("segments") or prepared_segments
+    prepared_journey = _clone_json(journey or {})
+    prepared_journey["layovers"] = recalculated.get("layovers") or []
+
+    existing_legs = prepared_journey.get("legs") if isinstance(prepared_journey.get("legs"), list) else []
+    grouped_legs = _build_legs_from_data(prepared_segments, prepared_journey)
+    normalized_legs = []
+    for leg_idx, leg in enumerate(grouped_legs):
+        existing_leg = existing_legs[leg_idx] if leg_idx < len(existing_legs) and isinstance(existing_legs[leg_idx], dict) else {}
+        first_seg = prepared_segments[leg[0]] if leg else {}
+        last_seg = prepared_segments[leg[-1]] if leg else {}
+        normalized_legs.append({
+            **existing_leg,
+            "segments": leg,
+            "from": ((first_seg.get("departure") or {}).get("airport") or existing_leg.get("from") or "").strip().upper(),
+            "to": ((last_seg.get("arrival") or {}).get("airport") or existing_leg.get("to") or "").strip().upper(),
+        })
+    prepared_journey["legs"] = normalized_legs
+
+    return prepared_segments, prepared_journey
+
+
 @app.route("/api/tickets/recalculate-segments", methods=["POST"])
 @login_required
 def recalculate_ticket_segments():
@@ -4496,6 +4521,7 @@ def generate_ticket_pdf(ticket_id):
         passengers = merged_passengers
         grand_total = _round_money(merged_total)
 
+    segments, journey = _prepare_pdf_schedule_snapshot(segments, journey)
     segments = _segments_with_barcodes(ticket, passengers, segments, raw)
     gst_details = raw.get("gst_details") or {}
     passengers = _sort_passengers_for_pdf(passengers, passenger_sort)
@@ -4640,6 +4666,7 @@ def generate_selected_passenger_pdf(ticket_id):
                 merged_passengers.append(p_copy)
         passengers = merged_passengers
 
+    segments, journey = _prepare_pdf_schedule_snapshot(segments, journey)
     segments = _segments_with_barcodes(ticket, passengers, segments, raw)
     gst_details = raw.get("gst_details") or {}
 

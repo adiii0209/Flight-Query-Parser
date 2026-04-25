@@ -476,15 +476,15 @@ def draw_ticket(c, data, include_fare=True):
             lay_text = ""
             if has_layover:
                 next_seg = leg[si + 1] or {}
-                # The current segment's own layover field has the full text
-                lay_dur  = _t(seg.get("layover") or seg.get("layover_duration"))
-                if not lay_dur:
-                    lay_dur = _t(next_seg.get("layover") or next_seg.get("layover_duration"))
+                # Layover belongs to the following segment in stored ticket data.
+                lay_dur = _t(next_seg.get("layover") or next_seg.get("layover_duration"))
                 if not lay_dur and isinstance(journey.get("layovers"), list):
                     for lo in journey["layovers"]:
                         if isinstance(lo, dict) and lo.get("after_segment") == global_seg_idx:
                             lay_dur = _t(lo.get("duration"))
                             break
+                if not lay_dur:
+                    lay_dur = _t(seg.get("layover") or seg.get("layover_duration"))
                 
                 # Dashboard sync: calculate if still missing
                 l_label = "Layover"
@@ -843,8 +843,27 @@ def draw_ticket(c, data, include_fare=True):
     PAX_HDR_H  = 32    # passenger name row height (compressed after moving type label)
     PAX_GAP    = 0     # no gap — rows touch, divider separates them
 
+    def _barcode_block_height(passenger_index):
+        if passenger_index < 0 or passenger_index >= len(passengers):
+            return 0
+        seg_bars_count = 0
+        for seg in segments:
+            if _barcode_image_bytes(seg.get("barcode_image")):
+                seg_bars_count += 1
+        bars_h = (
+            seg_bars_count * BC_H
+            + max(0, seg_bars_count - 1) * BC_GAP
+            + BC_TOP_PAD + BC_BOT_PAD
+        )
+        return PAX_HDR_H + bars_h
+
+    # Keep the section title with at least the first passenger barcode block.
+    first_barcode_block_h = _barcode_block_height(0)
+    required_barcode_section_h = 18 + first_barcode_block_h + 4
+    if T - required_barcode_section_h < PAGE_BOTTOM_LIMIT:
+        _start_continuation_page()
+
     # Section label
-    _ensure_space(18)
     _txt(c, M, T - 11, "TICKET BARCODES", "Helvetica-Bold", 7, RED)
     T -= 18
 
