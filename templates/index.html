@@ -1113,8 +1113,8 @@
       position: absolute;
       bottom: 0.6rem;
       right: 0.6rem;
-      width: 60px;
-      height: 15px;
+      width: 80px;
+      height: 16px;
       opacity: 0.9;
       pointer-events: none;
       z-index: 5;
@@ -8176,7 +8176,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         inlineEditorPlaceholder = `<div id="inline-editor-${index}" class="inline-fare-editor" style="display: none;"></div>`;
       }
 
-      card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="">` + optionLabelHTML + dateHeaderHTML + summaryHTML + timelineHTML + faresHTML + inlineEditorPlaceholder;
+      card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="" loading="eager" decoding="async" fetchpriority="high">` + optionLabelHTML + dateHeaderHTML + summaryHTML + timelineHTML + faresHTML + inlineEditorPlaceholder;
       return card;
     }
 
@@ -8329,7 +8329,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (outbound.is_editable) html += `<div id="inline-editor-${index}" class="inline-fare-editor" style="display: none;"></div>`;
       if (returnFlight.is_editable) html += `<div id="inline-editor-${index + 1}" class="inline-fare-editor" style="display: none;"></div>`;
 
-      card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="">` + html;
+      card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="" loading="eager" decoding="async" fetchpriority="high">` + html;
       return card;
     }
 
@@ -8395,7 +8395,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         if (f.is_editable) editorHTML += `<div id="inline-editor-${startIndex + i}" class="inline-fare-editor" style="display: none;"></div>`;
       });
 
-      card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="">` + contentHTML + faresHTML + editorHTML;
+      card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="" loading="eager" decoding="async" fetchpriority="high">` + contentHTML + faresHTML + editorHTML;
       return card;
     }
 
@@ -9844,7 +9844,31 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (cachedBlob) {
         return cachedBlob;
       }
-      const blob = await generateImageBlobClientSide(mode);
+      let blob = null;
+      let clientError = null;
+
+      if (useClientSideImageRender) {
+        try {
+          blob = await generateImageBlobClientSide(mode);
+        } catch (error) {
+          clientError = error;
+          console.warn('Client-side image render failed, falling back to server render', error);
+          useClientSideImageRender = false;
+        }
+      }
+
+      if (!blob) {
+        try {
+          blob = await generateImageBlobServerSide(mode);
+        } catch (serverError) {
+          useClientSideImageRender = true;
+          if (clientError) {
+            throw new Error(`${clientError.message}. Fallback also failed: ${serverError.message}`);
+          }
+          throw serverError;
+        }
+      }
+
       cardsImageBlobCache.set(requestKey, blob);
       if (cardsImageBlobCache.size > 8) {
         const oldestKey = cardsImageBlobCache.keys().next().value;
@@ -9889,6 +9913,28 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         payload.viewport_width,
         payload.cards_html
       ]);
+    }
+
+    async function generateImageBlobServerSide(mode = 'current') {
+      const payload = buildCardsImagePayload(mode);
+      const response = await fetch('/api/render/cards-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        let errorMessage = 'Server-side image render failed';
+        try {
+          const data = await response.json();
+          if (data && data.error) errorMessage = data.error;
+        } catch (e) {
+          // Ignore response parsing errors and keep the generic fallback message.
+        }
+        throw new Error(errorMessage);
+      }
+
+      return await response.blob();
     }
 
     async function generateImageBlobClientSide(mode = 'current') {
@@ -10066,11 +10112,53 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
         throw new Error('Image clipboard is not supported in this browser');
       }
-      await navigator.clipboard.write([
-        new ClipboardItem({
-          [imageBlob.type || 'image/png']: imageBlob
+      await Promise.race([
+        navigator.clipboard.write([
+          new ClipboardItem({
+            [imageBlob.type || 'image/png']: imageBlob
+          })
+        ]),
+        new Promise((_, reject) => {
+          window.setTimeout(() => reject(new Error('Clipboard write timed out')), 3500);
         })
       ]);
+    }
+
+    async function waitForCardImageReady(img, timeoutMs = 2500) {
+      if (!img) return;
+      if (img.complete) {
+        if (img.naturalWidth > 0 && typeof img.decode === 'function') {
+          await img.decode().catch(() => null);
+        }
+        return;
+      }
+
+      await new Promise((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+
+        const timer = window.setTimeout(finish, timeoutMs);
+        const cleanup = () => {
+          window.clearTimeout(timer);
+          img.removeEventListener('load', onDone);
+          img.removeEventListener('error', onDone);
+        };
+        const onDone = () => {
+          cleanup();
+          finish();
+        };
+
+        img.addEventListener('load', onDone, { once: true });
+        img.addEventListener('error', onDone, { once: true });
+      });
+
+      if (img.complete && img.naturalWidth > 0 && typeof img.decode === 'function') {
+        await img.decode().catch(() => null);
+      }
     }
 
     async function ensureCardsReadyForCapture() {
@@ -10086,16 +10174,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const images = Array.from(cardsContainer.querySelectorAll('img'));
       await Promise.all(images.map(async (img) => {
         try {
-          if (img.complete && img.naturalWidth > 0) {
-            if (typeof img.decode === 'function') await img.decode().catch(() => null);
-            return;
-          }
-          await new Promise((resolve) => {
-            const done = () => resolve();
-            img.addEventListener('load', done, { once: true });
-            img.addEventListener('error', done, { once: true });
-          });
-          if (typeof img.decode === 'function') await img.decode().catch(() => null);
+          await waitForCardImageReady(img);
         } catch (e) {
           return null;
         }
@@ -10142,11 +10221,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       try {
         await ensureCardsReadyForCapture();
         try {
-          blob = await generateImageBlobClientSide('current');
+          blob = await generateImageBlob('current');
         } catch (error) {
           console.warn('Image copy attempt 1 failed, retrying once', error);
           await ensureCardsReadyForCapture();
-          blob = await generateImageBlobClientSide('current');
+          blob = await generateImageBlob('current');
         }
         await writeImageBlobToClipboard(blob);
         setCopyCardsButtonState('success');
@@ -10165,7 +10244,30 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     }
 
     async function preloadCardsImage() {
-      return;
+      if (isRenderPreviewMode()) return;
+      const payload = buildCardsImagePayload('current');
+      const requestKey = getCardsImageRequestKey(payload);
+      if (requestKey === lastPreloadKey && imagePreloadPromise) {
+        return imagePreloadPromise;
+      }
+
+      lastPreloadKey = requestKey;
+      imagePreloadPromise = (async () => {
+        try {
+          if (useClientSideImageRender && typeof window.html2canvas === 'function') {
+            return;
+          }
+          await fetch('/api/render/cards-image/preload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        } catch (error) {
+          console.warn('Cards image preload failed', error);
+        }
+      })();
+
+      return imagePreloadPromise;
     }
 
     function scheduleCardsImagePreload() {
@@ -10529,11 +10631,11 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         await ensureCardsReadyForCapture();
         let blob;
         try {
-          blob = await generateImageBlobClientSide('current');
+          blob = await generateImageBlob('current');
         } catch (error) {
           console.warn('Image download attempt 1 failed, retrying once', error);
           await ensureCardsReadyForCapture();
-          blob = await generateImageBlobClientSide('current');
+          blob = await generateImageBlob('current');
         }
         showNotification('Download ready…', 'info', { id: 'download-status', duration: 4000 });
         downloadImage(blob);

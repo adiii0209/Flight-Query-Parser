@@ -63,6 +63,7 @@ let unreadTicketIds = new Set();
 let readOverrideTicketIds = new Set();
 let ticketsLastSeenAtMs = 0;
 let fareQuickFillDraft = '';
+const fareQuickFillDraftByTicket = new Map();
 const AIRLINE_CODE_MAP = window.AIRLINE_CODE_MAP || {};
 const AIRPORT_CODE_MAP = window.AIRPORT_CODE_MAP || {};
 const AIRPORT_TZ_MAP = window.AIRPORT_TZ_MAP || {};
@@ -2713,6 +2714,7 @@ async function openTicket(id, { syncUrl = true, replaceUrl = false } = {}) {
             activeSegmentEditIdx = null;
             expandedLegIds = new Set();
             editedData = JSON.parse(JSON.stringify(currentTicket));
+            fareQuickFillDraft = fareQuickFillDraftByTicket.get(currentTicket.id) || '';
             setTicketEditBaseline(currentTicket);
             applyTicketDraftIfPresent(currentTicket.id, { showToastMessage: true });
             renderDetailView();
@@ -2735,6 +2737,7 @@ async function openTicket(id, { syncUrl = true, replaceUrl = false } = {}) {
         activeSegmentEditIdx = null;
         expandedLegIds = new Set();
         editedData = JSON.parse(JSON.stringify(currentTicket));
+        fareQuickFillDraft = fareQuickFillDraftByTicket.get(currentTicket.id) || '';
         setTicketEditBaseline(currentTicket);
         applyTicketDraftIfPresent(currentTicket.id, { showToastMessage: true });
         renderDetailView();
@@ -2758,6 +2761,7 @@ async function showListView({ syncUrl = true, replaceUrl = false } = {}) {
     document.getElementById('listView').style.display = 'block';
     currentTicket = null;
     editedData = {};
+    fareQuickFillDraft = '';
     changeAttachmentState = { token: '', filename: '' };
     selectedPaxIndices.clear();
     _removePaxActionBar();
@@ -4794,6 +4798,10 @@ function updateOverrideGrandTotal(value, currencyCode) {
 
 function updateFareQuickFillDraft(value) {
     fareQuickFillDraft = String(value || '');
+    const ticketId = editedData?.id || currentTicket?.id;
+    if (ticketId) {
+        fareQuickFillDraftByTicket.set(ticketId, fareQuickFillDraft);
+    }
 }
 
 function parseFareQuickFillValue(value) {
@@ -4826,6 +4834,10 @@ function applyFareQuickFill(rawValue) {
     const isConsolidated = fareMode === 'consolidated';
 
     fareQuickFillDraft = String(rawValue || '').trim();
+    const ticketId = editedData?.id || currentTicket?.id;
+    if (ticketId) {
+        fareQuickFillDraftByTicket.set(ticketId, fareQuickFillDraft);
+    }
 
     if (isConsolidated) {
         editedData.journey.consolidated_fare.base_fare = parsed.base;
