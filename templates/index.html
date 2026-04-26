@@ -7038,10 +7038,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const flights = [];
       const flightTexturesByUnit = {}; // Map unit IDs to their flight texts and fares
 
-      // Check if any markup is specified anywhere (per-fare or global)
-      let hasAnyMarkup = markupValue > 0;
-      if (!hasAnyMarkup) {
-        // Check for per-fare markups
+      // Check if any markup or service charge is specified anywhere (per-fare or global)
+      let hasAnyFee = (markupValue > 0) || (svcValue > 0);
+      if (!hasAnyFee) {
+        // Check for per-fare markups or service charges
         document.querySelectorAll('.fare-card').forEach(card => {
           const checkbox = card.querySelector('.fare-card-header input[type="checkbox"]');
           if (checkbox && checkbox.checked) {
@@ -7049,18 +7049,25 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             const section = card.closest('.shared-fare-section');
             if (section) {
               const unitId = section.dataset.unitId;
-              const muInput = card.querySelector(`.mu-${fareKey}-unit-${unitId}`);
-              if (muInput && muInput.value && muInput.value.trim() !== '' && Number(muInput.value) > 0) {
-                hasAnyMarkup = true;
-              }
+              // Check for all possible suffixes (_out, _ret, or empty)
+              const suffixes = ['', '_out', '_ret'];
+              suffixes.forEach(suffix => {
+                const uniqueKey = `${fareKey}-unit-${unitId}${suffix}`;
+                const muInp = card.querySelector(`.mu-${uniqueKey}`);
+                const svcInp = card.querySelector(`.svc-${uniqueKey}`);
+                if ((muInp && muInp.value && muInp.value.trim() !== '' && Number(muInp.value) > 0) ||
+                  (svcInp && svcInp.value && svcInp.value.trim() !== '' && Number(svcInp.value) > 0)) {
+                  hasAnyFee = true;
+                }
+              });
             }
           }
         });
       }
 
-      // Warn if no markup anywhere
-      if (!hasAnyMarkup) {
-        const proceed = await showWarningModal('Are you sure you want to proceed without adding any markup?');
+      // Warn only if NO markup AND NO service charge anywhere
+      if (!hasAnyFee) {
+        const proceed = await showWarningModal('Are you sure you want to proceed without adding any markup or service charge?');
         if (!proceed) {
           document.getElementById('markup').focus();
           return;
@@ -7105,6 +7112,16 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
               const fareInput = card.querySelector(`.fare-${uniqueKey}`);
               const muInput = card.querySelector(`.mu-${uniqueKey}`);
               const svcInput = card.querySelector(`.svc-${uniqueKey}`);
+
+              // Collecting extra fields per fare
+              const cabinInp = card.querySelector(`.fare-cabin-${uniqueKey}`);
+              const checkinInp = card.querySelector(`.fare-checkin-${uniqueKey}`);
+              const pcsInp = card.querySelector(`.fare-pcs-${uniqueKey}`);
+              const seatInp = card.querySelector(`.fare-seat-${uniqueKey}`);
+              const mealInp = card.querySelector(`.fare-meal-${uniqueKey}`);
+              const cancelInp = card.querySelector(`.fare-cancellation-${uniqueKey}`);
+              const penInp = card.querySelector(`.fare-penalty-${uniqueKey}`);
+
               if (fareInput && fareInput.value && fareInput.value.trim() !== '') {
                 fares[fareKey] = Number(fareInput.value);
               }
@@ -7113,6 +7130,19 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
               }
               if (svcInput && svcInput.value && svcInput.value.trim() !== '') {
                 svcs[fareKey] = Number(svcInput.value);
+              }
+
+              // Only store extra if at least one field is filled
+              if (cabinInp?.value || checkinInp?.value || pcsInp?.value || seatInp?.value || mealInp?.value || cancelInp?.value || penInp?.value) {
+                fareExtras[fareKey] = {
+                  baggage_cabin: cabinInp?.value?.trim(),
+                  baggage_checkin: checkinInp?.value?.trim(),
+                  baggage_pcs: pcsInp?.value?.trim(),
+                  seat: seatInp?.value?.trim(),
+                  meal: mealInp?.value?.trim(),
+                  cancellation_charges: cancelInp?.value?.trim(),
+                  penalty_charges: penInp?.value?.trim()
+                };
               }
             });
 
@@ -7133,7 +7163,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
             fares: gdsFareData.fares,
             fare_mu: gdsFareData.mus,
             fare_svc: gdsFareData.svcs,
-            fare_extra_details: {},
+            fare_extra_details: gdsFareData.fareExtras,
             fare_order: gdsFareData.fareOrder,
             fare_labels: gdsFareData.fareLabels,
             has_layover: true,
@@ -7397,7 +7427,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
               flight.markup = Number(markup);
               flight.fare_mu = gdsFlight.fare_mu || {};
               flight.fare_svc = gdsFlight.fare_svc || {};
-              flight.fare_extra_details = {};
+              flight.fare_extra_details = gdsFlight.fare_extra_details || {};
               flight.fare_order = gdsFlight.fare_order || [];
               flight.fare_labels = gdsFlight.fare_labels || {};
               flight.service_charge = svcValue;
@@ -7939,10 +7969,16 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
       // Charges Grid
       if (hasCharges) {
+        const renderCharge = (val) => {
+          if (!val) return '';
+          const showGST = /\d/.test(val);
+          return `${val}${showGST ? ' <small style="font-weight:400; color:var(--text-secondary);">+GST</small>' : ''}`;
+        };
+
         html += `
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-             ${details.cancellation_charges ? `<div><small style="color:var(--text-secondary); display:block; font-size: 0.6rem;">Cancellation</small><span style="font-weight:600; font-size:0.85rem; color:var(--danger);">${details.cancellation_charges} <small style="font-weight:400; color:var(--text-secondary);">+GST</small></span></div>` : ''}
-             ${details.penalty_charges ? `<div><small style="color:var(--text-secondary); display:block; font-size: 0.6rem;">Change Penalty</small><span style="font-weight:600; font-size:0.85rem; color:var(--warning);">${details.penalty_charges} <small style="font-weight:400; color:var(--text-secondary);">+GST</small></span></div>` : ''}
+             ${details.cancellation_charges ? `<div><small style="color:var(--text-secondary); display:block; font-size: 0.6rem;">Cancellation</small><span style="font-weight:600; font-size:0.85rem; color:var(--danger);">${renderCharge(details.cancellation_charges)}</span></div>` : ''}
+             ${details.penalty_charges ? `<div><small style="color:var(--text-secondary); display:block; font-size: 0.6rem;">Change Penalty</small><span style="font-weight:600; font-size:0.85rem; color:var(--warning);">${renderCharge(details.penalty_charges)}</span></div>` : ''}
           </div>
         `;
       }
@@ -8225,7 +8261,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
                     <span class="footer-fare-label">${getFareDisplayLabel(flight, type)}</span>
                     ${hasClickableDetails ? `<span id="fare-toggle-icon-${fareUniqueId}" style="font-size:0.7rem; color:var(--text-secondary); transition: transform 0.3s ease;">▼</span>` : ''}
                 </div>
-                <span class="footer-fare-price">${rupeeIcon}${finalFare.toLocaleString('en-IN')}${extraText}</span>
+                <span class="footer-fare-price">${rupeeIcon}${finalFare.toLocaleString('en-IN')}${extraText} <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: normal; margin-left: 2px;">per pax</span></span>
                 
                 ${hasClickableDetails ? `
                 <div id="${fareUniqueId}" class="fare-details-collapsible" style="display:none; width:100%; margin-top:0.5rem; border-top:1px solid var(--border); padding-top:0.5rem; text-align: left;">
@@ -9253,7 +9289,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         if (perFareSVC > 0) {
           svcText = ` (+ ₹${perFareSVC} SVC + ₹${perFareGST} GST)`;
         }
-        output += `*${getFareDisplayLabel(flight, type)}:* ₹${finalFare.toLocaleString('en-IN')} per person${svcText}\n`;
+        output += `*${getFareDisplayLabel(flight, type)}:* ₹${finalFare.toLocaleString('en-IN')}${svcText} per pax\n`;
 
         // Add baggage/extra info on new lines
         if (flight.fare_extra_details && flight.fare_extra_details[type]) {
@@ -9273,10 +9309,18 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           if (d.seat) output += `*Seat:* ${d.seat}\n`;
 
           // 4. Cancellation Charges
-          if (d.cancellation_charges) output += `*Cancellation Charges:* ${d.cancellation_charges} + GST per pax\n`;
+          if (d.cancellation_charges) {
+            const hasNumbers = /\d/.test(d.cancellation_charges);
+            const suffix = hasNumbers ? ' + GST per pax' : '';
+            output += `*Cancellation Charges:* ${d.cancellation_charges}${suffix}\n`;
+          }
 
           // 5. Change Penalty
-          if (d.penalty_charges) output += `*Changes Penalty:* ${d.penalty_charges} + GST per pax\n`;
+          if (d.penalty_charges) {
+            const hasNumbers = /\d/.test(d.penalty_charges);
+            const suffix = hasNumbers ? ' + GST per pax' : '';
+            output += `*Changes Penalty:* ${d.penalty_charges}${suffix}\n`;
+          }
         }
         output += `\n`;
       });
@@ -9339,7 +9383,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           extraText = ` (+ ₹${perFareSVC} SVC + ₹${perFareGST} GST)`;
         }
 
-        fareLines += `*${getFareDisplayLabel(flight, type)}:* ₹${finalFare.toLocaleString('en-IN')} per person${extraText}\n`;
+        fareLines += `*${getFareDisplayLabel(flight, type)}:* ₹${finalFare.toLocaleString('en-IN')}${extraText} per pax\n`;
 
         // Add baggage/extra info on new lines
         if (flight.fare_extra_details && flight.fare_extra_details[type]) {
@@ -9359,10 +9403,18 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           if (d.seat) fareLines += `*Seat:* ${d.seat}\n`;
 
           // 4. Cancellation Charges
-          if (d.cancellation_charges) fareLines += `*Cancellation Charges:* ${d.cancellation_charges} + GST per pax\n`;
+          if (d.cancellation_charges) {
+            const hasNumbers = /\d/.test(d.cancellation_charges);
+            const suffix = hasNumbers ? ' + GST per pax' : '';
+            fareLines += `*Cancellation Charges:* ${d.cancellation_charges}${suffix}\n`;
+          }
 
           // 5. Change Penalty
-          if (d.penalty_charges) fareLines += `*Changes Penalty:* ${d.penalty_charges} + GST per pax\n`;
+          if (d.penalty_charges) {
+            const hasNumbers = /\d/.test(d.penalty_charges);
+            const suffix = hasNumbers ? ' + GST per pax' : '';
+            fareLines += `*Changes Penalty:* ${d.penalty_charges}${suffix}\n`;
+          }
         }
         fareLines += `\n`;
       });
