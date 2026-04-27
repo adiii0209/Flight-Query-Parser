@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 import hashlib
 from query_parser import extract_flight, extract_multiple_flights
-from models import User, Customer, Itinerary, Ticket, TicketRead, Aggregator, LedgerEntry, TicketOperation, OperationLedgerLink, BookingGroup
+from models import User, Customer, Itinerary, Ticket, TicketRead, Aggregator, LedgerEntry, TicketOperation, OperationLedgerLink, BookingGroup, FareRule
 from extensions import db
 
 import gspread
@@ -850,6 +850,12 @@ def billing_dashboard_page():
 def ledger_page():
     """Serve the aggregator ledger dashboard"""
     return render_template('ledger.html')
+
+@app.route("/fare-rules")
+def fare_rules_page():
+    """Serve the fare rules management page"""
+    from mappings import AIRLINE_CODES
+    return render_template('fare_rules.html', airline_codes=AIRLINE_CODES)
 
 @app.route("/login")
 def login_page():
@@ -5334,6 +5340,124 @@ def upload_change_attachment(ticket_id):
     path = os.path.join(UPLOAD_FOLDER, token)
     uploaded.save(path)
     return jsonify({"attachment_token": token, "filename": filename})
+
+
+# ==================== FARE RULES API ====================
+
+FARE_RULE_FIELDS = ['airline_code', 'airline_name', 'fare_type', 'fare_display_name',
+                    'baggage_cabin', 'baggage_checkin', 'baggage_pcs',
+                    'seat', 'meal', 'cancellation_charges', 'change_penalty',
+                    'refundability', 'notes']
+
+def _fare_rule_to_dict(rule):
+    return {
+        'id': rule.id,
+        'airline_code': rule.airline_code,
+        'airline_name': rule.airline_name or '',
+        'fare_type': rule.fare_type,
+        'fare_display_name': rule.fare_display_name or '',
+        'baggage_cabin': rule.baggage_cabin or '',
+        'baggage_checkin': rule.baggage_checkin or '',
+        'baggage_pcs': rule.baggage_pcs or '',
+        'seat': rule.seat or '',
+        'meal': rule.meal or '',
+        'cancellation_charges': rule.cancellation_charges or '',
+        'change_penalty': rule.change_penalty or '',
+        'refundability': rule.refundability or '',
+        'notes': rule.notes or '',
+        'created_at': rule.created_at.isoformat() if rule.created_at else None,
+        'updated_at': rule.updated_at.isoformat() if rule.updated_at else None,
+    }
+
+
+@app.route("/api/fare-rules", methods=["GET"])
+def get_fare_rules():
+    """List all fare rules, optionally filtered by airline_code."""
+    airline_code = request.args.get('airline_code', '').strip().upper()
+    query = FareRule.query
+    if airline_code:
+        query = query.filter_by(airline_code=airline_code)
+    rules = query.order_by(FareRule.airline_code, FareRule.fare_type).all()
+    return jsonify({"fare_rules": [_fare_rule_to_dict(r) for r in rules]})
+
+
+@app.route("/api/fare-rules/<airline_code>/<fare_type>", methods=["GET"])
+def get_fare_rule_by_airline_fare(airline_code, fare_type):
+    """Get a specific fare rule by airline code + fare type."""
+    rule = FareRule.query.filter_by(
+        airline_code=airline_code.upper(),
+        fare_type=fare_type.lower()
+    ).first()
+    if not rule:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify({"fare_rule": _fare_rule_to_dict(rule)})
+
+
+@app.route("/api/fare-rules/lookup", methods=["POST"])
+def lookup_fare_rules():
+    """Batch lookup: given airline_code and list of fare_types, return all matching rules."""
+    data = request.get_json(force=True) or {}
+    airline_code = (data.get('airline_code') or '').strip().upper()
+    fare_types = data.get('fare_types', [])
+    if not airline_code or not fare_types:
+        return jsonify({"fare_rules": {}})
+    fare_types_lower = [ft.lower() for ft in fare_types]
+    rules = FareRule.query.filter(
+        FareRule.airline_code == airline_code,
+        FareRule.fare_type.in_(fare_types_lower)
+    ).all()
+    result = {}
+    for r in rules:
+        result[r.fare_type] = _fare_rule_to_dict(r)
+    return jsonify({"fare_rules": result})
+
+
+@app.route("/api/fare-rules", methods=["POST"])
+def create_fare_rule():
+    """Create a new fare rule."""
+    data = request.get_json(force=True) or {}
+    airline_code = (data.get('airline_code') or '').strip().upper()
+    fare_type = (data.get('fare_type') or '').strip().lower()
+    if not airline_code or not fare_type:
+        return jsonify({"error": "airline_code and fare_type are required"}), 400
+
+    # Check for duplicate
+    existing = FareRule.query.filter_by(airline_code=airline_code, fare_type=fare_type).first()
+    if existing:
+        return jsonify({"error": f"Fare rule for {airline_code} / {fare_type} already exists. Use PUT to update."}), 409
+
+    rule = FareRule(airline_code=airline_code, fare_type=fare_type)
+    for field in FARE_RULE_FIELDS:
+        if field in data and field not in ('airline_code', 'fare_type'):
+            setattr(rule, field, (data[field] or '').strip())
+    db.session.add(rule)
+    db.session.commit()
+    return jsonify({"fare_rule": _fare_rule_to_dict(rule)}), 201
+
+
+@app.route("/api/fare-rules/<rule_id>", methods=["PUT"])
+def update_fare_rule(rule_id):
+    """Update an existing fare rule."""
+    rule = FareRule.query.get(rule_id)
+    if not rule:
+        return jsonify({"error": "Not found"}), 404
+    data = request.get_json(force=True) or {}
+    for field in FARE_RULE_FIELDS:
+        if field in data:
+            setattr(rule, field, (data[field] or '').strip())
+    db.session.commit()
+    return jsonify({"fare_rule": _fare_rule_to_dict(rule)})
+
+
+@app.route("/api/fare-rules/<rule_id>", methods=["DELETE"])
+def delete_fare_rule(rule_id):
+    """Delete a fare rule."""
+    rule = FareRule.query.get(rule_id)
+    if not rule:
+        return jsonify({"error": "Not found"}), 404
+    db.session.delete(rule)
+    db.session.commit()
+    return jsonify({"success": True})
 
 
 # ==================== DATABASE INITIALIZATION ====================

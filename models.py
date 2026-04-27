@@ -184,3 +184,35 @@ class OperationLedgerLink(db.Model):
     user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
     operation_id = db.Column(db.String, db.ForeignKey('ticket_operation.id'), nullable=False)
     ledger_entry_id = db.Column(db.String, db.ForeignKey('ledger_entry.id'), nullable=False)
+
+
+class FareRule(db.Model):
+    """Global fare rules per airline + fare type. Stores baggage, seat, meal, cancellation & change rules."""
+    __tablename__ = 'fare_rule'
+    __table_args__ = (
+        UniqueConstraint('airline_code', 'fare_type', name='uq_fare_rule_airline_fare'),
+    )
+
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    airline_code = db.Column(db.String(10), nullable=False, index=True)  # e.g. 6E, AI, UK
+    airline_name = db.Column(db.String(120), nullable=True)              # e.g. IndiGo, Air India
+    fare_type = db.Column(db.String(50), nullable=False, index=True)     # e.g. saver, flexi, corporate
+    fare_display_name = db.Column(db.String(100), nullable=True)         # e.g. "Saver Fare", "Flexi Plus"
+    # Baggage
+    baggage_cabin = db.Column(db.String(50), default='')       # e.g. 7kg
+    baggage_checkin = db.Column(db.String(50), default='')     # e.g. 15kg
+    baggage_pcs = db.Column(db.String(20), default='')         # e.g. 1pcs
+    # Seat & Meal
+    seat = db.Column(db.String(100), default='')               # e.g. Chargeable, Included, Free
+    meal = db.Column(db.String(100), default='')               # e.g. Chargeable, Complimentary
+    # Cancellation & Change
+    cancellation_charges = db.Column(db.String(100), default='')  # e.g. 3500, Non-Refundable
+    change_penalty = db.Column(db.String(100), default='')        # e.g. 3000, Free
+    # Refundability
+    refundability = db.Column(db.String(30), default='')          # Refundable / Non-Refundable
+    # Notes
+    notes = db.Column(db.Text, default='')
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+

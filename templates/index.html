@@ -3600,6 +3600,292 @@
     .btn-animate-click {
       animation: btn-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
+
+    /* ─── Fare Rules Suggestion Banner ─── */
+    .fare-rules-banner {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(5, 150, 105, 0.04));
+      border: 1.5px solid rgba(16, 185, 129, 0.3);
+      border-radius: 10px;
+      padding: 0.8rem 1rem;
+      margin: 0.75rem 0;
+      animation: frBannerIn 0.35s ease;
+    }
+
+    @keyframes frBannerIn {
+      from {
+        opacity: 0;
+        transform: translateY(-8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .fare-rules-banner .fr-banner-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .fare-rules-banner .fr-banner-title {
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: #059669;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .fare-rules-banner .fr-banner-actions {
+      display: flex;
+      gap: 0.4rem;
+    }
+
+    .fare-rules-banner .fr-banner-actions button {
+      padding: 0.3rem 0.7rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+
+    .fare-rules-banner .fr-apply-btn {
+      background: #10b981;
+      color: #fff;
+    }
+
+    .fare-rules-banner .fr-apply-btn:hover {
+      background: #059669;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    }
+
+    .fare-rules-banner .fr-skip-btn {
+      background: var(--bg-main, #f3f4f6);
+      color: var(--text-secondary, #6b7280);
+      border: 1px solid var(--border, #e5e7eb);
+    }
+
+    .fare-rules-banner .fr-skip-btn:hover {
+      background: var(--bg-card, #fff);
+    }
+
+    .fare-rules-banner .fr-rules-preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      font-size: 0.72rem;
+      color: var(--text-secondary, #6b7280);
+    }
+
+    .fare-rules-banner .fr-rule-chip {
+      background: var(--bg-card, #fff);
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 5px;
+      padding: 0.15rem 0.45rem;
+      white-space: nowrap;
+    }
+
+    .fare-rules-banner .fr-rule-chip strong {
+      color: var(--text-primary, #111827);
+    }
+
+    .fare-rules-prompt-modal {
+      width: min(88vw, 150px);
+      max-width: 150px;
+      padding: 14px;
+      border-radius: 16px;
+    }
+
+    .fare-rules-prompt-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 0.85rem;
+    }
+
+    .fare-rules-prompt-title {
+      margin: 0;
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.1rem;
+      color: var(--text-primary);
+    }
+
+    .fare-rules-prompt-subtitle {
+      margin: 0.35rem 0 0;
+      font-size: 0.88rem;
+      line-height: 1.5;
+      color: var(--text-secondary);
+    }
+
+    .fare-rules-prompt-close {
+      flex-shrink: 0;
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--bg-main);
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    .fare-rules-prompt-list {
+      max-height: min(42vh, 300px);
+      overflow-y: auto;
+      display: grid;
+      gap: 0.5rem;
+      margin-top: 0.7rem;
+      padding-right: 0.1rem;
+    }
+
+    .fare-rules-prompt-item {
+      padding: 0.7rem 0.75rem;
+      border: 1px solid rgba(16, 185, 129, 0.16);
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(16, 185, 129, 0.06), rgba(16, 185, 129, 0.02));
+    }
+
+    .fare-rules-prompt-item-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.55rem;
+      margin-bottom: 0.45rem;
+    }
+
+    .fare-rules-prompt-airline {
+      margin: 0;
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .fare-rules-prompt-context {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #059669;
+    }
+
+    .fare-rules-prompt-fares {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.4rem;
+      align-items: start;
+    }
+
+    .fare-rules-prompt-fare-card {
+      padding: 0.5rem 0.55rem;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    .fare-rules-prompt-fare-title {
+      margin: 0 0 0.35rem;
+      font-size: 0.86rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      color: var(--text-primary);
+    }
+
+    .fare-rules-prompt-field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.35rem 0.45rem;
+    }
+
+    .fare-rules-prompt-field {
+      min-width: 0;
+    }
+
+    .fare-rules-prompt-field-label {
+      display: block;
+      margin-bottom: 0.08rem;
+      font-size: 0.58rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .fare-rules-prompt-field-value {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      line-height: 1.2;
+      color: var(--text-primary);
+      word-break: break-word;
+    }
+
+    .fare-rules-prompt-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.7rem;
+      margin-top: 0.8rem;
+    }
+
+    .fare-rules-prompt-btn {
+      min-height: 40px;
+      padding: 0.55rem 1rem;
+      border-radius: 10px;
+      font-size: 0.84rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    }
+
+    .fare-rules-prompt-btn.secondary {
+      border: 1px solid var(--border);
+      background: var(--bg-main);
+      color: var(--text-secondary);
+    }
+
+    .fare-rules-prompt-btn.primary {
+      border: none;
+      background: #10b981;
+      color: #fff;
+      box-shadow: 0 10px 24px rgba(16, 185, 129, 0.18);
+    }
+
+    .fare-rules-prompt-btn:hover {
+      transform: translateY(-1px);
+    }
+
+    @media (max-width: 640px) {
+      .fare-rules-prompt-modal {
+        width: calc(100vw - 0.85rem);
+        padding: 12px;
+      }
+
+      .fare-rules-prompt-item-head,
+      .fare-rules-prompt-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .fare-rules-prompt-field-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .fare-rules-prompt-fares {
+        grid-template-columns: 1fr;
+      }
+
+      .fare-rules-prompt-context {
+        align-self: flex-start;
+      }
+    }
   </style>
   <style>
     /* ================= MODAL OVERLAY ================= */
@@ -6857,6 +7143,441 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       // Can add initialization logic here if needed
     }
 
+    // ==================== FARE RULES AUTO-DETECT ====================
+
+    /**
+     * After parsing, detect airline codes from parsed flights and look up stored fare rules.
+     * For each unit that has a matching rule, show a banner inside the fare section.
+     */
+    // Global store to hold rules pending application
+    window.pendingFareRules = {};
+
+    async function checkAndShowFareRuleSuggestions() {
+      if (!currentFlights || currentFlights.length === 0) return;
+
+      const unitAirlines = {};  // { unitId_suffix: airline_code }
+      const unitFareTypes = {}; // { unitId_suffix: [fare_type_keys] }
+
+      Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
+        const suffixes = ['', '_out', '_ret'];
+
+        suffixes.forEach(suffix => {
+          const listId = `fare-list-${unitId}${suffix}`;
+          const fareCards = document.querySelectorAll(`#${listId} .fare-card`);
+          if (fareCards.length === 0) return;
+
+          let flightIdx = flightIds[0];
+          if (suffix === '_ret' && flightIds.length > 1) flightIdx = flightIds[1];
+
+          const flight = currentFlights[flightIdx];
+          if (!flight) return;
+
+          let airlineCode = '';
+          const fn = flight.flight_number || '';
+          const fnMatch = fn.match(/^([A-Z0-9]{2})\s/i);
+          if (fnMatch) {
+            airlineCode = fnMatch[1].toUpperCase();
+          }
+          if (!airlineCode && flight.airline) {
+            const airlineName = (flight.airline || '').toLowerCase();
+            const codeMap = window.AIRLINE_CODE_MAP || {};
+            for (const [code, name] of Object.entries(codeMap)) {
+              if (name.toLowerCase() === airlineName || airlineName.includes(name.toLowerCase())) {
+                airlineCode = code;
+                break;
+              }
+            }
+          }
+          if (!airlineCode) return;
+
+          unitAirlines[`${unitId}${suffix}`] = airlineCode;
+
+          const types = [];
+          fareCards.forEach(card => {
+            const chk = card.querySelector('.fare-card-header input[type="checkbox"]');
+            if (chk && chk.checked) types.push(card.dataset.fareKey);
+          });
+          unitFareTypes[`${unitId}${suffix}`] = types;
+        });
+      });
+
+      const allMatches = [];
+
+      for (const [unitIdSuffix, airlineCode] of Object.entries(unitAirlines)) {
+        const fareTypes = unitFareTypes[unitIdSuffix] || [];
+        if (fareTypes.length === 0) continue;
+
+        try {
+          const res = await fetch('/api/fare-rules/lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ airline_code: airlineCode, fare_types: fareTypes })
+          });
+          if (!res.ok) continue;
+          const data = await res.json();
+          const matchedRules = data.fare_rules || {};
+          if (Object.keys(matchedRules).length === 0) continue;
+
+          window.pendingFareRules[unitIdSuffix] = matchedRules;
+
+          const chipParts = [];
+          for (const [fareType, rule] of Object.entries(matchedRules)) {
+            const displayName = rule.fare_display_name || fareType;
+            chipParts.push(`<span style="background:var(--bg-main); border:1px solid var(--border); padding:2px 6px; border-radius:4px; font-size:0.75rem;">${displayName}</span>`);
+          }
+
+          const airlineName = Object.values(matchedRules)[0]?.airline_name || airlineCode;
+          allMatches.push(`
+            <div style="margin-bottom:12px; padding:12px; background:rgba(16, 185, 129, 0.05); border:1px solid rgba(16, 185, 129, 0.2); border-radius:8px;">
+              <strong style="color:#059669; display:block; margin-bottom:6px;">✈️ ${airlineName} (${airlineCode}) for Option ${unitIdSuffix.replace('_', ' ')}</strong>
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">${chipParts.join('')}</div>
+            </div>
+          `);
+
+        } catch (e) {
+          console.error('Fare rules lookup error:', e);
+        }
+      }
+
+      if (allMatches.length > 0) {
+        showFareRulesPromptModal(allMatches.join(''));
+      }
+    }
+
+    function showFareRulesPromptModal(contentHTML) {
+      let modal = document.getElementById('fareRulesPromptModal');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'fareRulesPromptModal';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+          <div class="modal-content" style="max-width: 500px; padding: 24px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+              <h3 style="margin:0; font-family:'Outfit', sans-serif; font-size:1.2rem; color:var(--text-primary);">✨ Fare Rules Found</h3>
+              <button onclick="dismissFareRulesPromptModal()" style="background:none; border:none; font-size:1.2rem; cursor:pointer; color:var(--text-secondary);">✕</button>
+            </div>
+            <p style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:16px;">We found stored baggage and penalty rules for your selected flights. Would you like to map them to the fare cards automatically?</p>
+            <div id="fr-prompt-content" style="max-height: 300px; overflow-y: auto;"></div>
+            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:24px;">
+              <button onclick="dismissFareRulesPromptModal()" style="padding: 0.5rem 1rem; border: 1px solid var(--border); background: var(--bg-main); border-radius: 6px; cursor: pointer; font-weight:600; color: var(--text-secondary);">Skip</button>
+              <button onclick="applyAllPendingFareRules()" style="padding: 0.5rem 1rem; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight:600;">✓ Apply All Rules</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+      }
+      document.getElementById('fr-prompt-content').innerHTML = contentHTML;
+      modal.classList.add('is-active');
+    }
+
+    function dismissFareRulesPromptModal() {
+      const modal = document.getElementById('fareRulesPromptModal');
+      if (modal) modal.classList.remove('is-active');
+      window.pendingFareRules = {}; // Clear pending
+    }
+
+    function applyAllPendingFareRules() {
+      let appliedCount = 0;
+      for (const [unitIdSuffix, matchedRules] of Object.entries(window.pendingFareRules)) {
+        for (const [fareType, rule] of Object.entries(matchedRules)) {
+          const uniqueKey = `${fareType}-unit-${unitIdSuffix}`;
+
+          const setIfEmpty = (selector, value) => {
+            if (!value) return;
+            const input = document.querySelector(selector);
+            if (input && !input.value.trim()) input.value = value;
+          };
+
+          setIfEmpty(`.fare-cabin-${uniqueKey}`, rule.baggage_cabin);
+          setIfEmpty(`.fare-checkin-${uniqueKey}`, rule.baggage_checkin);
+          setIfEmpty(`.fare-pcs-${uniqueKey}`, rule.baggage_pcs);
+          setIfEmpty(`.fare-seat-${uniqueKey}`, rule.seat);
+          setIfEmpty(`.fare-meal-${uniqueKey}`, rule.meal);
+          setIfEmpty(`.fare-cancellation-${uniqueKey}`, rule.cancellation_charges);
+          setIfEmpty(`.fare-penalty-${uniqueKey}`, rule.change_penalty);
+
+          const detailsId = `fare-details-input-${uniqueKey}`;
+          const detailsEl = document.getElementById(detailsId);
+          if (detailsEl && detailsEl.style.display === 'none') {
+            detailsEl.style.display = 'block';
+            const icon = document.getElementById(`fare-toggle-icon-${detailsId}`);
+            if (icon) icon.style.transform = 'rotate(180deg)';
+          }
+          appliedCount++;
+        }
+      }
+
+      dismissFareRulesPromptModal();
+      if (appliedCount > 0) {
+        showNotification(`Successfully auto-filled ${appliedCount} fare card(s)!`, 'success');
+      }
+    }
+
+    function buildFareRulesPromptMatchHTML(unitIdSuffix, airlineCode, matchedRules) {
+      const fieldLabelMap = {
+        baggage_cabin: 'Cabin',
+        baggage_checkin: 'Check-in',
+        baggage_pcs: 'Pieces',
+        seat: 'Seat',
+        meal: 'Meal',
+        cancellation_charges: 'Cancel',
+        change_penalty: 'Change'
+      };
+
+      const fareBlocks = Object.entries(matchedRules).map(([fareType, rule]) => {
+        const displayName = rule.fare_display_name || fareType;
+        const fieldEntries = Object.entries(fieldLabelMap)
+          .map(([fieldKey, label]) => {
+            const value = rule[fieldKey];
+            if (!value) return '';
+            return `
+              <div class="fare-rules-prompt-field">
+                <span class="fare-rules-prompt-field-label">${label}</span>
+                <span class="fare-rules-prompt-field-value">${value}</span>
+              </div>
+            `;
+          })
+          .filter(Boolean)
+          .join('');
+
+        return `
+          <div class="fare-rules-prompt-fare-card">
+            <p class="fare-rules-prompt-fare-title">${displayName}</p>
+            <div class="fare-rules-prompt-field-grid">${fieldEntries}</div>
+          </div>
+        `;
+      });
+
+      const airlineName = Object.values(matchedRules)[0]?.airline_name || airlineCode;
+      return `
+        <div class="fare-rules-prompt-item">
+          <div class="fare-rules-prompt-item-head">
+            <p class="fare-rules-prompt-airline">${airlineName} (${airlineCode})</p>
+            <span class="fare-rules-prompt-context">Option ${unitIdSuffix.replace('_', ' ')}</span>
+          </div>
+          <div class="fare-rules-prompt-fares">${fareBlocks.join('')}</div>
+        </div>
+      `;
+    }
+
+    async function checkAndShowFareRuleSuggestions() {
+      if (!currentFlights || currentFlights.length === 0) return;
+
+      const unitAirlines = {};
+      const unitFareTypes = {};
+      const getFlightsForUnit = (unitId) => {
+        const normalizedUnitId = normalizeUnitIdValue(unitId);
+        return (currentFlights || [])
+          .map((flight, index) => ({ flight, index }))
+          .filter(({ flight }) => flight && normalizeUnitIdValue(flight.unit_id || flight.unitId || '') === normalizedUnitId);
+      };
+
+      Object.entries(unitFlights).forEach(([unitId, flightIds]) => {
+        ['', '_out', '_ret'].forEach(suffix => {
+          const fareCards = document.querySelectorAll(`#fare-list-${unitId}${suffix} .fare-card`);
+          if (fareCards.length === 0) return;
+
+          const flightsForUnit = getFlightsForUnit(unitId);
+          let targetEntry = flightsForUnit[0] || null;
+          if (suffix === '_ret' && flightsForUnit.length > 1) targetEntry = flightsForUnit[1];
+          if (suffix === '_out' && flightsForUnit.length > 0) targetEntry = flightsForUnit[0];
+
+          const flight = targetEntry ? targetEntry.flight : null;
+          if (!flight) return;
+
+          let airlineCode = '';
+          const fnMatch = (flight.flight_number || '').match(/^([A-Z0-9]{2})\s/i);
+          if (fnMatch) airlineCode = fnMatch[1].toUpperCase();
+
+          if (!airlineCode && flight.airline) {
+            const airlineName = String(flight.airline || '').toLowerCase();
+            const codeMap = window.AIRLINE_CODE_MAP || {};
+            for (const [code, name] of Object.entries(codeMap)) {
+              const normalizedName = String(name || '').toLowerCase();
+              if (normalizedName && (airlineName === normalizedName || airlineName.includes(normalizedName))) {
+                airlineCode = code;
+                break;
+              }
+            }
+          }
+          if (!airlineCode) return;
+
+          unitAirlines[`${unitId}${suffix}`] = airlineCode;
+
+          const types = [];
+          fareCards.forEach(card => {
+            const chk = card.querySelector('.fare-card-header input[type="checkbox"]');
+            if (chk && chk.checked) types.push(card.dataset.fareKey);
+          });
+          unitFareTypes[`${unitId}${suffix}`] = types;
+        });
+      });
+
+      const allMatches = [];
+      window.pendingFareRules = {};
+
+      for (const [unitIdSuffix, airlineCode] of Object.entries(unitAirlines)) {
+        const fareTypes = unitFareTypes[unitIdSuffix] || [];
+        if (fareTypes.length === 0) continue;
+
+        try {
+          const res = await fetch('/api/fare-rules/lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ airline_code: airlineCode, fare_types: fareTypes })
+          });
+          if (!res.ok) continue;
+
+          const data = await res.json();
+          const matchedRules = data.fare_rules || {};
+          if (Object.keys(matchedRules).length === 0) continue;
+
+          window.pendingFareRules[unitIdSuffix] = matchedRules;
+          allMatches.push(buildFareRulesPromptMatchHTML(unitIdSuffix, airlineCode, matchedRules));
+        } catch (e) {
+          console.error('Fare rules lookup error:', e);
+        }
+      }
+
+      if (allMatches.length > 0) {
+        showFareRulesPromptModal(allMatches.join(''));
+      }
+    }
+
+    function showFareRulesPromptModal(contentHTML) {
+      let modal = document.getElementById('fareRulesPromptModal');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'fareRulesPromptModal';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+          <div class="modal-content fare-rules-prompt-modal">
+            <div class="fare-rules-prompt-header">
+              <div>
+                <h3 class="fare-rules-prompt-title">Fare Rules Found</h3>
+                <p class="fare-rules-prompt-subtitle">Stored baggage, meal, seat, cancellation, and change rules are ready. Apply them to the matched fare cards and refresh the itinerary instantly.</p>
+              </div>
+              <button type="button" class="fare-rules-prompt-close" onclick="dismissFareRulesPromptModal()" aria-label="Close">x</button>
+            </div>
+            <div id="fr-prompt-content" class="fare-rules-prompt-list"></div>
+            <div class="fare-rules-prompt-actions">
+              <button type="button" class="fare-rules-prompt-btn secondary" onclick="dismissFareRulesPromptModal()">Skip</button>
+              <button type="button" class="fare-rules-prompt-btn primary" onclick="applyAllPendingFareRules()">Apply Rules</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+      }
+      document.getElementById('fr-prompt-content').innerHTML = contentHTML;
+      modal.classList.add('is-active');
+    }
+
+    function getFareRuleTargetFlights(unitIdSuffix) {
+      const unitIdSuffixText = String(unitIdSuffix || '');
+      const [rawUnitId, suffix = ''] = unitIdSuffixText.split(/(_out|_ret)$/);
+      const unitId = normalizeUnitIdValue(rawUnitId || unitIdSuffixText);
+      const matchingFlights = (currentFlights || [])
+        .map((flight, index) => ({ flight, index }))
+        .filter(({ flight }) => flight && normalizeUnitIdValue(flight.unit_id || flight.unitId || '') === unitId);
+
+      if (suffix === '_out') return matchingFlights.slice(0, 1);
+      if (suffix === '_ret') return matchingFlights.slice(1, 2);
+      return matchingFlights;
+    }
+
+    function mergeFareRuleIntoFlight(flight, fareType, rule) {
+      if (!flight || !fareType || !rule) return false;
+
+      if (!flight.fare_extra_details || typeof flight.fare_extra_details !== 'object') {
+        flight.fare_extra_details = {};
+      }
+
+      const nextExtras = { ...(flight.fare_extra_details[fareType] || {}) };
+      const ruleFields = {
+        baggage_cabin: rule.baggage_cabin,
+        baggage_checkin: rule.baggage_checkin,
+        baggage_pcs: rule.baggage_pcs,
+        seat: rule.seat,
+        meal: rule.meal,
+        cancellation_charges: rule.cancellation_charges,
+        penalty_charges: rule.change_penalty
+      };
+
+      let changed = false;
+      Object.entries(ruleFields).forEach(([field, value]) => {
+        if (!value) return;
+        if (String(nextExtras[field] || '').trim()) return;
+        nextExtras[field] = value;
+        changed = true;
+      });
+
+      if (!changed) return false;
+
+      flight.fare_extra_details[fareType] = nextExtras;
+
+      const fareKeys = Object.keys(flight.fares || {});
+      if (fareKeys.length === 1 && fareKeys[0] === fareType) {
+        flight.baggage_cabin = flight.baggage_cabin || nextExtras.baggage_cabin || '';
+        flight.baggage_checkin = flight.baggage_checkin || nextExtras.baggage_checkin || '';
+        flight.baggage_pcs = flight.baggage_pcs || nextExtras.baggage_pcs || '';
+        flight.seat = flight.seat || nextExtras.seat || '';
+        flight.meal = flight.meal || nextExtras.meal || '';
+        flight.cancellation_charges = flight.cancellation_charges || nextExtras.cancellation_charges || '';
+        flight.penalty_charges = flight.penalty_charges || nextExtras.penalty_charges || '';
+      }
+
+      return true;
+    }
+
+    function applyAllPendingFareRules() {
+      let appliedCount = 0;
+
+      for (const [unitIdSuffix, matchedRules] of Object.entries(window.pendingFareRules)) {
+        const targetFlights = getFareRuleTargetFlights(unitIdSuffix);
+
+        for (const [fareType, rule] of Object.entries(matchedRules)) {
+          const uniqueKey = `${fareType}-unit-${unitIdSuffix}`;
+
+          const setIfEmpty = (selector, value) => {
+            if (!value) return;
+            const input = document.querySelector(selector);
+            if (input && !String(input.value || '').trim()) input.value = value;
+          };
+
+          setIfEmpty(`.fare-cabin-${uniqueKey}`, rule.baggage_cabin);
+          setIfEmpty(`.fare-checkin-${uniqueKey}`, rule.baggage_checkin);
+          setIfEmpty(`.fare-pcs-${uniqueKey}`, rule.baggage_pcs);
+          setIfEmpty(`.fare-seat-${uniqueKey}`, rule.seat);
+          setIfEmpty(`.fare-meal-${uniqueKey}`, rule.meal);
+          setIfEmpty(`.fare-cancellation-${uniqueKey}`, rule.cancellation_charges);
+          setIfEmpty(`.fare-penalty-${uniqueKey}`, rule.change_penalty);
+
+          const detailsId = `fare-details-input-${uniqueKey}`;
+          const detailsEl = document.getElementById(detailsId);
+          if (detailsEl && detailsEl.style.display === 'none') {
+            detailsEl.style.display = 'block';
+            const icon = document.getElementById(`fare-toggle-icon-${detailsId}`);
+            if (icon) icon.style.transform = 'rotate(180deg)';
+          }
+
+          targetFlights.forEach(({ flight }) => {
+            if (mergeFareRuleIntoFlight(flight, fareType, rule)) {
+              appliedCount++;
+            }
+          });
+        }
+      }
+
+      dismissFareRulesPromptModal();
+      if (appliedCount > 0) {
+        renderResults(currentFlights);
+        regenerateOutputText();
+        showNotification(`Applied stored fare rules to ${appliedCount} fare selection${appliedCount === 1 ? '' : 's'}.`, 'success');
+      } else {
+        showNotification('Stored rules were already present, so nothing changed.', 'info');
+      }
+    }
+
     function addCityToUnit(unitId) {
       const cityCount = (unitFlightCounts[unitId] || 1) + 1;
       unitFlightCounts[unitId] = cityCount;
@@ -7500,6 +8221,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           }
 
           renderResults(currentFlights);
+          checkAndShowFareRuleSuggestions();
           isParsing = false;
           parseBtn.disabled = false;
           parseIcon.innerHTML = '&#10024;';
@@ -7612,6 +8334,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         // Reset edit mode to false by default for new parse results
         isGlobalEditMode = false;
         renderResults(data.flights);
+        checkAndShowFareRuleSuggestions();
         showNotification('Flights parsed successfully!', 'success');
 
       } catch (error) {

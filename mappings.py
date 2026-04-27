@@ -6,7 +6,7 @@ AIRPORT_CODES = {
     "DEL": "Delhi", "BOM": "Mumbai", "NMI": "Navi Mumbai", "BLR": "Bengaluru", "MAA": "Chennai", "CCU": "Kolkata",
     "HYD": "Hyderabad", "AMD": "Ahmedabad", "PNQ": "Pune", "COK": "Kochi", "GOI": "Goa", "VTZ": "Vishakhapatnam",
     "JAI": "Jaipur", "TRV": "Thiruvananthapuram", "GAU": "Guwahati", "LKO": "Lucknow",
-    "NAG": "Nagpur", "IXC": "Chandigarh", "VNS": "Varanasi", "PAT": "Patna", "BBI": "Bhubaneswar",
+    "NAG": "Nagpur", "IXC": "Chandigarh", "VNS": "Varanasi", "PAT": "Patna", "BBI": "Bhubaneshwar",
     "IXB": "Bagdogra", "IXR": "Ranchi", "IDR": "Indore", "RPR": "Raipur", "VGA": "Vijayawada",
     "IXE": "Mangalore", "IXM": "Madurai", "IXU": "Aurangabad", "SXR": "Srinagar", "IXZ": "Port Blair",
     "IMF": "Imphal", "DIB": "Dibrugarh", "JRH": "Jorhat", "IXJ": "Jammu", "ATQ": "Amritsar",
