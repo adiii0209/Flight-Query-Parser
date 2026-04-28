@@ -14,7 +14,6 @@ from flask import Flask, request, jsonify, render_template, render_template_stri
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
-from sqlalchemy.orm import load_only, selectinload
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 from functools import wraps
@@ -1923,99 +1922,6 @@ def _ticket_dict_with_children(ticket, include_barcodes=True):
     }
 
 
-def _ticket_summary_segments(segments):
-    summary_segments = []
-    for segment in segments or []:
-        departure = segment.get("departure") or {}
-        arrival = segment.get("arrival") or {}
-        summary_segments.append({
-            "airline": segment.get("airline"),
-            "flight_number": segment.get("flight_number"),
-            "departure": {
-                "airport": departure.get("airport"),
-                "city": departure.get("city"),
-                "date": departure.get("date"),
-                "time": departure.get("time"),
-            },
-            "arrival": {
-                "airport": arrival.get("airport"),
-                "city": arrival.get("city"),
-                "date": arrival.get("date"),
-                "time": arrival.get("time"),
-            },
-        })
-    return summary_segments
-
-
-def _ticket_summary_passengers(passengers):
-    return [{"name": (passenger or {}).get("name")} for passenger in (passengers or [])]
-
-
-def _ticket_list_item(ticket, include_route=True, include_children=True):
-    passengers = json.loads(ticket.passengers_data) if ticket.passengers_data else []
-    segments = json.loads(ticket.segments_data) if ticket.segments_data else []
-    journey = json.loads(ticket.journey_data) if ticket.journey_data else {}
-    _ensure_passenger_internal_ids(passengers)
-
-    financials = _ticket_financials(passengers, journey)
-    display_total = parseFloat(ticket.grand_total or 0) or financials.get("total", 0)
-
-    payload = {
-        "id": ticket.id,
-        "created_at": ticket.created_at.isoformat(),
-        "updated_at": ticket.updated_at.isoformat() if ticket.updated_at else None,
-        "pnr": ticket.pnr,
-        "currency": ticket.currency,
-        "grand_total": ticket.grand_total,
-        "display_total": _round_money(display_total),
-        "trip_type": ticket.trip_type,
-        "status": ticket.status,
-        "ticket_status": ticket.ticket_status or "live",
-        "parent_ticket_id": ticket.parent_ticket_id,
-        "booking_group_id": ticket.booking_group_id,
-        "passengers": _ticket_summary_passengers(passengers),
-        "passenger_names": [p.get("name", "") for p in passengers],
-        "segments": _ticket_summary_segments(segments),
-        "journey": {
-            "trip_type_display": journey.get("trip_type_display"),
-            "legs": journey.get("legs") or [],
-            "global_markup": parseFloat((journey or {}).get("global_markup", 0)),
-            "consolidated_fare": journey.get("consolidated_fare") or {},
-        },
-        "children": (
-            [
-                {
-                    "id": child.id,
-                    "pnr": child.pnr,
-                    "ticket_status": child.ticket_status,
-                    "grand_total": child.grand_total,
-                }
-                for child in (ticket.children or [])
-            ]
-            if include_children else []
-        ),
-    }
-
-    if include_route:
-        legs = _build_legs_from_data(payload["segments"], payload["journey"])
-        route_parts = []
-        for leg_indices in legs:
-            if not leg_indices:
-                continue
-            first_seg = payload["segments"][leg_indices[0]]
-            last_seg = payload["segments"][leg_indices[-1]]
-            dep_code = first_seg.get("departure", {}).get("airport", "")
-            arr_code = last_seg.get("arrival", {}).get("airport", "")
-            if dep_code and not route_parts:
-                route_parts.append(dep_code)
-            if arr_code:
-                route_parts.append(arr_code)
-        payload["legs"] = legs
-        payload["route"] = " -> ".join(route_parts) if route_parts else ""
-
-    return payload
-
-
 def _booking_group_sorted_tickets(booking_group):
     return sorted(list(booking_group.tickets), key=lambda item: (item.created_at, item.id))
 
@@ -2074,69 +1980,6 @@ def _merged_ticket_dict(booking_group, lead_ticket, include_barcodes=True):
         "pnr": booking_group.pnr,
         "status": booking_group.status,
     }
-    return lead_payload
-
-
-def _merged_ticket_list_item(booking_group, lead_ticket):
-    grouped_tickets = _booking_group_sorted_tickets(booking_group)
-    if not grouped_tickets:
-        return _ticket_list_item(lead_ticket)
-
-    lead_payload = _ticket_list_item(lead_ticket, include_route=False, include_children=False)
-    merged_passengers = []
-    merged_total = 0.0
-    merged_ticket_ids = []
-    merged_base = 0.0
-    merged_k3 = 0.0
-    merged_other = 0.0
-    merged_markup_total = 0.0
-
-    for grouped_ticket in grouped_tickets:
-        merged_ticket_ids.append(grouped_ticket.id)
-        merged_total += parseFloat(grouped_ticket.grand_total or 0)
-        ticket_passengers = json.loads(grouped_ticket.passengers_data or "[]")
-        grouped_journey = json.loads(grouped_ticket.journey_data or "{}")
-        grouped_financials = _ticket_financials(ticket_passengers, grouped_journey)
-        merged_base += parseFloat(grouped_financials.get("base", 0))
-        merged_k3 += parseFloat(grouped_financials.get("k3", 0))
-        merged_other += parseFloat(grouped_financials.get("other", 0))
-        merged_markup_total += parseFloat(grouped_financials.get("mu", 0))
-        merged_passengers.extend(_ticket_summary_passengers(ticket_passengers))
-
-    lead_payload["passengers"] = merged_passengers
-    lead_payload["passenger_names"] = [p.get("name", "") for p in merged_passengers]
-    lead_payload["grand_total"] = _round_money(merged_total)
-    lead_payload["display_total"] = _round_money(merged_total)
-    lead_payload.setdefault("journey", {})
-    lead_payload["journey"]["consolidated_fare"] = {
-        "base_fare": _round_money(merged_base),
-        "k3_gst": _round_money(merged_k3),
-        "other_taxes": _round_money(merged_other),
-    }
-    merged_passenger_count = len(merged_passengers)
-    lead_payload["journey"]["global_markup"] = (
-        _round_money(merged_markup_total / merged_passenger_count)
-        if merged_passenger_count else 0.0
-    )
-    lead_payload["is_merged_view"] = True
-    lead_payload["merged_ticket_ids"] = merged_ticket_ids
-    lead_payload["merged_ticket_count"] = len(merged_ticket_ids)
-
-    legs = _build_legs_from_data(lead_payload["segments"], lead_payload["journey"])
-    route_parts = []
-    for leg_indices in legs:
-        if not leg_indices:
-            continue
-        first_seg = lead_payload["segments"][leg_indices[0]]
-        last_seg = lead_payload["segments"][leg_indices[-1]]
-        dep_code = first_seg.get("departure", {}).get("airport", "")
-        arr_code = last_seg.get("arrival", {}).get("airport", "")
-        if dep_code and not route_parts:
-            route_parts.append(dep_code)
-        if arr_code:
-            route_parts.append(arr_code)
-    lead_payload["legs"] = legs
-    lead_payload["route"] = " -> ".join(route_parts) if route_parts else ""
     return lead_payload
 
 
@@ -2318,7 +2161,6 @@ def _create_indexes_if_missing():
         "CREATE INDEX IF NOT EXISTS ix_booking_group_pnr ON booking_group (pnr)",
         "CREATE INDEX IF NOT EXISTS ix_ticket_booking_group_id ON ticket (booking_group_id)",
         "CREATE INDEX IF NOT EXISTS ix_ticket_user_created_at ON ticket (user_id, created_at)",
-        "CREATE INDEX IF NOT EXISTS ix_ticket_user_duplicate_created_at ON ticket (user_id, duplicate_status, created_at)",
         "CREATE INDEX IF NOT EXISTS ix_ticket_read_user_id ON ticket_read (user_id)",
         "CREATE INDEX IF NOT EXISTS ix_ticket_read_ticket_id ON ticket_read (ticket_id)",
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_ticket_read_user_ticket ON ticket_read (user_id, ticket_id)",
@@ -4149,53 +3991,10 @@ def delete_pnr_group_tickets(pnr):
 def get_tickets():
     """Get all tickets for the logged-in user"""
     from sqlalchemy import or_
-    last_seen_at = db.session.query(User.last_ticket_seen_at).filter(
-        User.id == session['user_id']
-    ).scalar()
+    user = User.query.get(session['user_id'])
+    last_seen_at = user.last_ticket_seen_at if user else None
     server_now = _db_now()
-    query = Ticket.query.options(
-        load_only(
-            Ticket.id,
-            Ticket.created_at,
-            Ticket.updated_at,
-            Ticket.pnr,
-            Ticket.currency,
-            Ticket.grand_total,
-            Ticket.trip_type,
-            Ticket.status,
-            Ticket.ticket_status,
-            Ticket.parent_ticket_id,
-            Ticket.booking_group_id,
-            Ticket.passengers_data,
-            Ticket.segments_data,
-            Ticket.journey_data,
-        ),
-        selectinload(Ticket.children).load_only(
-            Ticket.id,
-            Ticket.pnr,
-            Ticket.ticket_status,
-            Ticket.grand_total,
-        ),
-        selectinload(Ticket.booking_group).load_only(
-            BookingGroup.id,
-            BookingGroup.pnr,
-            BookingGroup.status,
-        ).selectinload(BookingGroup.tickets).load_only(
-            Ticket.id,
-            Ticket.created_at,
-            Ticket.pnr,
-            Ticket.currency,
-            Ticket.grand_total,
-            Ticket.trip_type,
-            Ticket.status,
-            Ticket.ticket_status,
-            Ticket.parent_ticket_id,
-            Ticket.booking_group_id,
-            Ticket.passengers_data,
-            Ticket.segments_data,
-            Ticket.journey_data,
-        ),
-    ).filter(
+    query = Ticket.query.filter(
         Ticket.user_id == session['user_id'],
         or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status == 'approved'),
     ).order_by(Ticket.created_at.desc())
@@ -4214,34 +4013,56 @@ def get_tickets():
     if limit:
         tickets_query = tickets_query.limit(limit)
     tickets = tickets_query.all()
-
+    
     result = []
     ticket_scope_ids = []
     seen_booking_groups = set()
-    grouped_ticket_cache = {}
     for t in tickets:
         if t.booking_group_id:
             if t.booking_group_id in seen_booking_groups:
                 continue
             seen_booking_groups.add(t.booking_group_id)
-            grouped_tickets = grouped_ticket_cache.setdefault(
-                t.booking_group_id,
-                _booking_group_sorted_tickets(t.booking_group),
-            )
+            grouped_tickets = _booking_group_sorted_tickets(t.booking_group)
             lead_ticket = grouped_tickets[0] if grouped_tickets else t
-            payload = _merged_ticket_list_item(t.booking_group, lead_ticket)
+            payload = _merged_ticket_dict(t.booking_group, lead_ticket, include_barcodes=False)
             scope_tickets = grouped_tickets or [t]
         else:
-            payload = _ticket_list_item(t)
+            payload = _ticket_dict_with_children(t, include_barcodes=False)
             scope_tickets = [t]
+        passengers = payload["passengers"]
+        segments = payload["segments"]
+        journey = payload["journey"]
         ticket_scope_ids.extend(item.id for item in scope_tickets if item and item.id)
+        
+        # Group segments into logical legs (handling layovers)
+        legs = _build_legs_from_data(segments, journey)
+        
+        # Build route info from legs
+        route_parts = []
+        for leg_indices in legs:
+            if not leg_indices:
+                continue
+            first_seg = segments[leg_indices[0]]
+            last_seg = segments[leg_indices[-1]]
+            dep_code = first_seg.get("departure", {}).get("airport", "")
+            arr_code = last_seg.get("arrival", {}).get("airport", "")
+            if dep_code and not route_parts:
+                route_parts.append(dep_code)
+            if arr_code:
+                route_parts.append(arr_code)
+        
+        payload.update({
+            "legs": legs,
+            "route": " → ".join(route_parts) if route_parts else "",
+            "passenger_names": [p.get("name", "") for p in passengers],
+        })
         result.append(payload)
 
     read_ticket_ids = _ticket_read_ticket_ids(session['user_id'], ticket_scope_ids)
     result_by_id = {item["id"]: item for item in result if item.get("id")}
     for t in tickets:
         if t.booking_group_id:
-            grouped_tickets = grouped_ticket_cache.get(t.booking_group_id) or [t]
+            grouped_tickets = _booking_group_sorted_tickets(t.booking_group) or [t]
             lead_ticket = grouped_tickets[0]
             payload = result_by_id.get(lead_ticket.id)
             if payload is not None:
@@ -4259,9 +4080,8 @@ def get_tickets():
         "tickets": result,
         "total_count": total_count,
         "offset": offset,
-        "fetched_count": len(tickets),
         "returned_count": returned_count,
-        "has_more": (offset + len(tickets)) < total_count,
+        "has_more": (offset + returned_count) < total_count,
         "last_seen_at": _iso_or_none(last_seen_at),
         "server_now": _iso_or_none(server_now),
     })
@@ -5701,4 +5521,3 @@ apply_global_db_retry(app)
 if __name__ == "__main__":
     init_db()
     app.run(host="0.0.0.0", port=5000, debug=True)
-
