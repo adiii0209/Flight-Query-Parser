@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="/static/dashboard.css">
     <link rel="stylesheet" href="/static/sidebar.css">
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.11.1/tsparticles.bundle.min.js"></script>
+    <script src="https://unpkg.com/@dotlottie/player-component@latest/dist/dotlottie-player.mjs" type="module"></script>
     <style>
         /* ----- App Header (Synchronized with Index) ----- */
         .app-header {
@@ -254,6 +255,104 @@
         [data-theme="dark"] .itin-card.ticket-unread,
         [data-theme="dark"] .itin-card.ticket-unread .itin-card-body {
             background: #ffffff !important;
+        }
+
+        /* ===== LOADER STYLES ===== */
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            z-index: 50;
+        }
+
+        .status-group dotlottie-player {
+            flex-shrink: 0;
+            width: 45px !important;
+            height: 45px !important;
+            margin-right: -1px;
+            margin-left: -1px;
+        }
+
+        .dashboard-loader {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.12);
+            padding: 0.45rem 0.9rem;
+            border-radius: 12px;
+            font-size: 0.68rem;
+            font-weight: 800;
+            color: #10b981;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            backdrop-filter: blur(8px);
+            transition: all 0.3s ease;
+            animation: loaderFadeIn 0.4s ease;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.06);
+        }
+
+        @keyframes loaderFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .loader-pulse {
+            width: 8px;
+            height: 8px;
+            background: #10b981;
+            border-radius: 50%;
+            position: relative;
+        }
+
+        .loader-pulse::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: inherit;
+            border-radius: inherit;
+            animation: pulse-ring 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(1);
+                opacity: 0.8;
+            }
+
+            100% {
+                transform: scale(3.5);
+                opacity: 0;
+            }
+        }
+
+        .loader-text {
+            white-space: nowrap;
+        }
+
+        @media (max-width: 900px) {
+            .loader-text {
+                display: none;
+            }
+
+            .dashboard-loader {
+                padding: 0.45rem;
+                border-radius: 10px;
+                gap: 0;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .dashboard-loader {
+                display: none !important;
+            }
         }
 
         .modal-overlay {
@@ -1439,12 +1538,13 @@
 
         .ticket-toolbar-row {
             display: flex;
-            justify-content: flex-end;
+            justify-content: space-between;
+            align-items: flex-end;
             width: 100%;
             margin-top: -0.5rem;
+            margin-bottom: 0.75rem;
         }
 
-        .ticket-toolbar-row,
         .ticket-selection-secondary {
             width: max-content;
             margin-left: auto;
@@ -2772,6 +2872,14 @@
                     </button>
                 </div>
                 <div class="ticket-toolbar-row">
+                    <div id="dashboardLoader" class="status-group" style="display:none;">
+                        <dotlottie-player src="/static/doctor_dancing.lottie" background="transparent" speed="1"
+                            direction="1" playMode="normal" loop autoplay></dotlottie-player>
+                        <div class="dashboard-loader">
+                            <div class="loader-pulse"></div>
+                            <span class="loader-text">Updating Dashboard</span>
+                        </div>
+                    </div>
                     <div class="ticket-selection-toolbar">
                         <button class="btn-action secondary" onclick="markAllTicketsSeen()">Mark All Seen</button>
                         <button class="btn-action secondary" id="toggleAllTicketSelectionBtn"

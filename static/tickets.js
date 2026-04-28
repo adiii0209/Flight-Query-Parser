@@ -2161,10 +2161,34 @@ async function loadTickets(options = {}) {
     return null;
 }
 
+function setDashboardUpdatingState(isUpdating) {
+    const loader = document.getElementById('dashboardLoader');
+    if (!loader) return;
+    if (isUpdating) {
+        loader.style.display = 'flex';
+    } else {
+        // Fade out transition
+        loader.style.opacity = '0';
+        loader.style.transform = 'translateX(-10px)';
+        setTimeout(() => {
+            loader.style.display = 'none';
+            loader.style.opacity = '';
+            loader.style.transform = '';
+        }, 350);
+    }
+}
+
 async function syncAllTicketsInBackground() {
     if (fullTicketsSyncPromise) return fullTicketsSyncPromise;
+    
+    setDashboardUpdatingState(true);
+    
     fullTicketsSyncPromise = (async () => {
-        await loadTickets({ render: true, notifyNewTickets: false });
+        try {
+            await loadTickets({ render: true, notifyNewTickets: false });
+        } finally {
+            setDashboardUpdatingState(false);
+        }
     })().finally(() => {
         fullTicketsSyncPromise = null;
     });
