@@ -991,8 +991,15 @@ def draw_ticket(c, data, include_fare=True):
         except ValueError:
             global_markup = 0
 
-        FARE_H = 60
-        _ensure_space(FARE_H + 18)
+        # Dynamic height for fare summary
+        if is_consolidated:
+            FARE_H = 60
+        else:
+            # Header + rows + grand total row + padding
+            row_h = 14
+            FARE_H = (n_pax + 2) * row_h + 12
+
+        _ensure_space(FARE_H + 20)
 
         _txt(c, M, T - 11, "FARE SUMMARY", "Helvetica-Bold", 7, RED)
         T -= 16
@@ -1031,8 +1038,6 @@ def draw_ticket(c, data, include_fare=True):
             n_cols = len(cols)
             col_w  = IW / n_cols
 
-
-
             lbl_y  = T - 14
             val_y  = T - 32
 
@@ -1057,13 +1062,26 @@ def draw_ticket(c, data, include_fare=True):
             # per-passenger table
             running = 0
             row_h   = 14
-            th_y    = T - 14
+            th_y    = T - 12
             cols    = ["#", "PASSENGER", "BASE FARE", "GST (K3)", "OTHER TAXES", "TOTAL"]
-            col_ws  = [18, IW - 18 - 60 - 60 - 90 - 70, 60, 60, 90, 70]
+            # Adjust column widths for better spacing
+            col_ws  = [18, IW - 18 - 60 - 60 - 80 - 80, 60, 60, 80, 80]
             cx_list = [M + sum(col_ws[:i]) + 4 for i in range(len(cols))]
 
+            # Draw Header
             for ci, col_lbl in enumerate(cols):
-                _txt(c, cx_list[ci], th_y, col_lbl, "Helvetica", 6.5, INF_LABEL)
+                is_total_col = (ci == 5)
+                is_other_amt = (ci >= 2 and ci < 5)
+                if is_total_col:
+                    align = "center"
+                    x_pos = cx_list[ci] + col_ws[ci] / 2
+                elif is_other_amt:
+                    align = "right"
+                    x_pos = cx_list[ci] + col_ws[ci] - 8
+                else:
+                    align = "left"
+                    x_pos = cx_list[ci]
+                _txt(c, x_pos, th_y, col_lbl, "Helvetica", 6, INF_LABEL, align=align)
             _hline(c, M + 4, th_y - 2, IW - 8, CARD_BOR, 0.4)
 
             ry = th_y - row_h
@@ -1083,19 +1101,45 @@ def draw_ticket(c, data, include_fare=True):
                 tot = _t(pf.get("total_fare")) or "—"
                 if tot != "—":
                     try: running += float(str(tot).replace(",", ""))
-
-
-
                     except: pass
-                row_vals = [str(pi+1), pname, base, k3, othr or "—", tot]
+                
+                # Format money values for display
+                row_vals = [
+                    str(pi+1), 
+                    pname, 
+                    _format_money_display(curr_code, base), 
+                    _format_money_display(curr_code, k3), 
+                    _format_money_display(curr_code, othr or "—"), 
+                    _format_money_display(curr_code, tot)
+                ]
                 for ci, rv in enumerate(row_vals):
-                    _txt(c, cx_list[ci], ry, rv, "Helvetica", 7.5, NAVY)
+                    vsize = 7.5
+                    vfont = "Helvetica"
+                    is_total_col = (ci == 5)
+                    is_other_amt = (ci >= 2 and ci < 5)
+                    if is_total_col:
+                        align = "center"
+                        x_pos = cx_list[ci] + col_ws[ci] / 2
+                    elif is_other_amt:
+                        align = "right"
+                        x_pos = cx_list[ci] + col_ws[ci] - 8
+                    else:
+                        align = "left"
+                        x_pos = cx_list[ci]
+                    _txt(c, x_pos, ry, rv, vfont, vsize, NAVY, align=align)
                 ry -= row_h
 
             grand = _t(data.get("grand_total")) or (str(running) if running else "—")
             _hline(c, M + 4, ry + row_h - 2, IW - 8, CARD_BOR, 0.4)
-            _txt(c, RIGHT - 8, ry, _format_money_display(curr_code, grand),
-                 _font(bold=True), 9, RED, align="right")
+            
+            # Center of the TOTAL column
+            total_col_center_x = cx_list[5] + col_ws[5] / 2
+            
+            # Label "GRAND TOTAL" positioned to the left of the total value
+            _txt(c, total_col_center_x - 45, ry, "GRAND TOTAL", _font(bold=True), 8, INF_LABEL, align="right")
+            # Value (center-aligned under the TOTAL column values)
+            _txt(c, total_col_center_x, ry, _format_money_display(curr_code, grand),
+                 _font(bold=True), 10, RED, align="center")
 
         T -= FARE_H + 6
 
