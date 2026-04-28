@@ -66,7 +66,10 @@ let fareQuickFillDraft = '';
 const fareQuickFillDraftByTicket = new Map();
 const AIRLINE_CODE_MAP = window.AIRLINE_CODE_MAP || {};
 const AIRPORT_CODE_MAP = window.AIRPORT_CODE_MAP || {};
+const AIRPORT_GEO_MAP = window.AIRPORT_GEO_MAP || {};
 const AIRPORT_TZ_MAP = window.AIRPORT_TZ_MAP || {};
+const AIRPORT_GEO_ROUTE_FACTOR = 1.08;
+const AIRPORT_GEO_OVERHEAD_MINUTES = 28;
 
 // ==================== SIDEBAR & THEME ====================
 function initializeSidebar() {
@@ -810,16 +813,213 @@ function getDirectTimezoneElapsedMinutes(startPoint, endPoint) {
     return Math.round((end - start) / 60000);
 }
 
+function formatSignedDurationFromMinutes(totalMinutes) {
+    if (!Number.isFinite(totalMinutes)) return '';
+    if (totalMinutes === 0) return '0m';
+    const prefix = totalMinutes < 0 ? '-' : '';
+    return `${prefix}${formatDurationFromMinutes(Math.abs(totalMinutes))}`;
+}
+
 function getSegmentDurationMinutes(segment) {
     const explicitMinutes = parseDurationToMinutes(getSegmentDurationValue(segment));
     if (explicitMinutes > 0) return explicitMinutes;
     return getElapsedMinutes(segment?.departure, segment?.arrival);
 }
 
+function getSegmentRawDurationMinutes(segment) {
+    const departure = segment?.departure || {};
+    const arrival = segment?.arrival || {};
+    const rawMinutes = getDirectTimezoneElapsedMinutes(departure, arrival);
+    return Number.isFinite(rawMinutes) ? rawMinutes : null;
+}
+
+function getSegmentTemporalValidation(segment) {
+    const rawMinutes = getSegmentRawDurationMinutes(segment);
+    if (!Number.isFinite(rawMinutes) || rawMinutes >= 0) return null;
+    const departure = segment?.departure || {};
+    const arrival = segment?.arrival || {};
+    const origin = safe(departure.airport, '').toString().trim().toUpperCase() || '???';
+    const destination = safe(arrival.airport, '').toString().trim().toUpperCase() || '???';
+    return {
+        rawMinutes,
+        display: formatSignedDurationFromMinutes(rawMinutes),
+        warningMessage: [
+            `Arrival is earlier than departure for ${origin} -> ${destination}`,
+            `Raw flight duration is ${formatSignedDurationFromMinutes(rawMinutes)}.`,
+            'This segment looks invalid unless the arrival date needs to be moved forward.'
+        ].join('\n')
+    };
+}
+
 function doesSegmentDurationNeedWarning(segment) {
     const durationMinutes = getSegmentDurationMinutes(segment);
     if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return false;
     return durationMinutes < 30 || durationMinutes > (20 * 60);
+}
+
+function getAirportGeoCoordinate(code) {
+    const normalized = safe(code, '').toString().trim().toUpperCase();
+    if (!normalized) return null;
+    const raw = AIRPORT_GEO_MAP[normalized];
+    if (!raw || raw.length !== 2) return null;
+    const lat = Number(raw[0]);
+    const lon = Number(raw[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return { lat, lon };
+}
+
+function getGreatCircleDistanceKm(originCode, destinationCode) {
+    const origin = getAirportGeoCoordinate(originCode);
+    const destination = getAirportGeoCoordinate(destinationCode);
+    if (!origin || !destination) return null;
+
+    const toRadians = (value) => (value * Math.PI) / 180;
+    const deltaLat = toRadians(destination.lat - origin.lat);
+    const deltaLon = toRadians(destination.lon - origin.lon);
+    const lat1 = toRadians(origin.lat);
+    const lat2 = toRadians(destination.lat);
+    const a = (Math.sin(deltaLat / 2) ** 2)
+        + (Math.cos(lat1) * Math.cos(lat2) * (Math.sin(deltaLon / 2) ** 2));
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return 6371.0088 * c;
+}
+
+function getEstimatedFlightSpeedKmh(routeDistanceKm) {
+    if (routeDistanceKm < 250) return 380;
+    if (routeDistanceKm < 600) return 520;
+    if (routeDistanceKm < 1200) return 690;
+    if (routeDistanceKm < 2500) return 800;
+    return 870;
+}
+
+function getGeoDurationToleranceMinutes(greatCircleKm) {
+    if (greatCircleKm < 250) return 25;
+    if (greatCircleKm < 600) return 35;
+    if (greatCircleKm < 1500) return 50;
+    if (greatCircleKm < 3000) return 65;
+    return 85;
+}
+
+function getGeoDurationInvalidToleranceMinutes(greatCircleKm) {
+    const baseTolerance = getGeoDurationToleranceMinutes(greatCircleKm);
+    if (greatCircleKm < 600) return Math.max(Math.round(baseTolerance * 2.2), 80);
+    if (greatCircleKm < 3000) return Math.max(Math.round(baseTolerance * 2.0), 100);
+    return Math.max(Math.round(baseTolerance * 1.8), 130);
+}
+
+function getGeoWindBufferMinutes(airborneMinutes) {
+    if (!Number.isFinite(airborneMinutes) || airborneMinutes <= 0) return 8;
+    return Math.max(8, Math.min(Math.round(airborneMinutes * 0.10), 35));
+}
+
+function getGeoParserAcceptanceBufferMinutes(estimatedDurationMinutes, greatCircleKm) {
+    const baseTolerance = getGeoDurationToleranceMinutes(greatCircleKm);
+    const lowerExtraMinutes = Math.max(
+        8,
+        Math.min(Math.round(estimatedDurationMinutes * 0.09), 22),
+        Math.round(baseTolerance * 0.35)
+    );
+    const upperExtraMinutes = Math.max(
+        20,
+        Math.min(Math.round(estimatedDurationMinutes * 0.35), 90),
+        Math.round(baseTolerance * 1.10)
+    );
+    return {
+        lowerExtraMinutes: Math.max(lowerExtraMinutes, 1),
+        upperExtraMinutes: Math.max(upperExtraMinutes, 1)
+    };
+}
+
+function getSegmentGeoDurationValidation(segment) {
+    const existingValidation = segment?.duration_validation;
+    if (existingValidation && (existingValidation.status === 'SUSPICIOUS' || existingValidation.status === 'INVALID')) {
+        return {
+            ...existingValidation,
+            warningMessage: existingValidation.warningMessage || existingValidation.warning_message || ''
+        };
+    }
+
+    const departure = segment?.departure || {};
+    const arrival = segment?.arrival || {};
+    const origin = safe(departure.airport, '').toString().trim().toUpperCase()
+        || safe(segment?.departure_airport, '').toString().trim().toUpperCase();
+    const destination = safe(arrival.airport, '').toString().trim().toUpperCase()
+        || safe(segment?.arrival_airport, '').toString().trim().toUpperCase();
+    const parsedDurationMinutes = parseDurationToMinutes(getSegmentDurationValue(segment));
+    if (!origin || !destination || parsedDurationMinutes <= 0) return null;
+
+    const greatCircleKm = getGreatCircleDistanceKm(origin, destination);
+    if (!Number.isFinite(greatCircleKm) || greatCircleKm <= 0) return null;
+
+    const routeDistanceKm = greatCircleKm * AIRPORT_GEO_ROUTE_FACTOR;
+    const estimatedSpeedKmh = getEstimatedFlightSpeedKmh(routeDistanceKm);
+    const airborneMinutes = Math.max(Math.round((routeDistanceKm / estimatedSpeedKmh) * 60), 0);
+    const estimatedDurationMinutes = Math.max(airborneMinutes + AIRPORT_GEO_OVERHEAD_MINUTES, 1);
+    const windBufferMinutes = getGeoWindBufferMinutes(airborneMinutes);
+    const windMinExpectedDurationMinutes = Math.max(estimatedDurationMinutes - windBufferMinutes, 1);
+    const windMaxExpectedDurationMinutes = estimatedDurationMinutes + windBufferMinutes;
+    const parserBuffer = getGeoParserAcceptanceBufferMinutes(estimatedDurationMinutes, greatCircleKm);
+    const minExpectedDurationMinutes = Math.max(windMinExpectedDurationMinutes - parserBuffer.lowerExtraMinutes, 1);
+    const maxExpectedDurationMinutes = windMaxExpectedDurationMinutes + parserBuffer.upperExtraMinutes;
+    const invalidToleranceMinutes = getGeoDurationInvalidToleranceMinutes(greatCircleKm);
+    const invalidMinExpectedDurationMinutes = Math.max(minExpectedDurationMinutes - invalidToleranceMinutes, 1);
+    const invalidMaxExpectedDurationMinutes = maxExpectedDurationMinutes + invalidToleranceMinutes;
+    let deltaMinutes = 0;
+    let comparisonDirection = 'within';
+    if (parsedDurationMinutes < minExpectedDurationMinutes) {
+        deltaMinutes = minExpectedDurationMinutes - parsedDurationMinutes;
+        comparisonDirection = 'lower';
+    } else if (parsedDurationMinutes > maxExpectedDurationMinutes) {
+        deltaMinutes = parsedDurationMinutes - maxExpectedDurationMinutes;
+        comparisonDirection = 'upper';
+    }
+    const deltaRatio = estimatedDurationMinutes > 0 ? (deltaMinutes / estimatedDurationMinutes) : 0;
+
+    let status = 'OK';
+    if (
+        parsedDurationMinutes < Math.max(20, Math.round(invalidMinExpectedDurationMinutes * 0.33))
+        || parsedDurationMinutes > Math.round(invalidMaxExpectedDurationMinutes * 2.75)
+        || parsedDurationMinutes < invalidMinExpectedDurationMinutes
+        || parsedDurationMinutes > invalidMaxExpectedDurationMinutes
+        || deltaRatio > 0.85
+    ) {
+        status = 'INVALID';
+    } else if (comparisonDirection !== 'within' || deltaRatio > 0.35) {
+        status = 'SUSPICIOUS';
+    }
+
+    const validation = {
+        status,
+        origin,
+        destination,
+        parsedDurationMinutes,
+        estimatedDurationMinutes,
+        wind_min_expected_duration_minutes: windMinExpectedDurationMinutes,
+        wind_max_expected_duration_minutes: windMaxExpectedDurationMinutes,
+        min_expected_duration_minutes: minExpectedDurationMinutes,
+        max_expected_duration_minutes: maxExpectedDurationMinutes,
+        greatCircleKm,
+        routeDistanceKm,
+        airborneMinutes,
+        wind_buffer_minutes: windBufferMinutes,
+        lower_parser_buffer_minutes: parserBuffer.lowerExtraMinutes,
+        upper_parser_buffer_minutes: parserBuffer.upperExtraMinutes,
+        deltaMinutes,
+        comparison_direction: comparisonDirection,
+        invalid_min_expected_duration_minutes: invalidMinExpectedDurationMinutes,
+        invalid_max_expected_duration_minutes: invalidMaxExpectedDurationMinutes
+    };
+    if (status === 'SUSPICIOUS' || status === 'INVALID') {
+        const statusLabel = status === 'INVALID' ? 'Invalid duration' : 'Unusual duration';
+        validation.warningMessage = [
+            `${statusLabel} for ${origin} -> ${destination}`,
+            `Parsed ticket duration: ${formatDurationFromMinutes(parsedDurationMinutes)}`,
+            `Estimated normal duration: about ${formatDurationFromMinutes(estimatedDurationMinutes)}`,
+            `Wind-adjusted expected range: ${formatDurationFromMinutes(windMinExpectedDurationMinutes)} to ${formatDurationFromMinutes(windMaxExpectedDurationMinutes)}`,
+            `Accepted parser range: ${formatDurationFromMinutes(minExpectedDurationMinutes)} to ${formatDurationFromMinutes(maxExpectedDurationMinutes)}`
+        ].join('\n');
+    }
+    return validation;
 }
 
 function doesSegmentDateOrderNeedWarning(segment) {
@@ -878,6 +1078,16 @@ function getSegmentWarningKey(segIdx, kind, segment) {
             break;
         case 'arrival-terminal':
             detail = `${safe(arr.terminal)}`;
+            break;
+        case 'segment-negative':
+            detail = `${safe(dep.airport)}:${safe(dep.date)}:${safe(dep.time)}:${safe(arr.airport)}:${safe(arr.date)}:${safe(arr.time)}`;
+            break;
+        case 'layover-negative':
+            detail = `${safe(dep.airport)}:${safe(dep.date)}:${safe(dep.time)}`;
+            break;
+        case 'duration':
+        case 'duration-geo':
+            detail = `${safe(dep.airport)}:${safe(dep.date)}:${safe(dep.time)}:${safe(arr.airport)}:${safe(arr.date)}:${safe(arr.time)}:${safe(duration)}`;
             break;
         default:
             detail = `${safe(dep.date)}:${safe(dep.time)}:${safe(arr.date)}:${safe(arr.time)}:${safe(duration)}`;
@@ -1179,7 +1389,31 @@ function getJourneyLayoverMap(journey) {
     return layoverMap;
 }
 
+function getLayoverRawMinutes(prevSeg, nextSeg) {
+    const prevArrival = prevSeg?.arrival || {};
+    const nextDeparture = nextSeg?.departure || {};
+    const rawMinutes = getDirectTimezoneElapsedMinutes(prevArrival, nextDeparture);
+    return Number.isFinite(rawMinutes) ? rawMinutes : null;
+}
+
+function getLayoverValidation(prevSeg, nextSeg) {
+    const rawMinutes = getLayoverRawMinutes(prevSeg, nextSeg);
+    if (!Number.isFinite(rawMinutes) || rawMinutes >= 0) return null;
+    return {
+        rawMinutes,
+        display: formatSignedDurationFromMinutes(rawMinutes),
+        warningMessage: [
+            'Invalid layover between connecting segments',
+            `Previous arrival is ${formatSignedDurationFromMinutes(rawMinutes)} after the next departure.`,
+            'The second segment looks earlier than the first segment arrival instead of a valid connection.'
+        ].join('\n')
+    };
+}
+
 function getLayoverDurationValue(prevSeg, nextSeg, journey, prevSegIdx) {
+    const invalidLayover = getLayoverValidation(prevSeg, nextSeg);
+    if (invalidLayover) return invalidLayover.display;
+
     const layoverMap = getJourneyLayoverMap(journey);
     const explicit = [
         layoverMap[prevSegIdx]?.duration,
@@ -1194,6 +1428,8 @@ function getLayoverDurationValue(prevSeg, nextSeg, journey, prevSegIdx) {
 }
 
 function getLayoverDurationMinutes(prevSeg, nextSeg, journey, prevSegIdx) {
+    const invalidLayover = getLayoverValidation(prevSeg, nextSeg);
+    if (invalidLayover) return 0;
     return parseDurationToMinutes(getLayoverDurationValue(prevSeg, nextSeg, journey, prevSegIdx));
 }
 
@@ -1357,6 +1593,7 @@ function recalculateSegmentsLocally(segments = []) {
     const adjustments = [];
 
     updatedSegments.forEach((segment, index) => {
+        delete segment.duration_validation;
         syncSegmentScheduleFields(segment);
         const durationMinutes = getElapsedMinutes(segment?.departure, segment?.arrival);
         const durationText = formatDurationFromMinutes(durationMinutes) || getSegmentDurationValue(segment) || 'N/A';
@@ -1403,6 +1640,44 @@ async function refreshEditedSegmentDerivedData() {
         console.error('Segment timing recalculation failed, using local fallback', error);
         return recalculateSegmentsLocally(segmentsPayload);
     }
+}
+
+function getSegmentTimingWarningKeys(segIdx, segment) {
+    if (!Number.isInteger(segIdx) || !segment || typeof segment !== 'object') return [];
+    return ['duration', 'duration-geo', 'date-order', 'day-offset', 'segment-negative', 'layover-negative']
+        .map((kind) => getSegmentWarningKey(segIdx, kind, segment))
+        .filter(Boolean);
+}
+
+function clearSegmentTimingWarnings(segIdx, ...segments) {
+    segments.forEach((segment) => {
+        getSegmentTimingWarningKeys(segIdx, segment).forEach(clearDismissedWarning);
+    });
+}
+
+async function recomputeEditedSegmentsDerivedData() {
+    const recalculated = await refreshEditedSegmentDerivedData();
+    if (Array.isArray(recalculated?.segments)) {
+        editedData.segments = recalculated.segments;
+    }
+    if (!editedData.journey) editedData.journey = {};
+    editedData.journey.layovers = Array.isArray(recalculated?.layovers) ? recalculated.layovers : [];
+    syncJourneyDerivedDurations();
+    return recalculated;
+}
+
+function getEditableSegmentSnapshot(segIdx) {
+    if (!Number.isInteger(segIdx) || segIdx < 0) return null;
+    return JSON.parse(JSON.stringify(editedData?.segments?.[segIdx] || null));
+}
+
+function clearScheduleAffectedWarnings(segIdx, beforeSnapshots = [], afterSnapshots = []) {
+    const indices = [segIdx - 1, segIdx, segIdx + 1].filter((value) => Number.isInteger(value) && value >= 0);
+    indices.forEach((targetIdx) => {
+        const beforeSegment = beforeSnapshots[targetIdx];
+        const afterSegment = afterSnapshots[targetIdx] ?? editedData?.segments?.[targetIdx];
+        clearSegmentTimingWarnings(targetIdx, beforeSegment, afterSegment);
+    });
 }
 
 function hydrateUnreadTicketsFromCache() {
@@ -1612,12 +1887,21 @@ function escapeHtmlAttribute(value) {
         .replace(/>/g, '&gt;');
 }
 
+function renderWarningTextBlock(value) {
+    return String(value || '')
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => `<div style="margin-bottom:0.35rem;">${escapeHtmlAttribute(line)}</div>`)
+        .join('');
+}
+
 function buildWarningBadge(warningKey, message) {
     const safeKey = JSON.stringify(String(warningKey || ''));
     const payload = parseWarningPayload(message);
     const serializedMessage = typeof message === 'string' ? message : JSON.stringify(payload);
     const safeMessage = JSON.stringify(String(serializedMessage || ''));
-    const title = escapeHtmlAttribute(payload.text || serializedMessage);
+    const title = escapeHtmlAttribute(String(payload.text || serializedMessage).replace(/\s*\n+\s*/g, ' | '));
     return `<button type="button" class="field-warning-badge" title="${title}" onclick='event.stopPropagation(); openWarningReviewModal(${safeKey}, ${safeMessage})'>&#9888;</button>`;
 }
 
@@ -4205,13 +4489,18 @@ function renderSegmentsSection() {
             const departureLocationValidation = getAirportCityValidation(dep);
             const arrivalLocationValidation = getAirportCityValidation(arr);
             const duration = getSegmentDurationValue(seg);
-            const hasDurationWarning = doesSegmentDurationNeedWarning(seg);
+            const segmentTemporalValidation = getSegmentTemporalValidation(seg);
+            const geoDurationValidation = getSegmentGeoDurationValidation(seg);
+            const geoDurationWarningMessage = geoDurationValidation?.warningMessage || '';
+            const hasGeoDurationWarning = !!geoDurationWarningMessage;
+            const hasFallbackDurationWarning = !hasGeoDurationWarning && doesSegmentDurationNeedWarning(seg);
+            const hasDurationWarning = hasGeoDurationWarning || hasFallbackDurationWarning;
             const hasDateOrderWarning = doesSegmentDateOrderNeedWarning(seg);
             const overnightDateAdjustment = inferOvernightArrivalAdjustment(seg);
             const hasOvernightDateWarning = !!overnightDateAdjustment;
             const flightNumberWarningMessage = getFlightNumberWarningMessage(seg);
             const hasAirlineCodeWarning = !!flightNumberWarningMessage;
-            const durationWarningKey = getSegmentWarningKey(segIdx, 'duration', seg);
+            const durationWarningKey = getSegmentWarningKey(segIdx, hasGeoDurationWarning ? 'duration-geo' : 'duration', seg);
             const dateOrderWarningKey = getSegmentWarningKey(segIdx, 'date-order', seg);
             const overnightDateWarningKey = getSegmentWarningKey(segIdx, 'day-offset', seg);
             const airlineCodeWarningKey = getSegmentWarningKey(segIdx, 'flight-number', seg);
@@ -4221,9 +4510,12 @@ function renderSegmentsSection() {
             const arrivalCityWarningKey = getSegmentWarningKey(segIdx, 'arrival-city', seg);
             const departureTerminalWarningKey = getSegmentWarningKey(segIdx, 'departure-terminal', seg);
             const arrivalTerminalWarningKey = getSegmentWarningKey(segIdx, 'arrival-terminal', seg);
+            const segmentNegativeWarningKey = getSegmentWarningKey(segIdx, 'segment-negative', seg);
+            const layoverNegativeWarningKey = getSegmentWarningKey(segIdx, 'layover-negative', seg);
             const showDurationWarning = hasDurationWarning && !isWarningDismissed(durationWarningKey);
             const showDateOrderWarning = hasDateOrderWarning && !isWarningDismissed(dateOrderWarningKey);
             const showOvernightDateWarning = hasOvernightDateWarning && !isWarningDismissed(overnightDateWarningKey);
+            const showSegmentNegativeWarning = !!segmentTemporalValidation && !isWarningDismissed(segmentNegativeWarningKey);
             const showAirlineCodeWarning = hasAirlineCodeWarning && !isWarningDismissed(airlineCodeWarningKey);
             const showDepartureAirportWarning = !!departureLocationValidation.airportMessage && !isWarningDismissed(departureAirportWarningKey);
             const showArrivalAirportWarning = !!arrivalLocationValidation.airportMessage && !isWarningDismissed(arrivalAirportWarningKey);
@@ -4231,11 +4523,13 @@ function renderSegmentsSection() {
             const showArrivalCityWarning = !!arrivalLocationValidation.cityMessage && !isWarningDismissed(arrivalCityWarningKey);
             const showDepartureTerminalWarning = doesTerminalNeedConfirmation(dep.terminal) && !isWarningDismissed(departureTerminalWarningKey);
             const showArrivalTerminalWarning = doesTerminalNeedConfirmation(arr.terminal) && !isWarningDismissed(arrivalTerminalWarningKey);
-            const hasTimingWarning = showDurationWarning || showDateOrderWarning || showOvernightDateWarning;
+            const hasTimingWarning = showDurationWarning || showDateOrderWarning || showOvernightDateWarning || showSegmentNegativeWarning;
             const warningMessages = [];
             const warningKeys = [];
             if (showDurationWarning) {
-                warningMessages.push(createWarningPayload('Flight duration looks unusual: less than 30 minutes or more than 20 hours'));
+                warningMessages.push(createWarningPayload(
+                    geoDurationWarningMessage || 'Flight duration looks unusual: less than 30 minutes or more than 20 hours'
+                ));
                 warningKeys.push(durationWarningKey);
             }
             if (showDateOrderWarning) {
@@ -4256,6 +4550,10 @@ function renderSegmentsSection() {
                     }
                 ));
                 warningKeys.push(overnightDateWarningKey);
+            }
+            if (showSegmentNegativeWarning) {
+                warningMessages.push(createWarningPayload(segmentTemporalValidation.warningMessage));
+                warningKeys.push(segmentNegativeWarningKey);
             }
             const durationWarningBadge = hasTimingWarning
                 ? buildWarningBadge(warningKeys.join('||'), combineWarningPayloads(warningMessages))
@@ -4345,8 +4643,14 @@ function renderSegmentsSection() {
                 const prevSeg = segments[prevSegIdx] || {};
                 const lo = layoverMap[prevSegIdx];
                 const layoverDur = getLayoverDurationValue(prevSeg, seg, journey, prevSegIdx);
+                const layoverValidation = getLayoverValidation(prevSeg, seg);
                 const layoverCity = lo ? lo.at_airport : (dep.city || dep.airport || '');
-                html += `<div class="layover-indicator-v2"><div class="layover-line-v2"></div><div class="layover-info-v2"><span class="layover-text">Layover${layoverDur && layoverDur !== 'N/A' ? ' <strong>' + layoverDur + '</strong>' : ''} at <strong>${layoverCity}</strong></span></div><div class="layover-line-v2"></div></div>`;
+                const showLayoverWarning = !!layoverValidation && !isWarningDismissed(layoverNegativeWarningKey);
+                const layoverWarningBadge = showLayoverWarning
+                    ? buildWarningBadge(layoverNegativeWarningKey, layoverValidation.warningMessage)
+                    : '';
+                const layoverStyle = showLayoverWarning ? 'color:#dc2626; font-weight:800;' : '';
+                html += `<div class="layover-indicator-v2"><div class="layover-line-v2"></div><div class="layover-info-v2"><span class="layover-text" style="${layoverStyle}">Layover${layoverDur && layoverDur !== 'N/A' ? ' <strong>' + layoverDur + '</strong>' : ''} at <strong>${layoverCity}</strong>${showLayoverWarning ? layoverWarningBadge : ''}</span></div><div class="layover-line-v2"></div></div>`;
             }
             const bkClassStr = getSegmentBookingClassValue(seg);
             const showCabinClass = !!bkClassStr;
@@ -4400,11 +4704,14 @@ function renderSegmentsSection() {
             const arrTerminalHtml = isEditingSegment
                 ? `<div style="display:flex; flex-direction:column; align-items:flex-start; margin-top:0.35rem;"><input class="tl-terminal tl-terminal-input" style="${inlineInputStyle}; width:110px; font-size:0.72rem; font-weight:700; ${showArrivalTerminalWarning ? 'color:#dc2626; border-color:rgba(220,38,38,0.45); box-shadow:0 0 0 2px rgba(220,38,38,0.08);' : ''}" id="seg-arr-term-${segIdx}" placeholder="Terminal" value="${safe(arr.terminal)}">${arrivalTerminalWarningBadge}</div>`
                 : `${formatTerminalDisplay(arr.terminal) ? `<div style="display:flex; flex-direction:column; align-items:flex-start; margin-top:0.35rem;"><span class="tl-terminal" style="${showArrivalTerminalWarning ? 'color:#dc2626; font-weight:800;' : ''}">${safe(formatTerminalDisplay(arr.terminal))}</span>${arrivalTerminalWarningBadge}</div>` : ''}`;
-            const durationDisplay = hasDurationWarning && !showDateOrderWarning && !showOvernightDateWarning
-                ? duration
-                : (hasTimingWarning ? '' : duration);
+            const durationDisplay = showSegmentNegativeWarning
+                ? segmentTemporalValidation.display
+                : (hasDurationWarning && !showDateOrderWarning && !showOvernightDateWarning
+                    ? duration
+                    : (hasTimingWarning ? '' : duration));
+            const durationInputValue = showSegmentNegativeWarning ? segmentTemporalValidation.display : duration;
             const durationHtml = isEditingSegment
-                ? `<div style="position:absolute; top:-30px; left:50%; transform:translateX(-50%); z-index:3; display:flex; align-items:center; gap:0.35rem;"><input style="${inlineInputStyle}; width:98px; text-align:center; font-size:0.72rem; background:var(--bg-card); color:${hasTimingWarning ? '#dc2626' : 'var(--text-primary)'}; border-color:${hasTimingWarning ? 'rgba(220,38,38,0.4)' : 'var(--border)'};" id="seg-duration-${segIdx}" value="${safe(duration)}">${durationWarningBadge}</div>`
+                ? `<div style="position:absolute; top:-30px; left:50%; transform:translateX(-50%); z-index:3; display:flex; align-items:center; gap:0.35rem;"><input style="${inlineInputStyle}; width:98px; text-align:center; font-size:0.72rem; background:var(--bg-card); color:${hasTimingWarning ? '#dc2626' : 'var(--text-primary)'}; border-color:${hasTimingWarning ? 'rgba(220,38,38,0.4)' : 'var(--border)'};" id="seg-duration-${segIdx}" value="${safe(durationInputValue)}">${durationWarningBadge}</div>`
                 : `${hasTimingWarning || durationDisplay ? `<span class="timeline-duration" style="${hasTimingWarning ? 'color:#dc2626; font-weight:800; display:inline-flex; align-items:center; gap:0.35rem;' : 'display:inline-flex; align-items:center; gap:0.35rem;'}">${durationDisplay}${hasTimingWarning ? durationWarningBadge : ''}</span>` : ''}`;
 
             html += `<div class="${segmentCardClass}" style="${seg.status === 'cancelled' ? 'opacity:0.85; border-left:6px solid #ef4444; background:rgba(239,68,68,0.08); box-shadow: inset 0 0 10px rgba(239,68,68,0.1);' : ''}">
@@ -5474,6 +5781,11 @@ function toggleCustomCabinClassField(segIdx, selectedValue) {
 async function saveSegmentEdit(idx) {
     const seg = editedData.segments[idx];
     const originalSegment = JSON.parse(JSON.stringify(seg || {}));
+    const beforeSnapshots = {
+        [idx - 1]: getEditableSegmentSnapshot(idx - 1),
+        [idx]: JSON.parse(JSON.stringify(seg || {})),
+        [idx + 1]: getEditableSegmentSnapshot(idx + 1)
+    };
     const getValue = (id) => document.getElementById(`${id}-${idx}`)?.value || '';
 
     seg.airline = getValue('seg-airline').trim();
@@ -5502,16 +5814,16 @@ async function saveSegmentEdit(idx) {
 
     const editedDuration = getValue('seg-duration');
     if (didSegmentScheduleChange(originalSegment, seg)) {
-        const recalculated = await refreshEditedSegmentDerivedData();
-        if (Array.isArray(recalculated?.segments)) {
-            editedData.segments = recalculated.segments;
-        }
-        if (!editedData.journey) editedData.journey = {};
-        editedData.journey.layovers = Array.isArray(recalculated?.layovers) ? recalculated.layovers : [];
+        clearScheduleAffectedWarnings(idx, beforeSnapshots, { [idx]: seg });
+        await recomputeEditedSegmentsDerivedData();
+        clearScheduleAffectedWarnings(idx, beforeSnapshots);
     } else {
+        clearSegmentTimingWarnings(idx, originalSegment);
         seg.duration_calculated = editedDuration;
         seg.duration = editedDuration;
         seg.duration_extracted = editedDuration;
+        delete seg.duration_validation;
+        clearSegmentTimingWarnings(idx, seg);
     }
 
     syncJourneyDerivedDurations();
@@ -5765,6 +6077,7 @@ function getPersistableSegments(segments = []) {
         const clean = JSON.parse(JSON.stringify(segment || {}));
         delete clean.barcode_data;
         delete clean.barcode_image;
+        delete clean.duration_validation;
         return syncSegmentScheduleFields(clean);
     });
 }
@@ -6059,7 +6372,7 @@ function _closeModal() {
     if (m) m.remove();
 }
 
-function applyWarningSuggestion(warningKey, suggestion) {
+async function applyWarningSuggestion(warningKey, suggestion) {
     if (typeof suggestion === 'string') {
         try {
             suggestion = JSON.parse(suggestion);
@@ -6095,7 +6408,18 @@ function applyWarningSuggestion(warningKey, suggestion) {
         if (!editedData.segments || !editedData.segments[segIdx]) return;
         if (!editedData.segments[segIdx][field]) editedData.segments[segIdx][field] = {};
 
+        const beforeSnapshots = {
+            [segIdx - 1]: getEditableSegmentSnapshot(segIdx - 1),
+            [segIdx]: getEditableSegmentSnapshot(segIdx),
+            [segIdx + 1]: getEditableSegmentSnapshot(segIdx + 1)
+        };
+        const originalSegment = JSON.parse(JSON.stringify(editedData.segments[segIdx] || {}));
         editedData.segments[segIdx][field].airport = nextValue;
+        syncSegmentScheduleFields(editedData.segments[segIdx]);
+        delete editedData.segments[segIdx].duration_validation;
+        clearScheduleAffectedWarnings(segIdx, beforeSnapshots, { [segIdx]: editedData.segments[segIdx] });
+        await recomputeEditedSegmentsDerivedData();
+        clearScheduleAffectedWarnings(segIdx, beforeSnapshots);
         clearDismissedWarning(warningKey);
         _closeModal();
         renderDetailView();
@@ -6109,12 +6433,18 @@ function applyWarningSuggestion(warningKey, suggestion) {
         if (!editedData.segments || !editedData.segments[segIdx]) return;
         if (!editedData.segments[segIdx].arrival) editedData.segments[segIdx].arrival = {};
 
+        const beforeSnapshots = {
+            [segIdx - 1]: getEditableSegmentSnapshot(segIdx - 1),
+            [segIdx]: getEditableSegmentSnapshot(segIdx),
+            [segIdx + 1]: getEditableSegmentSnapshot(segIdx + 1)
+        };
+        const originalSegment = JSON.parse(JSON.stringify(editedData.segments[segIdx] || {}));
         editedData.segments[segIdx].arrival.date = nextValue;
-        const recalculated = recalculateSegmentsLocally(editedData.segments);
-        editedData.segments = recalculated.segments;
-        if (!editedData.journey) editedData.journey = {};
-        editedData.journey.layovers = Array.isArray(recalculated.layovers) ? recalculated.layovers : [];
-        syncJourneyDerivedDurations();
+        syncSegmentScheduleFields(editedData.segments[segIdx]);
+        delete editedData.segments[segIdx].duration_validation;
+        clearScheduleAffectedWarnings(segIdx, beforeSnapshots, { [segIdx]: editedData.segments[segIdx] });
+        await recomputeEditedSegmentsDerivedData();
+        clearScheduleAffectedWarnings(segIdx, beforeSnapshots);
         clearDismissedWarnings(warningKey);
         _closeModal();
         renderDetailView();
@@ -6385,11 +6715,11 @@ function openWarningReviewModal(warningKey, warningMessage) {
                 <div style="font-weight:800; font-size:1rem; color:var(--text-primary);">Warning Check</div>
             </div>
             <div style="color:var(--text-secondary); font-size:0.92rem; line-height:1.5; margin-bottom:1rem;">
-                ${escapeHtmlAttribute(payload.text)}
+                ${renderWarningTextBlock(payload.text)}
             </div>
             ${payload.suggestionText ? `
             <div style="color:var(--text-primary); font-size:0.92rem; font-weight:600; line-height:1.5; margin-bottom:0.75rem;">
-                ${escapeHtmlAttribute(payload.suggestionText)}
+                ${renderWarningTextBlock(payload.suggestionText)}
             </div>` : ''}
             ${suggestion?.label ? `
             <div style="display:flex; justify-content:flex-start; margin-bottom:1rem;">

@@ -4,7 +4,7 @@
 AIRPORT_CODES = {
     # ===== INDIA (Major hubs first) =====
     "DEL": "Delhi", "BOM": "Mumbai", "NMI": "Navi Mumbai", "BLR": "Bengaluru", "MAA": "Chennai", "CCU": "Kolkata",
-    "HYD": "Hyderabad", "AMD": "Ahmedabad", "PNQ": "Pune", "COK": "Kochi", "GOI": "Goa", "VTZ": "Vishakhapatnam",
+    "HYD": "Hyderabad", "AMD": "Ahmedabad", "PNQ": "Pune", "COK": "Kochi", "CCJ": "Kozhikode", "GOI": "Goa", "VTZ": "Vishakhapatnam",
     "JAI": "Jaipur", "TRV": "Thiruvananthapuram", "GAU": "Guwahati", "LKO": "Lucknow",
     "NAG": "Nagpur", "IXC": "Chandigarh", "VNS": "Varanasi", "PAT": "Patna", "BBI": "Bhubaneshwar",
     "IXB": "Bagdogra", "IXR": "Ranchi", "IDR": "Indore", "RPR": "Raipur", "VGA": "Vijayawada",
@@ -66,7 +66,7 @@ AIRPORT_CODES = {
     "ZAG": "Zagreb", "LJU": "Ljubljana", "SPU": "Split", "DBV": "Dubrovnik",
     "SNN": "Shannon", "ORK": "Cork", "BFS": "Belfast", "GDN": "Gdansk", "KTW": "Katowice",
     "WRO": "Wroclaw", "POZ": "Poznan", "CLJ": "Cluj-Napoca", "IAS": "Iasi",
-    "BTS": "Bratislava", "MLH": "Mulhouse", "TLS": "Toulouse", "LYS": "Lyon",
+    "BTS": "Bratislava", "MLH": "Mulhouse", "TLS": "Toulouse", "LYS": "Lyon", "NVS": "Nevers",
     "MRS": "Marseille", "BOD": "Bordeaux", "NTE": "Nantes", "BRE": "Bremen",
     "HAJ": "Hanover", "NUE": "Nuremberg", "LEJ": "Leipzig", "DRS": "Dresden",
     "FMM": "Memmingen", "SCQ": "Santiago de Compostela", "SVQ": "Seville", "VLC": "Valencia",
@@ -613,7 +613,7 @@ AIRPORT_TZ_MAP = {
     "LHR": "Europe/London", "LGW": "Europe/London", "STN": "Europe/London", "LTN": "Europe/London",
     "LCY": "Europe/London", "MAN": "Europe/London", "EDI": "Europe/London", "BHX": "Europe/London",
     "GLA": "Europe/London", "BFS": "Europe/Belfast", "CDG": "Europe/Paris", "ORY": "Europe/Paris",
-    "NCE": "Europe/Paris", "LYS": "Europe/Paris", "MRS": "Europe/Paris", "TLS": "Europe/Paris",
+    "NCE": "Europe/Paris", "LYS": "Europe/Paris", "MRS": "Europe/Paris", "TLS": "Europe/Paris", "NVS": "Europe/Paris",
     "BOD": "Europe/Paris", "NTE": "Europe/Paris", "MLH": "Europe/Paris", "BSL": "Europe/Paris",
     "FRA": "Europe/Berlin", "MUC": "Europe/Berlin", "DUS": "Europe/Berlin", "HAM": "Europe/Berlin",
     "BER": "Europe/Berlin", "STR": "Europe/Berlin", "CGN": "Europe/Berlin", "BRE": "Europe/Berlin",
@@ -799,6 +799,11 @@ AIRPORT_TZ_MAP = {
     "ISU": "Asia/Baghdad",
 }
 
+try:
+    from airport_geo_data import AIRPORT_GEO
+except Exception:
+    AIRPORT_GEO = {}
+
 # Helper function to get airport name
 def get_airport_name(code):
     """Get airport name from code"""
@@ -813,6 +818,15 @@ def get_airline_name(code):
 def get_airport_timezone(code):
     """Get IANA timezone for airport"""
     return AIRPORT_TZ_MAP.get(code.upper(), "UTC")
+
+
+def get_airport_geo(code):
+    """Get airport latitude/longitude tuple from generated geo mappings."""
+    airport_code = str(code or "").strip().upper()
+    coords = AIRPORT_GEO.get(airport_code)
+    if not coords or len(coords) != 2:
+        return None
+    return float(coords[0]), float(coords[1])
 
 # Search function for airport code
 def search_airport_code(code):

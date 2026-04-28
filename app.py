@@ -34,7 +34,8 @@ from collections import OrderedDict
 from copy import deepcopy
 from urllib.parse import urlparse
 from werkzeug.utils import secure_filename
-from mappings import AIRLINE_CODES, AIRPORT_CODES, AIRPORT_TZ_MAP
+from flight_duration_validator import annotate_segments_with_duration_warnings
+from mappings import AIRLINE_CODES, AIRPORT_CODES, AIRPORT_TZ_MAP, AIRPORT_GEO
 
 import pytesseract
 try:
@@ -52,6 +53,18 @@ except Exception:
 
 load_dotenv()
 app = Flask(__name__)
+
+
+def _annotate_segment_duration_warnings(segments, clone=True):
+    try:
+        return annotate_segments_with_duration_warnings(
+            segments,
+            logger=app.logger,
+            clone=clone,
+        )
+    except Exception:
+        app.logger.exception("Failed to annotate segment duration warnings")
+        return _clone_json(segments) if clone else (segments or [])
 
 def _resolve_database_uri():
     database_url = (os.getenv("DATABASE_URL") or "").strip()
@@ -1472,6 +1485,7 @@ def _sanitize_segments_for_storage(segments):
         if isinstance(segment_copy, dict):
             segment_copy.pop("barcode_data", None)
             segment_copy.pop("barcode_image", None)
+            segment_copy.pop("duration_validation", None)
             _sync_segment_schedule_fields(segment_copy)
         cleaned_segments.append(segment_copy)
     return cleaned_segments
@@ -1871,6 +1885,7 @@ def _ticket_dict_with_children(ticket, include_barcodes=True):
     _ensure_passenger_internal_ids(passengers)
     if include_barcodes:
         segments = _segments_with_barcodes(ticket, passengers, segments, raw)
+    segments = _annotate_segment_duration_warnings(segments, clone=False)
     return {
         "id": ticket.id,
         "created_at": ticket.created_at.isoformat(),
@@ -2881,6 +2896,7 @@ def _recalculate_segment_timing_data(segments):
         seg["accumulated_arr_days"] = current_cumulative_days
         _sync_segment_schedule_fields(seg)
 
+    recalculated_segments = _annotate_segment_duration_warnings(recalculated_segments, clone=False)
     return {
         "segments": recalculated_segments,
         "layovers": layovers,
@@ -2890,10 +2906,9 @@ def _recalculate_segment_timing_data(segments):
 
 def _prepare_pdf_schedule_snapshot(segments, journey=None):
     prepared_segments = _sanitize_segments_for_storage(segments or [])
-    recalculated = _recalculate_segment_timing_data(prepared_segments)
-    prepared_segments = recalculated.get("segments") or prepared_segments
     prepared_journey = _clone_json(journey or {})
-    prepared_journey["layovers"] = recalculated.get("layovers") or []
+    for segment in prepared_segments:
+        _sync_segment_schedule_fields(segment)
 
     existing_legs = prepared_journey.get("legs") if isinstance(prepared_journey.get("legs"), list) else []
     grouped_legs = _build_legs_from_data(prepared_segments, prepared_journey)
@@ -3489,6 +3504,7 @@ def tickets_page():
         'tickets.html',
         airline_codes=AIRLINE_CODES,
         airport_codes=AIRPORT_CODES,
+        airport_geo_map=AIRPORT_GEO,
         airport_tz_map=AIRPORT_TZ_MAP,
     )
 

@@ -77,13 +77,23 @@
         }
 
         @keyframes grid-move {
-            from { background-position: 0 0; }
-            to { background-position: 400px 400px; }
+            from {
+                background-position: 0 0;
+            }
+
+            to {
+                background-position: 400px 400px;
+            }
         }
 
         @keyframes scanline {
-            from { background-position: 0 0; }
-            to { background-position: 0 100%; }
+            from {
+                background-position: 0 0;
+            }
+
+            to {
+                background-position: 0 100%;
+            }
         }
 
         .app-header .header-content {
@@ -150,7 +160,7 @@
             z-index: 100;
             position: relative;
         }
-        
+
         .app-header .menu-toggle:hover {
             background: rgba(255, 255, 255, 0.25);
             transform: scale(1.05);
@@ -165,9 +175,18 @@
         }
 
         @media (max-width: 600px) {
-            .brand-name { font-size: 1.2rem; }
-            .brand-sub { font-size: 0.6rem; letter-spacing: 0.08em; }
-            .app-header { padding: 1rem; }
+            .brand-name {
+                font-size: 1.2rem;
+            }
+
+            .brand-sub {
+                font-size: 0.6rem;
+                letter-spacing: 0.08em;
+            }
+
+            .app-header {
+                padding: 1rem;
+            }
         }
 
         .tab {
@@ -197,6 +216,7 @@
             color: white;
             border-color: var(--primary);
         }
+
         /* ===== DARK MODE FORCED COLORS (BACKGROUND ONLY) ===== */
         [data-theme="dark"] {
             --bg-main: transparent !important;
@@ -327,8 +347,9 @@
             letter-spacing: 2px;
             text-transform: uppercase;
             z-index: 10;
-            box-shadow: inset 0 -2px 4px rgba(0,0,0,0.05);
-            border-radius: 13px 13px 0 0; /* Matches card radius minus border */
+            box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.05);
+            border-radius: 13px 13px 0 0;
+            /* Matches card radius minus border */
         }
 
         .itin-card.ticket-unread .itin-card-body {
@@ -395,7 +416,7 @@
             transition: all 0.2s ease;
         }
 
-        .ticket-select-toggle input:checked + span {
+        .ticket-select-toggle input:checked+span {
             border-color: #2563eb;
             background: #2563eb;
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
@@ -2005,7 +2026,8 @@
             }
 
             .field-item {
-                min-width: 0; /* Allow items to shrink */
+                min-width: 0;
+                /* Allow items to shrink */
             }
 
             .field-item label {
@@ -2015,7 +2037,8 @@
                 text-overflow: ellipsis;
             }
 
-            .field-item input, .field-item select {
+            .field-item input,
+            .field-item select {
                 font-size: 0.78rem !important;
                 padding: 0.35rem 0.5rem !important;
                 width: 100%;
@@ -2034,7 +2057,7 @@
                 justify-content: space-between;
                 margin-top: 0.4rem;
                 padding-top: 0.4rem;
-                border-top: 1px dashed rgba(0,0,0,0.1);
+                border-top: 1px dashed rgba(0, 0, 0, 0.1);
             }
 
             .leg-segments-v2 {
@@ -2072,13 +2095,15 @@
 
             .timeline-point {
                 flex: 0 0 auto !important;
-                width: 42% !important; /* Limit width of both points */
+                width: 42% !important;
+                /* Limit width of both points */
                 min-width: 0;
             }
 
             .timeline-point.arr {
                 justify-content: flex-end !important;
-                padding-left: 0.5rem; /* Add breathing room from connector */
+                padding-left: 0.5rem;
+                /* Add breathing room from connector */
             }
 
             .timeline-point.dep {
@@ -2087,7 +2112,8 @@
             }
 
             .timeline-connector {
-                flex: 1 !important; /* Allow connector to fill the center space */
+                flex: 1 !important;
+                /* Allow connector to fill the center space */
                 min-width: 30px;
                 max-width: 60px;
                 position: relative;
@@ -2541,7 +2567,8 @@
             font-size: 0.76rem;
         }
 
-        .vs-table th, .vs-table td {
+        .vs-table th,
+        .vs-table td {
             padding: 0.4rem 0.6rem;
             text-align: left;
             border-bottom: 1px solid #f1f5f9;
@@ -2565,7 +2592,7 @@
             color: var(--text-primary);
             font-weight: 700;
             width: calc(50% - 45px);
-            background: rgba(37,99,235,0.02);
+            background: rgba(37, 99, 235, 0.02);
         }
 
         .vs-val-match {
@@ -2628,6 +2655,7 @@
                 transform: translateY(0);
             }
         }
+
         /* Empty state override */
         [data-theme="dark"] .empty-state {
             background: #ffffff !important;
@@ -2635,12 +2663,11 @@
             border: 1px solid #e2e8f0 !important;
             box-shadow: rgba(15, 23, 42, 0.08) !important;
         }
-
     </style>
 </head>
 
 <body>
-  {% include 'components/sidebar.html' %}
+    {% include 'components/sidebar.html' %}
 
     <!-- Top Header -->
     <header class="app-header">
@@ -2680,7 +2707,11 @@
                 </div>
                 <div class="search-toolbar">
                     <div class="search-wrapper">
-                        <span class="search-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+                        <span class="search-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="11" cy="11" r="8" />
+                                <path d="m21 21-4.3-4.3" />
+                            </svg></span>
                         <input type="text" id="ticketSearch" class="search-input"
                             placeholder="Search tickets by PNR, passenger, route, city..."
                             oninput="renderTicketCards()">
@@ -2704,31 +2735,61 @@
                 <div id="notifPanel" style="display:none;"></div>
                 <div class="filter-bar">
                     <button class="tab active" onclick="filterTickets('all', this)">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> All
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                            <line x1="8" y1="6" x2="21" y2="6" />
+                            <line x1="8" y1="12" x2="21" y2="12" />
+                            <line x1="8" y1="18" x2="21" y2="18" />
+                            <line x1="3" y1="6" x2="3.01" y2="6" />
+                            <line x1="3" y1="12" x2="3.01" y2="12" />
+                            <line x1="3" y1="18" x2="3.01" y2="18" />
+                        </svg> All
                     </button>
                     <button class="tab" onclick="filterTickets('matched', this)">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Matched
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                            <polyline points="22 4 12 14.01 9 11.01" />
+                        </svg> Matched
                     </button>
                     <button class="tab" onclick="filterTickets('unmatched', this)">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Unmatched
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="12" y1="8" x2="12" y2="12" />
+                            <line x1="12" y1="16" x2="12.01" y2="16" />
+                        </svg> Unmatched
                     </button>
                     <button class="tab" onclick="switchToMergedView(this)">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg> Merged
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                            <path d="m7.5 4.27 9 5.15" />
+                            <path
+                                d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+                            <path d="m3.3 7 8.7 5 8.7-5" />
+                            <path d="M12 22V12" />
+                        </svg> Merged
                     </button>
                 </div>
                 <div class="ticket-toolbar-row">
                     <div class="ticket-selection-toolbar">
                         <button class="btn-action secondary" onclick="markAllTicketsSeen()">Mark All Seen</button>
-                        <button class="btn-action secondary" id="toggleAllTicketSelectionBtn" onclick="toggleTicketSelectionMode()">Select</button>
-                        <button class="btn-action secondary btn-icon" id="closeTicketSelectionBtn" onclick="closeTicketSelectionMode()" style="display:none;" aria-label="Close selection mode">&times;</button>
+                        <button class="btn-action secondary" id="toggleAllTicketSelectionBtn"
+                            onclick="toggleTicketSelectionMode()">Select</button>
+                        <button class="btn-action secondary btn-icon" id="closeTicketSelectionBtn"
+                            onclick="closeTicketSelectionMode()" style="display:none;"
+                            aria-label="Close selection mode">&times;</button>
                     </div>
                 </div>
                 <div class="ticket-selection-secondary">
                     <div id="ticketSelectionSummary" class="ticket-selection-summary" style="display:none;"></div>
                     <div class="ticket-selection-actions">
-                        <button class="btn-action secondary" id="markSelectedSeenBtn" onclick="markSelectedTicketsSeen()" disabled style="display:none;">Seen</button>
-                        <button class="btn-action secondary" id="markSelectedUnreadBtn" onclick="markSelectedTicketsUnread()" disabled style="display:none;">Unread</button>
-                        <button class="btn-action danger" id="deleteSelectedTicketsBtn" onclick="deleteSelectedTickets()" disabled style="display:none;">Delete</button>
+                        <button class="btn-action secondary" id="markSelectedSeenBtn"
+                            onclick="markSelectedTicketsSeen()" disabled style="display:none;">Seen</button>
+                        <button class="btn-action secondary" id="markSelectedUnreadBtn"
+                            onclick="markSelectedTicketsUnread()" disabled style="display:none;">Unread</button>
+                        <button class="btn-action danger" id="deleteSelectedTicketsBtn"
+                            onclick="deleteSelectedTickets()" disabled style="display:none;">Delete</button>
                     </div>
                 </div>
             </div>
@@ -2754,16 +2815,13 @@
     </div>
 
     <div id="tsparticles" style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:-10;"></div>
-<script>
-    window.AIRLINE_CODE_MAP = {{ airline_codes|tojson }};
-    window.AIRPORT_CODE_MAP = {{ airport_codes|tojson }};
-    window.AIRPORT_TZ_MAP = {{ airport_tz_map|tojson }};
-</script>
-<script src="{{ url_for('static', filename='tickets.js') }}?v=20260422a"></script>
+    <script>
+        window.AIRLINE_CODE_MAP = {{ airline_codes | tojson }};
+        window.AIRPORT_CODE_MAP = {{ airport_codes | tojson }};
+        window.AIRPORT_GEO_MAP = {{ airport_geo_map | tojson }};
+        window.AIRPORT_TZ_MAP = {{ airport_tz_map | tojson }};
+    </script>
+    <script src="{{ url_for('static', filename='tickets.js') }}?v=20260427a"></script>
 </body>
 
 </html>
-
-
-
-

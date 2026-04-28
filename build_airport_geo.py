@@ -1,0 +1,194 @@
+import argparse
+import csv
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+import requests
+
+from mappings import AIRPORT_CODES
+
+
+SOURCE_URL = "https://raw.githubusercontent.com/davidmegginson/ourairports-data/main/airports.csv"
+ROOT_DIR = Path(__file__).resolve().parent
+CACHE_DIR = ROOT_DIR / "instance" / "airport_geo_cache"
+CACHE_CSV_PATH = CACHE_DIR / "ourairports_airports.csv"
+CACHE_JSON_PATH = CACHE_DIR / "airport_geo_cache.json"
+OUTPUT_MODULE_PATH = ROOT_DIR / "airport_geo_data.py"
+MANUAL_CODE_ALIASES = {
+    "DBG": "DBR",
+}
+
+TYPE_PRIORITY = {
+    "large_airport": 50,
+    "medium_airport": 40,
+    "small_airport": 20,
+    "seaplane_base": 10,
+    "heliport": 5,
+    "closed_airport": 0,
+}
+
+
+def download_dataset(source_url, destination):
+    response = requests.get(source_url, timeout=60)
+    response.raise_for_status()
+    destination.write_bytes(response.content)
+
+
+def airport_candidate_score(row):
+    scheduled_service = 20 if str(row.get("scheduled_service") or "").strip().lower() == "yes" else 0
+    airport_type = TYPE_PRIORITY.get(str(row.get("type") or "").strip().lower(), 0)
+    has_keywords = 2 if row.get("keywords") else 0
+    has_municipality = 2 if row.get("municipality") else 0
+    return (
+        scheduled_service + airport_type + has_keywords + has_municipality,
+        str(row.get("name") or ""),
+    )
+
+
+def build_airport_geo_mapping(csv_path):
+    targets = {str(code or "").strip().upper() for code in AIRPORT_CODES.keys() if code}
+    all_iata_rows = {}
+    selected_rows = {}
+    alias_rows = {}
+
+    with csv_path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            iata_code = str(row.get("iata_code") or "").strip().upper()
+            latitude = str(row.get("latitude_deg") or "").strip()
+            longitude = str(row.get("longitude_deg") or "").strip()
+            if not latitude or not longitude:
+                continue
+
+            try:
+                lat = round(float(latitude), 6)
+                lon = round(float(longitude), 6)
+            except ValueError:
+                continue
+
+            current = selected_rows.get(iata_code)
+            candidate = {
+                "code": iata_code,
+                "name": str(row.get("name") or "").strip(),
+                "lat": lat,
+                "lon": lon,
+                "type": str(row.get("type") or "").strip(),
+                "scheduled_service": str(row.get("scheduled_service") or "").strip(),
+                "municipality": str(row.get("municipality") or "").strip(),
+            }
+
+            if iata_code:
+                current_any = all_iata_rows.get(iata_code)
+                if current_any is None or airport_candidate_score(candidate) > airport_candidate_score(current_any):
+                    all_iata_rows[iata_code] = candidate
+
+            if iata_code in targets:
+                current = selected_rows.get(iata_code)
+                if current is None or airport_candidate_score(candidate) > airport_candidate_score(current):
+                    selected_rows[iata_code] = candidate
+
+            alias_tokens = set()
+            for field_name in ("gps_code", "local_code"):
+                token = str(row.get(field_name) or "").strip().upper()
+                if token:
+                    alias_tokens.add(token)
+            keywords = str(row.get("keywords") or "").split(",")
+            alias_tokens.update(token.strip().upper() for token in keywords if token.strip())
+
+            for target_code in targets:
+                if target_code == iata_code or target_code not in alias_tokens:
+                    continue
+                current_alias = alias_rows.get(target_code)
+                if current_alias is None or airport_candidate_score(candidate) > airport_candidate_score(current_alias):
+                    alias_rows[target_code] = candidate
+
+    for code, alias_code in MANUAL_CODE_ALIASES.items():
+        if code in selected_rows or code not in targets:
+            continue
+        aliased_row = all_iata_rows.get(alias_code) or selected_rows.get(alias_code) or alias_rows.get(alias_code)
+        if aliased_row:
+            selected_rows[code] = {
+                **aliased_row,
+                "code": code,
+                "name": f"{aliased_row['name']} (alias for {code})",
+            }
+
+    for code, alias_row in alias_rows.items():
+        if code not in selected_rows and code in targets:
+            selected_rows[code] = alias_row
+
+    airport_geo = {
+        code: (data["lat"], data["lon"])
+        for code, data in sorted(selected_rows.items())
+    }
+    missing_codes = sorted(targets - set(airport_geo.keys()))
+    return airport_geo, missing_codes, selected_rows
+
+
+def write_python_module(output_path, airport_geo, source_url):
+    generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    lines = [
+        "# Auto-generated by build_airport_geo.py",
+        f"# Source: {source_url}",
+        f"# Generated at: {generated_at}",
+        "",
+        "AIRPORT_GEO = {",
+    ]
+    for code, coords in sorted(airport_geo.items()):
+        lines.append(f'    "{code}": ({coords[0]}, {coords[1]}),')
+    lines.append("}")
+    lines.append("")
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_cache_json(output_path, airport_geo, missing_codes, selected_rows, source_url):
+    payload = {
+        "source_url": source_url,
+        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "mapped_count": len(airport_geo),
+        "missing_count": len(missing_codes),
+        "missing_codes": missing_codes,
+        "airports": {
+            code: {
+                "lat": coords[0],
+                "lon": coords[1],
+                "name": selected_rows[code]["name"],
+                "type": selected_rows[code]["type"],
+                "scheduled_service": selected_rows[code]["scheduled_service"],
+                "municipality": selected_rows[code]["municipality"],
+            }
+            for code, coords in sorted(airport_geo.items())
+        },
+    }
+    output_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Generate airport geo coordinates for mappings.AIRPORT_CODES using OurAirports."
+    )
+    parser.add_argument("--refresh", action="store_true", help="Redownload the source dataset before building.")
+    parser.add_argument("--source-url", default=SOURCE_URL, help="Override the source CSV URL.")
+    args = parser.parse_args()
+
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    if args.refresh or not CACHE_CSV_PATH.exists():
+        print(f"Downloading airport dataset from {args.source_url}")
+        download_dataset(args.source_url, CACHE_CSV_PATH)
+    else:
+        print(f"Using cached airport dataset at {CACHE_CSV_PATH}")
+
+    airport_geo, missing_codes, selected_rows = build_airport_geo_mapping(CACHE_CSV_PATH)
+    write_python_module(OUTPUT_MODULE_PATH, airport_geo, args.source_url)
+    write_cache_json(CACHE_JSON_PATH, airport_geo, missing_codes, selected_rows, args.source_url)
+
+    print(f"Generated {len(airport_geo)} airport geo mappings")
+    print(f"Missing {len(missing_codes)} airport geo mappings")
+    print(f"Python module written to {OUTPUT_MODULE_PATH}")
+    print(f"Cache metadata written to {CACHE_JSON_PATH}")
+
+
+if __name__ == "__main__":
+    main()
