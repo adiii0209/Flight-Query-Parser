@@ -7427,6 +7427,7 @@ async function _executeCancel(selectedPax, isFullCancel, perPersonFares, sectorI
 
 // ==================== INIT ====================
 document.addEventListener('DOMContentLoaded', async () => {
+    setDashboardUpdatingState(true);
     updateTicketUrl(getTicketIdFromUrl(), { replace: true });
     const initialTicketId = getTicketIdFromUrl();
     if (initialTicketId) {
@@ -7462,12 +7463,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         void loadNotifications();
     }
     renderTicketCards();
+    let finalSyncPromise = null;
     if (!initialTicketId && (hasWarmTicketsCache || allTickets.length < totalAvailableTickets || totalAvailableTickets === 0)) {
-        void syncAllTicketsInBackground();
+        finalSyncPromise = syncAllTicketsInBackground();
     }
+    
     if (initialTicketId) {
         await openTicket(initialTicketId, { syncUrl: false, replaceUrl: true });
     }
+    
+    if (!finalSyncPromise) {
+        setDashboardUpdatingState(false);
+    }
+
     if (!startTicketsRealtime() && 'EventSource' in window) {
         scheduleTicketsRealtimeRetry();
     }
