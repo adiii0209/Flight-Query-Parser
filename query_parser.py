@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==================== CONFIG ====================
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_API_KEY = "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"
 
 if not OPENROUTER_API_KEY:
     raise ValueError("OPENROUTER_API_KEY is not set in the environment")
@@ -436,9 +436,13 @@ class TimezoneHandler:
         try:
             tz = pytz.timezone(tz_name)
             dt = date_obj or datetime.now()
-            if dt.hour == 0 and dt.minute == 0:
-                dt = dt.replace(hour=12)
-            offset_seconds = tz.utcoffset(dt).total_seconds()
+            if dt.tzinfo is None:
+                # Use midday to avoid DST edge cases when only a date is known.
+                dt = dt.replace(hour=12, minute=0, second=0, microsecond=0)
+                dt = tz.localize(dt, is_dst=None)
+            else:
+                dt = dt.astimezone(tz)
+            offset_seconds = dt.utcoffset().total_seconds()
             return offset_seconds / 3600.0
         except Exception as e:
             Logger.error(f"Error getting timezone for {airport_code}: {e}")
@@ -625,6 +629,12 @@ class TextPreprocessor:
         text = re.sub(r'\+(\d)([A-Za-z])', r'+\1 \2', text)
         text = re.sub(r'(\d{2}:\d{2})\+(\d)', r'\1 +\2 ', text)
         text = re.sub(r'(layover)([A-Z])', r'\1 \2', text, flags=re.IGNORECASE)
+        text = re.sub(r'(\d{2}:\d{2})([A-Z][a-z])', r'\1 \2', text)
+        text = re.sub(r'([a-z])(Tues|Wed|Thurs|Fri|Sat|Sun)\b', r'\1 \2', text, flags=re.IGNORECASE)
+        # Split glued month + word: "JunDubai" -> "Jun Dubai"
+        _MONTH_ABBR_REGEX = r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
+        text = re.sub(rf'({_MONTH_ABBR_REGEX})([A-Z])', r'\1 \2', text)
+        
         # Strip CO2e values safely (line-aware, not greedy across lines)
         text = re.sub(r'emissions\s*estimate:?\s*\d[\d\s,]*kg\s*co2e', '', text, flags=re.IGNORECASE)
         text = re.sub(r'\b\d[\d,]*\s*kg\s*co2e', '', text, flags=re.IGNORECASE)
@@ -682,140 +692,159 @@ class TextPreprocessor:
 class HintExtractor:
     """Extract structured hints from text using regex"""
 
-    # City/airport full names → IATA code.
-    # Used as a fallback when the text doesn't contain explicit 3-letter codes.
-    # Sorted longest-first at lookup time so "new delhi" matches before "delhi".
-    CITY_TO_IATA = {
-        # India domestic
-        'kolkata': 'CCU', 'calcutta': 'CCU', 'netaji subhash': 'CCU',
+    @staticmethod
+    def _normalize_lookup_key(value: str) -> str:
+        # Replace non-alphanumeric chars with spaces, collapse spaces, and lowercase
+        clean = re.sub(r'[^a-z0-9]+', ' ', (value or "").lower())
+        return re.sub(r'\s+', ' ', clean).strip()
+
+    @staticmethod
+    def _is_ambiguous_city_alias(alias: str) -> bool:
+        """
+        Treat a city alias as ambiguous if it matches more than one airport name
+        prefix in AIRPORT_CODES. That prevents defaulting "London" to Heathrow,
+        "New York" to JFK, and similar guesses.
+        """
+        alias_norm = HintExtractor._normalize_lookup_key(alias)
+        if not alias_norm:
+            return False
+
+        matches = 0
+        for airport_name in AIRPORT_CODES.values():
+            name_norm = HintExtractor._normalize_lookup_key(airport_name)
+            if not name_norm:
+                continue
+            if name_norm == alias_norm or name_norm.startswith(f"{alias_norm} "):
+                matches += 1
+                if matches > 1:
+                    return True
+        return False
+
+    # ── Auto-built reverse lookup: city name → IATA code ──────────────────
+    # Built from AIRPORT_CODES in mappings.py so it's always in sync.
+    # The first word of multi-word names (e.g. "Male Velana" → "male")
+    # is added as a shorthand only when it maps to exactly one airport.
+    # Manual aliases below cover colloquial / historical names that
+    # can't be derived from the official name, but ambiguous city names
+    # are intentionally skipped so we do not guess a default airport.
+    _AUTO_CITY_TO_IATA: Dict[str, str] = {}
+
+    @staticmethod
+    def _build_city_lookup():
+        """Build reverse city→IATA from AIRPORT_CODES. Called once at module load."""
+        lookup: Dict[str, str] = {}
+        first_word_counts: Dict[str, int] = {}
+
+        for code, city_name in AIRPORT_CODES.items():
+            full = city_name.strip().lower()
+            if not full:
+                continue
+
+            # Full name: "male velana" → MLE
+            if full not in lookup:
+                lookup[full] = code
+
+            # First word shorthand: "male" → MLE  (from "Male Velana")
+            parts = full.split()
+            if len(parts) > 1:
+                first = parts[0]
+                if len(first) >= 3:
+                    first_word_counts[first] = first_word_counts.get(first, 0) + 1
+
+        for code, city_name in AIRPORT_CODES.items():
+            full = city_name.strip().lower()
+            parts = full.split()
+            if len(parts) > 1:
+                first = parts[0]
+                if len(first) >= 3 and first_word_counts.get(first, 0) == 1 and first not in lookup:
+                    lookup[first] = code
+
+        HintExtractor._AUTO_CITY_TO_IATA = lookup
+
+    # Manual aliases for colloquial / historical names that can't be
+    # derived from the official airport name in AIRPORT_CODES.
+    # These OVERRIDE the auto-built lookup when there's a conflict.
+    CITY_ALIASES = {
+        # India — alternate names
+        'calcutta': 'CCU', 'netaji subhash': 'CCU',
         'new delhi': 'DEL', 'indira gandhi': 'DEL', 'ghaziabad': 'DEL',
-        'delhi': 'DEL',
-        'mumbai': 'BOM', 'bombay': 'BOM', 'chhatrapati': 'BOM',
-        'bengaluru': 'BLR', 'bangalore': 'BLR', 'kempegowda': 'BLR',
-        'chennai': 'MAA', 'madras': 'MAA',
-        'hyderabad': 'HYD', 'rajiv gandhi': 'HYD',
-        'goa': 'GOI', 'dabolim': 'GOI', 'mopa': 'GOX',
-        'ahmedabad': 'AMD', 'sardar vallabhbhai': 'AMD',
-        'pune': 'PNQ',
-        'kochi': 'COK', 'cochin': 'COK',
-        'guwahati': 'GAU', 'lokpriya gopinath': 'GAU',
-        'patna': 'PAT', 'jay prakash': 'PAT',
-        'varanasi': 'VNS', 'lal bahadur': 'VNS',
-        'lucknow': 'LKO', 'chaudhary charan': 'LKO',
-        'jaipur': 'JAI', 'sanganer': 'JAI',
-        'srinagar': 'SXR',
-        'chandigarh': 'IXC',
-        'amritsar': 'ATQ', 'sri guru ram dass': 'ATQ',
-        'nagpur': 'NAG', 'dr. babasaheb ambedkar': 'NAG',
-        'bhubaneswar': 'BBI', 'biju patnaik': 'BBI',
-        'raipur': 'RPR', 'swami vivekananda': 'RPR',
-        'indore': 'IDR', 'devi ahilya': 'IDR',
-        'coimbatore': 'CJB',
-        'visakhapatnam': 'VTZ', 'vizag': 'VTZ',
-        'tiruchirappalli': 'TRZ', 'trichy': 'TRZ',
-        'madurai': 'IXM',
-        'mangaluru': 'IXE', 'mangalore': 'IXE',
-        'thiruvananthapuram': 'TRV', 'trivandrum': 'TRV',
+        'bombay': 'BOM', 'chhatrapati': 'BOM',
+        'bangalore': 'BLR', 'kempegowda': 'BLR',
+        'madras': 'MAA',
+        'rajiv gandhi': 'HYD',
+        'dabolim': 'GOI', 'mopa': 'GOX',
+        'sardar vallabhbhai': 'AMD',
+        'cochin': 'COK',
+        'lokpriya gopinath': 'GAU',
+        'jay prakash': 'PAT',
+        'lal bahadur': 'VNS',
+        'chaudhary charan': 'LKO',
+        'sanganer': 'JAI',
+        'sri guru ram dass': 'ATQ',
+        'dr. babasaheb ambedkar': 'NAG',
+        'biju patnaik': 'BBI',
+        'swami vivekananda': 'RPR',
+        'devi ahilya': 'IDR',
+        'vizag': 'VTZ',
+        'trichy': 'TRZ',
+        'mangalore': 'IXE',
+        'trivandrum': 'TRV',
         'kolhapur': 'KLH',
-        'aurangabad': 'IXU',
-        'ranchi': 'IXR', 'birsa munda': 'IXR',
-        'agartala': 'IXA',
-        'imphal': 'IMF',
-        'dibrugarh': 'DIB',
-        'silchar': 'IXS',
-        'port blair': 'IXZ',
-        'hubli': 'HBX',
-        'belgaum': 'IXG', 'belagavi': 'IXG',
-        # International — Middle East
-        'dubai': 'DXB', 'dubai international': 'DXB',
-        'abu dhabi': 'AUH',
-        'doha': 'DOH', 'hamad': 'DOH',
-        'muscat': 'MCT', 'muscat international': 'MCT',
-        'riyadh': 'RUH', 'king khalid': 'RUH',
-        'jeddah': 'JED', 'king abdulaziz': 'JED',
-        'kuwait': 'KWI',
-        'bahrain': 'BAH',
-        # International — SE Asia / Asia Pacific
-        'singapore': 'SIN', 'changi': 'SIN',
-        'bangkok': 'BKK', 'suvarnabhumi': 'BKK',
-        'kuala lumpur': 'KUL', 'klia': 'KUL',
-        'jakarta': 'CGK', 'soekarno': 'CGK',
-        'manila': 'MNL', 'ninoy aquino': 'MNL',
-        'hong kong': 'HKG',
-        'tokyo': 'NRT', 'narita': 'NRT',
-        'haneda': 'HND',
-        'osaka': 'KIX', 'kansai': 'KIX',
-        'seoul': 'ICN', 'incheon': 'ICN',
-        'beijing': 'PEK', 'capital airport': 'PEK',
-        'shanghai': 'PVG', 'pudong': 'PVG',
-        'guangzhou': 'CAN',
-        'taipei': 'TPE', 'taoyuan': 'TPE',
-        'colombo': 'CMB', 'bandaranaike': 'CMB',
-        'kathmandu': 'KTM', 'tribhuvan': 'KTM',
-        'dhaka': 'DAC', 'hazrat shahjalal': 'DAC',
-        'yangon': 'RGN', 'rangoon': 'RGN',
-        'phnom penh': 'PNH',
-        'ho chi minh': 'SGN', 'tan son nhat': 'SGN',
-        'hanoi': 'HAN', 'noi bai': 'HAN',
-        'denpasar': 'DPS', 'bali': 'DPS',
-        # International — Europe
-        'london heathrow': 'LHR', 'heathrow': 'LHR',
-        'london gatwick': 'LGW', 'gatwick': 'LGW',
-        'london stansted': 'STN', 'stansted': 'STN',
+        'belagavi': 'IXG',
+        'birsa munda': 'IXR',
+        'maharana pratap': 'UDR',
+        'jolly grant': 'DED',
+        'kushok bakula': 'IXL',
+        'prayagraj': 'IXD',
+        'maldives': 'MLE',
+        # International — alternate / short names
+        'dubai': 'DXB', 'abu dhabi': 'AUH',
+        'changi': 'SIN', 'suvarnabhumi': 'BKK',
+        'klia': 'KUL', 'soekarno': 'CGK',
+        'ninoy aquino': 'MNL',
+        'heathrow': 'LHR', 'gatwick': 'LGW', 'stansted': 'STN',
         'london': 'LHR',
-        'paris charles de gaulle': 'CDG', 'charles de gaulle': 'CDG',
-        'paris orly': 'ORY', 'orly': 'ORY',
+        'charles de gaulle': 'CDG', 'orly': 'ORY',
         'paris': 'CDG',
-        'amsterdam': 'AMS', 'schiphol': 'AMS',
-        'frankfurt': 'FRA', 'frankfurt am main': 'FRA',
-        'zurich': 'ZRH',
-        'munich': 'MUC',
-        'vienna': 'VIE',
-        'brussels': 'BRU',
-        'rome': 'FCO', 'fiumicino': 'FCO',
-        'milan': 'MXP', 'malpensa': 'MXP',
-        'madrid': 'MAD', 'barajas': 'MAD',
-        'barcelona': 'BCN', 'el prat': 'BCN',
-        'lisbon': 'LIS',
-        'istanbul': 'IST', 'istanbul airport': 'IST',
-        'athens': 'ATH', 'eleftherios venizelos': 'ATH',
-        'moscow': 'SVO', 'sheremetyevo': 'SVO',
-        'helsinki': 'HEL',
-        'stockholm': 'ARN', 'arlanda': 'ARN',
-        'oslo': 'OSL',
-        'copenhagen': 'CPH',
-        'warsaw': 'WAW', 'chopin': 'WAW',
-        'prague': 'PRG',
-        'budapest': 'BUD',
-        'zurich': 'ZRH',
-        # International — Americas
-        'new york jfk': 'JFK', 'john f kennedy': 'JFK',
-        'new york newark': 'EWR', 'newark': 'EWR',
-        'new york': 'JFK',
-        'los angeles': 'LAX',
-        'chicago': 'ORD', "o'hare": 'ORD',
-        'san francisco': 'SFO',
-        'miami': 'MIA',
-        'toronto': 'YYZ', 'pearson': 'YYZ',
-        'vancouver': 'YVR',
-        'mexico city': 'MEX', 'benito juarez': 'MEX',
-        'sao paulo': 'GRU', 'guarulhos': 'GRU',
-        'buenos aires': 'EZE', 'ezeiza': 'EZE',
-        # International — Africa / Oceania
-        'addis ababa': 'ADD', 'bole': 'ADD',
-        'nairobi': 'NBO', 'jomo kenyatta': 'NBO',
-        'johannesburg': 'JNB', 'o.r. tambo': 'JNB',
-        'cape town': 'CPT',
-        'cairo': 'CAI',
-        'casablanca': 'CMN', 'mohammed v': 'CMN',
-        'lagos': 'LOS',
-        'accra': 'ACC', 'kotoka': 'ACC',
-        'sydney': 'SYD', 'kingsford smith': 'SYD',
-        'melbourne': 'MEL', 'tullamarine': 'MEL',
-        'brisbane': 'BNE',
-        'perth': 'PER',
-        'auckland': 'AKL',
+        'schiphol': 'AMS',
+        'frankfurt am main': 'FRA', 'fiumicino': 'FCO',
+        'malpensa': 'MXP', 'barajas': 'MAD',
+        'el prat': 'BCN',
+        'eleftherios venizelos': 'ATH',
+        'sheremetyevo': 'SVO',
+        'arlanda': 'ARN', 'chopin': 'WAW',
+        'john f kennedy': 'JFK', 'newark': 'EWR',
+        'new york': 'JFK', 'new york jfk': 'JFK', 'new york newark': 'EWR',
+        "o'hare": 'ORD',
+        'pearson': 'YYZ',
+        'benito juarez': 'MEX', 'guarulhos': 'GRU', 'ezeiza': 'EZE',
+        'bole': 'ADD', 'jomo kenyatta': 'NBO',
+        'o.r. tambo': 'JNB',
+        'mohammed v': 'CMN',
+        'kotoka': 'ACC',
+        'kingsford smith': 'SYD', 'tullamarine': 'MEL',
+        'bandaranaike': 'CMB', 'tribhuvan': 'KTM',
+        'hazrat shahjalal': 'DAC',
+        'rangoon': 'RGN',
+        'tan son nhat': 'SGN', 'noi bai': 'HAN',
+        'bali': 'DPS',
+        'boracay': 'KLO',
+        'nha trang': 'CXR',
     }
+
+    @staticmethod
+    def _get_city_to_iata() -> Dict[str, str]:
+        """Return the merged city→IATA lookup (auto-built + manual aliases)."""
+        if not HintExtractor._AUTO_CITY_TO_IATA:
+            HintExtractor._build_city_lookup()
+        merged = dict(HintExtractor._AUTO_CITY_TO_IATA)
+        for alias, code in HintExtractor.CITY_ALIASES.items():
+            if code not in AIRPORT_CODES:
+                continue
+            if HintExtractor._is_ambiguous_city_alias(alias):
+                continue
+            merged[alias] = code
+        return merged
 
     FALSE_POSITIVE_AIRPORTS = {
         'THE', 'AND', 'FOR', 'ALL', 'VIA', 'NON', 'ONE', 'TWO',
@@ -867,7 +896,7 @@ class HintExtractor:
         # Pass 2: full city/airport names → IATA
         text_lower = text.lower()
         city_positions: List[Tuple[int, int, str]] = []
-        for city_name, iata in sorted(HintExtractor.CITY_TO_IATA.items(),
+        for city_name, iata in sorted(HintExtractor._get_city_to_iata().items(),
                                        key=lambda x: -len(x[0])):
             start = 0
             while True:
@@ -1642,12 +1671,18 @@ CITY → IATA CODE QUICK REFERENCE
 ══════════════════════════════════════════════════════════════════
 Kolkata=CCU, Delhi=DEL, Mumbai=BOM, Bengaluru=BLR, Chennai=MAA,
 Hyderabad=HYD, Goa=GOI, Ahmedabad=AMD, Pune=PNQ, Kochi=COK,
-Singapore=SIN, Dubai=DXB, Abu Dhabi=AUH, Doha=DOH,
+Lucknow=LKO, Jaipur=JAI, Varanasi=VNS, Srinagar=SXR, Amritsar=ATQ,
+Indore=IDR, Bhopal=BHO, Surat=STV, Vadodara=BDQ, Udaipur=UDR,
+Bagdogra=IXB, Dehradun=DED, Patna=PAT, Ranchi=IXR, Guwahati=GAU,
+Nagpur=NAG, Chandigarh=IXC, Vizag=VTZ, Bhubaneswar=BBI,
+Singapore=SIN, Dubai=DXB, Abu Dhabi=AUH, Doha=DOH, Sharjah=SHJ,
+Male/Maldives=MLE, Colombo=CMB, Kathmandu=KTM, Dhaka=DAC,
 London Heathrow=LHR, London Gatwick=LGW, Paris=CDG,
 Frankfurt=FRA, Zurich=ZRH, Amsterdam=AMS, Istanbul=IST,
 New York JFK=JFK, New York Newark=EWR, Los Angeles=LAX,
 Tokyo Narita=NRT, Tokyo Haneda=HND, Hong Kong=HKG,
-Bangkok=BKK, Kuala Lumpur=KUL, Jakarta=CGK, Manila=MNL
+Bangkok=BKK, Kuala Lumpur=KUL, Jakarta=CGK, Manila=MNL,
+Phuket=HKT, Bali=DPS, Chiang Mai=CNX, Pattaya=UTP
 
 ══════════════════════════════════════════════════════════════════
 AIRLINE CODE → NAME QUICK REFERENCE
