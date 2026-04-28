@@ -42,6 +42,7 @@ let duplicatePanelTotalCount = 0;
 let duplicatePanelIsLoadingMore = false;
 let dismissedWarningKeys = new Set();
 const INITIAL_TICKETS_BATCH_SIZE = 6;
+const BACKGROUND_TICKETS_BATCH_SIZE = 50;
 const DUPLICATES_BATCH_SIZE = 6;
 const TICKETS_CACHE_KEY = 'ticketsDashboard.topCache.v1';
 const DUPLICATES_CACHE_KEY = 'ticketsDashboard.duplicatesCache.v1';
@@ -2065,8 +2066,7 @@ function getCachedTicketDetail(id) {
     if (!id) return null;
     const fromMemory = ticketDetailCache.get(id);
     if (fromMemory) return normalizeTicketFareData(fromMemory);
-    const fromList = allTickets.find((ticket) => ticket && ticket.id === id);
-    return fromList ? normalizeTicketFareData(fromList) : null;
+    return null;
 }
 
 function hydrateTicketsFromCache() {
@@ -2142,7 +2142,6 @@ async function loadTickets(options = {}) {
             lastFullTicketsSyncAt = Date.now();
         }
         knownTicketIds = new Set(allTickets.map((ticket) => ticket.id).filter(Boolean));
-        allTickets.forEach(cacheTicketDetail);
         writeCachedJson(TICKETS_CACHE_KEY, {
             cached_at: Date.now(),
             total_count: totalAvailableTickets,
@@ -2154,6 +2153,7 @@ async function loadTickets(options = {}) {
         }
         return {
             totalCount: totalAvailableTickets,
+            fetchedCount: Number(d.fetched_count || incomingTickets.length),
             returnedCount: incomingTickets.length,
             hasMore: Boolean(d.has_more)
         };
@@ -2164,7 +2164,22 @@ async function loadTickets(options = {}) {
 async function syncAllTicketsInBackground() {
     if (fullTicketsSyncPromise) return fullTicketsSyncPromise;
     fullTicketsSyncPromise = (async () => {
-        await loadTickets({ render: true, notifyNewTickets: false });
+        let nextOffset = Math.max(allTickets.length, INITIAL_TICKETS_BATCH_SIZE);
+        let hasMore = totalAvailableTickets === 0 || nextOffset < totalAvailableTickets;
+
+        while (hasMore) {
+            const snapshot = await loadTickets({
+                limit: BACKGROUND_TICKETS_BATCH_SIZE,
+                offset: nextOffset,
+                render: false,
+                notifyNewTickets: false
+            });
+            if (!snapshot) break;
+            nextOffset += snapshot.fetchedCount || 0;
+            hasMore = Boolean(snapshot.hasMore) && (snapshot.fetchedCount || 0) > 0;
+        }
+
+        renderTicketCards();
     })().finally(() => {
         fullTicketsSyncPromise = null;
     });
@@ -2443,7 +2458,7 @@ function renderTicketCards() {
 
         // Use override if present, otherwise use calculated total
         const grandTotal = parseMoneyValue(t.grand_total);
-        const displayTotal = grandTotal > 0 ? grandTotal : calculatedTotal;
+        const displayTotal = parseMoneyValue(t.display_total) || (grandTotal > 0 ? grandTotal : calculatedTotal);
 
         return `<div class="itin-card" onclick="openTicket('${t.id}')">
             <div class="itin-card-top ${statusClass}"></div>
@@ -2744,7 +2759,7 @@ function buildTicketCardHtml(t) {
             globalMarkup;
     });
     const grandTotal = parseMoneyValue(t.grand_total);
-    const displayTotal = grandTotal > 0 ? grandTotal : calculatedTotal;
+    const displayTotal = parseMoneyValue(t.display_total) || (grandTotal > 0 ? grandTotal : calculatedTotal);
     const isSelected = selectedTicketIds.has(t.id);
     const selectedClass = isSelected ? ' ticket-selected' : '';
 
@@ -2919,7 +2934,7 @@ function buildTicketCardHtml(t) {
             globalMarkup;
     });
     const grandTotal = parseMoneyValue(t.grand_total);
-    const displayTotal = grandTotal > 0 ? grandTotal : calculatedTotal;
+    const displayTotal = parseMoneyValue(t.display_total) || (grandTotal > 0 ? grandTotal : calculatedTotal);
     const isSelected = selectedTicketIds.has(t.id);
     const selectedClass = isSelected ? ' ticket-selected' : '';
 
