@@ -2163,28 +2163,43 @@ async function loadTickets(options = {}) {
 
 let dashboardLoaderHideHandle = null;
 
-function setDashboardUpdatingState(isUpdating) {
+function setDashboardUpdatingState(state) {
     const loader = document.getElementById('dashboardLoader');
     if (!loader) return;
+    const textEl = loader.querySelector('.loader-text');
+    const pulseEl = loader.querySelector('.loader-pulse');
+    const doctorEl = loader.querySelector('dotlottie-player');
     
     if (dashboardLoaderHideHandle) {
         clearTimeout(dashboardLoaderHideHandle);
         dashboardLoaderHideHandle = null;
     }
 
-    if (isUpdating) {
+    if (state === true || state === 'updating') {
         loader.style.display = 'flex';
-        // Reset properties in case a fade-out was in progress
         loader.style.opacity = '1';
         loader.style.transform = 'translateY(0)';
+        if (textEl) textEl.textContent = 'Updating Dashboard';
+        if (pulseEl) pulseEl.style.display = 'block';
+        if (doctorEl) doctorEl.style.display = 'block';
+        loader.classList.remove('is-complete');
     } else {
-        // Fade out transition
-        loader.style.opacity = '0';
-        loader.style.transform = 'translateY(5px)';
+        // Transition to complete state
+        if (textEl) textEl.textContent = 'Update Complete';
+        if (pulseEl) pulseEl.style.display = 'none';
+        if (doctorEl) doctorEl.style.display = 'none';
+        loader.classList.add('is-complete');
+
+        // Wait 2 seconds then vanish
         dashboardLoaderHideHandle = setTimeout(() => {
-            loader.style.display = 'none';
-            dashboardLoaderHideHandle = null;
-        }, 400);
+            loader.style.opacity = '0';
+            loader.style.transform = 'translateY(5px)';
+            dashboardLoaderHideHandle = setTimeout(() => {
+                loader.style.display = 'none';
+                loader.classList.remove('is-complete');
+                dashboardLoaderHideHandle = null;
+            }, 400);
+        }, 2000);
     }
 }
 
