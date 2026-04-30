@@ -2161,20 +2161,30 @@ async function loadTickets(options = {}) {
     return null;
 }
 
+let dashboardLoaderHideHandle = null;
+
 function setDashboardUpdatingState(isUpdating) {
     const loader = document.getElementById('dashboardLoader');
     if (!loader) return;
+    
+    if (dashboardLoaderHideHandle) {
+        clearTimeout(dashboardLoaderHideHandle);
+        dashboardLoaderHideHandle = null;
+    }
+
     if (isUpdating) {
         loader.style.display = 'flex';
+        // Reset properties in case a fade-out was in progress
+        loader.style.opacity = '1';
+        loader.style.transform = 'translateY(0)';
     } else {
         // Fade out transition
         loader.style.opacity = '0';
-        loader.style.transform = 'translateX(-10px)';
-        setTimeout(() => {
+        loader.style.transform = 'translateY(5px)';
+        dashboardLoaderHideHandle = setTimeout(() => {
             loader.style.display = 'none';
-            loader.style.opacity = '';
-            loader.style.transform = '';
-        }, 350);
+            dashboardLoaderHideHandle = null;
+        }, 400);
     }
 }
 
