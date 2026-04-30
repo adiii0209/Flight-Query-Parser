@@ -216,3 +216,85 @@ class FareRule(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+class HotelBooking(db.Model):
+    """Persisted hotel booking extracted from PDF/text."""
+    __tablename__ = "hotel_booking"
+
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user_id = db.Column(db.String, db.ForeignKey("user.id"), nullable=False)
+
+    # Booking identifiers
+    booking_id = db.Column(db.String(50), nullable=True)
+
+    # Hotel details
+    hotel_name    = db.Column(db.String(255), nullable=True)
+    hotel_address = db.Column(db.Text,        nullable=True)
+    hotel_phone   = db.Column(db.String(50),  nullable=True)
+
+    # Guest details
+    guest_name = db.Column(db.String(255), nullable=True)
+    num_guests = db.Column(db.Integer,     nullable=True)
+
+    # Stay details
+    check_in_date  = db.Column(db.String(20), nullable=True)   # YYYY-MM-DD
+    check_out_date = db.Column(db.String(20), nullable=True)   # YYYY-MM-DD
+    check_in_time  = db.Column(db.String(50), nullable=True)
+    check_out_time = db.Column(db.String(50), nullable=True)
+    room_type      = db.Column(db.String(100), nullable=True)
+    room_count     = db.Column(db.Integer, default=1)
+    meal_plan      = db.Column(db.String(100), nullable=True)
+    rooms_json     = db.Column(db.Text, default="[]")
+
+    # Amenities stored as JSON array string
+    amenities_json = db.Column(db.Text, default="[]")
+
+    # Fare
+    total_amount = db.Column(db.Float, nullable=True)
+    currency     = db.Column(db.String(32), nullable=True)
+
+    # Misc
+    special_instructions = db.Column(db.Text, nullable=True)
+    image_url            = db.Column(db.Text, nullable=True)
+    raw_text             = db.Column(db.Text, default="")
+
+    def to_dict(self):
+        import json as _json
+        try:
+            amenities = _json.loads(self.amenities_json or "[]")
+        except Exception:
+            amenities = []
+        try:
+            rooms = _json.loads(self.rooms_json or "[]")
+        except Exception:
+            rooms = []
+        return {
+            "id":                   self.id,
+            "created_at":           self.created_at.isoformat() if self.created_at else None,
+            "updated_at":           self.updated_at.isoformat() if self.updated_at else None,
+            "user_id":              self.user_id,
+            "booking_id":           self.booking_id,
+            "hotel_name":           self.hotel_name,
+            "hotel_address":        self.hotel_address,
+            "hotel_phone":          self.hotel_phone,
+            "guest_name":           self.guest_name,
+            "num_guests":           self.num_guests,
+            "check_in_date":        self.check_in_date,
+            "check_out_date":       self.check_out_date,
+            "check_in_time":        self.check_in_time,
+            "check_out_time":       self.check_out_time,
+            "booking_confirmation": self.booking_id,
+            "room_type":            self.room_type,
+            "room_count":           self.room_count,
+            "rooms":                rooms,
+            "meal_plan":            self.meal_plan,
+            "amenities":            amenities,
+            "total_amount":         self.total_amount,
+            "currency":             self.currency,
+            "special_instructions": self.special_instructions,
+            "image_url":            self.image_url,
+            "raw_text":             self.raw_text,
+        }

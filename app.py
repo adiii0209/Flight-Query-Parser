@@ -2189,6 +2189,9 @@ def ensure_schema_compatibility():
     _add_column_if_missing("ticket", "duplicate_status", "VARCHAR(20)")
     _add_column_if_missing("ticket", "duplicate_of_id", "VARCHAR")
     _add_column_if_missing("user", "last_ticket_seen_at", "TIMESTAMP")
+    _add_column_if_missing("hotel_booking", "check_in_time", "VARCHAR(50)")
+    _add_column_if_missing("hotel_booking", "check_out_time", "VARCHAR(50)")
+    _add_column_if_missing("hotel_booking", "rooms_json", "TEXT")
 
     _add_column_if_missing("operation_ledger_link", "created_at", "TIMESTAMP")
     _add_column_if_missing("operation_ledger_link", "user_id", "VARCHAR")
@@ -3507,6 +3510,282 @@ def tickets_page():
         airport_geo_map=AIRPORT_GEO,
         airport_tz_map=AIRPORT_TZ_MAP,
     )
+
+
+# ==================== HOTEL BOOKING ROUTES ====================
+
+@app.route("/hotels")
+@login_required
+def hotels_page():
+    """Serve the hotel bookings dashboard page."""
+    return render_template('hotels.html')
+
+
+@app.route("/api/hotels/parse", methods=["POST"])
+@login_required
+def hotel_parse():
+    """
+    Parse hotel booking from uploaded PDF or raw text.
+
+    Accepts multipart/form-data:
+        file  (optional) — PDF file
+        text  (optional) — raw booking text
+
+    Returns BookingData JSON with image_url auto-fetched.
+    """
+    from hotel_parser import HotelParser
+    from hotel_image import HotelImageService
+
+    raw_text = ""
+
+    # ── 1. Extract text ───────────────────────────────────────────────────────
+    if "file" in request.files:
+        f = request.files["file"]
+        if f and f.filename:
+            try:
+                import pdfplumber
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                    f.save(tmp.name)
+                    with pdfplumber.open(tmp.name) as pdf:
+                        raw_text = "\n".join(
+                            page.extract_text() or "" for page in pdf.pages
+                        )
+                os.unlink(tmp.name)
+            except ImportError:
+                # Fallback: read as bytes and try pytesseract
+                try:
+                    import pytesseract
+                    from PIL import Image
+                    import fitz  # PyMuPDF
+                    f.seek(0)
+                    pdf_bytes = f.read()
+                    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                    raw_text = "\n".join(
+                        page.get_text() for page in doc
+                    )
+                except Exception as e2:
+                    return jsonify({"error": f"Could not extract PDF text: {e2}"}), 400
+            except Exception as exc:
+                return jsonify({"error": f"PDF extraction failed: {exc}"}), 400
+
+    # ── 2. Use raw text if no file (or file gave empty text) ─────────────────
+    if not raw_text:
+        raw_text = (request.form.get("text") or
+                    (request.get_json(silent=True) or {}).get("text", ""))
+
+    if not raw_text or not raw_text.strip():
+        return jsonify({"error": "No text or file content provided."}), 400
+
+    # ── 3. Parse via LLM ─────────────────────────────────────────────────────
+    try:
+        parser = HotelParser()
+        data = parser.parse(raw_text)
+    except Exception as exc:
+        return jsonify({"error": f"Parsing failed: {exc}"}), 500
+
+    # ── 4. Enrich with hotel image ────────────────────────────────────────────
+    try:
+        svc = HotelImageService()
+        data["image_url"] = svc.fetch_image(data.get("hotel_name") or "")
+    except Exception:
+        data["image_url"] = None
+
+    return jsonify({"success": True, "data": data}), 200
+
+
+@app.route("/api/hotels/fetch-image", methods=["POST"])
+@login_required
+def hotel_fetch_image():
+    """Refresh hotel image from the hotel name (re-enrichment)."""
+    from hotel_image import HotelImageService
+    body = request.get_json(silent=True) or {}
+    hotel_name = (body.get("hotel_name") or "").strip()
+    if not hotel_name:
+        return jsonify({"error": "hotel_name is required"}), 400
+    svc = HotelImageService()
+    url = svc.fetch_image(hotel_name)
+    return jsonify({"image_url": url}), 200
+
+
+@app.route("/api/hotels/upload-image", methods=["POST"])
+@login_required
+def hotel_upload_image():
+    """Upload a custom hotel image, overriding the auto-fetched one."""
+    from hotel_image import HotelImageService
+    if "image" not in request.files:
+        return jsonify({"error": "No image file provided (field: 'image')"}), 400
+    f = request.files["image"]
+    try:
+        svc = HotelImageService()
+        url = svc.save_uploaded_image(f)
+        if not url:
+            return jsonify({"error": "Failed to save image"}), 500
+        return jsonify({"image_url": url}), 200
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Upload failed: {exc}"}), 500
+
+
+@app.route("/api/hotels", methods=["POST"])
+@login_required
+def hotel_create():
+    """Save a hotel booking to the database."""
+    from models import HotelBooking
+    data = request.get_json(silent=True) or {}
+    booking = HotelBooking(
+        user_id=session["user_id"],
+        booking_id=data.get("booking_id"),
+        hotel_name=data.get("hotel_name"),
+        hotel_address=data.get("hotel_address"),
+        hotel_phone=data.get("hotel_phone"),
+        guest_name=data.get("guest_name"),
+        num_guests=data.get("num_guests"),
+        check_in_date=data.get("check_in_date"),
+        check_out_date=data.get("check_out_date"),
+        check_in_time=data.get("check_in_time"),
+        check_out_time=data.get("check_out_time"),
+        room_type=data.get("room_type"),
+        room_count=data.get("room_count") or 1,
+        rooms_json=json.dumps(data.get("rooms") or []),
+        amenities_json=json.dumps(data.get("amenities") or []),
+        meal_plan=data.get("meal_plan"),
+        total_amount=data.get("total_amount"),
+        currency=data.get("currency"),
+        special_instructions=data.get("special_instructions"),
+        image_url=data.get("image_url"),
+        raw_text=data.get("raw_text", ""),
+    )
+    db.session.add(booking)
+    db.session.commit()
+    return jsonify({"success": True, "id": booking.id}), 201
+
+
+@app.route("/api/hotels", methods=["GET"])
+@login_required
+def hotel_list():
+    """List all hotel bookings for the current user."""
+    from models import HotelBooking
+    bookings = HotelBooking.query.filter_by(
+        user_id=session["user_id"]
+    ).order_by(HotelBooking.created_at.desc()).all()
+    return jsonify([b.to_dict() for b in bookings]), 200
+
+
+@app.route("/api/hotels/<booking_id>", methods=["GET"])
+@login_required
+def hotel_get(booking_id):
+    """Get a single hotel booking."""
+    from models import HotelBooking
+    b = HotelBooking.query.filter_by(
+        id=booking_id, user_id=session["user_id"]
+    ).first()
+    if not b:
+        return jsonify({"error": "Hotel booking not found"}), 404
+    return jsonify(b.to_dict()), 200
+
+
+@app.route("/api/hotels/<booking_id>", methods=["PUT"])
+@login_required
+def hotel_update(booking_id):
+    """Update a hotel booking (editable dashboard fields + image override)."""
+    from models import HotelBooking
+    b = HotelBooking.query.filter_by(
+        id=booking_id, user_id=session["user_id"]
+    ).first()
+    if not b:
+        return jsonify({"error": "Hotel booking not found"}), 404
+    data = request.get_json(silent=True) or {}
+    for field in (
+        "hotel_name", "hotel_address", "hotel_phone", "guest_name",
+        "num_guests", "check_in_date", "check_out_date", "check_in_time",
+        "check_out_time", "room_type", "room_count", "meal_plan", "total_amount", "currency",
+        "special_instructions", "image_url", "booking_id",
+    ):
+        if field in data:
+            setattr(b, field, data[field])
+    if "amenities" in data:
+        b.amenities_json = json.dumps(data["amenities"] or [])
+    if "rooms" in data:
+        b.rooms_json = json.dumps(data["rooms"] or [])
+    db.session.commit()
+    return jsonify({"success": True, "data": b.to_dict()}), 200
+
+
+@app.route("/api/hotels/<booking_id>", methods=["DELETE"])
+@login_required
+def hotel_delete(booking_id):
+    """Delete a hotel booking."""
+    from models import HotelBooking
+    b = HotelBooking.query.filter_by(
+        id=booking_id, user_id=session["user_id"]
+    ).first()
+    if not b:
+        return jsonify({"error": "Hotel booking not found"}), 404
+    db.session.delete(b)
+    db.session.commit()
+    return jsonify({"success": True}), 200
+
+
+@app.route("/api/hotels/<booking_id>/pdf", methods=["GET", "POST"])
+@login_required
+def hotel_pdf_generate(booking_id):
+    """
+    Generate a Hotel Voucher PDF.
+
+    Accepts optional JSON body with edited fields (same pattern as ticket PDF).
+    Uses hotel_pdf.draw_hotel_voucher — which reuses ALL primitives from ticket_pdf.
+    """
+    import io as _io
+    from reportlab.pdfgen import canvas as pdf_canvas
+    from reportlab.lib.pagesizes import A4
+    from hotel_pdf import draw_hotel_voucher
+    from models import HotelBooking
+
+    b = HotelBooking.query.filter_by(
+        id=booking_id, user_id=session["user_id"]
+    ).first()
+    if not b:
+        return jsonify({"error": "Hotel booking not found"}), 404
+
+    # Allow client-side edited snapshot (mirrors ticket PDF pattern)
+    payload = request.get_json(silent=True) or {}
+    data = b.to_dict()
+    # Overlay any client-edited fields
+    for key, val in payload.items():
+        if key in data:
+            data[key] = val
+    # Image override: if uploaded_image_url is in payload, use it
+    if payload.get("uploaded_image_url"):
+        data["image_url"] = payload["uploaded_image_url"]
+
+    buffer = _io.BytesIO()
+    c = pdf_canvas.Canvas(buffer, pagesize=A4)
+    draw_hotel_voucher(c, data)
+    c.save()
+    buffer.seek(0)
+
+    hotel_slug = (data.get("hotel_name") or "Hotel").replace(" ", "_")[:30]
+    guest_slug = (data.get("guest_name") or "Guest").replace(" ", "_")[:20]
+    filename = f"Hotel_Voucher_{hotel_slug}_{guest_slug}.pdf"
+    import re as _re
+    filename = _re.sub(r'[\\/*?:"<>|]', "", filename)
+
+    return send_file(
+        buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+# Serve uploaded hotel images
+@app.route("/uploads/hotel_images/<filename>")
+def serve_hotel_image(filename):
+    from werkzeug.utils import safe_join
+    img_dir = os.path.join(os.path.dirname(__file__), "uploads", "hotel_images")
+    return send_from_directory(img_dir, filename)
 
 
 @app.route("/settings")

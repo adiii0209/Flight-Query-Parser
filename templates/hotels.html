@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Hotel Bookings | Time Tours</title>
+<meta name="description" content="Manage hotel bookings — parse, edit, and generate voucher PDFs.">
+<link rel="icon" type="image/png" href="/static/ticket-flight.png">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/dashboard.css">
+<link rel="stylesheet" href="/static/sidebar.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Outfit',sans-serif;background:#f0f2f7;color:#0f172a;min-height:100vh}
+.app-header{background:#04060e;color:#fff;padding:1.25rem 1.5rem;display:flex;align-items:center;gap:1rem;position:sticky;top:0;z-index:1000;box-shadow:0 4px 30px rgba(0,0,0,.5)}
+.menu-toggle{background:none;border:none;cursor:pointer;padding:.4rem;display:flex;flex-direction:column;gap:5px}
+.menu-bar{display:block;width:22px;height:2px;background:#fff;border-radius:2px}
+.header-brand{margin-left:auto;font-size:1rem;font-weight:800;color:#fff;letter-spacing:.04em}
+.header-brand span{color:#10b981}
+.main-content{max-width:1300px;margin:0 auto;padding:1.5rem}
+.page-title{font-size:1.6rem;font-weight:800;color:#0f172a;margin-bottom:1.5rem}
+.page-title span{color:#10b981}
+
+/* ── Upload zone ── */
+.upload-zone{border:2px dashed #cbd5e1;border-radius:16px;background:#fff;padding:2.5rem;text-align:center;cursor:pointer;transition:.2s;margin-bottom:1.5rem;display:block;}
+.upload-zone:hover,.upload-zone.drag-over{border-color:#10b981;background:#f0fdf4}
+.upload-zone .icon{font-size:2.5rem;margin-bottom:.75rem}
+.upload-zone h3{font-size:1.1rem;font-weight:700;margin-bottom:.4rem}
+.upload-zone p{font-size:.82rem;color:#64748b}
+.upload-zone input[type=file]{display:none}
+
+/* ── Parser card ── */
+.parser-card{background:#fff;border-radius:16px;border:1px solid #e2e8f0;padding:1.5rem;margin-bottom:2rem;box-shadow:0 4px 15px rgba(0,0,0,0.03)}
+.parser-card h2{font-size:1.1rem;font-weight:800;margin-bottom:1.25rem;color:#0f172a;display:flex;align-items:center;gap:0.5rem;}
+.input-group{display:flex;flex-direction:column;gap:.4rem;margin-bottom:1rem}
+.input-group label{font-size:.8rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.05em}
+.input-group input,.input-group textarea,.input-group select{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:.7rem .9rem;font-family:inherit;font-size:.9rem;color:#0f172a;background:#fff;transition:.2s;box-shadow:inset 0 1px 2px rgba(0,0,0,0.02)}
+.input-group input:focus,.input-group textarea:focus,.input-group select:focus{outline:none;border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,0.1)}
+.input-group textarea{min-height:120px;resize:vertical;line-height:1.5}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:0 1.25rem}
+@media(max-width:640px){.form-row{grid-template-columns:1fr}}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.6rem 1.2rem;border-radius:8px;border:none;cursor:pointer;font-family:inherit;font-size:.9rem;font-weight:700;transition:.2s}
+.btn-primary{background:linear-gradient(135deg,#059669,#10b981);color:#fff;box-shadow:0 4px 10px rgba(16,185,129,0.2)}
+.btn-primary:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 6px 12px rgba(16,185,129,0.3)}
+.btn-secondary{background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0}
+.btn-secondary:hover{background:#e2e8f0}
+.btn-danger{background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.2)}
+.btn-danger:hover{background:#ef4444;color:#fff}
+.btn-pdf{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;box-shadow:0 4px 10px rgba(37,99,235,0.2)}
+.btn-pdf:hover{filter:brightness(1.1);transform:translateY(-1px);box-shadow:0 6px 12px rgba(37,99,235,0.3)}
+.btn-sm{padding:.4rem .8rem;font-size:.8rem;border-radius:6px}
+.action-row{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1.25rem}
+
+/* ── Hotel grid ── */
+.hotel-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:1.5rem}
+.hotel-card{background:#fff;border-radius:16px;border:1px solid #e2e8f0;overflow:hidden;transition:.2s;cursor:pointer;display:flex;flex-direction:column}
+.hotel-card:hover{box-shadow:0 12px 30px rgba(0,0,0,.08);transform:translateY(-4px);border-color:#cbd5e1}
+.hotel-card-img{width:100%;height:180px;object-fit:cover;background:#f8fafc;display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:#cbd5e1}
+.hotel-card-img img{width:100%;height:100%;object-fit:cover}
+.hotel-card-body{padding:1.25rem;flex-grow:1;display:flex;flex-direction:column}
+.hotel-card-name{font-size:1.1rem;font-weight:800;color:#0f172a;margin-bottom:.3rem;line-height:1.3}
+.hotel-card-meta{font-size:.85rem;color:#64748b;margin-bottom:.75rem}
+.hotel-card-dates{display:flex;gap:.5rem;font-size:.75rem;font-weight:700;margin-bottom:1rem}
+.date-chip{background:#f0fdf4;color:#059669;border:1px solid #bbf7d0;padding:.3rem .7rem;border-radius:6px}
+.hotel-card-footer{display:flex;justify-content:space-between;align-items:center;margin-top:auto}
+.hotel-amount{font-size:1.15rem;font-weight:800;color:#0f172a}
+.hotel-card-actions{display:flex;gap:.5rem}
+
+/* ── Detail panel ── */
+.detail-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;backdrop-filter:blur(4px)}
+.detail-panel{position:fixed;right:0;top:0;bottom:0;width:min(600px,100vw);background:#fff;z-index:501;overflow-y:auto;box-shadow:-8px 0 40px rgba(0,0,0,.2);transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)}
+.detail-panel.open{transform:none}
+.detail-overlay.open{display:block}
+.detail-header{background:#04060e;color:#fff;padding:1.25rem 1.5rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.detail-header h2{font-size:1.2rem;font-weight:800}
+.detail-close{background:none;border:none;color:#fff;font-size:1.8rem;cursor:pointer;opacity:.7;line-height:1;transition:.2s}
+.detail-close:hover{opacity:1;transform:rotate(90deg)}
+.detail-body{padding:1.5rem}
+.detail-img-wrap{width:100%;height:240px;background:#f8fafc;border-radius:12px;overflow:hidden;margin-bottom:1.5rem;position:relative;display:flex;align-items:center;justify-content:center;font-size:3rem;color:#cbd5e1;border:1px solid #e2e8f0}
+.detail-img-wrap img{width:100%;height:100%;object-fit:cover}
+.img-overlay-btn{position:absolute;bottom:1rem;right:1rem;background:rgba(15,23,42,.75);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:.5rem 1rem;font-size:.85rem;font-weight:700;cursor:pointer;backdrop-filter:blur(8px);transition:.2s;display:flex;align-items:center;gap:0.4rem;}
+.img-overlay-btn:hover{background:rgba(15,23,42,.9)}
+.img-paste-hint{position:absolute;top:1rem;left:1rem;background:rgba(15,23,42,.75);color:#fff;padding:0.3rem 0.6rem;border-radius:6px;font-size:0.75rem;font-weight:600;backdrop-filter:blur(8px);pointer-events:none;}
+
+.section-title{font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin:1.75rem 0 1rem;padding-bottom:0.4rem;border-bottom:1px solid #f1f5f9}
+.amenity-chips{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem}
+.amenity-chip{display:inline-flex;align-items:center;gap:.35rem;background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:.3rem .45rem .3rem .8rem;border-radius:999px;font-size:.8rem;font-weight:600}
+.amenity-chip-label{line-height:1.2}
+.amenity-chip-actions{display:inline-flex;align-items:center;gap:.15rem}
+.chip-icon-btn{width:18px;height:18px;border:none;background:transparent;color:#92400e;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:.65rem;padding:0;opacity:.8}
+.chip-icon-btn:hover{background:rgba(146,64,14,.12);opacity:1}
+.amenity-add-row{display:flex;gap:.55rem;align-items:center}
+.amenity-add-row input{margin-bottom:0}
+.currency-amount-row{display:grid;grid-template-columns:150px 1fr;gap:1rem}
+.room-list{display:flex;flex-direction:column;gap:.9rem;margin-bottom:1rem}
+.room-card{border:1px solid #e2e8f0;border-radius:12px;padding:1rem;background:#f8fafc}
+.room-card-header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.85rem}
+.room-card-title{font-size:.82rem;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.06em}
+.room-card-actions{display:flex;gap:.35rem}
+.guest-fields{display:flex;flex-direction:column;gap:.65rem}
+.guest-field-row{display:grid;grid-template-columns:110px 1fr;gap:.75rem;align-items:center}
+.guest-field-row span{font-size:.8rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+@media(max-width:640px){.currency-amount-row{grid-template-columns:1fr}}
+@media(max-width:640px){.guest-field-row{grid-template-columns:1fr}}
+.empty-state{text-align:center;padding:5rem 2rem;color:#94a3b8}
+.empty-state .icon{font-size:4rem;margin-bottom:1rem;opacity:0.8}
+
+/* ── Toast & Loading ── */
+.toast{position:fixed;bottom:2rem;left:50%;transform:translateX(-50%) translateY(20px);background:#0f172a;color:#fff;padding:.8rem 1.5rem;border-radius:10px;font-size:.9rem;font-weight:600;z-index:9999;opacity:0;transition:all .3s cubic-bezier(0.175, 0.885, 0.32, 1.275);pointer-events:none;box-shadow:0 10px 25px rgba(0,0,0,0.2)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.loading-overlay{display:none;position:fixed;inset:0;background:rgba(255,255,255,.85);z-index:800;align-items:center;justify-content:center;flex-direction:column;gap:1.2rem;backdrop-filter:blur(5px)}
+.loading-overlay.active{display:flex}
+.spinner{width:48px;height:48px;border:4px solid #e2e8f0;border-top-color:#10b981;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+{% include 'components/sidebar.html' %}
+
+<header class="app-header">
+  <button class="menu-toggle" id="menuToggle" aria-label="Open Menu">
+    <span class="menu-bar"></span><span class="menu-bar"></span><span class="menu-bar"></span>
+  </button>
+  <div class="header-brand">Time <span>Tours</span> Hotels</div>
+</header>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <p style="font-weight:800;color:#0f172a;font-size:1.1rem;letter-spacing:0.02em;">Processing booking…</p>
+</div>
+
+<div class="detail-overlay" id="detailOverlay" onclick="closeDetail()"></div>
+<div class="detail-panel" id="detailPanel">
+  <div class="detail-header">
+    <h2 id="detailTitle">Hotel Booking</h2>
+    <button class="detail-close" onclick="closeDetail()">&times;</button>
+  </div>
+  <div class="detail-body" id="detailBody"></div>
+</div>
+
+<div class="main-content">
+  <h1 class="page-title">🏨 Hotel <span>Bookings</span></h1>
+
+  <!-- Input card -->
+  <div class="parser-card">
+    <h2><span style="font-size:1.4rem">📥</span> Parse New Booking</h2>
+    <label class="upload-zone" id="uploadZone" for="fileInput">
+      <div class="icon">📄</div>
+      <h3>Drop PDF or click to browse</h3>
+      <p>Or paste raw booking text below</p>
+      <input type="file" id="fileInput" accept=".pdf" onchange="onFileSelected(this)">
+    </label>
+    <div id="fileNameLabel" style="display:none;font-size:.9rem;color:#10b981;margin-bottom:1rem;font-weight:700"></div>
+    <div class="input-group">
+      <label>Raw Booking Text (optional if PDF uploaded)</label>
+      <textarea id="rawText" placeholder="Paste confirmation email or booking details here…"></textarea>
+    </div>
+    <div class="action-row">
+      <button class="btn btn-primary" onclick="parseBooking()">✨ Parse & Extract</button>
+      <button class="btn btn-secondary" onclick="clearParser()">✕ Clear</button>
+    </div>
+  </div>
+
+  <!-- Hotel grid -->
+  <div id="hotelGrid" class="hotel-grid"></div>
+  <div id="emptyState" class="empty-state" style="display:none">
+    <div class="icon">🏨</div>
+    <p style="font-weight:800;font-size:1.2rem;margin-bottom:.5rem;color:#475569">No hotel bookings yet</p>
+    <p style="font-size:.95rem">Parse a PDF or paste booking text above to get started.</p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let bookings = [];
+let currentBooking = null;
+let uploadedImageUrl = null;
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  setupSidebar();
+  loadBookings();
+  setupDragDrop();
+  setupClipboardPaste();
+});
+
+function setupSidebar() {
+  const toggle = document.getElementById('menuToggle');
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+  if (toggle && sidebar) {
+    toggle.addEventListener('click', () => { sidebar.classList.add('active'); overlay?.classList.add('active'); });
+    overlay?.addEventListener('click', () => { sidebar.classList.remove('active'); overlay.classList.remove('active'); });
+  }
+}
+
+function setupDragDrop() {
+  const zone = document.getElementById('uploadZone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) { document.getElementById('fileInput').files = e.dataTransfer.files; onFileSelected({ files: e.dataTransfer.files }); }
+  });
+}
+
+function setupClipboardPaste() {
+  document.addEventListener('paste', async (e) => {
+    const isDetailOpen = document.getElementById('detailPanel').classList.contains('open');
+    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    
+    let imagePasted = false;
+    for (let index in items) {
+      const item = items[index];
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        imagePasted = true;
+        const blob = item.getAsFile();
+        
+        if (isDetailOpen && currentBooking) {
+          const fd = new FormData();
+          fd.append('image', blob, "pasted_image.png");
+          await uploadImageFormData(fd);
+        } else {
+          showToast('Open a hotel booking to paste an image.', 'error');
+        }
+        break;
+      }
+    }
+    
+    // Allow default text paste into textareas, but block it if it was an image
+    if (imagePasted) {
+      e.preventDefault();
+    }
+  });
+}
+
+function onFileSelected(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const lbl = document.getElementById('fileNameLabel');
+  lbl.textContent = `📎 ${file.name}`;
+  lbl.style.display = 'block';
+}
+
+
+// ── Parse ─────────────────────────────────────────────────────────────────────
+async function parseBooking() {
+  const fileInput = document.getElementById('fileInput');
+  const rawText = document.getElementById('rawText').value.trim();
+  const file = fileInput.files?.[0];
+  if (!file && !rawText) { showToast('Please upload a PDF or paste booking text.', 'error'); return; }
+
+  showLoading(true);
+  try {
+    const fd = new FormData();
+    if (file) fd.append('file', file);
+    if (rawText) fd.append('text', rawText);
+
+    const r = await fetch('/api/hotels/parse', { method: 'POST', body: fd });
+    const json = await r.json();
+    if (!r.ok || !json.success) { showToast(json.error || 'Parse failed', 'error'); return; }
+
+    // Save to DB then open detail
+    const saveR = await fetch('/api/hotels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(json.data)
+    });
+    const saved = await saveR.json();
+    if (!saveR.ok) { showToast(saved.error || 'Save failed', 'error'); return; }
+
+    showToast('Booking parsed & saved ✓');
+    clearParser();
+    await loadBookings();
+    const newBooking = bookings.find(b => b.id === saved.id);
+    if (newBooking) openDetail(newBooking);
+  } catch(e) {
+    showToast('Network error', 'error');
+  } finally {
+    showLoading(false);
+  }
+}
+
+function clearParser() {
+  document.getElementById('fileInput').value = '';
+  document.getElementById('rawText').value = '';
+  document.getElementById('fileNameLabel').style.display = 'none';
+}
+
+// ── Load bookings ─────────────────────────────────────────────────────────────
+async function loadBookings() {
+  try {
+    const r = await fetch('/api/hotels');
+    bookings = await r.json();
+    renderGrid();
+  } catch(e) { console.error(e); }
+}
+
+function renderGrid() {
+  const grid = document.getElementById('hotelGrid');
+  const empty = document.getElementById('emptyState');
+  if (!bookings.length) { grid.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+  grid.innerHTML = bookings.map(b => `
+    <div class="hotel-card" onclick="openDetail(bookings.find(x=>x.id==='${b.id}'))">
+      <div class="hotel-card-img">
+        ${b.image_url ? `<img src="${b.image_url}" alt="${b.hotel_name||'Hotel'}" onerror="this.parentElement.innerHTML='🏨'">` : '🏨'}
+      </div>
+      <div class="hotel-card-body">
+        <div class="hotel-card-name">${esc(b.hotel_name||'Unknown Hotel')}</div>
+        <div class="hotel-card-meta">${formatCardMeta(b)}</div>
+        <div class="hotel-card-dates">
+          ${b.check_in_date?`<span class="date-chip">IN ${b.check_in_date}</span>`:''}
+          ${b.check_out_date?`<span class="date-chip">OUT ${b.check_out_date}</span>`:''}
+        </div>
+        <div class="hotel-card-footer">
+          <span class="hotel-amount">${formatHotelAmount(b)}</span>
+          <div class="hotel-card-actions" onclick="event.stopPropagation()">
+            <button class="btn btn-pdf btn-sm" onclick="downloadPDF('${b.id}')">PDF</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteBooking('${b.id}')">✕</button>
+          </div>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+// ── Detail panel ──────────────────────────────────────────────────────────────
+function openDetail(b) {
+  if (!b) return;
+  currentBooking = b;
+  uploadedImageUrl = null;
+  document.getElementById('detailTitle').textContent = b.hotel_name || 'Hotel Booking';
+  document.getElementById('detailBody').innerHTML = buildDetailHTML(b);
+  const primaryInput = document.getElementById('f_guest_name');
+  if (primaryInput) primaryInput.dataset.autoPrimary = primaryInput.value.trim() ? 'false' : 'true';
+  const roomTypeInput = document.getElementById('f_room_type');
+  if (roomTypeInput) roomTypeInput.dataset.autoRoomType = roomTypeInput.value.trim() ? 'false' : 'true';
+  syncGuestSummaryFields();
+  document.getElementById('detailPanel').classList.add('open');
+  document.getElementById('detailOverlay').classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detailPanel').classList.remove('open');
+  document.getElementById('detailOverlay').classList.remove('open');
+  currentBooking = null;
+}
+
+function formatHotelAmount(b) {
+  if (b?.total_amount == null || b.total_amount === '') return '-';
+  const prefix = b?.currency ? `${esc(b.currency)} ` : '';
+  return `${prefix}${Number(b.total_amount).toLocaleString('en-IN',{minimumFractionDigits:0,maximumFractionDigits:2})}`;
+}
+
+function getRoomsForDisplay(b) {
+  const rooms = Array.isArray(b?.rooms) ? b.rooms.filter(Boolean) : [];
+  if (rooms.length) {
+    return rooms.map(room => ({
+      room_type: room.room_type || '',
+      guest_count: Number.isFinite(Number(room.guest_count)) ? Number(room.guest_count) : ((room.guests || []).length || 1),
+      guests: Array.isArray(room.guests) ? room.guests : [],
+      guest_summary: room.guest_summary || '',
+    }));
+  }
+  if (b?.room_type || b?.guest_name || b?.num_guests) {
+    return [{
+      room_type: b.room_type || '',
+      guest_count: b.num_guests || 1,
+      guests: b.guest_name ? [b.guest_name] : [],
+      guest_summary: !b.guest_name && b.num_guests ? `${b.num_guests} guest(s)` : ''
+    }];
+  }
+  return [];
+}
+
+function formatCardMeta(b) {
+  const rooms = getRoomsForDisplay(b);
+  const roomCount = rooms.length || b?.room_count || 0;
+  const guestCount = b?.num_guests || rooms.reduce((sum, room) => sum + ((room.guests || []).length || 0), 0);
+  const leadGuest = b?.guest_name || rooms.flatMap(room => room.guests || [])[0] || '';
+  const parts = [];
+  if (leadGuest) parts.push(esc(leadGuest));
+  if (roomCount) parts.push(`${roomCount} room${roomCount > 1 ? 's' : ''}`);
+  if (guestCount) parts.push(`${guestCount} guest${guestCount > 1 ? 's' : ''}`);
+  return parts.join(' · ');
+}
+
+function parseAmountInput(value) {
+  const cleaned = String(value ?? '').replace(/,/g, '').trim();
+  if (!cleaned) return null;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function renderGuestFields(room, roomIndex) {
+  const guestCount = Math.max(1, parseInt(room.guest_count, 10) || 1);
+  const guests = Array.isArray(room.guests) ? room.guests : [];
+  const rows = [];
+  for (let i = 0; i < guestCount; i += 1) {
+    rows.push(`
+      <div class="guest-field-row">
+        <span>${i === 0 ? 'Primary Guest' : `Guest ${i + 1}`}</span>
+        <input type="text" value="${esc(guests[i] || '')}" placeholder="${i === 0 ? 'Primary guest name' : `Guest ${i + 1} name`}" oninput="updateRoomGuestName(${roomIndex}, ${i}, this.value)">
+      </div>`);
+  }
+  return `<div class="guest-fields">${rows.join('')}</div>`;
+}
+
+function renderRoomCards(rooms) {
+  const items = Array.isArray(rooms) ? rooms : [];
+  if (!items.length) {
+    return '<span style="color:#94a3b8;font-size:.85rem">No rooms extracted yet</span>';
+  }
+  return items.map((room, index) => `
+    <div class="room-card">
+      <div class="room-card-header">
+        <div class="room-card-title">Room ${index + 1}</div>
+        <div class="room-card-actions">
+          <button type="button" class="chip-icon-btn" title="Delete room" onclick="removeRoom(${index})">&times;</button>
+        </div>
+      </div>
+      <div class="input-group">
+        <label>Room Type</label>
+        <input type="text" value="${esc(room.room_type || '')}" oninput="updateRoomField(${index}, 'room_type', this.value)">
+      </div>
+      <div class="input-group">
+        <label>Guest Count</label>
+        <input type="number" min="1" value="${Math.max(1, parseInt(room.guest_count, 10) || (room.guests || []).length || 1)}" oninput="updateRoomGuestCount(${index}, this.value)">
+      </div>
+      <div class="input-group">
+        <label>Guest Names</label>
+        ${renderGuestFields(room, index)}
+      </div>
+      <div class="input-group" style="margin-bottom:0">
+        <label>Guest Summary (fallback if not segmented)</label>
+        <input type="text" value="${esc(room.guest_summary || '')}" oninput="updateRoomField(${index}, 'guest_summary', this.value)">
+      </div>
+    </div>`).join('');
+}
+
+function renderRoomsEditor(roomsInput) {
+  return `
+    <p class="section-title">Rooms & Guests</p>
+    <div id="roomList" class="room-list">${renderRoomCards(roomsInput)}</div>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="addRoom()">Add Room</button>`;
+}
+
+function renderAmenitiesEditor(amenities) {
+  const items = Array.isArray(amenities) ? amenities : [];
+  const chips = items.length
+    ? items.map((a, i) => `
+      <span class="amenity-chip">
+        <span class="amenity-chip-label">${esc(a)}</span>
+        <span class="amenity-chip-actions">
+          <button type="button" class="chip-icon-btn" title="Edit amenity" onclick="editAmenity(${i})">&#9998;</button>
+          <button type="button" class="chip-icon-btn" title="Delete amenity" onclick="removeAmenity(${i})">&times;</button>
+        </span>
+      </span>`).join('')
+    : '<span style="color:#94a3b8;font-size:.85rem">No amenities added yet</span>';
+  return `
+    <p class="section-title">Amenities</p>
+    <div id="amenityList" class="amenity-chips">${chips}</div>
+    <div class="amenity-add-row">
+      <input id="f_new_amenity" type="text" placeholder="Add amenity" onkeydown="if(event.key==='Enter'){event.preventDefault();addAmenity();}">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="addAmenity()">Add</button>
+    </div>`;
+}
+
+function buildDetailHTML(b) {
+  return `
+    <div class="detail-img-wrap" id="detailImgWrap" title="You can also paste an image directly from clipboard">
+      <div class="img-paste-hint">Ctrl+V / Cmd+V to paste image</div>
+      ${b.image_url?`<img id="detailImg" src="${b.image_url}" alt="Hotel">`:
+        `<span id="detailImg">🏨</span>`}
+      <button class="img-overlay-btn" onclick="triggerImageUpload()">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+        Upload Custom Image
+      </button>
+    </div>
+    <input type="file" id="imgUploadInput" accept="image/*" style="display:none" onchange="uploadCustomImage(this)">
+    <p class="section-title">Hotel Details</p>
+    <div class="form-row">
+      <div class="input-group"><label>Hotel Name</label><input id="f_hotel_name" value="${esc(b.hotel_name||'')}"></div>
+      <div class="input-group"><label>Phone</label><input id="f_hotel_phone" value="${esc(b.hotel_phone||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="input-group"><label>Booking Confirmation</label><input id="f_booking_id" value="${esc(b.booking_confirmation||b.booking_id||'')}"></div>
+      <div class="input-group"><label>Primary Guest</label><input id="f_guest_name" value="${esc(b.guest_name||'')}" oninput="updatePrimaryGuest(this.value)"></div>
+    </div>
+    <div class="input-group"><label>Address</label><input id="f_hotel_address" value="${esc(b.hotel_address||'')}"></div>
+
+    <p class="section-title">Guest & Stay</p>
+    <div class="form-row">
+      <div class="input-group"><label>Total Guests</label><input id="f_num_guests" type="number" min="1" value="${b.num_guests||1}" oninput="applyTotalGuests(this.value)"></div>
+      <div class="input-group"><label>Room Count</label><input id="f_room_count" type="number" min="1" value="${b.room_count||1}" oninput="applyRoomCount(this.value)"></div>
+    </div>
+    <div class="form-row">
+      <div class="input-group"><label>Check-In</label>
+        <div style="display:flex;gap:0.5rem">
+          <input id="f_check_in_date" type="date" value="${b.check_in_date||''}" style="flex:2">
+          <input id="f_check_in_time" type="text" placeholder="e.g. 2:00 PM" value="${esc(b.check_in_time||'')}" style="flex:1">
+        </div>
+      </div>
+      <div class="input-group"><label>Check-Out</label>
+        <div style="display:flex;gap:0.5rem">
+          <input id="f_check_out_date" type="date" value="${b.check_out_date||''}" style="flex:2">
+          <input id="f_check_out_time" type="text" placeholder="e.g. 11:00 AM" value="${esc(b.check_out_time||'')}" style="flex:1">
+        </div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="input-group"><label>Room Type</label><input id="f_room_type" value="${esc(b.room_type||'')}" oninput="updatePrimaryRoomType(this.value)"></div>
+      <div class="input-group"><label>Meal Plan</label><input id="f_meal_plan" value="${esc(b.meal_plan||'')}"></div>
+    </div>
+    <div class="currency-amount-row">
+      <div class="input-group"><label>Currency</label><input id="f_currency" value="${esc(b.currency||'')}" placeholder="INR / USD / AED"></div>
+      <div class="input-group"><label>Total Amount</label><input id="f_total_amount" type="text" inputmode="decimal" value="${b.total_amount??''}"></div>
+    </div>
+    <div class="input-group"><label>Special Instructions</label><textarea id="f_special_instructions">${esc(b.special_instructions||'')}</textarea></div>
+
+    ${renderRoomsEditor(getRoomsForDisplay(b))}
+    ${renderAmenitiesEditor(b.amenities||[])}
+
+    <div class="action-row" style="margin-top: 2rem; border-top: 1px solid #f1f5f9; padding-top: 1.5rem;">
+      <button class="btn btn-primary" onclick="saveDetail()">💾 Save Changes</button>
+      <button class="btn btn-pdf" onclick="downloadPDF('${b.id}')">📄 Download PDF</button>
+      <button class="btn btn-danger" onclick="deleteBooking('${b.id}')">🗑 Delete</button>
+    </div>`;
+}
+
+function triggerImageUpload() { document.getElementById('imgUploadInput').click(); }
+
+async function uploadImageFormData(fd) {
+  showLoading(true);
+  try {
+    const r = await fetch('/api/hotels/upload-image', { method: 'POST', body: fd });
+    const j = await r.json();
+    if (!r.ok) { showToast(j.error||'Upload failed','error'); return; }
+    uploadedImageUrl = j.image_url;
+    if (currentBooking) currentBooking.image_url = j.image_url;
+    const wrap = document.getElementById('detailImgWrap');
+    if (wrap) {
+      // Find image tag or placeholder and replace it
+      const imgElem = document.getElementById('detailImg');
+      if (imgElem) {
+        imgElem.outerHTML = `<img id="detailImg" src="${j.image_url}" alt="Hotel">`;
+      } else {
+        // If somehow missing
+        wrap.insertAdjacentHTML('afterbegin', `<img id="detailImg" src="${j.image_url}" alt="Hotel">`);
+      }
+    }
+    showToast('Image updated ✓');
+    renderGrid();
+  } finally { showLoading(false); }
+}
+
+async function uploadCustomImage(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('image', file);
+  await uploadImageFormData(fd);
+}
+
+function getAmenities() {
+  return Array.isArray(currentBooking?.amenities) ? [...currentBooking.amenities] : [];
+}
+
+function getRooms() {
+  return Array.isArray(currentBooking?.rooms) ? [...currentBooking.rooms] : [];
+}
+
+function normalizeRoom(room = {}) {
+  const guests = Array.isArray(room.guests) ? room.guests.map(g => String(g || '').trim()) : [];
+  const guestCount = Math.max(1, parseInt(room.guest_count, 10) || guests.filter(Boolean).length || 1);
+  while (guests.length < guestCount) guests.push('');
+  return {
+    room_type: String(room.room_type || '').trim(),
+    guest_count: guestCount,
+    guests: guests.slice(0, guestCount),
+    guest_summary: String(room.guest_summary || '').trim(),
+  };
+}
+
+function syncPrimaryGuestField() {
+  const primaryInput = document.getElementById('f_guest_name');
+  if (!primaryInput) return;
+  const rooms = getRooms();
+  const firstNamedGuest = rooms.flatMap(room => room.guests || []).find(Boolean);
+  if (!primaryInput.value.trim() || primaryInput.dataset.autoPrimary === 'true') {
+    primaryInput.value = firstNamedGuest || primaryInput.value.trim();
+    primaryInput.dataset.autoPrimary = firstNamedGuest ? 'true' : 'false';
+  }
+}
+
+function syncGuestSummaryFields() {
+  const summary = buildRoomSummary(getRooms());
+  const roomCountInput = document.getElementById('f_room_count');
+  const guestCountInput = document.getElementById('f_num_guests');
+  const roomTypeInput = document.getElementById('f_room_type');
+  if (roomCountInput) roomCountInput.value = summary.room_count || 1;
+  if (guestCountInput) guestCountInput.value = summary.num_guests || 1;
+  if (roomTypeInput && (!roomTypeInput.value.trim() || roomTypeInput.dataset.autoRoomType === 'true')) {
+    roomTypeInput.value = summary.room_type || '';
+    roomTypeInput.dataset.autoRoomType = summary.room_type ? 'true' : 'false';
+  }
+  syncPrimaryGuestField();
+}
+
+function setRooms(nextRooms) {
+  if (!currentBooking) return;
+  currentBooking.rooms = nextRooms.map(room => normalizeRoom(room));
+  const list = document.getElementById('roomList');
+  if (!list) return;
+  list.innerHTML = renderRoomCards(currentBooking.rooms);
+  syncGuestSummaryFields();
+}
+
+function addRoom() {
+  setRooms([...getRooms(), { room_type: '', guest_count: 1, guests: [''], guest_summary: '' }]);
+}
+
+function removeRoom(index) {
+  const rooms = getRooms();
+  rooms.splice(index, 1);
+  setRooms(rooms);
+}
+
+function updateRoomField(index, field, value) {
+  const rooms = getRooms();
+  if (!rooms[index]) return;
+  rooms[index] = { ...rooms[index], [field]: value };
+  setRooms(rooms);
+}
+
+function updateRoomGuestCount(index, value) {
+  const rooms = getRooms();
+  if (!rooms[index]) return;
+  const nextCount = Math.max(1, parseInt(value, 10) || 1);
+  rooms[index] = normalizeRoom({ ...rooms[index], guest_count: nextCount });
+  setRooms(rooms);
+}
+
+function updateRoomGuestName(index, guestIndex, value) {
+  const rooms = getRooms();
+  if (!rooms[index]) return;
+  const room = normalizeRoom(rooms[index]);
+  room.guests[guestIndex] = value;
+  rooms[index] = room;
+  setRooms(rooms);
+}
+
+function applyRoomCount(value) {
+  const nextCount = Math.max(1, parseInt(value, 10) || 1);
+  const rooms = getRooms().map(room => normalizeRoom(room));
+  while (rooms.length < nextCount) {
+    rooms.push({ room_type: '', guest_count: 1, guests: [''], guest_summary: '' });
+  }
+  setRooms(rooms.slice(0, nextCount));
+}
+
+function applyTotalGuests(value) {
+  const target = Math.max(1, parseInt(value, 10) || 1);
+  const rooms = getRooms().map(room => normalizeRoom(room));
+  if (!rooms.length) {
+    setRooms([{ room_type: '', guest_count: target, guests: Array.from({ length: target }, () => ''), guest_summary: '' }]);
+    return;
+  }
+  let remaining = target;
+  const updated = rooms.map((room, index) => {
+    const minForRest = rooms.length - index - 1;
+    const assigned = index === rooms.length - 1
+      ? Math.max(1, remaining)
+      : Math.max(1, Math.min(room.guest_count || 1, remaining - minForRest));
+    remaining -= assigned;
+    return normalizeRoom({ ...room, guest_count: assigned });
+  });
+  setRooms(updated);
+}
+
+function buildRoomSummary(roomsInput) {
+  const rooms = Array.isArray(roomsInput) ? roomsInput.filter(Boolean) : [];
+  const roomCount = rooms.length || null;
+  const firstRoomType = rooms.find(room => room.room_type)?.room_type || '';
+  let primaryGuestName = '';
+  let countedGuests = 0;
+  let fallbackSummary = '';
+  rooms.forEach(room => {
+    const guests = Array.isArray(room.guests) ? room.guests.filter(Boolean) : [];
+    countedGuests += Math.max(guests.length, parseInt(room.guest_count, 10) || 0);
+    if (!primaryGuestName && guests.length) primaryGuestName = guests[0];
+    if (!fallbackSummary && room.guest_summary) fallbackSummary = room.guest_summary;
+  });
+  return {
+    room_count: roomCount,
+    room_type: firstRoomType,
+    num_guests: countedGuests || null,
+    guest_name: primaryGuestName || fallbackSummary || '',
+  };
+}
+
+function updatePrimaryGuest(value) {
+  const input = document.getElementById('f_guest_name');
+  if (input) input.dataset.autoPrimary = 'false';
+  const rooms = getRooms();
+  if (!rooms.length) {
+    setRooms([{ room_type: '', guest_count: 1, guests: [value], guest_summary: '' }]);
+    return;
+  }
+  const firstRoom = normalizeRoom(rooms[0]);
+  firstRoom.guests[0] = value;
+  rooms[0] = firstRoom;
+  setRooms(rooms);
+}
+
+function updatePrimaryRoomType(value) {
+  const input = document.getElementById('f_room_type');
+  if (input) input.dataset.autoRoomType = 'false';
+  const rooms = getRooms();
+  if (!rooms.length) {
+    setRooms([{ room_type: value, guest_count: 1, guests: [''], guest_summary: '' }]);
+    return;
+  }
+  rooms[0] = normalizeRoom({ ...rooms[0], room_type: value });
+  setRooms(rooms);
+}
+
+function setAmenities(nextAmenities) {
+  if (!currentBooking) return;
+  currentBooking.amenities = nextAmenities.filter(Boolean).map(a => String(a).trim()).filter(Boolean);
+  const list = document.getElementById('amenityList');
+  if (!list) return;
+  list.innerHTML = currentBooking.amenities.length
+    ? currentBooking.amenities.map((a, i) => `
+      <span class="amenity-chip">
+        <span class="amenity-chip-label">${esc(a)}</span>
+        <span class="amenity-chip-actions">
+          <button type="button" class="chip-icon-btn" title="Edit amenity" onclick="editAmenity(${i})">&#9998;</button>
+          <button type="button" class="chip-icon-btn" title="Delete amenity" onclick="removeAmenity(${i})">&times;</button>
+        </span>
+      </span>`).join('')
+    : '<span style="color:#94a3b8;font-size:.85rem">No amenities added yet</span>';
+}
+
+function addAmenity() {
+  const input = document.getElementById('f_new_amenity');
+  const value = input?.value?.trim();
+  if (!value) return;
+  setAmenities([...getAmenities(), value]);
+  input.value = '';
+}
+
+function editAmenity(index) {
+  const amenities = getAmenities();
+  const currentValue = amenities[index];
+  if (currentValue == null) return;
+  const nextValue = window.prompt('Edit amenity', currentValue);
+  if (nextValue == null) return;
+  amenities[index] = nextValue.trim();
+  setAmenities(amenities);
+}
+
+function removeAmenity(index) {
+  const amenities = getAmenities();
+  amenities.splice(index, 1);
+  setAmenities(amenities);
+}
+
+async function saveDetail() {
+  if (!currentBooking) return;
+  const rooms = getRooms();
+  const roomSummary = buildRoomSummary(rooms);
+  const payload = {
+    booking_id: document.getElementById('f_booking_id').value,
+    hotel_name: document.getElementById('f_hotel_name').value,
+    hotel_phone: document.getElementById('f_hotel_phone').value,
+    hotel_address: document.getElementById('f_hotel_address').value,
+    guest_name: document.getElementById('f_guest_name').value || roomSummary.guest_name,
+    num_guests: parseInt(document.getElementById('f_num_guests').value)||roomSummary.num_guests,
+    check_in_date: document.getElementById('f_check_in_date').value||null,
+    check_in_time: document.getElementById('f_check_in_time').value||null,
+    check_out_date: document.getElementById('f_check_out_date').value||null,
+    check_out_time: document.getElementById('f_check_out_time').value||null,
+    room_type: document.getElementById('f_room_type').value || roomSummary.room_type,
+    room_count: parseInt(document.getElementById('f_room_count').value)||roomSummary.room_count||1,
+    rooms,
+    meal_plan: document.getElementById('f_meal_plan').value,
+    currency: document.getElementById('f_currency').value,
+    total_amount: parseAmountInput(document.getElementById('f_total_amount').value),
+    amenities: getAmenities(),
+    special_instructions: document.getElementById('f_special_instructions').value,
+    image_url: uploadedImageUrl || currentBooking.image_url,
+  };
+  showLoading(true);
+  try {
+    const r = await fetch(`/api/hotels/${currentBooking.id}`, {
+      method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+    const j = await r.json();
+    if (!r.ok) { showToast(j.error||'Save failed','error'); return; }
+    Object.assign(currentBooking, j.data);
+    await loadBookings();
+    showToast('Saved ✓');
+  } finally { showLoading(false); }
+}
+
+async function deleteBooking(id) {
+  if (!confirm('Delete this hotel booking?')) return;
+  showLoading(true);
+  try {
+    await fetch(`/api/hotels/${id}`, { method: 'DELETE' });
+    closeDetail();
+    await loadBookings();
+    showToast('Deleted');
+  } finally { showLoading(false); }
+}
+
+function downloadPDF(id) {
+  if (!currentBooking && id !== currentBooking?.id) {
+    window.open(`/api/hotels/${id}/pdf`, '_blank'); return;
+  }
+  // Send edited snapshot
+  const rooms = getRooms();
+  const roomSummary = buildRoomSummary(rooms);
+  const payload = {
+    booking_id: document.getElementById('f_booking_id')?.value,
+    hotel_name: document.getElementById('f_hotel_name')?.value,
+    hotel_phone: document.getElementById('f_hotel_phone')?.value,
+    hotel_address: document.getElementById('f_hotel_address')?.value,
+    guest_name: document.getElementById('f_guest_name')?.value || roomSummary.guest_name,
+    num_guests: parseInt(document.getElementById('f_num_guests')?.value)||roomSummary.num_guests,
+    check_in_date: document.getElementById('f_check_in_date')?.value||null,
+    check_in_time: document.getElementById('f_check_in_time')?.value||null,
+    check_out_date: document.getElementById('f_check_out_date')?.value||null,
+    check_out_time: document.getElementById('f_check_out_time')?.value||null,
+    room_type: document.getElementById('f_room_type')?.value || roomSummary.room_type,
+    room_count: parseInt(document.getElementById('f_room_count')?.value)||roomSummary.room_count||1,
+    rooms,
+    meal_plan: document.getElementById('f_meal_plan')?.value,
+    currency: document.getElementById('f_currency')?.value,
+    total_amount: parseAmountInput(document.getElementById('f_total_amount')?.value),
+    amenities: getAmenities(),
+    special_instructions: document.getElementById('f_special_instructions')?.value,
+    uploaded_image_url: uploadedImageUrl||null,
+    image_url: uploadedImageUrl || currentBooking?.image_url,
+  };
+  fetch(`/api/hotels/${id}/pdf`, {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+  }).then(r => r.blob()).then(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'Hotel_Voucher.pdf';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function esc(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+function showLoading(v){ document.getElementById('loadingOverlay').classList.toggle('active',v); }
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = type==='error'?'#ef4444':'#0f172a';
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>
