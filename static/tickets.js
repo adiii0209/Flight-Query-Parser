@@ -73,6 +73,45 @@ const AIRPORT_TZ_MAP = window.AIRPORT_TZ_MAP || {};
 const AIRPORT_GEO_ROUTE_FACTOR = 1.08;
 const AIRPORT_GEO_OVERHEAD_MINUTES = 28;
 
+function getInlineSvgIcon(name, className = '') {
+    const cssClass = className ? ` class="${className}"` : '';
+    const icons = {
+        booking: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3"/><path d="M16 3v3"/><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 14h3"/><path d="M8 17h5"/></svg>`,
+        building: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v14"/><path d="M16 11h2a2 2 0 0 1 2 2v8"/><path d="M8 9h.01"/><path d="M8 13h.01"/><path d="M8 17h.01"/><path d="M12 9h.01"/><path d="M12 13h.01"/><path d="M12 17h.01"/><path d="M10 21v-3h2v3"/></svg>`,
+        passengers: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="3.25"/><path d="M21 21v-2a3.5 3.5 0 0 0-2.6-3.38"/><path d="M15.5 3.8a3.2 3.2 0 0 1 0 6.4"/></svg>`,
+        passenger: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20v-1a5 5 0 0 0-5-5H8a5 5 0 0 0-5 5v1"/><circle cx="10.5" cy="8" r="3.5"/></svg>`,
+        fare: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 6.5c0-1.9-2.2-3.5-5-3.5S7 4.6 7 6.5 9.2 10 12 10s5 1.6 5 3.5-2.2 3.5-5 3.5-5-1.6-5-3.5"/></svg>`,
+        actions: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>`,
+        pdf: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M8 13h3"/><path d="M8 17h5"/></svg>`,
+        trash: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`,
+        change: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h13"/><path d="m12 3 4 4-4 4"/><path d="M21 17H8"/><path d="m12 13-4 4 4 4"/></svg>`,
+        cancel: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6"/><path d="m15 9-6 6"/></svg>`,
+        success: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg>`,
+        warning: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.8 19a1 1 0 0 0 .87 1.5h16.66A1 1 0 0 0 21.2 19L12 3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`,
+        statusLive: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor"/></svg>`,
+        statusChanged: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor"/></svg>`,
+        statusCancelled: `<svg${cssClass} viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor"/></svg>`
+    };
+    return icons[name] || '';
+}
+
+function renderTitleWithIcon(label, iconName) {
+    return `<h2 class="title-with-icon">${getInlineSvgIcon(iconName, 'inline-icon')}<span>${label}</span></h2>`;
+}
+
+function renderActionLabel(label, iconName) {
+    return `<span class="action-label">${getInlineSvgIcon(iconName, 'btn-inline-icon')}<span>${label}</span></span>`;
+}
+
+function renderStatusBadge(label, tone) {
+    const iconMap = {
+        cancelled: 'statusCancelled',
+        changed: 'statusChanged',
+        live: 'statusLive'
+    };
+    return `<span class="detail-status-chip ${tone}">${getInlineSvgIcon(iconMap[tone], 'status-inline-icon')}<span>${label}</span></span>`;
+}
+
 // ==================== SIDEBAR & THEME ====================
 function initializeSidebar() {
     const menuToggle = document.getElementById('menuToggle');
@@ -4392,14 +4431,14 @@ function renderDetailView() {
     // Ticket status badge for detail
     const detailTStatus = t.ticket_status || 'live';
     const detailTStatusBadge = detailTStatus === 'cancelled'
-        ? '<span style="background:rgba(239,68,68,0.12);color:#ef4444;padding:0.2rem 0.7rem;border-radius:8px;font-size:0.82rem;font-weight:700;">🔴 Cancelled</span>'
+        ? renderStatusBadge('Cancelled', 'cancelled')
         : detailTStatus === 'changed'
-        ? '<span style="background:rgba(245,158,11,0.12);color:#f59e0b;padding:0.2rem 0.7rem;border-radius:8px;font-size:0.82rem;font-weight:700;">🟡 Changed</span>'
-        : '<span style="background:rgba(16,185,129,0.12);color:#10b981;padding:0.2rem 0.7rem;border-radius:8px;font-size:0.82rem;font-weight:700;">🟢 Live</span>';
+        ? renderStatusBadge('Changed', 'changed')
+        : renderStatusBadge('Live', 'live');
 
     // Cancellation charge display
     const charge = parseFloat(t.cancellation_charge) || 0;
-    const chargeHtml = charge > 0 ? `<span style="background:rgba(239,68,68,0.1); color:#dc2626; padding:0.2rem 0.6rem; border-radius:8px; font-size:0.8rem; font-weight:700; border:1px solid rgba(239,68,68,0.2);">⚠️ XXD: ₹${charge.toLocaleString('en-IN')}</span>` : '';
+    const chargeHtml = charge > 0 ? `<span class="detail-alert-chip">${getInlineSvgIcon('warning', 'inline-icon inline-icon-sm')}<span>XXD: ₹${charge.toLocaleString('en-IN')}</span></span>` : '';
 
     document.getElementById('ticketDetailHeader').innerHTML = `
         <div class="detail-header-main">
@@ -4416,7 +4455,7 @@ function renderDetailView() {
             </div>
         </div>
         <div class="detail-actions">
-            <button class="btn-action small danger" onclick="deleteTicket()">Delete</button>
+            <button class="btn-action small danger" onclick="deleteTicket()">${renderActionLabel('Delete', 'trash')}</button>
         </div>`;
     renderBookingSection();
     renderSegmentsSection();
@@ -4441,7 +4480,7 @@ function renderBookingSection() {
     const gstHtml = `
         <div style="margin-top:1rem; padding:1rem; background:var(--bg-main); border-radius:10px; border:1px solid var(--border);">
             <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.75rem;">
-                <span style="font-size:1rem;">🏢</span>
+                <span class="inline-icon-wrap accent-amber">${getInlineSvgIcon('building', 'inline-icon')}</span>
                 <span style="font-weight:700; font-size:0.9rem; color:var(--text-primary);">GST Details</span>
             </div>
             <div class="field-grid">
@@ -4457,7 +4496,7 @@ function renderBookingSection() {
         </div>`;
 
     document.getElementById('bookingSection').innerHTML = `
-        <div class="section-header-row"><h2>📋 Booking Information</h2></div>
+        <div class="section-header-row">${renderTitleWithIcon('Booking Information', 'booking')}</div>
         <div class="field-grid">
             <div class="field-item ${pnrNeedsWarning ? 'warning' : ''}" id="ticketPnrField">
                 <div class="field-label-row">
@@ -4655,29 +4694,29 @@ function renderSegmentsSection() {
 
         if (showLegSummary) {
             html += `<div class="leg-header-v2" onclick="toggleLeg('${legId}')" style="cursor:pointer;">
-                <div style="display:flex; width:100%; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
-                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                <div class="leg-summary-shell">
+                    <div class="leg-summary-badge-wrap">
                         <span class="leg-badge-v2">${legLabel}</span>
                     </div>
-                    <div style="display:flex; flex:1; justify-content:center; align-items:center; gap:1.5rem; min-width:300px;">
-                        <div style="display:flex; flex-direction:column; align-items:flex-start; text-align:left;">
-                            <div style="display:flex; align-items:baseline; gap:0.3rem;"><span class="leg-code">${legOrigin}</span>${legOriginCity ? `<span class="leg-city" style="font-size:0.75rem; color:var(--text-secondary);">(${legOriginCity})</span>` : ''}</div>
-                            <div style="display:flex; gap:0.4rem; align-items:baseline; margin-top:2px;"><span style="font-weight:700; font-size:0.95rem;">${depTime || '--:--'}</span><span style="font-size:0.7rem; color:var(--text-secondary);">${depDate}</span></div>
+                    <div class="leg-summary-route">
+                        <div class="leg-summary-endpoint">
+                            <div class="leg-summary-code-row"><span class="leg-code">${legOrigin}</span>${legOriginCity ? `<span class="leg-city leg-summary-city">(${legOriginCity})</span>` : ''}</div>
+                            <div class="leg-summary-time-row"><span class="leg-summary-time">${depTime || '--:--'}</span><span class="leg-summary-date">${depDate}</span></div>
                         </div>
-                        <div style="flex:1; width:220px; max-width:220px; min-width:170px; display:grid; grid-template-rows:18px 18px 16px; align-items:center; justify-items:center; row-gap:0.16rem;">
-                            <div style="display:flex;align-items:center;justify-content:center;min-height:18px;">${durationSummaryHtml}</div>
-                            <div style="width:100%; height:18px; position:relative; display:flex; align-items:center; justify-content:center;">
-                                <div style="position:absolute; left:0; right:0; top:50%; height:2px; transform:translateY(-50%); background:linear-gradient(90deg, var(--primary), #8b5cf6); border-radius:2px;"></div>
-                                <div style="position:relative; z-index:1; width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; color:#8b5cf6; background:var(--bg-card); border:1px solid rgba(139,92,246,0.16); border-radius:999px; font-size:0.9rem; line-height:1;">&#9992;</div>
+                        <div class="leg-summary-middle">
+                            <div class="leg-summary-duration">${durationSummaryHtml}</div>
+                            <div class="leg-summary-line-wrap">
+                                <div class="leg-summary-line"></div>
+                                <div class="leg-summary-plane" aria-hidden="true">&#9992;</div>
                             </div>
-                            <div style="font-size:0.65rem; color:#f59e0b; font-weight:600; text-align:center; white-space:nowrap; line-height:1.1;">${stopCount} stop${stopCount > 1 ? 's' : ''} in ${layoverAirports.join(', ')}</div>
+                            <div class="leg-summary-stops">${stopCount} stop${stopCount > 1 ? 's' : ''} in ${layoverAirports.join(', ')}</div>
                         </div>
-                        <div style="display:flex; flex-direction:column; align-items:flex-start; text-align:left;">
-                            <div style="display:flex; align-items:baseline; gap:0.3rem;"><span class="leg-code">${legDest}</span>${legDestCity ? `<span class="leg-city" style="font-size:0.75rem; color:var(--text-secondary);">(${legDestCity})</span>` : ''}</div>
-                            <div style="display:flex; gap:0.4rem; align-items:baseline; margin-top:2px;"><span style="font-weight:700; font-size:0.95rem;">${arrTime || '--:--'}</span><span style="font-size:0.7rem; color:var(--text-secondary);">${arrDate}</span></div>
+                        <div class="leg-summary-endpoint">
+                            <div class="leg-summary-code-row"><span class="leg-code">${legDest}</span>${legDestCity ? `<span class="leg-city leg-summary-city">(${legDestCity})</span>` : ''}</div>
+                            <div class="leg-summary-time-row"><span class="leg-summary-time">${arrTime || '--:--'}</span><span class="leg-summary-date">${arrDate}</span></div>
                         </div>
                     </div>
-                    <div style="display:flex; align-items:center; min-width:20px; justify-content:flex-end;"><span class="leg-expand-icon" id="icon-${legId}">v</span></div>
+                    <div class="leg-summary-expand"><span class="leg-expand-icon" id="icon-${legId}">v</span></div>
                 </div>
             </div>`;
         }
@@ -4992,7 +5031,7 @@ function renderPassengersSection() {
     }
 
     let html = `<div class="section-header-row">
-        <h2>👥 Passengers</h2>
+        ${renderTitleWithIcon('Passengers', 'passengers')}
         <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
             <label style="display:flex; align-items:center; gap:0.45rem; font-size:0.9rem; color:var(--text-secondary);">
                 <span>Sort</span>
@@ -5041,7 +5080,7 @@ function renderPassengersSection() {
                     <input type="checkbox" class="pax-checkbox" id="paxCheck-${i}"
                         ${isChecked ? 'checked' : ''}
                         onchange="togglePaxSelection(${i}, this.checked)">
-                    <h4 style="margin:0;">👤 ${safe(p.name, 'Passenger ' + (i + 1))}</h4>
+                    <h4 class="passenger-card-title" style="margin:0;">${getInlineSvgIcon('passenger', 'inline-icon inline-icon-sm')}<span>${safe(p.name, 'Passenger ' + (i + 1))}</span></h4>
                 </div>
                 <div style="display:flex;align-items:center;gap:0.5rem;">
                     <span class="pax-type-badge ${typeClass}">${paxType}</span>
@@ -7738,11 +7777,11 @@ function renderActionsSection() {
     const isMergedView = !!editedData.is_merged_view;
 
     document.getElementById('actionsSection').innerHTML = `
-        <div class="section-header-row"><h2>⚡ Actions</h2></div>
+        <div class="section-header-row">${renderTitleWithIcon('Actions', 'actions')}</div>
         <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;">
             <div class="pdf-btn-group">
-                <button class="pdf-btn with-fare" data-pdf-download="with-fare" onclick="downloadPDF(true)">📄 PDF (With Fare)</button>
-                <button class="pdf-btn without-fare" data-pdf-download="without-fare" onclick="downloadPDF(false)">📄 PDF (Without Fare)</button>
+                <button class="pdf-btn with-fare" data-pdf-download="with-fare" onclick="downloadPDF(true)">${renderActionLabel('PDF (With Fare)', 'pdf')}</button>
+                <button class="pdf-btn without-fare" data-pdf-download="without-fare" onclick="downloadPDF(false)">${renderActionLabel('PDF (Without Fare)', 'pdf')}</button>
             </div>
             ${!editedData.ledger_hash ? `
             <div id="ledgerBtnGroup" style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-main); padding:0.5rem 1rem; border-radius:12px; border:1px solid var(--border);">
@@ -7754,15 +7793,15 @@ function renderActionsSection() {
                 <button class="pdf-btn" style="background: #6366f1; color:white; padding: 0.45rem 0.5rem; min-width:38px; justify-content:center;" onclick="addToLedger('CK')">CK</button>
             </div>` : `
             <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(16,185,129,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(16,185,129,0.2);">
-                <span style="font-weight:700; color:#10b981;">✅ In Ledger</span>
+                <span class="action-label success-text">${getInlineSvgIcon('success', 'btn-inline-icon')}<span>In Ledger</span></span>
             </div>`}
             ${!isCancelled ? `
             <div class="action-danger-group" style="display:flex; align-items:center; gap:0.5rem; background:rgba(239,68,68,0.05); padding:0.5rem 1rem; border-radius:12px; border:1px solid rgba(239,68,68,0.2);">
-                <button class="pdf-btn" style="background:linear-gradient(135deg,#dc2626,#ef4444); color:white; padding:0.5rem 1rem;" onclick="openCancelModal()">❌ Cancel / Split</button>
-                <button class="pdf-btn" style="background:linear-gradient(135deg,#d97706,#f59e0b); color:white; padding:0.5rem 1rem;" onclick="openChangeModal()">🔄 Change</button>
+                <button class="pdf-btn" style="background:linear-gradient(135deg,#dc2626,#ef4444); color:white; padding:0.5rem 1rem;" onclick="openCancelModal()">${renderActionLabel('Cancel / Split', 'cancel')}</button>
+                <button class="pdf-btn" style="background:linear-gradient(135deg,#d97706,#f59e0b); color:white; padding:0.5rem 1rem;" onclick="openChangeModal()">${renderActionLabel('Change', 'change')}</button>
             </div>` : `
             <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(239,68,68,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px dashed rgba(239,68,68,0.3);">
-                <span style="font-weight:700; color:#ef4444;">🔴 This ticket is cancelled</span>
+                <span class="action-label danger-text">${getInlineSvgIcon('statusCancelled', 'btn-inline-icon')}<span>This ticket is cancelled</span></span>
             </div>`}
             ${isMergedView ? `
             <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(5,150,105,0.08); padding:0.6rem 1.2rem; border-radius:12px; border:1px solid rgba(5,150,105,0.2);">
