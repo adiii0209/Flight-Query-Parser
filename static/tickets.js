@@ -2063,9 +2063,14 @@ function mergeTicketLists(primaryTickets, secondaryTickets) {
 function cacheTicketDetail(ticket) {
     if (!ticket || !ticket.id) return;
     const normalized = normalizeTicketFareData(ticket);
-    // 1. Write to in-memory map
+    // 1. Always update in-memory map (safe for current session)
     ticketDetailCache.set(normalized.id, normalized);
-    // 2. Persist to localStorage so detail is instant even after page refresh
+    // 2. Only persist to localStorage when NOT mid-edit.
+    //    If isDetailDirty is true, editedData has unsaved changes that have NOT been
+    //    merged back into `ticket` — writing now would create a partial/inconsistent snapshot.
+    if (isDetailDirty || hasPendingLocalDraft) {
+        return; // Skip localStorage write; in-memory cache is still useful for this session.
+    }
     try {
         localStorage.setItem(
             'ticketsDashboard.detail.' + normalized.id,
@@ -2074,7 +2079,7 @@ function cacheTicketDetail(ticket) {
     } catch (e) { /* localStorage full — in-memory cache still works */ }
 }
 
-/** Evict a ticket's detail from both caches (call on delete). */
+/** Evict a ticket's detail from both caches (call on delete or stale-dirty nav). */
 function evictTicketDetailCache(ticketId) {
     if (!ticketId) return;
     ticketDetailCache.delete(ticketId);
@@ -3221,11 +3226,19 @@ async function openTicket(id, { syncUrl = true, replaceUrl = false } = {}) {
 }
 
 async function showListView({ syncUrl = true, replaceUrl = false } = {}) {
+    const wasEditing = isDetailDirty || hasPendingLocalDraft;
+    const editedTicketId = currentTicket?.id;
     if (currentTicket && editedData) {
         clearTimeout(autoSaveTimeout);
         if (isDetailDirty) {
             await queueSave(true);
         }
+    }
+    // If we still have dirty state after the save attempt (save failed/offline),
+    // evict the persisted detail cache for this ticket so that next open always
+    // fetches clean data from the server instead of a corrupted partial snapshot.
+    if (wasEditing && editedTicketId && (isDetailDirty || hasPendingLocalDraft)) {
+        evictTicketDetailCache(editedTicketId);
     }
     document.getElementById('detailView').style.display = 'none';
     document.getElementById('listView').style.display = 'block';
@@ -5796,10 +5809,10 @@ function syncPassengerNamesToVisibleUi(index) {
         passengerHeader.textContent = `👤 ${passengerName}`;
     }
 
-    if (currentTicket?.id === editedData?.id) {
-        currentTicket.passengers = JSON.parse(JSON.stringify(editedData.passengers || []));
-        cacheTicketDetail(currentTicket);
-    }
+    // NOTE: Do NOT mutate currentTicket here during an edit session.
+    // currentTicket must stay as a clean copy of the last server state so that
+    // the detail cache, draft comparison, and sync logic all work correctly.
+    // The list-view card below is updated via allTickets which is separate.
     const ticketIndex = allTickets.findIndex(ticket => ticket.id === editedData?.id);
     if (ticketIndex !== -1) {
         allTickets[ticketIndex].passengers = JSON.parse(JSON.stringify(editedData.passengers || []));
