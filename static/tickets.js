@@ -23,6 +23,8 @@ let _processingJustCompleted = false;
 let _pendingArrivalToastMessage = '';
 let _duplicateAlertTimeout = null;
 let _hasLoadedNotificationsOnce = false;
+let _lastNotificationFetchAt = 0;           // throttle: ms timestamp of last fetch
+const NOTIF_THROTTLE_MS = 30 * 1000;        // don't re-fetch notifications within 30s
 let totalAvailableTickets = 0;
 let lastFullTicketsSyncAt = 0;
 let fullTicketsSyncPromise = null;
@@ -2047,7 +2049,22 @@ function mergeTicketLists(primaryTickets, secondaryTickets) {
 function cacheTicketDetail(ticket) {
     if (!ticket || !ticket.id) return;
     const normalized = normalizeTicketFareData(ticket);
+    // 1. Write to in-memory map
     ticketDetailCache.set(normalized.id, normalized);
+    // 2. Persist to localStorage so detail is instant even after page refresh
+    try {
+        localStorage.setItem(
+            'ticketsDashboard.detail.' + normalized.id,
+            JSON.stringify({ t: Date.now(), d: normalized })
+        );
+    } catch (e) { /* localStorage full — in-memory cache still works */ }
+}
+
+/** Evict a ticket's detail from both caches (call on delete). */
+function evictTicketDetailCache(ticketId) {
+    if (!ticketId) return;
+    ticketDetailCache.delete(ticketId);
+    try { localStorage.removeItem('ticketsDashboard.detail.' + ticketId); } catch (e) {}
 }
 
 function setTicketEditBaseline(ticket) {
@@ -2063,10 +2080,29 @@ function setTicketEditBaseline(ticket) {
 
 function getCachedTicketDetail(id) {
     if (!id) return null;
+    // 1. In-memory detail cache (full data — safe to serve as detail view)
     const fromMemory = ticketDetailCache.get(id);
-    if (fromMemory) return normalizeTicketFareData(fromMemory);
-    const fromList = allTickets.find((ticket) => ticket && ticket.id === id);
-    return fromList ? normalizeTicketFareData(fromList) : null;
+    if (fromMemory && fromMemory.id === id) return normalizeTicketFareData(fromMemory);
+    // 2. localStorage persisted detail (survives page refresh, keyed by ID — no cross-contamination)
+    try {
+        const raw = localStorage.getItem('ticketsDashboard.detail.' + id);
+        if (raw) {
+            const entry = JSON.parse(raw);
+            if (entry && entry.d && entry.d.id === id) {
+                const age = Date.now() - (entry.t || 0);
+                if (age < 10 * 60 * 1000) { // 10-min TTL
+                    const ticket = normalizeTicketFareData(entry.d);
+                    ticketDetailCache.set(id, ticket); // warm in-memory cache
+                    return ticket;
+                } else {
+                    localStorage.removeItem('ticketsDashboard.detail.' + id);
+                }
+            }
+        }
+    } catch (e) {}
+    // NOTE: Do NOT fall back to allTickets — those are list-view stubs (no barcodes,
+    // operations, etc.) and serving them as detail causes dangerous data hazards.
+    return null;
 }
 
 function hydrateTicketsFromCache() {
@@ -2142,7 +2178,9 @@ async function loadTickets(options = {}) {
             lastFullTicketsSyncAt = Date.now();
         }
         knownTicketIds = new Set(allTickets.map((ticket) => ticket.id).filter(Boolean));
-        allTickets.forEach(cacheTicketDetail);
+        // NOTE: Do NOT call cacheTicketDetail on list stubs here. List-view tickets
+        // are incomplete (no barcodes, ledger ops, etc.) — persisting them would cause
+        // getCachedTicketDetail to serve stale/incomplete data as if it were a full detail.
         writeCachedJson(TICKETS_CACHE_KEY, {
             cached_at: Date.now(),
             total_count: totalAvailableTickets,
@@ -2250,31 +2288,45 @@ async function syncCurrentTicketFromServer() {
 }
 
 function scheduleRealtimeRefresh(payload = {}) {
+    // Directly apply embedded notification data — no fetch needed
     if (payload.notifications) {
         _notifData = payload.notifications;
         writeCachedJson(TICKETS_NOTIFICATIONS_CACHE_KEY, _notifData);
         _updateNotifBadges();
+        _lastNotificationFetchAt = Date.now(); // counts as a notification fetch
     }
-    if (payload.event === 'connected') {
-        return;
-    }
+    if (payload.event === 'connected') return;
+
+    // Sync current open ticket if this event targets it
     if (payload.ticket_id && currentTicket && currentTicket.id === payload.ticket_id) {
         if (!isDetailDirty && !isSaveInFlight && Date.now() >= suppressRealtimeUntil) {
             void syncCurrentTicketFromServer();
         }
     }
+
+    // Debounce the dashboard refresh — 2s window collapses rapid bursts
     clearTimeout(realtimeRefreshHandle);
     realtimeRefreshHandle = setTimeout(async () => {
         try {
-            await loadNotifications();
-            const snapshot = await loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, render: true });
-            if (snapshot && (allTickets.length < totalAvailableTickets || payload.event === 'ticket_created')) {
+            const isNewTicket = payload.event === 'ticket_created';
+            const notifStale = (Date.now() - _lastNotificationFetchAt) > NOTIF_THROTTLE_MS;
+
+            // Only fetch notifications if throttle window has expired
+            if (notifStale) {
+                void loadNotifications();
+            }
+
+            // Always load the first page to surface new/updated tickets
+            const snapshot = await loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, render: true, notifyNewTickets: isNewTicket });
+
+            // Full sync only when a new ticket arrived or list is incomplete
+            if (snapshot && (isNewTicket || allTickets.length < totalAvailableTickets)) {
                 void syncAllTicketsInBackground();
             }
         } catch (e) {
             console.error('Realtime refresh failed', e);
         }
-    }, 120);
+    }, 2000); // 2-second debounce
 }
 
 function startTicketsRealtime() {
@@ -2369,9 +2421,17 @@ function resumeDashboardLiveUpdates({ refresh = false } = {}) {
         scheduleTicketsRealtimeRetry();
     }
     if (refresh) {
-        void loadNotifications();
+        // Always show a quick first-page refresh
         void loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, render: true, notifyNewTickets: false });
-        void syncAllTicketsInBackground();
+        // Only reload notifications if throttle window has passed
+        if ((Date.now() - _lastNotificationFetchAt) > NOTIF_THROTTLE_MS) {
+            void loadNotifications();
+        }
+        // Full background sync only if data is actually stale or incomplete
+        const STALE_MS = 30 * 1000;
+        if ((Date.now() - lastFullTicketsSyncAt) > STALE_MS || allTickets.length < totalAvailableTickets) {
+            void syncAllTicketsInBackground();
+        }
     }
 }
 
@@ -2643,6 +2703,14 @@ async function deleteSelectedTickets() {
     const ticketIds = Array.from(selectedTicketIds);
     if (!ticketIds.length) return;
     if (!confirm(`Delete ${ticketIds.length} selected ticket${ticketIds.length === 1 ? '' : 's'}?`)) return;
+    // Optimistic UI: remove instantly, then confirm with server
+    allTickets = allTickets.filter((t) => !ticketIds.includes(t.id));
+    ticketIds.forEach((id) => {
+        evictTicketDetailCache(id);
+        knownTicketIds.delete(id);
+    });
+    setTicketSelectionMode(false, { clearSelection: true, render: true });
+    showToast(`Deleting ${ticketIds.length} ticket${ticketIds.length === 1 ? '' : 's'}…`, 'info');
     try {
         const response = await fetch('/api/tickets/bulk-delete', {
             method: 'POST',
@@ -2652,14 +2720,17 @@ async function deleteSelectedTickets() {
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
             showToast(payload.error || 'Failed to delete selected tickets', 'error');
+            // Re-sync to restore actual server state
+            void loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, render: true, notifyNewTickets: false });
             return;
         }
-        setTicketSelectionMode(false, { clearSelection: true, render: false });
-        await loadTickets({ render: true, notifyNewTickets: false });
         showToast(payload.message || 'Selected tickets deleted', 'success');
+        // Quiet background reconcile — no full reload
+        void loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, render: false, notifyNewTickets: false });
     } catch (e) {
         console.error('Delete selected tickets failed', e);
         showToast('Failed to delete selected tickets', 'error');
+        void loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, render: true, notifyNewTickets: false });
     }
 }
 
@@ -3041,6 +3112,8 @@ async function openTicket(id, { syncUrl = true, replaceUrl = false } = {}) {
         }
         renderTicketCards();
         pauseDashboardLiveUpdates();
+
+        // Tier 1: Full persisted detail — completely instant, no fetch
         if (cachedTicket) {
             currentTicket = cachedTicket;
             fareFieldsTouched = false;
@@ -3053,29 +3126,61 @@ async function openTicket(id, { syncUrl = true, replaceUrl = false } = {}) {
             renderDetailView();
             showDetailView();
             if (syncUrl) updateTicketUrl(id, { replace: replaceUrl });
-            void syncCurrentTicketFromServer();
+            void syncCurrentTicketFromServer(); // silently refresh in background
             return;
         }
 
-        document.getElementById('listView').style.display = 'none';
-        document.getElementById('detailView').style.display = 'block';
-        document.getElementById('ticketDetailHeader').innerHTML = `<div><h1>Loading ticket...</h1></div>`;
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        // Tier 2: List stub preview — show immediately, upgrade silently in background
+        if (listedTicket) {
+            currentTicket = normalizeTicketFareData(listedTicket);
+            fareFieldsTouched = false;
+            activeSegmentEditIdx = null;
+            expandedLegIds = new Set();
+            editedData = JSON.parse(JSON.stringify(currentTicket));
+            fareQuickFillDraft = fareQuickFillDraftByTicket.get(currentTicket.id) || '';
+            setTicketEditBaseline(currentTicket);
+            renderDetailView();
+            showDetailView();
+            if (syncUrl) updateTicketUrl(id, { replace: replaceUrl });
+            // Small badge while full data loads
+            const hdr = document.getElementById('ticketDetailHeader');
+            if (hdr) {
+                const badge = document.createElement('span');
+                badge.id = 'ticketDetailRefreshBadge';
+                badge.style.cssText = 'font-size:0.72rem;color:var(--text-secondary);font-weight:600;padding:0.2rem 0.6rem;border-radius:6px;background:var(--bg-main);border:1px solid var(--border);margin-left:0.75rem;vertical-align:middle;';
+                badge.textContent = '\u21bb Refreshing...';
+                const h1 = hdr.querySelector('h1');
+                if (h1) h1.after(badge);
+            }
+        } else {
+            // Tier 3: No data at all — show loading placeholder
+            document.getElementById('listView').style.display = 'none';
+            document.getElementById('detailView').style.display = 'block';
+            document.getElementById('ticketDetailHeader').innerHTML = `<div><h1>Loading ticket...</h1></div>`;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
 
+        // Fetch full data
+        const openedId = id;
         const r = await fetch('/api/tickets/' + id);
         if (!r.ok) { showToast('Failed to load ticket', 'error'); showListView(); return; }
-        currentTicket = normalizeTicketFareData(await r.json());
-        cacheTicketDetail(currentTicket);
-        fareFieldsTouched = false;
-        activeSegmentEditIdx = null;
-        expandedLegIds = new Set();
-        editedData = JSON.parse(JSON.stringify(currentTicket));
-        fareQuickFillDraft = fareQuickFillDraftByTicket.get(currentTicket.id) || '';
-        setTicketEditBaseline(currentTicket);
-        applyTicketDraftIfPresent(currentTicket.id, { showToastMessage: true });
-        renderDetailView();
-        showDetailView();
-        if (syncUrl) updateTicketUrl(id, { replace: replaceUrl });
+        const freshTicket = normalizeTicketFareData(await r.json());
+        cacheTicketDetail(freshTicket);
+
+        // Only update view if user hasn't navigated away
+        if (!currentTicket || currentTicket.id === openedId) {
+            currentTicket = freshTicket;
+            fareFieldsTouched = false;
+            activeSegmentEditIdx = null;
+            expandedLegIds = new Set();
+            editedData = JSON.parse(JSON.stringify(currentTicket));
+            fareQuickFillDraft = fareQuickFillDraftByTicket.get(currentTicket.id) || '';
+            setTicketEditBaseline(currentTicket);
+            applyTicketDraftIfPresent(currentTicket.id, { showToastMessage: !listedTicket });
+            renderDetailView();
+            showDetailView();
+            if (syncUrl) updateTicketUrl(id, { replace: replaceUrl });
+        }
     } catch (e) {
         console.error(e);
         showToast('Error loading ticket', 'error');
@@ -3107,7 +3212,10 @@ let _notifData = { merge_count: 0, merge_groups: [], duplicate_count: 0, process
 let _activeNotifPanel = null;
 let _mergedViewActive = false;
 
-async function loadNotifications() {
+async function loadNotifications({ force = false } = {}) {
+    // Throttle: skip if fetched recently and not forced
+    const now = Date.now();
+    if (!force && (now - _lastNotificationFetchAt) < NOTIF_THROTTLE_MS) return;
     try {
         const r = await fetch('/api/tickets/notifications');
         if (!r.ok) return;
@@ -3116,6 +3224,7 @@ async function loadNotifications() {
             ? _notifData.processing_batches.reduce((sum, batch) => sum + parseMoneyValue(batch.pending_count), 0)
             : parseMoneyValue(_notifData.processing_count);
         _notifData = await r.json();
+        _lastNotificationFetchAt = Date.now();
         writeCachedJson(TICKETS_NOTIFICATIONS_CACHE_KEY, _notifData);
         const nextDuplicateCount = parseMoneyValue(_notifData.duplicate_count);
         const nextActiveProcessingCount = Array.isArray(_notifData.processing_batches)
@@ -7473,32 +7582,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     hydrateUnreadSeenStateFromCache();
     hydrateNotificationsFromCache();
     hydrateAggregatorsFromCache();
-    hydrateTicketsFromCache();
+
+    // Step 1: Render cached tickets INSTANTLY — never block on network
+    const hasCachedTickets = hydrateTicketsFromCache();
+    if (!initialTicketId) renderTicketCards();
     updateTicketSelectionToolbar();
     void checkAuth();
-    const hasWarmTicketsCache = allTickets.length > 0 && hasFreshTicketsCache();
-    if (!hasWarmTicketsCache || initialTicketId) {
-        await loadNotifications();
-        await loadTickets({
+
+    // Step 2: Decide what network work is needed
+    const cacheIsFresh = hasFreshTicketsCache();
+
+    if (initialTicketId) {
+        // Opening a specific ticket URL — fetch both in parallel, then open detail
+        await Promise.all([
+            loadNotifications({ force: true }),
+            loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, showLoading: !hasCachedTickets, render: false })
+        ]);
+        renderTicketCards();
+        await openTicket(initialTicketId, { syncUrl: false, replaceUrl: true });
+        setDashboardUpdatingState(false);
+    } else if (!cacheIsFresh || !hasCachedTickets) {
+        // Stale/empty cache — fetch first page quietly in background while cards show from cache
+        void loadNotifications({ force: true });
+        void loadTickets({
             limit: INITIAL_TICKETS_BATCH_SIZE,
-            showLoading: allTickets.length === 0,
-            render: false
+            showLoading: !hasCachedTickets,
+            render: true
+        }).then(() => {
+            if (allTickets.length < totalAvailableTickets || totalAvailableTickets === 0) {
+                void syncAllTicketsInBackground();
+            } else {
+                setDashboardUpdatingState(false);
+            }
         });
     } else {
-        void loadNotifications();
-    }
-    renderTicketCards();
-    let finalSyncPromise = null;
-    if (!initialTicketId && (hasWarmTicketsCache || allTickets.length < totalAvailableTickets || totalAvailableTickets === 0)) {
-        finalSyncPromise = syncAllTicketsInBackground();
-    }
-    
-    if (initialTicketId) {
-        await openTicket(initialTicketId, { syncUrl: false, replaceUrl: true });
-    }
-    
-    if (!finalSyncPromise) {
+        // Fresh cache — don't touch tickets at all, just lazy-sync in background
+        void loadNotifications({ force: true });
         setDashboardUpdatingState(false);
+        if ((Date.now() - lastFullTicketsSyncAt) > 30000 || allTickets.length < totalAvailableTickets) {
+            void syncAllTicketsInBackground();
+        }
     }
 
     if (!startTicketsRealtime() && 'EventSource' in window) {
