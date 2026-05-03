@@ -284,6 +284,20 @@ function scheduleDraftRetry(delayMs = 2000) {
 function applyTicketDraftIfPresent(ticketId, { showToastMessage = false } = {}) {
     const draft = readTicketDraft(ticketId);
     if (!draft?.ticket) return false;
+
+    // Server always wins: if server data is newer than the draft, discard the stale draft.
+    // This prevents a saved-and-synced or externally-updated ticket from being overwritten
+    // by old localStorage data.
+    if (currentTicket && currentTicket.updated_at && draft.saved_at) {
+        const serverUpdatedMs = new Date(currentTicket.updated_at).getTime();
+        if (!isNaN(serverUpdatedMs) && draft.saved_at < serverUpdatedMs) {
+            // Draft is from before the server's last save — it's already reflected server-side
+            console.info('[draft] Discarding stale draft (saved_at < server updated_at), server data is authoritative.');
+            clearTicketDraft(ticketId);
+            return false;
+        }
+    }
+
     editedData = normalizeTicketFareData(JSON.parse(JSON.stringify(draft.ticket)));
     fareFieldsTouched = false;
     hasPendingLocalDraft = true;
@@ -2259,23 +2273,41 @@ async function syncAllTicketsInBackground() {
 }
 
 async function syncCurrentTicketFromServer() {
-    if (!currentTicket || isDetailDirty || isSaveInFlight || Date.now() < suppressRealtimeUntil) return;
+    if (!currentTicket || isSaveInFlight || Date.now() < suppressRealtimeUntil) return;
     const syncTicketId = currentTicket.id;
     const syncStartedAt = Date.now();
     try {
         const r = await fetch('/api/tickets/' + syncTicketId);
         if (!r.ok) return;
         const freshTicket = normalizeTicketFareData(await r.json());
-        if (
-            !currentTicket
-            || currentTicket.id !== syncTicketId
-            || isDetailDirty
-            || isSaveInFlight
-            || Date.now() < suppressRealtimeUntil
-            || lastDetailInputAt > syncStartedAt
-        ) {
-            return;
+
+        // Guard: user navigated away or started editing
+        if (!currentTicket || currentTicket.id !== syncTicketId || lastDetailInputAt > syncStartedAt) return;
+
+        // If there's a pending dirty draft, only override it if the server has definitively
+        // newer data (server updated_at > draft saved_at). This means the last save succeeded
+        // server-side and the draft is now stale.
+        if (isDetailDirty || isSaveInFlight) {
+            if (!hasPendingLocalDraft) return; // user is actively editing, respect that
+            const draftKey = getTicketDraftCacheKey(syncTicketId);
+            const draft = draftKey ? readCachedJson(draftKey) : null;
+            if (draft && draft.saved_at && freshTicket.updated_at) {
+                const serverMs = new Date(freshTicket.updated_at).getTime();
+                if (!isNaN(serverMs) && draft.saved_at < serverMs) {
+                    // Server has newer data than the draft — draft is stale, server wins
+                    console.info('[sync] Server has newer data than draft, clearing stale draft.');
+                    clearTicketDraft(syncTicketId);
+                    hasPendingLocalDraft = false;
+                    isDetailDirty = false;
+                    // Fall through to update below
+                } else {
+                    return; // Draft is genuinely ahead of server, keep editing
+                }
+            } else {
+                return; // Can't compare, be safe and keep local state
+            }
         }
+
         currentTicket = freshTicket;
         cacheTicketDetail(currentTicket);
         editedData = JSON.parse(JSON.stringify(currentTicket));
