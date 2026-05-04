@@ -109,7 +109,7 @@ _RE_AMADEUS = re.compile(
     (?P<dep_time>[01]\d[0-5]\d|2[0-3][0-5]\d)\s+
     (?P<arr_time>[01]\d[0-5]\d|2[0-3][0-5]\d)
     (?P<next_day>[+/]\d)?
-    (?:\s+\d{{1,2}}(?:{_MON})(?:\d{{2}})?)?
+    (?:\s+(?P<arr_day>\d{{1,2}})(?P<arr_mon>{_MON})(?P<arr_yr>\d{{2}})?\b)?
     (?:\s+[EO])?(?:\s+\d)?
     (?:\s+(?P<aircraft>[A-Z0-9]{{3}}))?
     """,
@@ -141,6 +141,7 @@ _RE_GALILEO = re.compile(
     (?P<dep_time>[01]\d[0-5]\d|2[0-3][0-5]\d)\s+
     (?P<arr_time>[01]\d[0-5]\d|2[0-3][0-5]\d)
     (?P<next_day>[+/]\d)?
+    (?:\s+(?P<arr_day>\d{{1,2}})(?P<arr_mon>{_MON})(?P<arr_yr>\d{{2}})?\b)?
     """,
     re.VERBOSE | re.I | re.MULTILINE,
 )
@@ -256,13 +257,15 @@ def _build_segment(
     dep_time_raw: str, arr_time_raw: str,
     explicit_next_day: int,
     aircraft_raw: str = "",
+    arr_date: Optional[datetime] = None,
 ) -> Dict:
     """
     Build one segment dict.
 
     days_offset resolution order:
       1. Explicit +N marker in raw GDS text (e.g. 0315+1)
-      2. DayOffsetCalculator.calculate() — uses departure/arrival times plus
+      2. Explicit arrival date provided in GDS text (e.g. 05MAY ... 06MAY)
+      3. DayOffsetCalculator.calculate() — uses departure/arrival times plus
          timezone offsets from AIRPORT_TZ_MAP to detect midnight crossing.
 
     Duration computed by DurationCalculator.calculate() which applies
@@ -278,6 +281,12 @@ def _build_segment(
     if explicit_next_day > 0:
         # GDS marker is authoritative
         days_offset = explicit_next_day
+    elif dep_date and arr_date:
+        # Explicit arrival date calculation
+        days_offset = (arr_date - dep_date).days
+        # Ensure it's not negative (though year rollover logic in caller should handle most)
+        if days_offset < 0:
+            days_offset = 0
     else:
         # Auto-detect via time arithmetic + timezone (same logic as LLM path)
         days_offset = DayOffsetCalculator.calculate(
@@ -593,12 +602,24 @@ class GDSParser:
                 continue
             dep_date = _parse_gds_date(g.get("dep_day","1"), g.get("dep_mon","JAN"),
                                         g.get("dep_yr"), ref_year)
+            arr_date = None
+            if g.get("arr_day") and g.get("arr_mon"):
+                arr_date = _parse_gds_date(g.get("arr_day"), g.get("arr_mon"),
+                                            g.get("arr_yr"), ref_year)
+                if dep_date and arr_date and arr_date < dep_date:
+                    if (dep_date - arr_date).days > 300:
+                        try:
+                            arr_date = arr_date.replace(year=arr_date.year + 1)
+                        except ValueError:
+                            arr_date = arr_date + timedelta(days=366)
+
             seg = _build_segment(
                 g.get("airline",""), g.get("flt_num",""), g.get("bkg_cls","Y"),
                 dep_date, da, aa,
                 g.get("dep_time",""), g.get("arr_time",""),
                 _nd_from_marker(g.get("next_day")),
                 g.get("aircraft") or "",
+                arr_date=arr_date,
             )
             segs.append(seg)
             Logger.debug(f"Amadeus: {seg['flight_number']} {da}→{aa}")
@@ -632,11 +653,23 @@ class GDSParser:
                 continue
             dep_date = _parse_gds_date(g.get("dep_day","1"), g.get("dep_mon","JAN"),
                                         g.get("dep_yr"), ref_year)
+            arr_date = None
+            if g.get("arr_day") and g.get("arr_mon"):
+                arr_date = _parse_gds_date(g.get("arr_day"), g.get("arr_mon"),
+                                            g.get("arr_yr"), ref_year)
+                if dep_date and arr_date and arr_date < dep_date:
+                    if (dep_date - arr_date).days > 300:
+                        try:
+                            arr_date = arr_date.replace(year=arr_date.year + 1)
+                        except ValueError:
+                            arr_date = arr_date + timedelta(days=366)
+
             seg = _build_segment(
                 g.get("airline",""), g.get("flt_num",""), g.get("bkg_cls") or "Y",
                 dep_date, da, aa,
                 g.get("dep_time",""), g.get("arr_time",""),
                 _nd_from_marker(g.get("next_day")),
+                arr_date=arr_date,
             )
             segs.append(seg)
             Logger.debug(f"Galileo: {seg['flight_number']} {da}→{aa}")
