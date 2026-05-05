@@ -156,6 +156,7 @@ _TICKET_PROCESSING_TTL_SECONDS = 60 * 45
 _TICKET_PROCESSING_MIN_VISIBLE_SECONDS = 6
 _ticket_dashboard_streams = {}
 _ticket_dashboard_streams_lock = threading.Lock()
+_ticket_receive_lock = threading.Lock()
 
 # Register API v2 Blueprint
 # Register API v2 Blueprint
@@ -3379,96 +3380,99 @@ def receive_ticket():
                         if cleaned_t.isdigit():
                             point["terminal"] = cleaned_t
 
-        # Create ticket
-        ticket = Ticket(
-            pnr=booking.get("pnr"),
-            booking_date=booking.get("booking_date"),
-            phone=booking.get("phone"),
-            currency=booking.get("currency", "INR"),
-            grand_total=final_grand_total,
-            class_of_travel=final_class,
-            trip_type=trip_type,
-            passengers_data=json.dumps(passengers),
-            segments_data=json.dumps(segments),
-            journey_data=json.dumps(journey),
-            raw_data=json.dumps(data),
-            status="unmatched",
-            user_id=user.id,
-            parser_version=metadata.get("parser_version")
-        )
+        with _ticket_receive_lock:
+            # Create ticket
+            ticket = Ticket(
+                pnr=booking.get("pnr"),
+                booking_date=booking.get("booking_date"),
+                phone=booking.get("phone"),
+                currency=booking.get("currency", "INR"),
+                grand_total=final_grand_total,
+                class_of_travel=final_class,
+                trip_type=trip_type,
+                passengers_data=json.dumps(passengers),
+                segments_data=json.dumps(segments),
+                journey_data=json.dumps(journey),
+                raw_data=json.dumps(data),
+                status="unmatched",
+                user_id=user.id,
+                parser_version=metadata.get("parser_version")
+            )
 
         # ── Duplicate Detection ────────────────────────────────────────────
-        is_duplicate = False
-        duplicate_of = None
-        new_pnr = (booking.get("pnr") or "").strip().upper()
+            # Duplicate detection must run inside the receive lock so near-simultaneous
+            # deliveries cannot both miss each other and enter the main dashboard.
+            is_duplicate = False
+            duplicate_of = None
+            new_pnr = (booking.get("pnr") or "").strip().upper()
 
-        if new_pnr:
-            new_sectors = []
-            for seg in segments:
-                dep_ap = (seg.get("departure") or {}).get("airport", "").strip().upper()
-                arr_ap = (seg.get("arrival") or {}).get("airport", "").strip().upper()
-                if dep_ap and arr_ap:
-                    new_sectors.append(f"{dep_ap}-{arr_ap}")
-            new_sectors_key = "|".join(new_sectors)
-
-            new_pax_names = sorted([
-                _normalize_passenger_name(p.get("name", ""))
-                for p in passengers if p.get("name")
-            ])
-            new_pax_key = "|".join(new_pax_names)
-
-            from sqlalchemy import or_
-            existing_tickets = Ticket.query.filter(
-                Ticket.pnr == new_pnr,
-                Ticket.user_id == user.id,
-                or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status.in_(["approved"])),
-            ).order_by(Ticket.created_at.asc()).all()
-
-            for existing in existing_tickets:
-                ex_segments = json.loads(existing.segments_data or "[]")
-                ex_passengers = json.loads(existing.passengers_data or "[]")
-
-                ex_sectors = []
-                for s in ex_segments:
-                    dep_ap = (s.get("departure") or {}).get("airport", "").strip().upper()
-                    arr_ap = (s.get("arrival") or {}).get("airport", "").strip().upper()
+            if new_pnr:
+                new_sectors = []
+                for seg in segments:
+                    dep_ap = (seg.get("departure") or {}).get("airport", "").strip().upper()
+                    arr_ap = (seg.get("arrival") or {}).get("airport", "").strip().upper()
                     if dep_ap and arr_ap:
-                        ex_sectors.append(f"{dep_ap}-{arr_ap}")
-                ex_sectors_key = "|".join(ex_sectors)
+                        new_sectors.append(f"{dep_ap}-{arr_ap}")
+                new_sectors_key = "|".join(new_sectors)
 
-                ex_pax_names = sorted([
+                new_pax_names = sorted([
                     _normalize_passenger_name(p.get("name", ""))
-                    for p in ex_passengers if p.get("name")
+                    for p in passengers if p.get("name")
                 ])
-                ex_pax_key = "|".join(ex_pax_names)
+                new_pax_key = "|".join(new_pax_names)
 
-                if new_sectors_key and new_sectors_key == ex_sectors_key and new_pax_key == ex_pax_key:
-                    is_duplicate = True
-                    duplicate_of = existing.id
-                    break
+                from sqlalchemy import or_
+                existing_tickets = Ticket.query.filter(
+                    Ticket.pnr == new_pnr,
+                    Ticket.user_id == user.id,
+                    or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status.in_(["approved"])),
+                ).order_by(Ticket.created_at.asc()).all()
 
-        if is_duplicate:
-            ticket.duplicate_status = "pending"
-            ticket.duplicate_of_id = duplicate_of
-            print(f"[DUPLICATE] Ticket quarantined - PNR {new_pnr} is a suspected duplicate of {duplicate_of}")
+                for existing in existing_tickets:
+                    ex_segments = json.loads(existing.segments_data or "[]")
+                    ex_passengers = json.loads(existing.passengers_data or "[]")
 
-        # Try to match against issued itineraries
-        matched = False
-        pnr = booking.get("pnr", "").strip().upper()
-        if pnr:
-            # Match by PNR in itinerary flights_data
-            issued_itineraries = Itinerary.query.filter(
-                Itinerary.status.in_(['confirmed', 'issued'])
-            ).all()
-            for itin in issued_itineraries:
-                if itin.flights_data and pnr.lower() in itin.flights_data.lower():
-                    ticket.matched_itinerary_id = itin.id
-                    ticket.status = "matched"
-                    matched = True
-                    break
+                    ex_sectors = []
+                    for s in ex_segments:
+                        dep_ap = (s.get("departure") or {}).get("airport", "").strip().upper()
+                        arr_ap = (s.get("arrival") or {}).get("airport", "").strip().upper()
+                        if dep_ap and arr_ap:
+                            ex_sectors.append(f"{dep_ap}-{arr_ap}")
+                    ex_sectors_key = "|".join(ex_sectors)
 
-        db.session.add(ticket)
-        db.session.commit()
+                    ex_pax_names = sorted([
+                        _normalize_passenger_name(p.get("name", ""))
+                        for p in ex_passengers if p.get("name")
+                    ])
+                    ex_pax_key = "|".join(ex_pax_names)
+
+                    if new_sectors_key and new_sectors_key == ex_sectors_key and new_pax_key == ex_pax_key:
+                        is_duplicate = True
+                        duplicate_of = existing.id
+                        break
+
+            if is_duplicate:
+                ticket.duplicate_status = "pending"
+                ticket.duplicate_of_id = duplicate_of
+                print(f"[DUPLICATE] Ticket quarantined - PNR {new_pnr} is a suspected duplicate of {duplicate_of}")
+
+            # Try to match against issued itineraries
+            matched = False
+            pnr = booking.get("pnr", "").strip().upper()
+            if pnr:
+                # Match by PNR in itinerary flights_data
+                issued_itineraries = Itinerary.query.filter(
+                    Itinerary.status.in_(['confirmed', 'issued'])
+                ).all()
+                for itin in issued_itineraries:
+                    if itin.flights_data and pnr.lower() in itin.flights_data.lower():
+                        ticket.matched_itinerary_id = itin.id
+                        ticket.status = "matched"
+                        matched = True
+                        break
+
+            db.session.add(ticket)
+            db.session.commit()
         if processing_batch_id:
             _mark_ticket_processing_received(user.id, processing_batch_id)
         _publish_ticket_dashboard_event(
