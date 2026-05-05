@@ -15,6 +15,7 @@ import io
 import os
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
+_AIRLINE_LOGOS_DIR = os.path.join(_DIR, "Airline Logos")
 
 # ── Palette ────────────────────────────────────────────────────────────────────
 BRAND        = colors.Color(0.07, 0.28, 0.73)   # deep blue
@@ -36,6 +37,18 @@ def _t(v):
     if v is None: return ""
     s = str(v).strip()
     return "" if s.lower() in ("n/a", "none", "null", "-", "") else s
+
+
+def _get_airline_logo_path(airline):
+    airline_name = _t(airline)
+    if not airline_name or not os.path.isdir(_AIRLINE_LOGOS_DIR):
+        return None
+
+    target_name = f"{airline_name}.png".lower()
+    for entry in os.scandir(_AIRLINE_LOGOS_DIR):
+        if entry.is_file() and entry.name.lower() == target_name:
+            return entry.path
+    return None
 
 def _ct(city, terminal):
     c, t = _t(city), _t(terminal)
@@ -597,8 +610,8 @@ def draw_ticket(c, data, include_fare=True):
             
             logo_found = False
             if airline:
-                logo_path = os.path.join(_DIR, "Airline Logos", f"{airline}.png")
-                if os.path.isfile(logo_path):
+                logo_path = _get_airline_logo_path(airline)
+                if logo_path:
                     try:
                         img = ImageReader(logo_path)
                         iw, ih = img.getSize()
