@@ -5778,6 +5778,8 @@ def apply_global_db_retry(app_instance):
     def retry_db(f):
         @wraps(f)
         def decorated(*args, **kwargs):
+            if request.method not in {"GET", "HEAD", "OPTIONS"}:
+                return f(*args, **kwargs)
             try:
                 return f(*args, **kwargs)
             except OperationalError:
