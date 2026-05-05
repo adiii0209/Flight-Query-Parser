@@ -5914,6 +5914,8 @@ function updatePassengerField(index, field, value) {
     editedData.passengers[index][field] = value;
     if (field === 'name') {
         syncPassengerNamesToVisibleUi(index);
+    } else if (field === 'pax_type' || field === 'type') {
+        renderPassengersSection();
     } else if (field === 'ticket_number') {
         syncPassengerTicketNumberWarningUi(index);
     }
