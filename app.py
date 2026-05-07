@@ -5000,13 +5000,25 @@ def generate_selected_passenger_pdf(ticket_id):
     except (ValueError, TypeError):
         pass
 
+    selected_base_total = 0.0
+    selected_k3_total = 0.0
+    selected_other_total = 0.0
     grand_total = 0
     for p in selected_passengers:
         f = p.get("fare") or {}
-        grand_total += (float(f.get("base_fare") or 0) +
-                        float(f.get("k3_gst") or 0) +
-                        float(f.get("other_taxes") or 0) +
-                        global_markup)
+        base_value = float(f.get("base_fare") or 0)
+        k3_value = float(f.get("k3_gst") or 0)
+        other_value = float(f.get("other_taxes") or 0)
+        selected_base_total += base_value
+        selected_k3_total += k3_value
+        selected_other_total += other_value
+        grand_total += (base_value + k3_value + other_value + global_markup)
+
+    selected_journey["consolidated_fare"] = {
+        "base_fare": _round_money(selected_base_total),
+        "k3_gst": _round_money(selected_k3_total),
+        "other_taxes": _round_money(selected_other_total),
+    }
 
     import io as _io
     from reportlab.pdfgen import canvas as pdf_canvas

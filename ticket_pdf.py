@@ -1112,6 +1112,16 @@ def draw_ticket(c, data, include_fare=True):
                     except ValueError:
                         pass
                 tot = _t(pf.get("total_fare")) or "—"
+                if tot == "—":
+                    try:
+                        row_total = (
+                            float(str(base).replace(",", "")) +
+                            float(str(k3).replace(",", "")) +
+                            float(str(othr or 0).replace(",", ""))
+                        )
+                        tot = f"{row_total:g}"
+                    except ValueError:
+                        pass
                 if tot != "—":
                     try: running += float(str(tot).replace(",", ""))
                     except: pass
