@@ -97,17 +97,48 @@ def _ct(city, terminal):
         return f"{c}  ({t})"
     return c
 
-def _txt(c, x, y, text, font="Times-Roman", size=8, col=None, align="left"):
+def _fit_font_size(c, text, font, max_size, max_width, min_size=6):
+    value = _t(text)
+    if not value: return max_size
+    size = max_size
+    while size > min_size and c.stringWidth(value, font, size) > max_width:
+        size -= 0.5
+    return size
+
+def _txt(c, x, y, text, font="Times-Roman", size=8, col=None, align="left", max_w=None):
     if not _t(text): return 0
     s = str(text)
+    
+    actual_size = size
+    if max_w and max_w > 0:
+        actual_size = _fit_font_size(c, s, font, size, max_w, min_size=6)
+        
+    orig_width = c.stringWidth(s, font, actual_size)
+    h_scale = 100
+    if max_w and max_w > 0 and orig_width > max_w:
+        h_scale = (max_w / orig_width) * 100
+        if h_scale < 55: h_scale = 55
+    
+    displayed_width = orig_width * (h_scale / 100.0)
+
     c.saveState()
     c.setFillColor(col or INK)
-    c.setFont(font, size)
-    {"left": c.drawString,
-     "right": c.drawRightString,
-     "center": c.drawCentredString}[align](x, y, s)
+    c.setFont(font, actual_size)
+    
+    # Use translate and scale for horizontal squeezing
+    c.translate(x, y)
+    if h_scale != 100:
+        c.scale(h_scale / 100.0, 1.0)
+    
+    if align == "left":
+        c.drawString(0, 0, s)
+    elif align == "right":
+        c.drawString(-orig_width, 0, s)
+    elif align == "center":
+        c.drawString(-orig_width / 2.0, 0, s)
+        
     c.restoreState()
-    return c.stringWidth(s, font, size)
+    return displayed_width
 
 def _hline(c, x, y, w, col=None, lw=0.5):
     c.saveState()
@@ -233,17 +264,6 @@ def _cabin_badge_style(label):
         return (colors.Color(0.90, 0.97, 0.93), GREEN)
     return (colors.Color(0.82, 0.90, 1.00), BRAND)
 
-def _fit_font_size(c, text, font, max_size, max_width, min_size=7):
-    value = _t(text)
-    if not value:
-        return max_size
-
-
-
-    size = max_size
-    while size > min_size and c.stringWidth(value, font, size) > max_width:
-        size -= 0.5
-    return size
 
 def _draw_traveller_icon(c, x, y, size=10, col=None):
     icon_path = os.path.join(_DIR, "traveller.png")
@@ -797,7 +817,8 @@ def draw_ticket(c, data, include_fare=True):
             c.restoreState()
 
         # Name + type
-        _txt(c, M + 30, T - 10, pname,            "Helvetica-Bold", 8.5, NAVY)
+        # Name + type (max width approx IW - 160 to leave space for ticket info)
+        _txt(c, M + 30, T - 10, pname,            "Helvetica-Bold", 8.5, NAVY, max_w=IW - 160)
         _txt(c, M + 30, T - 20, type_lbl.upper(), "Helvetica",      6,   INF_LABEL)
 
         # Ticket right-aligned
@@ -927,7 +948,8 @@ def draw_ticket(c, data, include_fare=True):
         _draw_traveller_icon(c, M + 18, T - 8, size=8.5, col=NAVY)
 
         # Name + type
-        _txt(c, M + 34, T - 13, f"{pname} ({type_lbl})", "Helvetica-Bold", 9, NAVY)
+        # Name + type (max width IW - 180 to leave space for barcodes and ticket info)
+        _txt(c, M + 34, T - 13, f"{pname} ({type_lbl})", "Helvetica-Bold", 9, NAVY, max_w=IW - 180)
         if bag:
             _txt(c, M + 34, T - 24, f"Baggage: {bag}", "Helvetica", 6.5, INF_LABEL)
 
@@ -1056,7 +1078,7 @@ def draw_ticket(c, data, include_fare=True):
 
             for ci, (col_lbl, col_val) in enumerate(zip(cols, vals)):
                 cx = M + ci * col_w + col_w / 2
-                _txt(c, cx, lbl_y, col_lbl, _font(), 6, INF_LABEL, align="center")
+                _txt(c, cx, lbl_y, col_lbl, _font(), 6, INF_LABEL, align="center", max_w=col_w - 4)
                 is_total = (ci == n_cols - 1)
                 vfont = _font(bold=True)
                 if ci == 0 and is_single_pax_per_passenger:
@@ -1064,7 +1086,7 @@ def draw_ticket(c, data, include_fare=True):
                 else:
                     vsize = 13 if is_total else 11
                 vcol  = RED if is_total else NAVY
-                _txt(c, cx, val_y, col_val, vfont, vsize, vcol, align="center")
+                _txt(c, cx, val_y, col_val, vfont, vsize, vcol, align="center", max_w=col_w - 6)
 
             # Subtle column dividers
             for ci in range(1, n_cols):
@@ -1094,7 +1116,7 @@ def draw_ticket(c, data, include_fare=True):
                 else:
                     align = "left"
                     x_pos = cx_list[ci]
-                _txt(c, x_pos, th_y, col_lbl, "Helvetica", 6, INF_LABEL, align=align)
+                _txt(c, x_pos, th_y, col_lbl, "Helvetica", 6, INF_LABEL, align=align, max_w=col_ws[ci] - 4)
             _hline(c, M + 4, th_y - 2, IW - 8, CARD_BOR, 0.4)
 
             ry = th_y - row_h
@@ -1149,7 +1171,7 @@ def draw_ticket(c, data, include_fare=True):
                     else:
                         align = "left"
                         x_pos = cx_list[ci]
-                    _txt(c, x_pos, ry, rv, vfont, vsize, NAVY, align=align)
+                    _txt(c, x_pos, ry, rv, vfont, vsize, NAVY, align=align, max_w=col_ws[ci] - 4)
                 ry -= row_h
 
             grand = _t(data.get("grand_total")) or (str(running) if running else "—")
@@ -1176,9 +1198,9 @@ def draw_ticket(c, data, include_fare=True):
               stroke=CARD_BOR, lw=0.4, radius=4)
         _txt(c, RIGHT - 174, T - 9, "GST", "Helvetica-Bold", 7, RED)
         if gst_comp:
-            _txt(c, RIGHT - 174, T - 18, gst_comp, "Helvetica", 7, INF_LABEL)
+            _txt(c, RIGHT - 174, T - 18, gst_comp, "Helvetica", 7, INF_LABEL, max_w=170)
         if gst_no:
-            _txt(c, RIGHT - 174, T - 27, f"GSTIN: {gst_no}", "Helvetica", 7, INF_LABEL)
+            _txt(c, RIGHT - 174, T - 27, f"GSTIN: {gst_no}", "Helvetica", 7, INF_LABEL, max_w=170)
         T -= GST_H + G
 
     # ══════════════════════════════════════════════════════════════════════════
