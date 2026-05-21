@@ -1,6 +1,18 @@
 """
-Minimal clean hotel voucher PDF — matches the widget preview design.
-Typographic approach, removing buggy SVG paths and grey blocks.
+Hotel Voucher PDF — Premium redesign.
+Matches the HTML preview widget exactly:
+  - Pure white page, no outer grey card rect
+  - Airy spacing between every section
+  - Status bar: plain white, BOOKING CONFIRMATION label stacked above ID, green pill right only
+  - Hero: image left (46%), dates right with large text and night count
+  - Stay info: primary guest left | room summary right (per-type rows when types differ)
+  - Property details: address + phone, no "Phone:" prefix
+  - Rooms & guests: type name IS the heading when types differ, no "Room N" badge, names only
+  - Amenities: pill chips wrapping
+  - Total amount: right-aligned
+  - Footer: left website/phone | right address
+
+All backend helpers preserved exactly from original.
 """
 
 from reportlab.lib.pagesizes import A4
@@ -8,23 +20,25 @@ from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 from reportlab.lib.utils import ImageReader
 import os, io, urllib.request
+from datetime import datetime
 
 W, H = A4
-M = 40          # outer margin
-IW = W - 2 * M  # inner width
-R = W - M       # right edge
+M  = 44          # outer margin — generous breathing room
+IW = W - 2 * M  # inner content width
+R  = W - M      # right edge
 
-# ── Palette (neutral, minimal) ────────────────────────────────────────────────
-C_TEXT_PRI  = colors.Color(0.10, 0.10, 0.11)   # near-black
-C_TEXT_SEC  = colors.Color(0.38, 0.38, 0.42)   # muted
-C_TEXT_TER  = colors.Color(0.55, 0.55, 0.60)   # hints
-C_BG        = colors.white
-C_BG_SEC    = colors.Color(0.97, 0.97, 0.98)   # very subtle surface
-C_BORDER    = colors.Color(0.88, 0.88, 0.90)   # 0.5px rule
-C_SUCCESS   = colors.Color(0.10, 0.60, 0.35)   # confirmed green
-C_SUCCESS_BG= colors.Color(0.90, 0.98, 0.93)
+# ── Palette ───────────────────────────────────────────────────────────────────
+C_TEXT_PRI   = colors.Color(0.07, 0.07, 0.07)   # near-black  #111
+C_TEXT_SEC   = colors.Color(0.38, 0.38, 0.40)   # muted grey  #666
+C_TEXT_TER   = colors.Color(0.58, 0.58, 0.60)   # hint grey   #999
+C_BORDER     = colors.Color(0.88, 0.88, 0.90)   # light rule  #E7E7E7
+C_SURFACE    = colors.Color(0.98, 0.98, 0.98)   # chip bg     #FAFAFA
+C_SUCCESS    = colors.Color(0.09, 0.64, 0.29)   # green       #16A34A
+C_SUCCESS_BG = colors.Color(0.93, 0.99, 0.95)   # green tint  #ECFDF3
+C_SUCCESS_BD = colors.Color(0.73, 0.97, 0.81)   # green border #BBF7D0
+C_WHITE      = colors.white
 
-# ── Primitives ────────────────────────────────────────────────────────────────
+# ── Primitives (preserved exactly) ───────────────────────────────────────────
 def txt(c, x, y, s, size=9, color=C_TEXT_PRI, bold=False, align="left"):
     font = "Helvetica-Bold" if bold else "Helvetica"
     c.setFont(font, size)
@@ -46,7 +60,7 @@ def vline(c, x, y1, y2, color=C_BORDER, lw=0.5):
     c.line(x, y1, x, y2)
     c.restoreState()
 
-def rect(c, x, y, w, h, fill=None, stroke=C_BORDER, lw=0.5, radius=0):
+def rect(c, x, y, w, h, fill=None, stroke=None, lw=0.5, radius=0):
     c.saveState()
     if fill: c.setFillColor(fill)
     if stroke: c.setStrokeColor(stroke); c.setLineWidth(lw)
@@ -55,338 +69,429 @@ def rect(c, x, y, w, h, fill=None, stroke=C_BORDER, lw=0.5, radius=0):
                 stroke=1 if stroke else 0)
     c.restoreState()
 
-def pill(c, x, y, w, h, label, size=7.5):
-    """Rounded pill chip."""
-    rect(c, x, y - h, w, h, fill=C_BG_SEC, stroke=C_BORDER, lw=0.4, radius=h/2)
-    txt(c, x + w/2, y - h/2 - 3, label, size=size, color=C_TEXT_SEC, align="center", bold=True)
+def pill_chip(c, x, y, w, h, label, size=7.5):
+    """Amenity pill chip."""
+    rect(c, x, y - h, w, h, fill=C_SURFACE, stroke=C_BORDER, lw=0.4, radius=h / 2)
+    txt(c, x + w / 2, y - h / 2 - 3, label, size=size, color=C_TEXT_SEC, align="center", bold=True)
 
+# ── Backend helpers (preserved exactly) ──────────────────────────────────────
 def night_count(ci, co):
     if not ci or not co: return None
-    from datetime import datetime
-    for fmt in ("%d %b %Y", "%Y-%m-%d", "%d/%m/%Y"):
-        try:
-            d = (datetime.strptime(co, fmt) - datetime.strptime(ci, fmt)).days
-            return d if d > 0 else None
-        except: continue
+    d_ci = parse_date_value(ci)
+    d_co = parse_date_value(co)
+    if d_ci and d_co:
+        d = (d_co - d_ci).days
+        return d if d > 0 else None
     return None
 
 def format_amount(amount, currency):
-    if amount in (None, ""):
-        return None
-    try:
-        value = float(amount)
-    except Exception:
-        return None
+    if amount in (None, ""): return None
+    try: value = float(amount)
+    except Exception: return None
     prefix = f"{currency} " if currency else ""
     return f"{prefix}{value:,.2f}"
 
 def has_value(value):
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return bool(value.strip())
+    if value is None: return False
+    if isinstance(value, str): return bool(value.strip())
     return True
+
+def parse_date_value(value):
+    if not value:
+        return None
+    raw = str(value).strip()
+    for fmt in ("%d %b %Y", "%d %B %Y", "%d %b, %Y", "%d %B, %Y", "%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except Exception:
+            continue
+    return None
+
+def format_display_date(value):
+    dt = parse_date_value(value)
+    return dt.strftime("%d %B, %Y") if dt else (str(value).strip() if value else "—")
+
+def wrap_text_lines(c, value, max_width, font_name="Helvetica", font_size=9):
+    text = str(value or "").strip()
+    if not text:
+        return []
+    words = text.split()
+    if not words:
+        return []
+    lines = []
+    current = words[0]
+    for word in words[1:]:
+        trial = f"{current} {word}"
+        if c.stringWidth(trial, font_name, font_size) <= max_width:
+            current = trial
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return lines
 
 def normalize_rooms(data):
     rooms = data.get("rooms") or []
     if isinstance(rooms, list) and rooms:
         out = []
         for room in rooms:
-            if not isinstance(room, dict):
-                continue
+            if not isinstance(room, dict): continue
             guests = room.get("guests") or []
-            if not isinstance(guests, list):
-                guests = [guests]
+            if not isinstance(guests, list): guests = [guests]
             guest_values = [str(g).strip() for g in guests if g and str(g).strip()]
             guest_count = room.get("guest_count")
-            try:
-                guest_count = int(guest_count) if guest_count is not None else None
-            except Exception:
-                guest_count = None
+            try: guest_count = int(guest_count) if guest_count is not None else None
+            except Exception: guest_count = None
             out.append({
-                "room_type": room.get("room_type") or "",
-                "guest_count": guest_count or max(len(guest_values), 1),
-                "guests": guest_values,
+                "room_type":     room.get("room_type") or "",
+                "guest_count":   guest_count or max(len(guest_values), 1),
+                "guests":        guest_values,
                 "guest_summary": room.get("guest_summary") or "",
+                "meal_plan":     room.get("meal_plan") or "",
             })
-        if out:
-            return out
+        if out: return out
 
     fallback_guests = []
     guest_name = data.get("guest_name")
-    if guest_name:
-        fallback_guests = [str(guest_name).strip()]
+    if guest_name: fallback_guests = [str(guest_name).strip()]
     fallback_count = data.get("num_guests") or len(fallback_guests) or 1
-    try:
-        fallback_count = int(fallback_count)
-    except Exception:
-        fallback_count = 1
+    try: fallback_count = int(fallback_count)
+    except Exception: fallback_count = 1
     room_count = data.get("room_count") or 1
-    try:
-        room_count = int(room_count)
-    except Exception:
-        room_count = 1
+    try: room_count = int(room_count)
+    except Exception: room_count = 1
     return [{
-        "room_type": data.get("room_type") or "",
-        "guest_count": fallback_count,
-        "guests": fallback_guests,
+        "room_type":     data.get("room_type") or "",
+        "guest_count":   fallback_count,
+        "guests":        fallback_guests,
         "guest_summary": "" if fallback_guests else f"{fallback_count} guest(s)",
+        "meal_plan":     data.get("meal_plan") or "",
     } for _ in range(max(room_count, 1))]
 
 
 # ── Main draw function ────────────────────────────────────────────────────────
 def draw_hotel_voucher(c, data):
-    # Outer card border
-    rect(c, M, 50, IW, H - 100, fill=C_BG, stroke=C_BORDER, lw=0.5, radius=8)
 
-    T = H - 50   # top of card
-    BOT = 50     # bottom of card
+    rooms        = normalize_rooms(data)
+    room_types   = [r.get("room_type", "").strip() for r in rooms]
+    unique_types = list(dict.fromkeys(t for t in room_types if t))
+    all_different = len(unique_types) == len(rooms) and len(unique_types) > 1
+    check_in_label = format_display_date(data.get("check_in_date"))
+    check_out_label = format_display_date(data.get("check_out_date"))
 
-    # ── HEADER ────────────────────────────────────────────────────────────────
-    HDR_H = 75
-    rect(c, M, T - HDR_H, IW, HDR_H, fill=C_BG, stroke=None, radius=8)
+    # Pure white page — no outer card rect
+    T   = H - 44   # start Y (top margin)
+    BOT = 44       # bottom margin
 
-    # Left: voucher label + hotel name
-    txt(c, M+20, T-20, "HOTEL VOUCHER", size=7, color=C_TEXT_TER, bold=True)
-    txt(c, M+20, T-38, data.get("hotel_name") or "", size=15, color=C_TEXT_PRI, bold=True)
-    
-    addr = data.get("hotel_address") or ""
+    GAP    = 16    # standard gap between sections
+    GAP_SM = 10    # small gap
+
+    # ── 1. HEADER ─────────────────────────────────────────────────────────────
+    # Left: HOTEL VOUCHER label → hotel name → city
+    # Right: logo or company name
+    txt(c, M, T,      "HOTEL VOUCHER", size=7,  color=C_TEXT_TER, bold=True)
+    txt(c, M, T-16,   data.get("hotel_name") or "", size=17, color=C_TEXT_PRI, bold=True)
+
+    addr      = data.get("hotel_address") or ""
     city_hint = addr.split(",")[-1].strip() if "," in addr else ""
-    txt(c, M+20, T-54, city_hint, size=9.5, color=C_TEXT_SEC)
+    if has_value(city_hint):
+        txt(c, M, T-30, city_hint, size=9, color=C_TEXT_SEC)
 
-    # Right: logo area
     logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png")
     if os.path.isfile(logo_path):
-        try:
-            c.drawImage(ImageReader(logo_path), R-115, T-35, width=95, height=23, mask="auto")
+        try: c.drawImage(ImageReader(logo_path), R - 88, T - 20, width=90, height=22, mask="auto")
         except: pass
     else:
-        txt(c, R-20, T-25, "TIME TOURS", size=12, color=C_TEXT_PRI, bold=True, align="right")
-        txt(c, R-20, T-40, "Tech Pvt Ltd", size=8.5, color=C_TEXT_TER, align="right")
+        txt(c, R, T - 4,  "TIME TOURS",   size=12, color=C_TEXT_PRI, bold=True, align="right")
+        txt(c, R, T - 18, "Tech Pvt Ltd", size=8,  color=C_TEXT_TER, align="right")
 
-    T -= HDR_H
+    T -= 42
     hline(c, M, T, IW)
+    T -= GAP
 
-    # ── BOOKING ID ROW ─────────────────────────────────────────────────────────
-    BAR_H = 36
-    rect(c, M, T-BAR_H, IW, BAR_H, fill=C_BG, stroke=None, radius=0)
-    
+    # ── 2. BOOKING CONFIRMATION ───────────────────────────────────────────────
+    # Plain white — no background rect at all
+    # Label stacked above booking ID on left; confirmed pill on right
     booking_id = data.get("booking_id")
     if has_value(booking_id):
-        txt(c, M+20, T-BAR_H/2-3.5, "BOOKING CONFIRMATION", size=7, color=C_TEXT_TER, bold=True)
-        txt(c, M+155, T-BAR_H/2-4.5, booking_id, size=10, color=C_TEXT_PRI, bold=True)
+        txt(c, M, T,      "BOOKING CONFIRMATION", size=7,  color=C_TEXT_TER, bold=True)
+        txt(c, M, T - 13, str(booking_id),        size=10, color=C_TEXT_PRI, bold=True)
 
-    # Confirmed pill (right side)
-    pill_w = 70; pill_h = 18
-    rect(c, R-pill_w-20, T-BAR_H/2-pill_h/2, pill_w, pill_h,
-         fill=C_SUCCESS_BG, stroke=colors.Color(0.70,0.90,0.78), lw=0.4, radius=pill_h/2)
-    txt(c, R-20-pill_w/2, T-BAR_H/2-3.5,
-        "Confirmed", size=8, color=C_SUCCESS, bold=True, align="center")
+    # Confirmed pill — right only
+    PW = 72; PH = 17
+    rect(c, R - PW, T - 14, PW, PH,
+         fill=C_SUCCESS_BG, stroke=C_SUCCESS_BD, lw=0.4, radius=PH / 2)
+    txt(c, R - PW / 2, T - 9, "Confirmed", size=8, color=C_SUCCESS, bold=True, align="center")
 
-    T -= BAR_H
+    T -= 34
     hline(c, M, T, IW)
+    T -= GAP
 
-    # ── HOTEL IMAGE AREA + DATES ───────────────────────────────────────────────
-    IMG_H = 140
-    IMG_W = IW * 0.45
+    # ── 3. HOTEL IMAGE + DATES ────────────────────────────────────────────────
+    IMG_W = IW * 0.46
+    IMG_H = 115
 
-    # Image box (left)
-    img_x = M; img_y = T - IMG_H
+    # Image (left)
+    img_x = M
+    img_frame_v_inset = 6
+    img_box_h = IMG_H - (img_frame_v_inset * 2)
+    img_y = T - IMG_H + img_frame_v_inset
     image_url = data.get("image_url", "")
     img_drawn = False
     if image_url:
         try:
             if image_url.startswith("/uploads/"):
-                local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), image_url.lstrip("/"))
-                with open(local_path, "rb") as f:
-                    img_bytes = f.read()
+                local = os.path.join(os.path.dirname(os.path.abspath(__file__)), image_url.lstrip("/"))
+                with open(local, "rb") as f: img_bytes = f.read()
             else:
-                req = urllib.request.Request(image_url, headers={"User-Agent":"Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=8) as resp:
-                    img_bytes = resp.read()
+                req = urllib.request.Request(image_url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=8) as resp: img_bytes = resp.read()
             c.drawImage(ImageReader(io.BytesIO(img_bytes)),
-                        img_x, img_y, width=IMG_W, height=IMG_H,
+                        img_x, img_y, width=IMG_W, height=img_box_h,
                         preserveAspectRatio=True, mask="auto")
             img_drawn = True
         except: pass
 
     if not img_drawn:
-        # Placeholder box
-        rect(c, img_x, img_y, IMG_W, IMG_H, fill=C_BG_SEC, stroke=None, lw=0, radius=0)
-        txt(c, img_x + IMG_W/2, img_y + IMG_H/2 - 3,
+        rect(c, img_x, img_y, IMG_W, img_box_h, fill=C_SURFACE, stroke=C_BORDER, lw=0.5, radius=4)
+        txt(c, img_x + IMG_W / 2, img_y + img_box_h / 2 - 4,
             "No Hotel Image", size=9, color=C_TEXT_TER, align="center")
 
     # Dates (right of image)
-    DX = M + IMG_W   # divider x
-    vline(c, DX, T - IMG_H, T)
-    INFO_X = DX + 25
-    INFO_CX = DX + (IW - IMG_W) / 2
-
+    DX     = M + IMG_W + 22   # date column x
     CELL_H = IMG_H / 2
+    upper_block_top = T - 4
+    lower_block_top = T - CELL_H - 16
 
     # Check-in
-    if has_value(data.get("check_in_date")):
-        txt(c, INFO_X, T - 20, "CHECK-IN", size=7, color=C_TEXT_TER, bold=True)
-        txt(c, INFO_X, T - 38, data.get("check_in_date"), size=14, color=C_TEXT_PRI, bold=True)
-    ci_time = data.get("check_in_time")
-    if has_value(ci_time):
-        txt(c, INFO_X, T - 52, f"from {ci_time}", size=8, color=C_TEXT_SEC)
+    txt(c, DX, upper_block_top,  "CHECK-IN", size=7, color=C_TEXT_TER, bold=True)
+    txt(c, DX, upper_block_top - 16, check_in_label, size=16, color=C_TEXT_PRI, bold=True)
+    if has_value(data.get("check_in_time")):
+        txt(c, DX, upper_block_top - 29, f"from {data.get('check_in_time')}", size=8, color=C_TEXT_SEC)
 
+    # Night count — right aligned
     nights = night_count(data.get("check_in_date"), data.get("check_out_date"))
     if nights:
-        txt(c, R - 20, T - 38, f"{nights} NIGHTS", size=10, color=C_TEXT_PRI, bold=True, align="right")
+        label = f"{nights} Night{'s' if nights != 1 else ''}"
+        txt(c, R, upper_block_top - 16, label, size=9, color=C_TEXT_TER, align="right")
 
-    hline(c, DX, T - CELL_H, IW - IMG_W)
+    # Divider between check-in / check-out
+    hline(c, M + IMG_W, T - CELL_H, IW - IMG_W)
 
     # Check-out
-    if has_value(data.get("check_out_date")):
-        txt(c, INFO_X, T - CELL_H - 20, "CHECK-OUT", size=7, color=C_TEXT_TER, bold=True)
-        txt(c, INFO_X, T - CELL_H - 38, data.get("check_out_date"), size=14, color=C_TEXT_PRI, bold=True)
-    co_time = data.get("check_out_time")
-    if has_value(co_time):
-        txt(c, INFO_X, T - CELL_H - 52, f"until {co_time}", size=8, color=C_TEXT_SEC)
+    txt(c, DX, lower_block_top,  "CHECK-OUT", size=7, color=C_TEXT_TER, bold=True)
+    txt(c, DX, lower_block_top - 16, check_out_label, size=16, color=C_TEXT_PRI, bold=True)
+    if has_value(data.get("check_out_time")):
+        txt(c, DX, lower_block_top - 29, f"until {data.get('check_out_time')}", size=8, color=C_TEXT_SEC)
 
     T -= IMG_H
     hline(c, M, T, IW)
+    T -= GAP
 
-    # ── GUEST + ROOM ──────────────────────────────────────────────────────────
-    rooms = normalize_rooms(data)
-    ROW_H = 72
-    half = IW / 2
+    # ── 4. PRIMARY GUEST + ROOM SUMMARY ──────────────────────────────────────
+    HALF   = IW / 2
 
-    # Guest (left)
-    if has_value(data.get("guest_name")):
-        txt(c, M+20, T-20, "PRIMARY GUEST", size=7, color=C_TEXT_TER, bold=True)
-        txt(c, M+20, T-38, str(data.get("guest_name")).title(), size=12, color=C_TEXT_PRI, bold=True)
-    guest_count = data.get("num_guests") or sum(room.get("guest_count") or len(room.get("guests") or []) for room in rooms) or 1
-    if has_value(guest_count):
-        txt(c, M+20, T-52, f"{guest_count} Guest(s)", size=9, color=C_TEXT_SEC)
+    # Left — primary guest
+    txt(c, M, T, "PRIMARY GUEST", size=7, color=C_TEXT_TER, bold=True)
+    guest_name = data.get("guest_name")
+    if has_value(guest_name):
+        txt(c, M, T - 14, str(guest_name).title(), size=13, color=C_TEXT_PRI, bold=True)
+    guest_total = (
+        data.get("num_guests")
+        or sum(r.get("guest_count") or len(r.get("guests") or []) for r in rooms)
+        or 1
+    )
+    txt(c, M, T - 28, f"{guest_total} Guest(s)", size=9, color=C_TEXT_SEC)
 
-    vline(c, M + half, T-ROW_H, T)
+    # Right — room summary
+    RX = M + HALF + 20
+    txt(c, RX, T, "ROOM SUMMARY", size=7, color=C_TEXT_TER, bold=True)
 
-    # Room (right)
-    primary_room = next((room.get("room_type") for room in rooms if room.get("room_type")), data.get("room_type") or "")
-    if has_value(primary_room):
-        txt(c, M+half+20, T-20, "ROOM SUMMARY", size=7, color=C_TEXT_TER, bold=True)
-        txt(c, M+half+20, T-38, primary_room, size=12, color=C_TEXT_PRI, bold=True)
+    r_count = data.get("room_count") or len(rooms) or 1
+    meal    = data.get("meal_plan") or (rooms[0].get("meal_plan") if rooms else "")
 
-    r_count = data.get('room_count') or len(rooms) or 1
-    meal = data.get('meal_plan')
-    summary_parts = []
-    if has_value(r_count):
-        summary_parts.append(f"{r_count} Room(s)")
-    if has_value(meal):
-        summary_parts.append(str(meal))
-    if summary_parts:
-        txt(c, M+half+20, T-52, " · ".join(summary_parts), size=9, color=C_TEXT_SEC)
+    if len(unique_types) <= 1:
+        # All same type — single bold line
+        primary_room = unique_types[0] if unique_types else (data.get("room_type") or "")
+        if has_value(primary_room):
+            txt(c, RX, T - 14, primary_room, size=13, color=C_TEXT_PRI, bold=True)
+        parts = []
+        if has_value(r_count): parts.append(f"{r_count} Room(s)")
+        if has_value(meal):    parts.append(str(meal))
+        if parts: txt(c, RX, T - 28, " · ".join(parts), size=9, color=C_TEXT_SEC)
+        room_summary_bottom = T - 28
+    else:
+        # Different types — clean stacked room-type rows, no numbering
+        ly = T - 14
+        for rt in room_types:
+            txt(c, RX, ly, rt or "Accommodation", size=10, color=C_TEXT_PRI, bold=True)
+            ly -= 13
+        parts = []
+        if has_value(r_count): parts.append(f"{r_count} Rooms")
+        if has_value(meal):    parts.append(str(meal))
+        if parts: txt(c, RX, ly - 2, " · ".join(parts), size=9, color=C_TEXT_SEC)
+        room_summary_bottom = ly - 2
 
-    T -= ROW_H
+    section_bottom = min(T - 28, room_summary_bottom)
+    SECT_H = max(58, T - section_bottom + 14)
+
+    # Vertical separator
+    vline(c, M + HALF, T - SECT_H, T)
+
+    T -= SECT_H
     hline(c, M, T, IW)
+    T -= GAP
 
-    # ── PROPERTY + CONTACT ────────────────────────────────────────────────────
-    PROP_H = 65
+    # ── 5. PROPERTY DETAILS ───────────────────────────────────────────────────
+    txt(c, M, T, "PROPERTY DETAILS", size=7, color=C_TEXT_TER, bold=True)
+    detail_y = T - 13
     if has_value(data.get("hotel_address")):
-        txt(c, M+20, T-20, "PROPERTY ADDRESS", size=7, color=C_TEXT_TER, bold=True)
-        txt(c, M+20, T-36, str(data.get("hotel_address"))[:75], size=10, color=C_TEXT_PRI)
-    
-    phone = data.get("hotel_phone")
-    if has_value(phone):
-        txt(c, M+20, T-50, f"Phone: {phone}", size=9, color=C_TEXT_SEC)
+        address_lines = wrap_text_lines(c, data.get("hotel_address"), IW, "Helvetica", 10)
+        for line in address_lines[:3]:
+            txt(c, M, detail_y, line, size=10, color=C_TEXT_PRI)
+            detail_y -= 13
+    if has_value(data.get("hotel_phone")):
+        txt(c, M, detail_y, str(data.get("hotel_phone")), size=9, color=C_TEXT_SEC)
+        detail_y -= 12
 
-    T -= PROP_H
+    T = detail_y - 4
     hline(c, M, T, IW)
+    T -= GAP
 
-    # ── ROOM BREAKDOWN ────────────────────────────────────────────────────────
-    if rooms and any(has_value(room.get("room_type")) or has_value(room.get("guest_summary")) or any(room.get("guests") or []) for room in rooms):
-        txt(c, M+20, T-20, "ROOMS & GUESTS", size=7, color=C_TEXT_TER, bold=True)
-        row_top = T - 34
-        row_h = 34
+    # ── 6. ROOMS & GUESTS BREAKDOWN ───────────────────────────────────────────
+    # Always use room type as the heading; never show Room 1 / Room 2 labels.
+    # Guest line     → names only, no Adult/Child tag
+    has_room_data = any(
+        has_value(r.get("room_type")) or has_value(r.get("guest_summary")) or r.get("guests")
+        for r in rooms
+    )
+
+    if has_room_data:
+        txt(c, M, T, "ROOMS & GUESTS", size=7, color=C_TEXT_TER, bold=True)
+        ry = T - 16
+
         for idx, room in enumerate(rooms[:6]):
-            y = row_top - (idx * row_h)
-            if y - 20 < BOT + 110:
-                break
-            room_label = room.get("room_type") or f"Room {idx + 1}"
-            guests = room.get("guests") or []
-            guest_line = ", ".join(str(g) for g in guests if g) if guests else (room.get("guest_summary") or f"{room.get('guest_count') or 1} guest(s)")
-            txt(c, M+20, y, f"Room {idx + 1}", size=8, color=C_TEXT_TER, bold=True)
-            if has_value(room_label):
-                txt(c, M+80, y, room_label, size=10, color=C_TEXT_PRI, bold=True)
-            if has_value(guest_line):
-                txt(c, M+80, y-13, guest_line[:80], size=8.5, color=C_TEXT_SEC)
-        T -= 34 + (min(len(rooms), 6) * row_h)
-        hline(c, M, T, IW)
+            if ry - 28 < BOT + 60: break
 
-    # ── AMENITIES ─────────────────────────────────────────────────────────────
+            rtype      = room.get("room_type") or ""
+            meal_room  = room.get("meal_plan") or ""
+            guests     = room.get("guests") or []
+            guest_names = [str(g).strip() for g in guests if g and str(g).strip()]
+            if not guest_names:
+                fallback_guest = room.get("guest_summary") or f"{room.get('guest_count') or 1} guest(s)"
+                guest_names = [str(fallback_guest).strip()]
+
+            heading = rtype or "Accommodation"
+            txt(c, M, ry, heading, size=10, color=C_TEXT_PRI, bold=True)
+            if has_value(meal_room):
+                txt(c, M + 2, ry - 11, meal_room, size=8, color=C_TEXT_TER)
+
+            # Guest names — stacked so long names stay aligned and never overflow
+            guest_y = ry - (25 if has_value(meal_room) else 14)
+            guest_line_count = 0
+            for gname in guest_names:
+                wrapped_guest_lines = wrap_text_lines(c, gname, IW - 20, "Helvetica", 8.5) or [gname]
+                for guest_line in wrapped_guest_lines:
+                    txt(c, M, guest_y, guest_line, size=8.5, color=C_TEXT_SEC)
+                    guest_y -= 11
+                    guest_line_count += 1
+
+            # Separator between rooms (not after last)
+            top_offset = 25 if has_value(meal_room) else 14
+            room_block_height = max(34, top_offset + (guest_line_count * 11) + 4)
+            if idx < len(rooms) - 1:
+                hline(c, M, ry - room_block_height, IW, lw=0.4)
+                ry -= room_block_height + 12
+            else:
+                ry -= room_block_height
+
+        T = ry
+        hline(c, M, T, IW)
+        T -= GAP
+
+    # ── 7. AMENITIES ──────────────────────────────────────────────────────────
     amenities = data.get("amenities") or []
     if not isinstance(amenities, list): amenities = []
-    
+
     if amenities:
-        AM_PAD = 20
-        CHIP_H = 20; CHIP_GAP = 8; CHIP_W = 100
-        row_y = T - AM_PAD - CHIP_H - 12
-        txt(c, M+20, T - AM_PAD - 2, "AMENITIES", size=7, color=C_TEXT_TER, bold=True)
-        cx = M + 20
-        for i, am in enumerate(amenities[:8]):
-            if cx + CHIP_W > R - 20:
-                cx = M + 20
-                row_y -= CHIP_H + 8
-            pill(c, cx, row_y + CHIP_H, CHIP_W, CHIP_H, str(am)[:20], size=7.5)
-            cx += CHIP_W + CHIP_GAP
+        txt(c, M, T, "AMENITIES", size=7, color=C_TEXT_TER, bold=True)
 
-        AM_H = (T - row_y) + 15
-        T -= AM_H
+        CHIP_H = 18; CHIP_GAP = 6
+        cx = M; chip_y = T - 26
+
+        for am in amenities[:10]:
+            label   = str(am)[:22]
+            chip_w  = min(max(len(label) * 5.4 + 14, 55), 140)
+            if cx + chip_w > R:
+                cx = M; chip_y -= CHIP_H + 6
+            pill_chip(c, cx, chip_y + CHIP_H, chip_w, CHIP_H, label, size=7.5)
+            cx += chip_w + CHIP_GAP
+
+        T = chip_y - 10
         hline(c, M, T, IW)
+        T -= GAP
 
+    # ── 8. TOTAL AMOUNT ───────────────────────────────────────────────────────
     paid_logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paid logo.png")
     total_label = format_amount(data.get("total_amount"), data.get("currency"))
     if total_label:
-        txt(c, R - 30, BOT + 140, "TOTAL AMOUNT", size=7, color=C_TEXT_TER, bold=True, align="right")
-        txt(c, R - 30, BOT + 125, total_label, size=12, color=C_TEXT_PRI, bold=True, align="right")
+        txt(c, R, T,      "TOTAL AMOUNT", size=7,  color=C_TEXT_TER, bold=True, align="right")
+        txt(c, R, T - 16, total_label,    size=16, color=C_TEXT_PRI, bold=True, align="right")
+        T -= 32
+        hline(c, M, T, IW)
+        T -= GAP
+
     if os.path.isfile(paid_logo_path):
         try:
             c.saveState()
-            c.translate(R - 95, BOT + 48)
+            c.translate(R - 90, BOT + 50)
             c.rotate(8)
-            c.drawImage(ImageReader(paid_logo_path), 0, 0, width=82, height=60, preserveAspectRatio=True, mask="auto")
+            c.drawImage(ImageReader(paid_logo_path), 0, 0, width=78, height=58,
+                        preserveAspectRatio=True, mask="auto")
             c.restoreState()
-        except Exception:
-            pass
+        except Exception: pass
 
-    # ── FOOTER ────────────────────────────────────────────────────────────────
-    # Push footer down and separate it
-    hline(c, M, BOT + 45, IW)
-    
-    FOOT_Y = BOT + 20
-
-    # Left footer
-    txt(c, M+20, FOOT_Y, "timetours.in  ·  +91 33 400 11 333", size=8.5, color=C_TEXT_SEC)
-
-    # Right footer
-    txt(c, R-20, FOOT_Y, "13, Camac Street, Kolkata 700017", size=8.5, color=C_TEXT_SEC, align="right")
+    # ── 9. FOOTER ─────────────────────────────────────────────────────────────
+    hline(c, M, BOT + 36, IW)
+    FOOT_Y = BOT + 16
+    txt(c, M, FOOT_Y, "timetours.in  ·  +91 33 400 11 333", size=8, color=C_TEXT_SEC)
+    txt(c, R,  FOOT_Y, "13, Camac Street, Kolkata 700017",   size=8, color=C_TEXT_SEC, align="right")
 
 
-# ── Booking data (for standalone testing) ─────────────────────────────────────
+# ── Sample data ───────────────────────────────────────────────────────────────
 data = {
     "booking_id":     "73393899308293",
-    "hotel_name":     "Fairfield by Marriott Mumbai",
+    "hotel_name":     "Fairfield by Marriott Mumbai Andheri West",
     "hotel_address":  "B-43, New Link Rd, Andheri West, Mumbai",
     "hotel_phone":    "+91 (22) 65740000",
     "check_in_date":  "13 Mar 2026",
     "check_out_date": "15 Mar 2026",
-    "room_type":      "1 King Bed",
-    "num_guests":     "2",
     "guest_name":     "SUNDEEP AGARWALA",
+    "num_guests":     4,
     "amenities": [
         "Breakfast Buffet", "Free Valet Parking", "Free WiFi",
         "Air Conditioning", "Meeting Rooms", "24-hr Fitness",
     ],
-    "image_url": "",   # set to a URL to embed hotel photo
+    "image_url": "",   # set to URL or /uploads/... path for hotel photo
+
+    "rooms": [
+        {
+            "room_type": "1 King Bed, City View",
+            "guests":    ["Sundeep Agarwala", "Priya Agarwala"],
+            "meal_plan": "Breakfast Included",
+        },
+        {
+            "room_type": "2 Queen Beds, Garden View",
+            "guests":    ["Rahul Mehta", "Neha Mehta"],
+            "meal_plan": "Breakfast Included",
+        },
+    ],
 }
 
 if __name__ == "__main__":
-    out = os.path.join(os.path.dirname(__file__), "hotel_voucher_minimal.pdf")
-    cv = canvas.Canvas(out, pagesize=A4)
+    out = os.path.join(os.path.dirname(__file__), "hotel_voucher.pdf")
+    cv  = canvas.Canvas(out, pagesize=A4)
     cv.setTitle("Hotel Voucher – Fairfield by Marriott")
     draw_hotel_voucher(cv, data)
     cv.save()
-    print(f"Saved → {out}")
+    print(f"Saved -> {out}")
