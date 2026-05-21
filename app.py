@@ -21,6 +21,7 @@ import hashlib
 from query_parser import extract_flight, extract_multiple_flights
 from models import User, Customer, Itinerary, Ticket, TicketRead, Aggregator, LedgerEntry, TicketOperation, OperationLedgerLink, BookingGroup, FareRule
 from extensions import db
+from cache_backend import DashboardCache
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -157,6 +158,15 @@ _TICKET_PROCESSING_MIN_VISIBLE_SECONDS = 6
 _ticket_dashboard_streams = {}
 _ticket_dashboard_streams_lock = threading.Lock()
 _ticket_receive_lock = threading.Lock()
+_dashboard_cache = DashboardCache(
+    redis_url=os.getenv("REDIS_URL"),
+    prefix=os.getenv("CACHE_PREFIX", "flight-query-parser"),
+)
+_TICKETS_LIST_CACHE_TTL_SECONDS = max(int(os.getenv("TICKETS_LIST_CACHE_TTL_SECONDS", "30") or 30), 1)
+_TICKET_DETAIL_CACHE_TTL_SECONDS = max(int(os.getenv("TICKET_DETAIL_CACHE_TTL_SECONDS", "45") or 45), 1)
+_TICKET_NOTIFICATIONS_CACHE_TTL_SECONDS = max(int(os.getenv("TICKET_NOTIFICATIONS_CACHE_TTL_SECONDS", "15") or 15), 1)
+_TICKETS_DUPLICATES_CACHE_TTL_SECONDS = max(int(os.getenv("TICKETS_DUPLICATES_CACHE_TTL_SECONDS", "20") or 20), 1)
+_TICKETS_MERGED_HISTORY_CACHE_TTL_SECONDS = max(int(os.getenv("TICKETS_MERGED_HISTORY_CACHE_TTL_SECONDS", "30") or 30), 1)
 
 # Register API v2 Blueprint
 # Register API v2 Blueprint
@@ -624,6 +634,39 @@ def _get_user_ticket_processing_batches(user_id):
     return batches
 
 
+def _dashboard_cache_version_key(user_id):
+    return f"ticket-dashboard:version:{user_id}"
+
+
+def _dashboard_cache_version(user_id):
+    return _dashboard_cache.get_int(_dashboard_cache_version_key(user_id), default=1)
+
+
+def _dashboard_cache_key(kind, user_id, version, **parts):
+    normalized_parts = []
+    for key in sorted(parts):
+        normalized_parts.append(f"{key}={parts[key]}")
+    suffix = ":".join(normalized_parts)
+    base = f"ticket-dashboard:{kind}:user:{user_id}:v:{version}"
+    return f"{base}:{suffix}" if suffix else base
+
+
+def _dashboard_cache_get(kind, user_id, **parts):
+    version = _dashboard_cache_version(user_id)
+    key = _dashboard_cache_key(kind, user_id, version, **parts)
+    return _dashboard_cache.get_json(key), key
+
+
+def _dashboard_cache_set(key, payload, ttl_seconds):
+    _dashboard_cache.set_json(key, payload, ttl_seconds)
+
+
+def _invalidate_ticket_dashboard_cache(user_id):
+    if not user_id:
+        return None
+    return _dashboard_cache.incr(_dashboard_cache_version_key(user_id))
+
+
 def _ticket_notifications_payload(user_id):
     merge_groups = _build_pnr_merge_groups(user_id)
     pending_merges = [g for g in merge_groups if g["merged_ticket_count"] < g["ticket_count"]]
@@ -644,6 +687,7 @@ def _ticket_notifications_payload(user_id):
 def _publish_ticket_dashboard_event(user_id, event_type="dashboard_refresh", **payload):
     if not user_id:
         return
+    _invalidate_ticket_dashboard_cache(user_id)
     event_payload = {
         "event": event_type,
         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -3837,7 +3881,13 @@ def notify_ticket_processing():
 def get_ticket_notifications():
     """Return notification counts for PNR merge groups and pending duplicates."""
     user_id = session["user_id"]
-    return jsonify(_ticket_notifications_payload(user_id))
+    cached_payload, cache_key = _dashboard_cache_get("notifications", user_id)
+    if cached_payload is not None:
+        return jsonify(cached_payload)
+
+    payload = _ticket_notifications_payload(user_id)
+    _dashboard_cache_set(cache_key, payload, _TICKET_NOTIFICATIONS_CACHE_TTL_SECONDS)
+    return jsonify(payload)
 
 
 @app.route("/api/tickets/stream", methods=["GET"])
@@ -3901,11 +3951,6 @@ def tickets_stream():
 def get_pending_duplicates():
     """List all pending duplicate tickets with their original ticket info."""
     user_id = session["user_id"]
-    query = Ticket.query.filter_by(
-        user_id=user_id,
-        duplicate_status="pending"
-    ).order_by(Ticket.created_at.desc())
-
     try:
         limit = max(int(request.args.get("limit", 0) or 0), 0)
     except (TypeError, ValueError):
@@ -3914,6 +3959,15 @@ def get_pending_duplicates():
         offset = max(int(request.args.get("offset", 0) or 0), 0)
     except (TypeError, ValueError):
         offset = 0
+
+    cached_payload, cache_key = _dashboard_cache_get("duplicates", user_id, limit=limit, offset=offset)
+    if cached_payload is not None:
+        return jsonify(cached_payload)
+
+    query = Ticket.query.filter_by(
+        user_id=user_id,
+        duplicate_status="pending"
+    ).order_by(Ticket.created_at.desc())
 
     total_count = query.count()
     pending_query = query.offset(offset)
@@ -3970,13 +4024,15 @@ def get_pending_duplicates():
         result.append(dup_data)
 
     returned_count = len(result)
-    return jsonify({
+    payload = {
         "duplicates": result,
         "total_count": total_count,
         "offset": offset,
         "returned_count": returned_count,
         "has_more": (offset + returned_count) < total_count,
-    })
+    }
+    _dashboard_cache_set(cache_key, payload, _TICKETS_DUPLICATES_CACHE_TTL_SECONDS)
+    return jsonify(payload)
 
 
 @app.route("/api/tickets/<ticket_id>/approve-duplicate", methods=["POST"])
@@ -4024,6 +4080,10 @@ def reject_duplicate(ticket_id):
 def get_merged_history():
     """Return completed booking groups (merged tickets history)."""
     user_id = session["user_id"]
+    cached_payload, cache_key = _dashboard_cache_get("merged-history", user_id)
+    if cached_payload is not None:
+        return jsonify(cached_payload)
+
     groups = BookingGroup.query.filter_by(user_id=user_id, status="merged").order_by(BookingGroup.updated_at.desc()).all()
 
     result = []
@@ -4044,7 +4104,9 @@ def get_merged_history():
             "lead_ticket_id": lead.id,
         })
 
-    return jsonify({"merged_groups": result})
+    payload = {"merged_groups": result}
+    _dashboard_cache_set(cache_key, payload, _TICKETS_MERGED_HISTORY_CACHE_TTL_SECONDS)
+    return jsonify(payload)
 
 
 # ==================== TICKET CRUD ROUTES ====================
@@ -4274,14 +4336,10 @@ def delete_pnr_group_tickets(pnr):
 def get_tickets():
     """Get all tickets for the logged-in user"""
     from sqlalchemy import or_
+    user_id = session['user_id']
     user = User.query.get(session['user_id'])
     last_seen_at = user.last_ticket_seen_at if user else None
     server_now = _db_now()
-    query = Ticket.query.filter(
-        Ticket.user_id == session['user_id'],
-        or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status == 'approved'),
-    ).order_by(Ticket.created_at.desc())
-
     try:
         limit = max(int(request.args.get("limit", 0) or 0), 0)
     except (TypeError, ValueError):
@@ -4290,6 +4348,15 @@ def get_tickets():
         offset = max(int(request.args.get("offset", 0) or 0), 0)
     except (TypeError, ValueError):
         offset = 0
+
+    cached_payload, cache_key = _dashboard_cache_get("tickets-list", user_id, limit=limit, offset=offset)
+    if cached_payload is not None:
+        return jsonify(cached_payload)
+
+    query = Ticket.query.filter(
+        Ticket.user_id == user_id,
+        or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status == 'approved'),
+    ).order_by(Ticket.created_at.desc())
 
     total_count = query.count()
     tickets_query = query.offset(offset)
@@ -4341,7 +4408,7 @@ def get_tickets():
         })
         result.append(payload)
 
-    read_ticket_ids = _ticket_read_ticket_ids(session['user_id'], ticket_scope_ids)
+    read_ticket_ids = _ticket_read_ticket_ids(user_id, ticket_scope_ids)
     result_by_id = {item["id"]: item for item in result if item.get("id")}
     for t in tickets:
         if t.booking_group_id:
@@ -4359,7 +4426,7 @@ def get_tickets():
                 payload["is_unread"] = _ticket_unread_for_state(t, last_seen_at, read_ticket_ids)
 
     returned_count = len(result)
-    return jsonify({
+    payload = {
         "tickets": result,
         "total_count": total_count,
         "offset": offset,
@@ -4367,7 +4434,9 @@ def get_tickets():
         "has_more": (offset + returned_count) < total_count,
         "last_seen_at": _iso_or_none(last_seen_at),
         "server_now": _iso_or_none(server_now),
-    })
+    }
+    _dashboard_cache_set(cache_key, payload, _TICKETS_LIST_CACHE_TTL_SECONDS)
+    return jsonify(payload)
 
 
 
@@ -4435,42 +4504,54 @@ def delete_account():
 @login_required
 def get_ticket(ticket_id):
     """Get a specific ticket with full data"""
-    user = User.query.get(session['user_id'])
+    user_id = session['user_id']
+    user = User.query.get(user_id)
     last_seen_at = user.last_ticket_seen_at if user else None
-    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+    ticket = Ticket.query.filter_by(id=ticket_id, user_id=user_id).first()
     if not ticket:
         return jsonify({"error": "Ticket not found"}), 404
-    
+
+    ticket_mutated_on_read = False
     passengers = json.loads(ticket.passengers_data) if ticket.passengers_data else []
     if _ensure_passenger_internal_ids(passengers):
         ticket.passengers_data = json.dumps(passengers)
-        db.session.commit()
+        ticket_mutated_on_read = True
 
     # Auto-map to ledger if PNR exists there but hash is missing
     if not ticket.ledger_hash and ticket.pnr:
-        existing = LedgerEntry.query.filter_by(pnr=ticket.pnr, user_id=session['user_id']).first()
+        existing = LedgerEntry.query.filter_by(pnr=ticket.pnr, user_id=user_id).first()
         if existing:
             # We use a special marker to indicate it was mapped via PNR
             ticket.ledger_hash = f"MAPPED_{existing.id}"
-            db.session.commit()
+            ticket_mutated_on_read = True
+
+    if ticket_mutated_on_read:
+        db.session.commit()
+        _invalidate_ticket_dashboard_cache(user_id)
+
+    cached_payload, cache_key = _dashboard_cache_get("ticket-detail", user_id, ticket_id=ticket_id)
+    if cached_payload is not None:
+        return jsonify(cached_payload)
 
     if ticket.booking_group_id and ticket.booking_group:
         grouped_tickets = _booking_group_sorted_tickets(ticket.booking_group)
         lead_ticket = grouped_tickets[0] if grouped_tickets else ticket
         payload = _merged_ticket_dict(ticket.booking_group, lead_ticket)
-        read_ticket_ids = _ticket_read_ticket_ids(session['user_id'], [grouped_ticket.id for grouped_ticket in grouped_tickets])
+        read_ticket_ids = _ticket_read_ticket_ids(user_id, [grouped_ticket.id for grouped_ticket in grouped_tickets])
         payload["is_unread"] = any(
             _ticket_unread_for_state(grouped_ticket, last_seen_at, read_ticket_ids)
             for grouped_ticket in grouped_tickets
         )
+        _dashboard_cache_set(cache_key, payload, _TICKET_DETAIL_CACHE_TTL_SECONDS)
         return jsonify(payload)
 
     payload = _ticket_dict_with_children(ticket)
     payload["is_unread"] = _ticket_unread_for_state(
         ticket,
         last_seen_at,
-        _ticket_read_ticket_ids(session['user_id'], [ticket.id]),
+        _ticket_read_ticket_ids(user_id, [ticket.id]),
     )
+    _dashboard_cache_set(cache_key, payload, _TICKET_DETAIL_CACHE_TTL_SECONDS)
     return jsonify(payload)
 
 
@@ -4502,6 +4583,7 @@ def mark_ticket_read(ticket_id):
 
     if inserted_ids or deleted_any:
         db.session.commit()
+        _invalidate_ticket_dashboard_cache(session['user_id'])
 
     return jsonify({
         "message": "Marked as read",
@@ -4523,6 +4605,7 @@ def mark_all_tickets_seen():
     user.last_ticket_seen_at = seen_at
     TicketRead.query.filter_by(user_id=session['user_id']).delete(synchronize_session=False)
     db.session.commit()
+    _invalidate_ticket_dashboard_cache(session['user_id'])
 
     return jsonify({
         "message": "All tickets marked seen",
@@ -4568,6 +4651,7 @@ def mark_selected_tickets_unread():
         TicketRead.ticket_id.in_(scoped_ids),
     ).delete(synchronize_session=False)
     db.session.commit()
+    _invalidate_ticket_dashboard_cache(session['user_id'])
 
     return jsonify({
         "message": f"Marked {len(scoped_ids)} ticket{'' if len(scoped_ids) == 1 else 's'} as unread",
