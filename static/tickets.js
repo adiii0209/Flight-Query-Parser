@@ -2172,6 +2172,7 @@ function hydrateTicketsFromCache() {
     }
     allTickets = cachedTickets;
     totalAvailableTickets = Number.isFinite(Number(cached?.total_count)) ? Number(cached.total_count) : cachedTickets.length;
+    lastFullTicketsSyncAt = Number.isFinite(Number(cached?.cached_at)) ? Number(cached.cached_at) : 0;
     knownTicketIds = new Set(cachedTickets.map((ticket) => ticket.id).filter(Boolean));
     renderTicketCards();
     return true;
@@ -2202,10 +2203,6 @@ async function loadTickets(options = {}) {
         if (!r.ok) return null;
         const d = await r.json();
         syncUnreadStateFromServer(d);
-        unreadTicketIds.clear();
-        readOverrideTicketIds.clear();
-        persistUnreadTickets();
-        persistUnreadSeenState();
         const incomingTickets = (d.tickets || []).map(normalizeTicketFareData);
         totalAvailableTickets = Number.isFinite(Number(d.total_count)) ? Number(d.total_count) : incomingTickets.length;
         if (notifyNewTickets && hasInitializedTicketFeed && offset === 0) {
@@ -7782,6 +7779,38 @@ window.addEventListener('beforeunload', () => {
 
 window.addEventListener('pagehide', () => {
     persistUnreadSeenState();
+});
+
+window.addEventListener('pageshow', () => {
+    hydrateUserFromCache();
+    hydrateUnreadTicketsFromCache();
+    hydrateUnreadSeenStateFromCache();
+    hydrateNotificationsFromCache();
+    hydrateAggregatorsFromCache();
+    hydrateTicketsFromCache();
+    updateTicketSelectionToolbar();
+});
+
+window.addEventListener('storage', (event) => {
+    if (!event || !event.key) return;
+    if (event.key === TICKETS_CACHE_KEY) {
+        if (!currentTicket || !isDetailDirty) {
+            hydrateTicketsFromCache();
+            updateTicketSelectionToolbar();
+        }
+        return;
+    }
+    if (event.key === TICKETS_NOTIFICATIONS_CACHE_KEY) {
+        hydrateNotificationsFromCache();
+        return;
+    }
+    if (event.key === UNREAD_TICKETS_CACHE_KEY || event.key === TICKETS_LAST_SEEN_AT_KEY || event.key === TICKETS_READ_OVERRIDES_KEY) {
+        hydrateUnreadTicketsFromCache();
+        hydrateUnreadSeenStateFromCache();
+        if (!currentTicket || !isDetailDirty) {
+            renderTicketCards();
+        }
+    }
 });
 
 window.addEventListener('online', () => {
