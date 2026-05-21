@@ -719,6 +719,14 @@ def _invalidate_ticket_dashboard_cache(user_id):
     return _dashboard_cache.incr(_dashboard_cache_version_key(user_id))
 
 
+def _jsonify_dashboard_cache_payload(payload, cache_status, cache_scope):
+    response = jsonify(payload)
+    response.headers["X-Cache"] = cache_status
+    response.headers["X-Cache-Backend"] = _dashboard_cache.backend_name
+    response.headers["X-Cache-Scope"] = cache_scope
+    return response
+
+
 def _ticket_notifications_payload(user_id):
     merge_groups = _build_pnr_merge_groups(user_id)
     pending_merges = [g for g in merge_groups if g["merged_ticket_count"] < g["ticket_count"]]
@@ -3937,11 +3945,11 @@ def get_ticket_notifications():
     user_id = session["user_id"]
     cached_payload, cache_key = _dashboard_cache_get("notifications", user_id)
     if cached_payload is not None:
-        return jsonify(cached_payload)
+        return _jsonify_dashboard_cache_payload(cached_payload, "HIT", "tickets-notifications")
 
     payload = _ticket_notifications_payload(user_id)
     _dashboard_cache_set(cache_key, payload, _TICKET_NOTIFICATIONS_CACHE_TTL_SECONDS)
-    return jsonify(payload)
+    return _jsonify_dashboard_cache_payload(payload, "MISS", "tickets-notifications")
 
 
 @app.route("/api/tickets/stream", methods=["GET"])
@@ -4016,7 +4024,7 @@ def get_pending_duplicates():
 
     cached_payload, cache_key = _dashboard_cache_get("duplicates", user_id, limit=limit, offset=offset)
     if cached_payload is not None:
-        return jsonify(cached_payload)
+        return _jsonify_dashboard_cache_payload(cached_payload, "HIT", "tickets-duplicates")
 
     query = Ticket.query.filter_by(
         user_id=user_id,
@@ -4086,7 +4094,7 @@ def get_pending_duplicates():
         "has_more": (offset + returned_count) < total_count,
     }
     _dashboard_cache_set(cache_key, payload, _TICKETS_DUPLICATES_CACHE_TTL_SECONDS)
-    return jsonify(payload)
+    return _jsonify_dashboard_cache_payload(payload, "MISS", "tickets-duplicates")
 
 
 @app.route("/api/tickets/<ticket_id>/approve-duplicate", methods=["POST"])
@@ -4136,7 +4144,7 @@ def get_merged_history():
     user_id = session["user_id"]
     cached_payload, cache_key = _dashboard_cache_get("merged-history", user_id)
     if cached_payload is not None:
-        return jsonify(cached_payload)
+        return _jsonify_dashboard_cache_payload(cached_payload, "HIT", "tickets-merged-history")
 
     groups = BookingGroup.query.filter_by(user_id=user_id, status="merged").order_by(BookingGroup.updated_at.desc()).all()
 
@@ -4160,7 +4168,7 @@ def get_merged_history():
 
     payload = {"merged_groups": result}
     _dashboard_cache_set(cache_key, payload, _TICKETS_MERGED_HISTORY_CACHE_TTL_SECONDS)
-    return jsonify(payload)
+    return _jsonify_dashboard_cache_payload(payload, "MISS", "tickets-merged-history")
 
 
 # ==================== TICKET CRUD ROUTES ====================
@@ -4405,7 +4413,7 @@ def get_tickets():
 
     cached_payload, cache_key = _dashboard_cache_get("tickets-list", user_id, limit=limit, offset=offset)
     if cached_payload is not None:
-        return jsonify(cached_payload)
+        return _jsonify_dashboard_cache_payload(cached_payload, "HIT", "tickets-list")
 
     query = Ticket.query.filter(
         Ticket.user_id == user_id,
@@ -4490,7 +4498,7 @@ def get_tickets():
         "server_now": _iso_or_none(server_now),
     }
     _dashboard_cache_set(cache_key, payload, _TICKETS_LIST_CACHE_TTL_SECONDS)
-    return jsonify(payload)
+    return _jsonify_dashboard_cache_payload(payload, "MISS", "tickets-list")
 
 
 
@@ -4585,7 +4593,7 @@ def get_ticket(ticket_id):
 
     cached_payload, cache_key = _dashboard_cache_get("ticket-detail", user_id, ticket_id=ticket_id)
     if cached_payload is not None:
-        return jsonify(cached_payload)
+        return _jsonify_dashboard_cache_payload(cached_payload, "HIT", "ticket-detail")
 
     if ticket.booking_group_id and ticket.booking_group:
         grouped_tickets = _booking_group_sorted_tickets(ticket.booking_group)
@@ -4597,7 +4605,7 @@ def get_ticket(ticket_id):
             for grouped_ticket in grouped_tickets
         )
         _dashboard_cache_set(cache_key, payload, _TICKET_DETAIL_CACHE_TTL_SECONDS)
-        return jsonify(payload)
+        return _jsonify_dashboard_cache_payload(payload, "MISS", "ticket-detail")
 
     payload = _ticket_dict_with_children(ticket)
     payload["is_unread"] = _ticket_unread_for_state(
@@ -4606,7 +4614,7 @@ def get_ticket(ticket_id):
         _ticket_read_ticket_ids(user_id, [ticket.id]),
     )
     _dashboard_cache_set(cache_key, payload, _TICKET_DETAIL_CACHE_TTL_SECONDS)
-    return jsonify(payload)
+    return _jsonify_dashboard_cache_payload(payload, "MISS", "ticket-detail")
 
 
 @app.route("/api/tickets/<ticket_id>/read", methods=["POST"])

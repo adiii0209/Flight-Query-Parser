@@ -28,6 +28,7 @@ const NOTIF_THROTTLE_MS = 30 * 1000;        // don't re-fetch notifications with
 let totalAvailableTickets = 0;
 let lastFullTicketsSyncAt = 0;
 let fullTicketsSyncPromise = null;
+let deferredFullSyncHandle = null;
 let ticketsEventSource = null;
 let realtimeRefreshHandle = null;
 let ticketsRealtimeRetryHandle = null;
@@ -2296,21 +2297,32 @@ function setDashboardUpdatingState(state) {
     }
 }
 
-async function syncAllTicketsInBackground() {
+async function syncAllTicketsInBackground({ showLoader = false } = {}) {
     if (fullTicketsSyncPromise) return fullTicketsSyncPromise;
-    
-    setDashboardUpdatingState(true);
-    
+    if (showLoader) {
+        setDashboardUpdatingState(true);
+    }
+
     fullTicketsSyncPromise = (async () => {
         try {
             await loadTickets({ render: true, notifyNewTickets: false });
         } finally {
-            setDashboardUpdatingState(false);
+            if (showLoader) {
+                setDashboardUpdatingState(false);
+            }
         }
     })().finally(() => {
         fullTicketsSyncPromise = null;
     });
     return fullTicketsSyncPromise;
+}
+
+function scheduleDeferredFullSync(delayMs = 2500) {
+    if (fullTicketsSyncPromise || deferredFullSyncHandle) return;
+    deferredFullSyncHandle = setTimeout(() => {
+        deferredFullSyncHandle = null;
+        void syncAllTicketsInBackground({ showLoader: false });
+    }, delayMs);
 }
 
 async function syncCurrentTicketFromServer() {
@@ -2393,8 +2405,8 @@ function scheduleRealtimeRefresh(payload = {}) {
             const snapshot = await loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, render: true, notifyNewTickets: isNewTicket });
 
             // Full sync only when a new ticket arrived or list is incomplete
-            if (snapshot && (isNewTicket || allTickets.length < totalAvailableTickets)) {
-                void syncAllTicketsInBackground();
+            if (snapshot && isNewTicket) {
+                scheduleDeferredFullSync(1200);
             }
         } catch (e) {
             console.error('Realtime refresh failed', e);
@@ -2502,8 +2514,8 @@ function resumeDashboardLiveUpdates({ refresh = false } = {}) {
         }
         // Full background sync only if data is actually stale or incomplete
         const STALE_MS = 30 * 1000;
-        if ((Date.now() - lastFullTicketsSyncAt) > STALE_MS || allTickets.length < totalAvailableTickets) {
-            void syncAllTicketsInBackground();
+        if ((Date.now() - lastFullTicketsSyncAt) > STALE_MS) {
+            scheduleDeferredFullSync(1200);
         }
     }
 }
@@ -7709,18 +7721,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             showLoading: !hasCachedTickets,
             render: true
         }).then(() => {
-            if (allTickets.length < totalAvailableTickets || totalAvailableTickets === 0) {
-                void syncAllTicketsInBackground();
+            if (totalAvailableTickets === 0) {
+                void syncAllTicketsInBackground({ showLoader: !hasCachedTickets });
             } else {
                 setDashboardUpdatingState(false);
+                scheduleDeferredFullSync(hasCachedTickets ? 3000 : 1500);
             }
         });
     } else {
         // Fresh cache — don't touch tickets at all, just lazy-sync in background
         void loadNotifications({ force: true });
         setDashboardUpdatingState(false);
-        if ((Date.now() - lastFullTicketsSyncAt) > 30000 || allTickets.length < totalAvailableTickets) {
-            void syncAllTicketsInBackground();
+        if ((Date.now() - lastFullTicketsSyncAt) > 30000) {
+            scheduleDeferredFullSync(3000);
         }
     }
 
@@ -7728,7 +7741,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         scheduleTicketsRealtimeRetry();
     }
     if (!('EventSource' in window)) {
-        void syncAllTicketsInBackground();
+        scheduleDeferredFullSync(1500);
     }
 
     const detailView = document.getElementById('detailView');
