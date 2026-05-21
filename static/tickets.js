@@ -2168,7 +2168,6 @@ function hydrateTicketsFromCache() {
     const cached = readCachedJson(TICKETS_CACHE_KEY);
     const cachedTickets = Array.isArray(cached?.tickets) ? cached.tickets.map(normalizeTicketFareData) : [];
     if (!cachedTickets.length) {
-        renderTicketSkeletons();
         return false;
     }
     allTickets = cachedTickets;
@@ -2177,6 +2176,13 @@ function hydrateTicketsFromCache() {
     knownTicketIds = new Set(cachedTickets.map((ticket) => ticket.id).filter(Boolean));
     renderTicketCards();
     return true;
+}
+
+function cachedTicketsAreComplete() {
+    const cached = readCachedJson(TICKETS_CACHE_KEY);
+    const cachedTickets = Array.isArray(cached?.tickets) ? cached.tickets : [];
+    const cachedTotal = Number.isFinite(Number(cached?.total_count)) ? Number(cached.total_count) : cachedTickets.length;
+    return cachedTickets.length >= cachedTotal;
 }
 
 // ==================== LOAD DATA ====================
@@ -2405,7 +2411,7 @@ function scheduleRealtimeRefresh(payload = {}) {
             const snapshot = await loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, render: true, notifyNewTickets: isNewTicket });
 
             // Full sync only when a new ticket arrived or list is incomplete
-            if (snapshot && isNewTicket) {
+            if (snapshot && (isNewTicket || allTickets.length < totalAvailableTickets)) {
                 scheduleDeferredFullSync(1200);
             }
         } catch (e) {
@@ -2514,7 +2520,7 @@ function resumeDashboardLiveUpdates({ refresh = false } = {}) {
         }
         // Full background sync only if data is actually stale or incomplete
         const STALE_MS = 30 * 1000;
-        if ((Date.now() - lastFullTicketsSyncAt) > STALE_MS) {
+        if ((Date.now() - lastFullTicketsSyncAt) > STALE_MS || allTickets.length < totalAvailableTickets) {
             scheduleDeferredFullSync(1200);
         }
     }
@@ -7703,6 +7709,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Step 2: Decide what network work is needed
     const cacheIsFresh = hasFreshTicketsCache();
+    const cacheHasFullTicketList = cachedTicketsAreComplete();
 
     if (initialTicketId) {
         // Opening a specific ticket URL — fetch both in parallel, then open detail
@@ -7725,15 +7732,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 void syncAllTicketsInBackground({ showLoader: !hasCachedTickets });
             } else {
                 setDashboardUpdatingState(false);
-                scheduleDeferredFullSync(hasCachedTickets ? 3000 : 1500);
+                if (allTickets.length < totalAvailableTickets || !cacheHasFullTicketList) {
+                    scheduleDeferredFullSync(hasCachedTickets ? 1200 : 800);
+                }
             }
         });
     } else {
         // Fresh cache — don't touch tickets at all, just lazy-sync in background
         void loadNotifications({ force: true });
         setDashboardUpdatingState(false);
-        if ((Date.now() - lastFullTicketsSyncAt) > 30000) {
-            scheduleDeferredFullSync(3000);
+        if ((Date.now() - lastFullTicketsSyncAt) > 30000 || !cacheHasFullTicketList) {
+            scheduleDeferredFullSync(!cacheHasFullTicketList ? 800 : 3000);
         }
     }
 
@@ -7794,7 +7803,9 @@ window.addEventListener('pagehide', () => {
     persistUnreadSeenState();
 });
 
-window.addEventListener('pageshow', () => {
+window.addEventListener('pageshow', (event) => {
+    const shouldHydrateFromCache = event?.persisted || allTickets.length === 0;
+    if (!shouldHydrateFromCache) return;
     hydrateUserFromCache();
     hydrateUnreadTicketsFromCache();
     hydrateUnreadSeenStateFromCache();
@@ -7807,7 +7818,7 @@ window.addEventListener('pageshow', () => {
 window.addEventListener('storage', (event) => {
     if (!event || !event.key) return;
     if (event.key === TICKETS_CACHE_KEY) {
-        if (!currentTicket || !isDetailDirty) {
+        if ((!currentTicket || !isDetailDirty) && readCachedJson(TICKETS_CACHE_KEY)?.tickets?.length) {
             hydrateTicketsFromCache();
             updateTicketSelectionToolbar();
         }

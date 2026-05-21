@@ -13,7 +13,10 @@ import sys
 import tempfile
 from flask import Flask, request, jsonify, render_template, render_template_string, session, redirect, url_for, send_file, send_from_directory, Response, stream_with_context
 from dotenv import load_dotenv
-from flask_session import Session
+try:
+    from flask_session import Session
+except Exception:
+    Session = None
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -120,6 +123,9 @@ db.init_app(app)
 
 
 def _configure_server_side_session(flask_app):
+    if Session is None:
+        return
+
     redis_url = (os.getenv("REDIS_URL") or "").strip()
     redis_client = None
     if redis_url and redis is not None:
