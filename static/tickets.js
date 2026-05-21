@@ -5263,6 +5263,9 @@ function getNormalizedFareState() {
     }
 
     const perPassengerRows = passengers.map((_, index) => {
+        if (hasExplicitPassengerFares) {
+            return explicitPassengerFareRows[index] || { base: 0, k3: 0, other: 0 };
+        }
         if (useConsolidatedSource) {
             return {
                 base: consolidatedTotals.base / passengerCount,
@@ -5277,7 +5280,7 @@ function getNormalizedFareState() {
         passengerRows: perPassengerRows,
         consolidatedTotals,
         globalMarkup,
-        hasExplicitPassengerFares: hasConsolidatedFare ? false : hasExplicitPassengerFares
+        hasExplicitPassengerFares
     };
 }
 
@@ -5425,16 +5428,24 @@ function switchFareDisplay(nextMode) {
     const globalMarkup = fareState.globalMarkup;
 
     if (nextMode === 'per_passenger') {
-        const splitBase = fareState.consolidatedTotals.base / passengerCount;
-        const splitK3 = fareState.consolidatedTotals.k3 / passengerCount;
-        const splitOther = fareState.consolidatedTotals.other / passengerCount;
-        passengers.forEach((passenger) => {
-            if (!passenger.fare) passenger.fare = {};
-            passenger.fare.base_fare = splitBase;
-            passenger.fare.k3_gst = splitK3;
-            passenger.fare.other_taxes = splitOther;
-            passenger.fare.total_fare = splitBase + splitK3 + splitOther + globalMarkup;
-        });
+        if (!fareState.hasExplicitPassengerFares) {
+            const splitBase = fareState.consolidatedTotals.base / passengerCount;
+            const splitK3 = fareState.consolidatedTotals.k3 / passengerCount;
+            const splitOther = fareState.consolidatedTotals.other / passengerCount;
+            passengers.forEach((passenger) => {
+                if (!passenger.fare) passenger.fare = {};
+                passenger.fare.base_fare = splitBase;
+                passenger.fare.k3_gst = splitK3;
+                passenger.fare.other_taxes = splitOther;
+                passenger.fare.total_fare = splitBase + splitK3 + splitOther + globalMarkup;
+            });
+        } else {
+            passengers.forEach((passenger, index) => {
+                if (!passenger.fare) passenger.fare = {};
+                const row = fareState.passengerRows[index] || { base: 0, k3: 0, other: 0 };
+                passenger.fare.total_fare = row.base + row.k3 + row.other + globalMarkup;
+            });
+        }
     } else {
         let totalBase = 0;
         let totalK3 = 0;
@@ -5738,16 +5749,22 @@ function recalcFareGlobal(redraw = true) {
         editedData.journey.consolidated_fare.base_fare = base;
         editedData.journey.consolidated_fare.k3_gst = k3;
         editedData.journey.consolidated_fare.other_taxes = other;
-        const perPassengerBase = passengersCount ? (base / passengersCount) : 0;
-        const perPassengerK3 = passengersCount ? (k3 / passengersCount) : 0;
-        const perPassengerOther = passengersCount ? (other / passengersCount) : 0;
         const perPassengerMarkup = passengersCount ? globalMarkup : 0;
-        (editedData.passengers || []).forEach((passenger) => {
+        (editedData.passengers || []).forEach((passenger, index) => {
             if (!passenger.fare) passenger.fare = {};
-            passenger.fare.base_fare = perPassengerBase;
-            passenger.fare.k3_gst = perPassengerK3;
-            passenger.fare.other_taxes = perPassengerOther;
-            passenger.fare.total_fare = perPassengerBase + perPassengerK3 + perPassengerOther + perPassengerMarkup;
+            const row = fareState.hasExplicitPassengerFares
+                ? (fareState.passengerRows[index] || { base: 0, k3: 0, other: 0 })
+                : {
+                    base: passengersCount ? (base / passengersCount) : 0,
+                    k3: passengersCount ? (k3 / passengersCount) : 0,
+                    other: passengersCount ? (other / passengersCount) : 0
+                };
+            if (!fareState.hasExplicitPassengerFares) {
+                passenger.fare.base_fare = row.base;
+                passenger.fare.k3_gst = row.k3;
+                passenger.fare.other_taxes = row.other;
+            }
+            passenger.fare.total_fare = row.base + row.k3 + row.other + perPassengerMarkup;
         });
 
         const baseEl = document.querySelector('input[onchange*="consolidated_fare.base_fare"]');
