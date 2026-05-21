@@ -2240,7 +2240,7 @@ async function loadTickets(options = {}) {
         writeCachedJson(TICKETS_CACHE_KEY, {
             cached_at: Date.now(),
             total_count: totalAvailableTickets,
-            tickets: allTickets.slice(0, INITIAL_TICKETS_BATCH_SIZE)
+            tickets: allTickets
         });
         hasInitializedTicketFeed = true;
         if (render) {
