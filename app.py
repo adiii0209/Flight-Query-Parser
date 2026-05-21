@@ -10,8 +10,10 @@ import base64
 import io
 import subprocess
 import sys
+import tempfile
 from flask import Flask, request, jsonify, render_template, render_template_string, session, redirect, url_for, send_file, send_from_directory, Response, stream_with_context
 from dotenv import load_dotenv
+from flask_session import Session
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -39,6 +41,10 @@ from flight_duration_validator import annotate_segments_with_duration_warnings
 from mappings import AIRLINE_CODES, AIRPORT_CODES, AIRPORT_TZ_MAP, AIRPORT_GEO
 
 import pytesseract
+try:
+    import redis
+except Exception:
+    redis = None
 try:
     import pdf417gen
 except Exception:
@@ -93,6 +99,15 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_timeout": 30
 }
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+app.config["SESSION_PERMANENT"] = True
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=max(int(os.getenv("SESSION_LIFETIME_DAYS", "30") or 30), 1))
+app.config["SESSION_USE_SIGNER"] = True
+app.config["SESSION_KEY_PREFIX"] = os.getenv("SESSION_KEY_PREFIX", "flight-query-session:")
+app.config["SESSION_COOKIE_NAME"] = os.getenv("SESSION_COOKIE_NAME", "flight_query_session")
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
+app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "false").strip().lower() in {"1", "true", "yes", "on"}
+app.config["SESSION_REFRESH_EACH_REQUEST"] = True
 # 🔐 Shared secret for ticket parser
 API_KEY ="timetours@1978"
 
@@ -102,6 +117,38 @@ RENDER_CACHE_FOLDER = os.path.join(UPLOAD_FOLDER, "render_cache")
 os.makedirs(RENDER_CACHE_FOLDER, exist_ok=True)
 
 db.init_app(app)
+
+
+def _configure_server_side_session(flask_app):
+    redis_url = (os.getenv("REDIS_URL") or "").strip()
+    redis_client = None
+    if redis_url and redis is not None:
+        try:
+            redis_client = redis.Redis.from_url(
+                redis_url,
+                socket_connect_timeout=1,
+                socket_timeout=1,
+                retry_on_timeout=True,
+                health_check_interval=30,
+            )
+            redis_client.ping()
+        except Exception:
+            redis_client = None
+
+    if redis_client is not None:
+        flask_app.config["SESSION_TYPE"] = "redis"
+        flask_app.config["SESSION_REDIS"] = redis_client
+    else:
+        session_dir = os.path.join(tempfile.gettempdir(), "flight-query-parser-sessions")
+        os.makedirs(session_dir, exist_ok=True)
+        flask_app.config["SESSION_TYPE"] = "filesystem"
+        flask_app.config["SESSION_FILE_DIR"] = session_dir
+        flask_app.config["SESSION_FILE_THRESHOLD"] = 500
+
+    Session(flask_app)
+
+
+_configure_server_side_session(app)
 
 _playwright_runtime = None
 _playwright_browser = None
@@ -179,6 +226,11 @@ app.register_blueprint(ocr_bp)
 @app.teardown_appcontext
 def shutdown_session(exception=None):
     db_session.remove()
+
+
+@app.before_request
+def _keep_session_persistent():
+    session.permanent = True
 
 # ==================== AUTHENTICATION DECORATOR ====================
 
@@ -950,6 +1002,7 @@ def register():
         db.session.commit()
         
         # Log the user in
+        session.permanent = True
         session['user_id'] = user.id
         session['username'] = user.username
         
@@ -982,6 +1035,7 @@ def login():
         if not user or not user.check_password(data['password']):
             return jsonify({"error": "Invalid credentials"}), 401
         
+        session.permanent = True
         session['user_id'] = user.id
         session['username'] = user.username
         
