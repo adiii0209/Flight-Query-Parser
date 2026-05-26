@@ -73,6 +73,11 @@ const AIRPORT_GEO_MAP = window.AIRPORT_GEO_MAP || {};
 const AIRPORT_TZ_MAP = window.AIRPORT_TZ_MAP || {};
 const AIRPORT_GEO_ROUTE_FACTOR = 1.08;
 const AIRPORT_GEO_OVERHEAD_MINUTES = 28;
+const WEB_CHECKIN_DONE_CACHE_KEY = 'ticketsDashboard.webCheckinDone.v1';
+let webCheckinPanelOpen = false;
+let webCheckinWindowDays = 7;
+let webCheckinExpandedIds = new Set();
+let webCheckinDoneByTicket = {};
 
 function getInlineSvgIcon(name, className = '') {
     const cssClass = className ? ` class="${className}"` : '';
@@ -111,6 +116,381 @@ function renderStatusBadge(label, tone) {
         live: 'statusLive'
     };
     return `<span class="detail-status-chip ${tone}">${getInlineSvgIcon(iconMap[tone], 'status-inline-icon')}<span>${label}</span></span>`;
+}
+
+function hydrateWebCheckinState() {
+    try {
+        const raw = localStorage.getItem(WEB_CHECKIN_DONE_CACHE_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        webCheckinDoneByTicket = parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (e) {
+        webCheckinDoneByTicket = {};
+    }
+}
+
+function persistWebCheckinState() {
+    try {
+        localStorage.setItem(WEB_CHECKIN_DONE_CACHE_KEY, JSON.stringify(webCheckinDoneByTicket || {}));
+    } catch (e) {
+        console.warn('Failed to persist web check-in state', e);
+    }
+}
+
+function getPrimaryPassenger(ticket) {
+    return (ticket?.passengers || [])[0] || {};
+}
+
+function getPassengerLastName(ticket) {
+    const name = String(getPrimaryPassenger(ticket)?.name || '').trim();
+    if (!name) return 'N/A';
+    const parts = name.split(/\s+/).filter(Boolean);
+    return parts.length ? parts[parts.length - 1].toUpperCase() : 'N/A';
+}
+
+function getTicketDepartureTimestamp(ticket) {
+    const firstSeg = (ticket?.segments || [])[0] || {};
+    return parseFlightDateTime(firstSeg.departure || {});
+}
+
+function getTicketArrivalCode(ticket) {
+    const segments = ticket?.segments || [];
+    const lastSeg = segments[segments.length - 1] || {};
+    return safe((lastSeg.arrival || {}).airport, '---');
+}
+
+function getTicketRouteLabel(ticket) {
+    const segments = ticket?.segments || [];
+    const journey = ticket?.journey || {};
+    let legs;
+    if (journey.legs && journey.legs.length > 0) {
+        legs = journey.legs.map((leg) => leg.segments || []);
+    } else {
+        legs = groupSegmentsIntoLegs(segments);
+    }
+    const firstSeg = segments[0] || {};
+    const origin = safe((firstSeg.departure || {}).airport, '---');
+
+    if (ticket?.trip_type === 'round_trip' && legs.length >= 2) {
+        const outboundLeg = legs[0] || [];
+        const outboundLastSeg = segments[outboundLeg[outboundLeg.length - 1]] || segments[0] || {};
+        const outboundDestination = safe((outboundLastSeg.arrival || {}).airport, '---');
+        return `${origin} ↔ ${outboundDestination}`;
+    }
+
+    const lastSeg = segments[segments.length - 1] || {};
+    const destination = safe((lastSeg.arrival || {}).airport, '---');
+    return `${origin} → ${destination}`;
+}
+
+function getTicketFlightMeta(ticket) {
+    const firstSeg = (ticket?.segments || [])[0] || {};
+    const airline = safe(firstSeg.airline, '').trim();
+    const flight = safe(firstSeg.flight_number, '').trim();
+    return [airline, flight].filter(Boolean).join(' ');
+}
+
+function formatWebCheckinDateTime(ticket) {
+    const firstSeg = (ticket?.segments || [])[0] || {};
+    const dateText = safe((firstSeg.departure || {}).date, '').trim();
+    const timeText = safe((firstSeg.departure || {}).time, '').trim();
+    return [dateText, timeText].filter(Boolean).join(' • ') || 'Date unavailable';
+}
+
+function getHoursUntilDeparture(ticket) {
+    const departureTs = getTicketDepartureTimestamp(ticket);
+    if (!Number.isFinite(departureTs)) return Number.POSITIVE_INFINITY;
+    return (departureTs - Date.now()) / 3600000;
+}
+
+function normalizeAncillaryValue(value) {
+    const text = String(safe(value, '')).trim();
+    if (!text) return '';
+    const upper = text.toUpperCase();
+    if (['N/A', 'NA', 'NONE', 'NULL', '-', '--'].includes(upper)) return '';
+    return text;
+}
+
+function getTicketAncillarySummary(ticket) {
+    const passengers = ticket?.passengers || [];
+    const seats = new Set();
+    const meals = new Set();
+    const baggages = new Set();
+
+    passengers.forEach((passenger) => {
+        normalizeAncillaryValue(passenger?.baggage) && baggages.add(normalizeAncillaryValue(passenger.baggage));
+        normalizeAncillaryValue(passenger?.meal) && meals.add(normalizeAncillaryValue(passenger.meal));
+        normalizeAncillaryValue(passenger?.seat) && seats.add(normalizeAncillaryValue(passenger.seat));
+
+        (passenger?.seats || []).forEach((seat) => {
+            const value = normalizeAncillaryValue(typeof seat === 'string' ? seat : seat?.seat_number);
+            if (value) seats.add(value);
+        });
+        (passenger?.meals || []).forEach((meal) => {
+            const value = normalizeAncillaryValue(meal?.name || meal?.code || meal);
+            if (value) meals.add(value);
+        });
+    });
+
+    const compact = (values) => {
+        const list = Array.from(values);
+        if (!list.length) return 'Not added';
+        if (list.length <= 2) return list.join(', ');
+        return `${list.slice(0, 2).join(', ')} +${list.length - 2}`;
+    };
+
+    return {
+        seat: compact(seats),
+        meal: compact(meals),
+        baggage: compact(baggages),
+        hasSeat: seats.size > 0,
+        hasMeal: meals.size > 0,
+        hasBaggage: baggages.size > 0
+    };
+}
+
+function getWebCheckinFlights() {
+    const now = Date.now();
+    return (allTickets || [])
+        .filter((ticket) => ticket && ticket.id)
+        .filter((ticket) => (ticket.ticket_status || 'live') !== 'cancelled')
+        .map((ticket) => ({ ...ticket, _departureTs: getTicketDepartureTimestamp(ticket) }))
+        .filter((ticket) => Number.isFinite(ticket._departureTs) && ticket._departureTs >= now)
+        .sort((a, b) => a._departureTs - b._departureTs);
+}
+
+function getFlightsWithinHours(hours) {
+    return getWebCheckinFlights().filter((ticket) => getHoursUntilDeparture(ticket) <= hours);
+}
+
+function getUpcomingFlights(days) {
+    const hours = Number(days || webCheckinWindowDays || 7) * 24;
+    return getWebCheckinFlights().filter((ticket) => {
+        const diff = getHoursUntilDeparture(ticket);
+        return diff > 48 && diff <= hours;
+    });
+}
+
+function renderWebCheckinEmptyState(message) {
+    return `<div class="web-checkin-card-empty">${message}</div>`;
+}
+
+function renderWebCheckinCard(ticket, { showOpenButton = false } = {}) {
+    const ticketId = safe(ticket?.id, '');
+    const expanded = webCheckinExpandedIds.has(ticketId);
+    const done = !!webCheckinDoneByTicket[ticketId];
+    const lastName = getPassengerLastName(ticket);
+    const pnr = safe(ticket?.pnr, 'N/A');
+    const pnrCopyValue = JSON.stringify(String(pnr || ''));
+    const lastNameCopyValue = JSON.stringify(String(lastName || ''));
+    const summary = getTicketAncillarySummary(ticket);
+    const hoursUntil = getHoursUntilDeparture(ticket);
+    const urgencyText = Number.isFinite(hoursUntil)
+        ? (hoursUntil < 1 ? 'Departing soon' : `In ${Math.round(hoursUntil)}h`)
+        : 'Upcoming';
+    const statusChip = done
+        ? '<span class="web-checkin-chip done">Check-in done</span>'
+        : '<span class="web-checkin-chip pending">Pending</span>';
+    const openButton = showOpenButton
+        ? `<button class="mini-btn ghost" onclick="event.stopPropagation(); openWebCheckinTicket('${ticketId}')">Open Ticket</button>`
+        : '';
+    const expandButton = `
+        <button class="web-checkin-expand-btn ${expanded ? 'expanded' : ''}" onclick="event.stopPropagation(); toggleWebCheckinExpanded('${ticketId}')" aria-label="${expanded ? 'Collapse details' : 'Expand details'}">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m6 9 6 6 6-6" />
+            </svg>
+        </button>
+    `;
+    const openIcon = `
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 5h5v5" />
+            <path d="M10 14 19 5" />
+            <path d="M19 14v5H5V5h5" />
+        </svg>
+    `;
+    const copyIcon = `
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="11" height="11" rx="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+    `;
+
+    return `
+        <div class="web-checkin-card ${hoursUntil <= 48 ? 'urgent' : ''}" onclick="toggleWebCheckinExpanded('${ticketId}')">
+            <div class="web-checkin-card-top">
+                <div class="web-checkin-route">
+                    <div class="web-checkin-route-row">
+                        <strong>${safe(getTicketRouteLabel(ticket))}</strong>
+                        <button class="web-checkin-icon-btn" onclick="event.stopPropagation(); openWebCheckinTicket('${ticketId}')" aria-label="Open ticket">${openIcon}</button>
+                    </div>
+                    <div class="web-checkin-meta">
+                        <span class="web-checkin-chip subtle">${safe(formatWebCheckinDateTime(ticket))}</span>
+                        ${getTicketFlightMeta(ticket) ? `<span class="web-checkin-chip">${safe(getTicketFlightMeta(ticket))}</span>` : ''}
+                        <span class="web-checkin-chip">${safe(urgencyText)}</span>
+                    </div>
+                </div>
+                <div class="web-checkin-top-actions">
+                    ${statusChip}
+                    ${expandButton}
+                </div>
+            </div>
+            <div class="web-checkin-copy-grid">
+                <div class="web-checkin-copy-item">
+                    <label>PNR</label>
+                    <div class="web-checkin-copy-row">
+                        <span>${safe(pnr)}</span>
+                        <button class="web-checkin-icon-btn" onclick='event.stopPropagation(); copyWebCheckinValue(${pnrCopyValue}, "PNR copied")' aria-label="Copy PNR">${copyIcon}</button>
+                    </div>
+                </div>
+                <div class="web-checkin-copy-item">
+                    <label>Last Name</label>
+                    <div class="web-checkin-copy-row">
+                        <span>${safe(lastName)}</span>
+                        <button class="web-checkin-icon-btn" onclick='event.stopPropagation(); copyWebCheckinValue(${lastNameCopyValue}, "Last name copied")' aria-label="Copy last name">${copyIcon}</button>
+                    </div>
+                </div>
+            </div>
+            <div class="web-checkin-actions">
+                <button class="mini-btn ${done ? 'done' : 'primary'}" onclick="event.stopPropagation(); toggleWebCheckinDone('${ticketId}')">${done ? 'Undo Done' : 'Web Check-in Done'}</button>
+                ${openButton}
+            </div>
+            <div class="web-checkin-expandable ${expanded ? 'open' : ''}">
+                <div class="web-checkin-expandable-inner">
+                    <div class="web-checkin-summary-grid">
+                        <div class="web-checkin-summary-item">
+                            <label>Seat</label>
+                            <div>${safe(summary.seat)}</div>
+                        </div>
+                        <div class="web-checkin-summary-item">
+                            <label>Meal</label>
+                            <div>${safe(summary.meal)}</div>
+                        </div>
+                        <div class="web-checkin-summary-item">
+                            <label>Baggage</label>
+                            <div>${safe(summary.baggage)}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderWebCheckinPanel() {
+    const body = document.getElementById('webCheckinPanelBody');
+    const badge = document.getElementById('webCheckinCountBadge');
+    const panel = document.getElementById('webCheckinPanel');
+    const overlay = document.getElementById('webCheckinOverlay');
+    if (!body || !badge || !panel || !overlay) return;
+
+    const urgentFlights = getFlightsWithinHours(48);
+    const upcomingFlights = getUpcomingFlights(webCheckinWindowDays);
+
+    badge.textContent = String(urgentFlights.length);
+    badge.style.display = urgentFlights.length ? 'inline-flex' : 'none';
+
+    body.innerHTML = `
+        <section class="web-checkin-section">
+            <div class="web-checkin-section-header">
+                <h4>Flights within 48 hrs</h4>
+                <span>${urgentFlights.length} found</span>
+            </div>
+            <div class="web-checkin-list">
+                ${urgentFlights.length
+                    ? urgentFlights.map((ticket) => renderWebCheckinCard(ticket)).join('')
+                    : renderWebCheckinEmptyState('No flights need web check-in in the next 48 hours.')}
+            </div>
+        </section>
+        <section class="web-checkin-section">
+            <div class="web-checkin-section-header">
+                <h4>Upcoming flights</h4>
+                <div style="display:flex;align-items:center;gap:0.55rem;">
+                    <span>${upcomingFlights.length} shown</span>
+                    <select class="web-checkin-filter" onchange="setWebCheckinWindow(this.value)">
+                        <option value="7" ${Number(webCheckinWindowDays) === 7 ? 'selected' : ''}>7 days</option>
+                        <option value="10" ${Number(webCheckinWindowDays) === 10 ? 'selected' : ''}>10 days</option>
+                        <option value="15" ${Number(webCheckinWindowDays) === 15 ? 'selected' : ''}>15 days</option>
+                        <option value="30" ${Number(webCheckinWindowDays) === 30 ? 'selected' : ''}>30 days</option>
+                    </select>
+                </div>
+            </div>
+            <div class="web-checkin-list">
+                ${upcomingFlights.length
+                    ? upcomingFlights.map((ticket) => renderWebCheckinCard(ticket, { showOpenButton: true })).join('')
+                    : renderWebCheckinEmptyState('No upcoming flights in the selected window.')}
+            </div>
+        </section>
+    `;
+
+    panel.classList.toggle('active', webCheckinPanelOpen);
+    overlay.classList.toggle('active', webCheckinPanelOpen);
+    panel.setAttribute('aria-hidden', webCheckinPanelOpen ? 'false' : 'true');
+    document.body.style.overflow = webCheckinPanelOpen ? 'hidden' : '';
+}
+
+function openWebCheckinPanel() {
+    webCheckinPanelOpen = true;
+    renderWebCheckinPanel();
+}
+
+function closeWebCheckinPanel() {
+    webCheckinPanelOpen = false;
+    renderWebCheckinPanel();
+}
+
+function toggleWebCheckinPanel() {
+    webCheckinPanelOpen = !webCheckinPanelOpen;
+    renderWebCheckinPanel();
+}
+
+function toggleWebCheckinExpanded(ticketId) {
+    if (!ticketId) return;
+    if (webCheckinExpandedIds.has(ticketId)) webCheckinExpandedIds.delete(ticketId);
+    else webCheckinExpandedIds.add(ticketId);
+    renderWebCheckinPanel();
+}
+
+function setWebCheckinWindow(value) {
+    const next = Number.parseInt(value, 10);
+    webCheckinWindowDays = [7, 10, 15, 30].includes(next) ? next : 7;
+    renderWebCheckinPanel();
+}
+
+async function copyWebCheckinValue(value, successMessage = 'Copied') {
+    const text = String(value || '');
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+        } else {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.setAttribute('readonly', '');
+            textArea.style.position = 'fixed';
+            textArea.style.opacity = '0';
+            textArea.style.pointerEvents = 'none';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            const copied = document.execCommand('copy');
+            document.body.removeChild(textArea);
+            if (!copied) throw new Error('execCommand copy failed');
+        }
+        showToast(successMessage, 'success');
+    } catch (e) {
+        showToast('Copy failed', 'error');
+    }
+}
+
+function toggleWebCheckinDone(ticketId) {
+    if (!ticketId) return;
+    if (webCheckinDoneByTicket[ticketId]) delete webCheckinDoneByTicket[ticketId];
+    else webCheckinDoneByTicket[ticketId] = { done_at: new Date().toISOString() };
+    persistWebCheckinState();
+    renderWebCheckinPanel();
+}
+
+function openWebCheckinTicket(ticketId) {
+    closeWebCheckinPanel();
+    void openTicket(ticketId);
 }
 
 // ==================== SIDEBAR & THEME ====================
@@ -3177,6 +3557,7 @@ function buildTicketCardHtml(t) {
 function renderTicketCards() {
     updateTicketSelectionToolbar();
     patchTicketCards(getVisibleTicketItems());
+    renderWebCheckinPanel();
 }
 
 function findTicketById(ticketId) {
@@ -7700,6 +8081,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     hydrateUnreadSeenStateFromCache();
     hydrateNotificationsFromCache();
     hydrateAggregatorsFromCache();
+    hydrateWebCheckinState();
 
     // Step 1: Render cached tickets INSTANTLY — never block on network
     const hasCachedTickets = hydrateTicketsFromCache();
@@ -7811,6 +8193,7 @@ window.addEventListener('pageshow', (event) => {
     hydrateUnreadSeenStateFromCache();
     hydrateNotificationsFromCache();
     hydrateAggregatorsFromCache();
+    hydrateWebCheckinState();
     hydrateTicketsFromCache();
     updateTicketSelectionToolbar();
 });
@@ -7821,11 +8204,17 @@ window.addEventListener('storage', (event) => {
         if ((!currentTicket || !isDetailDirty) && readCachedJson(TICKETS_CACHE_KEY)?.tickets?.length) {
             hydrateTicketsFromCache();
             updateTicketSelectionToolbar();
+            renderWebCheckinPanel();
         }
         return;
     }
     if (event.key === TICKETS_NOTIFICATIONS_CACHE_KEY) {
         hydrateNotificationsFromCache();
+        return;
+    }
+    if (event.key === WEB_CHECKIN_DONE_CACHE_KEY) {
+        hydrateWebCheckinState();
+        renderWebCheckinPanel();
         return;
     }
     if (event.key === UNREAD_TICKETS_CACHE_KEY || event.key === TICKETS_LAST_SEEN_AT_KEY || event.key === TICKETS_READ_OVERRIDES_KEY) {
@@ -7840,6 +8229,12 @@ window.addEventListener('storage', (event) => {
 window.addEventListener('online', () => {
     if (currentTicket && isDetailDirty) {
         scheduleDraftRetry(400);
+    }
+});
+
+window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && webCheckinPanelOpen) {
+        closeWebCheckinPanel();
     }
 });
 
