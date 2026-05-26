@@ -2215,6 +2215,8 @@ function markTicketRead(ticketId) {
     if (changed) {
         persistUnreadTickets();
         persistUnreadSeenState();
+        allTickets = allTickets.map((ticket) => ticket.id === ticketId ? { ...ticket, is_unread: false } : ticket);
+        persistTicketsCacheSnapshot();
     }
 }
 
@@ -2250,6 +2252,7 @@ async function postTicketRead(ticketId) {
             }
             return ticket;
         });
+        persistTicketsCacheSnapshot();
         return payload;
     } catch (e) {
         console.error('Failed to mark ticket read', e);
@@ -2265,6 +2268,7 @@ async function markAllTicketsSeen({ silent = false, render = true } = {}) {
         syncUnreadStateFromServer(payload);
         clearUnreadOverrides({ clearReadOverrides: true });
         allTickets = allTickets.map((ticket) => ({ ...ticket, is_unread: false }));
+        persistTicketsCacheSnapshot();
         if (render) renderTicketCards();
         if (!silent) showToast('All tickets marked seen', 'success');
         return payload;
@@ -2579,6 +2583,50 @@ function hydrateTicketsFromCache() {
     return true;
 }
 
+function persistTicketsCacheSnapshot() {
+    knownTicketIds = new Set((allTickets || []).map((ticket) => ticket?.id).filter(Boolean));
+    writeCachedJson(TICKETS_CACHE_KEY, {
+        cached_at: Date.now(),
+        total_count: totalAvailableTickets,
+        tickets: allTickets
+    });
+}
+
+function upsertTicketInLocalState(ticket, { render = true, prepend = false } = {}) {
+    if (!ticket || !ticket.id) return;
+    const normalizedTicket = normalizeTicketFareData(ticket);
+    const existingIndex = allTickets.findIndex((item) => item?.id === normalizedTicket.id);
+    if (existingIndex > -1) {
+        allTickets[existingIndex] = normalizedTicket;
+    } else if (prepend) {
+        allTickets = [normalizedTicket, ...allTickets];
+        totalAvailableTickets += 1;
+    } else {
+        allTickets.push(normalizedTicket);
+        totalAvailableTickets += 1;
+    }
+    cacheTicketDetail(normalizedTicket);
+    persistTicketsCacheSnapshot();
+    if (render) renderTicketCards();
+}
+
+function removeTicketFromLocalState(ticketId, { render = true } = {}) {
+    if (!ticketId) return;
+    const beforeLength = allTickets.length;
+    allTickets = allTickets.filter((ticket) => ticket?.id !== ticketId);
+    if (allTickets.length !== beforeLength) {
+        totalAvailableTickets = Math.max(0, totalAvailableTickets - 1);
+    }
+    evictTicketDetailCache(ticketId);
+    selectedTicketIds.delete(ticketId);
+    unreadTicketIds.delete(ticketId);
+    readOverrideTicketIds.delete(ticketId);
+    persistUnreadTickets();
+    persistUnreadSeenState();
+    persistTicketsCacheSnapshot();
+    if (render) renderTicketCards();
+}
+
 function cachedTicketsAreComplete() {
     const cached = readCachedJson(TICKETS_CACHE_KEY);
     const cachedTickets = Array.isArray(cached?.tickets) ? cached.tickets : [];
@@ -2779,6 +2827,27 @@ async function syncCurrentTicketFromServer() {
     }
 }
 
+async function reconcileSingleTicketFromServer(ticketId, { prepend = false, openDetail = false } = {}) {
+    if (!ticketId) return false;
+    try {
+        const response = await fetch('/api/tickets/' + ticketId);
+        if (!response.ok) return false;
+        const freshTicket = normalizeTicketFareData(await response.json());
+        upsertTicketInLocalState(freshTicket, { render: true, prepend });
+        if (openDetail && currentTicket && currentTicket.id === ticketId && !isDetailDirty && !isSaveInFlight) {
+            currentTicket = freshTicket;
+            editedData = JSON.parse(JSON.stringify(freshTicket));
+            fareFieldsTouched = false;
+            setTicketEditBaseline(currentTicket);
+            renderDetailView();
+        }
+        return true;
+    } catch (e) {
+        console.error('Failed to reconcile single ticket', e);
+        return false;
+    }
+}
+
 function scheduleRealtimeRefresh(payload = {}) {
     // Directly apply embedded notification data — no fetch needed
     if (payload.notifications) {
@@ -2789,8 +2858,29 @@ function scheduleRealtimeRefresh(payload = {}) {
     }
     if (payload.event === 'connected') return;
 
+    const eventType = payload.event || '';
+    const payloadTicketId = payload.ticket_id || '';
+
+    if (payloadTicketId && eventType === 'ticket_deleted') {
+        removeTicketFromLocalState(payloadTicketId, { render: true });
+        if (currentTicket && currentTicket.id === payloadTicketId) {
+            void showListView({ syncUrl: true, replaceUrl: true });
+        }
+        return;
+    }
+
+    if (payloadTicketId && ['ticket_updated', 'ticket_created', 'duplicate_approved'].includes(eventType)) {
+        if (!isDetailDirty && !isSaveInFlight && Date.now() >= suppressRealtimeUntil) {
+            void reconcileSingleTicketFromServer(payloadTicketId, {
+                prepend: eventType === 'ticket_created' || eventType === 'duplicate_approved',
+                openDetail: true
+            });
+            return;
+        }
+    }
+
     // Sync current open ticket if this event targets it
-    if (payload.ticket_id && currentTicket && currentTicket.id === payload.ticket_id) {
+    if (payloadTicketId && currentTicket && currentTicket.id === payloadTicketId) {
         if (!isDetailDirty && !isSaveInFlight && Date.now() >= suppressRealtimeUntil) {
             void syncCurrentTicketFromServer();
         }
@@ -2800,7 +2890,7 @@ function scheduleRealtimeRefresh(payload = {}) {
     clearTimeout(realtimeRefreshHandle);
     realtimeRefreshHandle = setTimeout(async () => {
         try {
-            const isNewTicket = payload.event === 'ticket_created';
+            const isNewTicket = eventType === 'ticket_created';
             const notifStale = (Date.now() - _lastNotificationFetchAt) > NOTIF_THROTTLE_MS;
 
             // Only fetch notifications if throttle window has expired
@@ -3196,11 +3286,7 @@ async function deleteSelectedTickets() {
     if (!ticketIds.length) return;
     if (!confirm(`Delete ${ticketIds.length} selected ticket${ticketIds.length === 1 ? '' : 's'}?`)) return;
     // Optimistic UI: remove instantly, then confirm with server
-    allTickets = allTickets.filter((t) => !ticketIds.includes(t.id));
-    ticketIds.forEach((id) => {
-        evictTicketDetailCache(id);
-        knownTicketIds.delete(id);
-    });
+    ticketIds.forEach((id) => removeTicketFromLocalState(id, { render: false }));
     setTicketSelectionMode(false, { clearSelection: true, render: true });
     showToast(`Deleting ${ticketIds.length} ticket${ticketIds.length === 1 ? '' : 's'}…`, 'info');
     try {
@@ -3247,8 +3333,15 @@ async function markSelectedTicketsUnread() {
         syncUnreadStateFromServer(payload);
         persistUnreadTickets();
         persistUnreadSeenState();
+        allTickets = allTickets.map((ticket) => {
+            if ((payload.ticket_ids || ticketIds).includes(ticket.id)) {
+                return { ...ticket, is_unread: true };
+            }
+            return ticket;
+        });
+        persistTicketsCacheSnapshot();
         setTicketSelectionMode(false, { clearSelection: true, render: false });
-        await loadTickets({ render: true, notifyNewTickets: false });
+        renderTicketCards();
         showToast(payload.message || 'Selected tickets marked unread', 'success');
     } catch (e) {
         console.error('Mark selected tickets unread failed', e);
@@ -3261,8 +3354,15 @@ async function markSelectedTicketsSeen() {
     if (!ticketIds.length) return;
     try {
         await Promise.all(ticketIds.map((ticketId) => postTicketRead(ticketId)));
+        allTickets = allTickets.map((ticket) => {
+            if (ticketIds.includes(ticket.id)) {
+                return { ...ticket, is_unread: false };
+            }
+            return ticket;
+        });
+        persistTicketsCacheSnapshot();
         setTicketSelectionMode(false, { clearSelection: true, render: false });
-        await loadTickets({ render: true, notifyNewTickets: false });
+        renderTicketCards();
         showToast('Selected tickets marked seen', 'success');
     } catch (e) {
         console.error('Mark selected tickets seen failed', e);
@@ -3705,7 +3805,7 @@ async function showListView({ syncUrl = true, replaceUrl = false } = {}) {
     selectedPaxIndices.clear();
     _removePaxActionBar();
     if (syncUrl) updateTicketUrl('', { replace: replaceUrl });
-    resumeDashboardLiveUpdates({ refresh: true });
+    resumeDashboardLiveUpdates({ refresh: (Date.now() - lastFullTicketsSyncAt) > 30000 });
 }
 
 // ==================== NOTIFICATION PANEL SYSTEM ====================
@@ -6992,17 +7092,11 @@ async function downloadSelectedPaxTogether() {
 async function deleteTicket() {
     if (!confirm('Are you sure you want to delete this ticket?')) return;
     try {
+        const ticketId = currentTicket.id;
         const r = await fetch('/api/tickets/' + currentTicket.id, { method: 'DELETE' });
         if (!r.ok) { showToast('Delete failed', 'error'); return; }
-        ticketDetailCache.delete(currentTicket.id);
-        selectedTicketIds.delete(currentTicket.id);
-        unreadTicketIds.delete(currentTicket.id);
-        readOverrideTicketIds.delete(currentTicket.id);
-        allTickets = allTickets.filter((ticket) => ticket.id !== currentTicket.id);
-        knownTicketIds = new Set(allTickets.map((ticket) => ticket.id).filter(Boolean));
+        removeTicketFromLocalState(ticketId, { render: false });
         updateTicketSelectionToolbar();
-        persistUnreadTickets();
-        persistUnreadSeenState();
         showToast('Ticket deleted', 'success');
         await showListView();
         renderTicketCards();
