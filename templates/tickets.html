@@ -1866,6 +1866,32 @@
             font-weight: 700;
         }
 
+        .web-checkin-filter-group {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            flex-wrap: wrap;
+        }
+
+        .web-checkin-filter-chip {
+            min-height: 32px;
+            padding: 0.35rem 0.72rem;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            background: white;
+            color: #475569;
+            font-size: 0.74rem;
+            font-weight: 800;
+            cursor: pointer;
+            transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+        }
+
+        .web-checkin-filter-chip.active {
+            background: linear-gradient(135deg, rgba(14, 116, 144, 0.1), rgba(8, 145, 178, 0.14));
+            border-color: rgba(8, 145, 178, 0.22);
+            color: #0f172a;
+        }
+
         .web-checkin-list {
             display: flex;
             flex-direction: column;

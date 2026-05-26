@@ -78,6 +78,7 @@ let webCheckinPanelOpen = false;
 let webCheckinWindowDays = 7;
 let webCheckinExpandedIds = new Set();
 let webCheckinDoneByTicket = {};
+let webCheckinStatusFilter = 'pending';
 
 function getInlineSvgIcon(name, className = '') {
     const cssClass = className ? ` class="${className}"` : '';
@@ -270,6 +271,15 @@ function getUpcomingFlights(days) {
     });
 }
 
+function filterWebCheckinTicketsByStatus(tickets) {
+    return (tickets || []).filter((ticket) => {
+        const done = !!webCheckinDoneByTicket[ticket?.id];
+        if (webCheckinStatusFilter === 'done') return done;
+        if (webCheckinStatusFilter === 'all') return true;
+        return !done;
+    });
+}
+
 function renderWebCheckinEmptyState(message) {
     return `<div class="web-checkin-card-empty">${message}</div>`;
 }
@@ -382,22 +392,28 @@ function renderWebCheckinPanel() {
     const overlay = document.getElementById('webCheckinOverlay');
     if (!body || !badge || !panel || !overlay) return;
 
-    const urgentFlights = getFlightsWithinHours(48);
-    const upcomingFlights = getUpcomingFlights(webCheckinWindowDays);
+    const urgentFlights = filterWebCheckinTicketsByStatus(getFlightsWithinHours(48));
+    const upcomingFlights = filterWebCheckinTicketsByStatus(getUpcomingFlights(webCheckinWindowDays));
+    const badgeCount = getFlightsWithinHours(48).filter((ticket) => !webCheckinDoneByTicket[ticket?.id]).length;
 
-    badge.textContent = String(urgentFlights.length);
-    badge.style.display = urgentFlights.length ? 'inline-flex' : 'none';
+    badge.textContent = String(badgeCount);
+    badge.style.display = badgeCount ? 'inline-flex' : 'none';
 
     body.innerHTML = `
         <section class="web-checkin-section">
             <div class="web-checkin-section-header">
                 <h4>Flights within 48 hrs</h4>
-                <span>${urgentFlights.length} found</span>
+                <div class="web-checkin-filter-group">
+                    <button class="web-checkin-filter-chip ${webCheckinStatusFilter === 'pending' ? 'active' : ''}" onclick="setWebCheckinStatusFilter('pending')">Pending</button>
+                    <button class="web-checkin-filter-chip ${webCheckinStatusFilter === 'done' ? 'active' : ''}" onclick="setWebCheckinStatusFilter('done')">Done</button>
+                    <button class="web-checkin-filter-chip ${webCheckinStatusFilter === 'all' ? 'active' : ''}" onclick="setWebCheckinStatusFilter('all')">All</button>
+                    <span>${urgentFlights.length} found</span>
+                </div>
             </div>
             <div class="web-checkin-list">
                 ${urgentFlights.length
                     ? urgentFlights.map((ticket) => renderWebCheckinCard(ticket)).join('')
-                    : renderWebCheckinEmptyState('No flights need web check-in in the next 48 hours.')}
+                    : renderWebCheckinEmptyState(`No ${webCheckinStatusFilter} flights in the next 48 hours.`)}
             </div>
         </section>
         <section class="web-checkin-section">
@@ -416,7 +432,7 @@ function renderWebCheckinPanel() {
             <div class="web-checkin-list">
                 ${upcomingFlights.length
                     ? upcomingFlights.map((ticket) => renderWebCheckinCard(ticket, { showOpenButton: true })).join('')
-                    : renderWebCheckinEmptyState('No upcoming flights in the selected window.')}
+                    : renderWebCheckinEmptyState(`No ${webCheckinStatusFilter} upcoming flights in the selected window.`)}
             </div>
         </section>
     `;
@@ -452,6 +468,11 @@ function toggleWebCheckinExpanded(ticketId) {
 function setWebCheckinWindow(value) {
     const next = Number.parseInt(value, 10);
     webCheckinWindowDays = [7, 10, 15, 30].includes(next) ? next : 7;
+    renderWebCheckinPanel();
+}
+
+function setWebCheckinStatusFilter(value) {
+    webCheckinStatusFilter = ['pending', 'done', 'all'].includes(value) ? value : 'pending';
     renderWebCheckinPanel();
 }
 
