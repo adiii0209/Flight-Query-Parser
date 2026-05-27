@@ -758,12 +758,12 @@ def _get_user_ticket_processing_batches(user_id):
     return batches
 
 
-def _dashboard_cache_version_key(user_id):
-    return f"ticket-dashboard:version:{user_id}"
+def _dashboard_cache_version_key(user_id, kind):
+    return f"ticket-dashboard:version:{kind}:{user_id}"
 
 
-def _dashboard_cache_version(user_id):
-    return _dashboard_cache.get_int(_dashboard_cache_version_key(user_id), default=1)
+def _dashboard_cache_version(user_id, kind):
+    return _dashboard_cache.get_int(_dashboard_cache_version_key(user_id, kind), default=1)
 
 
 def _dashboard_cache_key(kind, user_id, version, **parts):
@@ -776,7 +776,7 @@ def _dashboard_cache_key(kind, user_id, version, **parts):
 
 
 def _dashboard_cache_get(kind, user_id, **parts):
-    version = _dashboard_cache_version(user_id)
+    version = _dashboard_cache_version(user_id, kind)
     key = _dashboard_cache_key(kind, user_id, version, **parts)
     return _dashboard_cache.get_json(key), key
 
@@ -785,10 +785,19 @@ def _dashboard_cache_set(key, payload, ttl_seconds):
     _dashboard_cache.set_json(key, payload, ttl_seconds)
 
 
-def _invalidate_ticket_dashboard_cache(user_id):
+def _invalidate_ticket_dashboard_cache(user_id, kinds=None):
     if not user_id:
         return None
-    return _dashboard_cache.incr(_dashboard_cache_version_key(user_id))
+    target_kinds = list(kinds or [
+        "tickets-list",
+        "ticket-detail",
+        "notifications",
+        "duplicates",
+        "merged-history",
+    ])
+    for kind in target_kinds:
+        _dashboard_cache.incr(_dashboard_cache_version_key(user_id, kind))
+    return True
 
 
 def _jsonify_dashboard_cache_payload(payload, cache_status, cache_scope):
@@ -816,10 +825,10 @@ def _ticket_notifications_payload(user_id):
     }
 
 
-def _publish_ticket_dashboard_event(user_id, event_type="dashboard_refresh", **payload):
+def _publish_ticket_dashboard_event(user_id, event_type="dashboard_refresh", cache_kinds=None, **payload):
     if not user_id:
         return
-    _invalidate_ticket_dashboard_cache(user_id)
+    _invalidate_ticket_dashboard_cache(user_id, kinds=cache_kinds)
     event_payload = {
         "event": event_type,
         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -1959,6 +1968,53 @@ def _serialize_ticket_model(ticket):
     }
 
 
+_TICKET_SCALAR_EDIT_FIELDS = {
+    "pnr",
+    "booking_date",
+    "phone",
+    "currency",
+    "grand_total",
+    "class_of_travel",
+    "trip_type",
+    "status",
+}
+_TICKET_COMPLEX_EDIT_FIELDS = {"passengers", "segments", "journey", "raw_data"}
+
+
+def _stable_json(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _ticket_changed_field_set(ticket, data, base_snapshot):
+    changed_fields = set()
+
+    for field in _TICKET_SCALAR_EDIT_FIELDS:
+        if field not in data:
+            continue
+        base_value = base_snapshot.get(field, getattr(ticket, field, None))
+        if data.get(field) != base_value:
+            changed_fields.add(field)
+
+    baseline_complex = {
+        "passengers": base_snapshot.get("passengers", _json_list(ticket.passengers_data)),
+        "segments": base_snapshot.get("segments", _json_list(ticket.segments_data)),
+        "journey": base_snapshot.get("journey", _json_dict(ticket.journey_data)),
+        "raw_data": base_snapshot.get("raw_data", _json_dict(ticket.raw_data)),
+    }
+    for field in _TICKET_COMPLEX_EDIT_FIELDS:
+        if field not in data:
+            continue
+        if _stable_json(data.get(field) or ([] if field in {"passengers", "segments"} else {})) != _stable_json(baseline_complex[field]):
+            changed_fields.add(field)
+
+    return changed_fields
+
+
+def _is_simple_scalar_ticket_edit(ticket, data, base_snapshot):
+    changed_fields = _ticket_changed_field_set(ticket, data, base_snapshot)
+    return bool(changed_fields) and changed_fields.issubset(_TICKET_SCALAR_EDIT_FIELDS)
+
+
 def _db_now():
     value = db.session.execute(text("SELECT CURRENT_TIMESTAMP")).scalar()
     if isinstance(value, datetime):
@@ -2103,6 +2159,85 @@ def _ticket_dict_with_children(ticket, include_barcodes=True, include_raw_data=T
     }
 
 
+def _ticket_summary_from_parts(
+    ticket,
+    passengers,
+    segments,
+    journey,
+    *,
+    include_relationships=False,
+    booking_group=None,
+    children=None,
+):
+    payload = {
+        "id": ticket.id,
+        "created_at": ticket.created_at.isoformat(),
+        "updated_at": ticket.updated_at.isoformat() if ticket.updated_at else None,
+        "pnr": ticket.pnr,
+        "booking_date": ticket.booking_date,
+        "phone": ticket.phone,
+        "currency": ticket.currency,
+        "grand_total": ticket.grand_total,
+        "class_of_travel": ticket.class_of_travel,
+        "trip_type": ticket.trip_type,
+        "status": ticket.status,
+        "ticket_status": ticket.ticket_status or "live",
+        "matched_itinerary_id": ticket.matched_itinerary_id,
+        "parser_version": ticket.parser_version,
+        "passengers": passengers,
+        "segments": segments,
+        "journey": journey,
+        "ledger_hash": ticket.ledger_hash,
+        "parent_ticket_id": ticket.parent_ticket_id,
+        "booking_group_id": ticket.booking_group_id,
+        "duplicate_status": ticket.duplicate_status,
+        "duplicate_of_id": ticket.duplicate_of_id,
+        "cancellation_charge": ticket.cancellation_charge or 0,
+        "last_aggregator": ticket.last_aggregator,
+        "last_booked_by": ticket.last_booked_by,
+    }
+    if include_relationships:
+        resolved_booking_group = booking_group if booking_group is not None else ticket.booking_group
+        resolved_children = children if children is not None else ticket.children
+        payload["booking_group"] = {
+            "id": resolved_booking_group.id,
+            "pnr": resolved_booking_group.pnr,
+            "status": resolved_booking_group.status,
+        } if resolved_booking_group else None
+        payload["children"] = [
+            {
+                "id": child.id,
+                "pnr": child.pnr,
+                "ticket_status": child.ticket_status,
+                "grand_total": child.grand_total,
+            }
+            for child in (resolved_children or [])
+        ]
+    return payload
+
+
+def _ticket_summary_dict(ticket, include_relationships=False):
+    passengers = _json_list(ticket.passengers_data)
+    segments = _json_list(ticket.segments_data)
+    journey = _json_dict(ticket.journey_data)
+    _ensure_passenger_internal_ids(passengers)
+    return _ticket_summary_from_parts(
+        ticket,
+        passengers,
+        segments,
+        journey,
+        include_relationships=include_relationships,
+    )
+
+
+def _ticket_detail_dict(ticket, include_barcodes=True, include_raw_data=True):
+    return _ticket_dict_with_children(
+        ticket,
+        include_barcodes=include_barcodes,
+        include_raw_data=include_raw_data,
+    )
+
+
 def _booking_group_sorted_tickets(booking_group):
     return sorted(list(booking_group.tickets), key=lambda item: (item.created_at, item.id))
 
@@ -2165,6 +2300,71 @@ def _merged_ticket_dict(booking_group, lead_ticket, include_barcodes=True, inclu
         "pnr": booking_group.pnr,
         "status": booking_group.status,
     }
+    return lead_payload
+
+
+def _merged_ticket_summary_dict(booking_group, lead_ticket):
+    passengers = _json_list(lead_ticket.passengers_data)
+    segments = _json_list(lead_ticket.segments_data)
+    journey = _json_dict(lead_ticket.journey_data)
+    _ensure_passenger_internal_ids(passengers)
+    lead_payload = _ticket_summary_from_parts(
+        lead_ticket,
+        passengers,
+        segments,
+        journey,
+        include_relationships=False,
+    )
+
+    merged_passengers = []
+    merged_total = 0.0
+    merged_ticket_ids = []
+    merged_base = 0.0
+    merged_k3 = 0.0
+    merged_other = 0.0
+    merged_markup_total = 0.0
+    for grouped_ticket in _booking_group_sorted_tickets(booking_group):
+        merged_ticket_ids.append(grouped_ticket.id)
+        merged_total += parseFloat(grouped_ticket.grand_total or 0)
+        ticket_passengers = _json_list(grouped_ticket.passengers_data)
+        _ensure_passenger_internal_ids(ticket_passengers)
+        grouped_journey = _json_dict(grouped_ticket.journey_data)
+        grouped_financials = _ticket_financials(ticket_passengers, grouped_journey)
+        merged_base += parseFloat(grouped_financials.get("base", 0))
+        merged_k3 += parseFloat(grouped_financials.get("k3", 0))
+        merged_other += parseFloat(grouped_financials.get("other", 0))
+        merged_markup_total += parseFloat(grouped_financials.get("mu", 0))
+        for passenger in ticket_passengers:
+            passenger_copy = _clone_json(passenger)
+            passenger_copy["source_ticket_id"] = grouped_ticket.id
+            merged_passengers.append(passenger_copy)
+
+    lead_payload["passengers"] = merged_passengers
+    lead_payload["passenger_names"] = [p.get("name", "") for p in merged_passengers]
+    lead_payload["grand_total"] = _round_money(merged_total)
+    lead_payload.setdefault("journey", {})
+    lead_payload["journey"]["consolidated_fare"] = {
+        "base_fare": _round_money(merged_base),
+        "k3_gst": _round_money(merged_k3),
+        "other_taxes": _round_money(merged_other),
+    }
+    merged_passenger_count = len(merged_passengers)
+    lead_payload["journey"]["global_markup"] = (
+        _round_money(merged_markup_total / merged_passenger_count)
+        if merged_passenger_count else 0.0
+    )
+    lead_payload["children"] = [
+        {
+            "id": child.id,
+            "pnr": child.pnr,
+            "ticket_status": child.ticket_status,
+            "grand_total": child.grand_total,
+        }
+        for child in (lead_ticket.children or [])
+    ]
+    lead_payload["is_merged_view"] = True
+    lead_payload["merged_ticket_ids"] = merged_ticket_ids
+    lead_payload["merged_ticket_count"] = len(merged_ticket_ids)
     return lead_payload
 
 
@@ -4582,11 +4782,14 @@ def get_tickets():
         ),
     ).order_by(Ticket.created_at.desc())
 
-    total_count = query.count()
+    fetch_limit = limit + 1 if limit else 0
     tickets_query = query.offset(offset)
-    if limit:
-        tickets_query = tickets_query.limit(limit)
+    if fetch_limit:
+        tickets_query = tickets_query.limit(fetch_limit)
     tickets = tickets_query.all()
+    has_more = bool(limit and len(tickets) > limit)
+    if has_more:
+        tickets = tickets[:limit]
     
     result = []
     ticket_scope_ids = []
@@ -4598,15 +4801,13 @@ def get_tickets():
             seen_booking_groups.add(t.booking_group_id)
             grouped_tickets = _booking_group_sorted_tickets(t.booking_group)
             lead_ticket = grouped_tickets[0] if grouped_tickets else t
-            payload = _merged_ticket_dict(
+            payload = _merged_ticket_summary_dict(
                 t.booking_group,
                 lead_ticket,
-                include_barcodes=False,
-                include_raw_data=False,
             )
             scope_tickets = grouped_tickets or [t]
         else:
-            payload = _ticket_dict_with_children(t, include_barcodes=False, include_raw_data=False)
+            payload = _ticket_summary_dict(t, include_relationships=True)
             scope_tickets = [t]
         passengers = payload["passengers"]
         segments = payload["segments"]
@@ -4655,12 +4856,13 @@ def get_tickets():
                 payload["is_unread"] = _ticket_unread_for_state(t, last_seen_at, read_ticket_ids)
 
     returned_count = len(result)
+    total_count = len(tickets) if not limit else (offset + returned_count + (1 if has_more else 0))
     payload = {
         "tickets": result,
         "total_count": total_count,
         "offset": offset,
         "returned_count": returned_count,
-        "has_more": (offset + returned_count) < total_count,
+        "has_more": has_more,
         "last_seen_at": _iso_or_none(last_seen_at),
         "server_now": _iso_or_none(server_now),
     }
@@ -5016,10 +5218,52 @@ def update_ticket(ticket_id):
                 event_type="ticket_updated",
                 ticket_id=ticket.id,
                 booking_group_id=ticket.booking_group_id,
+                cache_kinds=["tickets-list", "ticket-detail"],
             )
             return jsonify({"message": "Merged booking updated successfully"})
 
-        current_snapshot = _ticket_dict_with_children(ticket)
+        changed_fields = _ticket_changed_field_set(ticket, data, base_snapshot)
+        if changed_fields and changed_fields.issubset(_TICKET_SCALAR_EDIT_FIELDS):
+            for field in _TICKET_SCALAR_EDIT_FIELDS:
+                if field in data:
+                    setattr(
+                        ticket,
+                        field,
+                        _merge_concurrent_value(
+                            getattr(ticket, field, None),
+                            base_snapshot.get(field, _MISSING),
+                            data[field],
+                        ),
+                    )
+            ticket.updated_at = datetime.utcnow()
+            response_payload = {
+                "message": "Ticket updated successfully",
+                "ok": True,
+                "ticket_id": ticket.id,
+                "updated_fields": sorted(changed_fields),
+                "ticket_summary": {
+                    "id": ticket.id,
+                    "pnr": ticket.pnr,
+                    "booking_date": ticket.booking_date,
+                    "phone": ticket.phone,
+                    "currency": ticket.currency,
+                    "grand_total": ticket.grand_total,
+                    "class_of_travel": ticket.class_of_travel,
+                    "trip_type": ticket.trip_type,
+                    "status": ticket.status,
+                    "updated_at": ticket.updated_at.isoformat(),
+                },
+            }
+            db.session.commit()
+            _publish_ticket_dashboard_event(
+                session["user_id"],
+                event_type="ticket_updated",
+                ticket_id=ticket.id,
+                cache_kinds=["tickets-list", "ticket-detail"],
+            )
+            return jsonify(response_payload)
+
+        current_snapshot = _ticket_detail_dict(ticket)
         current_snapshot["segments"] = _sanitize_segments_for_storage(current_snapshot.get("segments", []))
 
         if 'pnr' in data:
@@ -5060,11 +5304,12 @@ def update_ticket(ticket_id):
             session["user_id"],
             event_type="ticket_updated",
             ticket_id=ticket.id,
+            cache_kinds=["tickets-list", "ticket-detail"],
         )
         
         return jsonify({
             "message": "Ticket updated successfully",
-            "ticket": _ticket_dict_with_children(ticket),
+            "ticket_summary": _ticket_summary_dict(ticket, include_relationships=False),
         })
     
     except Exception as e:

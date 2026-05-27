@@ -2860,6 +2860,11 @@ function scheduleRealtimeRefresh(payload = {}) {
 
     const eventType = payload.event || '';
     const payloadTicketId = payload.ticket_id || '';
+    const isOwnSuppressedUpdate = eventType === 'ticket_updated' && Date.now() < suppressRealtimeUntil;
+
+    if (isOwnSuppressedUpdate) {
+        return;
+    }
 
     if (payloadTicketId && eventType === 'ticket_deleted') {
         removeTicketFromLocalState(payloadTicketId, { render: true });
@@ -2891,7 +2896,8 @@ function scheduleRealtimeRefresh(payload = {}) {
     realtimeRefreshHandle = setTimeout(async () => {
         try {
             const isNewTicket = eventType === 'ticket_created';
-            const notifStale = (Date.now() - _lastNotificationFetchAt) > NOTIF_THROTTLE_MS;
+            const shouldRefreshNotifications = ['ticket_created', 'ticket_deleted', 'duplicate_approved', 'duplicate_rejected', 'dashboard_refresh'].includes(eventType);
+            const notifStale = shouldRefreshNotifications && (Date.now() - _lastNotificationFetchAt) > NOTIF_THROTTLE_MS;
 
             // Only fetch notifications if throttle window has expired
             if (notifStale) {
@@ -6683,11 +6689,13 @@ async function saveTicket(silent = false) {
         clearTimeout(draftRetryHandle);
         draftRetryHandle = null;
         if (!silent) showToast('Ticket saved successfully!', 'success');
-        const savedTicket = normalizeTicketFareData(
-            responsePayload.ticket
-                ? JSON.parse(JSON.stringify(responsePayload.ticket))
-                : JSON.parse(JSON.stringify(localSnapshotBeforeSave))
-        );
+        const savedTicketSource = responsePayload.ticket
+            ? JSON.parse(JSON.stringify(responsePayload.ticket))
+            : JSON.parse(JSON.stringify(localSnapshotBeforeSave));
+        if (responsePayload.ticket_summary && typeof responsePayload.ticket_summary === 'object') {
+            Object.assign(savedTicketSource, JSON.parse(JSON.stringify(responsePayload.ticket_summary)));
+        }
+        const savedTicket = normalizeTicketFareData(savedTicketSource);
         const editsChangedDuringSave = (
             currentTicket?.id !== ticketIdAtSaveStart
             || lastDetailInputAt > saveStartedAt
