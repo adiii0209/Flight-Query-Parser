@@ -3,6 +3,7 @@ if os.name == "nt":
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "C:\\pw-browsers")
 else:
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
+import gzip as gzip_lib
 import json
 import uuid
 import requests
@@ -19,6 +20,7 @@ except Exception:
     Session = None
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
+from sqlalchemy.orm import defer, load_only, selectinload
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 from functools import wraps
@@ -156,6 +158,45 @@ def _configure_server_side_session(flask_app):
 
 _configure_server_side_session(app)
 
+
+@app.after_request
+def _gzip_response(response):
+    accept_encoding = (request.headers.get("Accept-Encoding") or "").lower()
+    if "gzip" not in accept_encoding:
+        return response
+    if response.status_code < 200 or response.status_code >= 300:
+        return response
+    if response.direct_passthrough or response.is_streamed:
+        return response
+    if response.headers.get("Content-Encoding"):
+        return response
+
+    mimetype = (response.mimetype or "").lower()
+    if mimetype not in {
+        "application/json",
+        "text/html",
+        "text/plain",
+        "text/css",
+        "text/javascript",
+        "application/javascript",
+    }:
+        return response
+
+    payload = response.get_data()
+    if not payload or len(payload) < _GZIP_MIN_BYTES:
+        return response
+
+    compressed = gzip_lib.compress(payload, compresslevel=6)
+    if len(compressed) >= len(payload):
+        return response
+
+    response.set_data(compressed)
+    response.headers["Content-Encoding"] = "gzip"
+    response.headers["Content-Length"] = str(len(compressed))
+    vary = response.headers.get("Vary")
+    response.headers["Vary"] = "Accept-Encoding" if not vary else f"{vary}, Accept-Encoding"
+    return response
+
 _playwright_runtime = None
 _playwright_browser = None
 _playwright_lock = threading.Lock()
@@ -218,6 +259,31 @@ _dashboard_cache = DashboardCache(
 _TICKETS_LIST_CACHE_TTL_SECONDS = max(int(os.getenv("TICKETS_LIST_CACHE_TTL_SECONDS", "30") or 30), 1)
 _TICKET_DETAIL_CACHE_TTL_SECONDS = max(int(os.getenv("TICKET_DETAIL_CACHE_TTL_SECONDS", "45") or 45), 1)
 _TICKET_NOTIFICATIONS_CACHE_TTL_SECONDS = max(int(os.getenv("TICKET_NOTIFICATIONS_CACHE_TTL_SECONDS", "15") or 15), 1)
+_GZIP_MIN_BYTES = max(int(os.getenv("GZIP_MIN_BYTES", "1024") or 1024), 256)
+
+
+def _json_value(value, default=None):
+    if value is None:
+        return default() if callable(default) else default
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return default() if callable(default) else default
+        try:
+            return json.loads(stripped)
+        except (TypeError, ValueError):
+            return default() if callable(default) else default
+    return value
+
+
+def _json_list(value):
+    parsed = _json_value(value, list)
+    return parsed if isinstance(parsed, list) else []
+
+
+def _json_dict(value):
+    parsed = _json_value(value, dict)
+    return parsed if isinstance(parsed, dict) else {}
 _TICKETS_DUPLICATES_CACHE_TTL_SECONDS = max(int(os.getenv("TICKETS_DUPLICATES_CACHE_TTL_SECONDS", "20") or 20), 1)
 _TICKETS_MERGED_HISTORY_CACHE_TTL_SECONDS = max(int(os.getenv("TICKETS_MERGED_HISTORY_CACHE_TTL_SECONDS", "30") or 30), 1)
 
@@ -1087,8 +1153,8 @@ def export_ticket_to_sheet(ticket_id):
             return jsonify({"error": "Ticket not found"}), 404
 
         # Parse data
-        passengers = json.loads(ticket.passengers_data or '[]')
-        journey = json.loads(ticket.journey_data or '{}')
+        passengers = _json_list(ticket.passengers_data)
+        journey = _json_dict(ticket.journey_data)
         
         n_pax = len(passengers) if passengers else 1
         global_mu_single = float(journey.get('global_markup', 0))
@@ -1851,10 +1917,10 @@ def _ticket_payload_from_parts(source_ticket, passengers, segments, total_compon
         "grand_total": _round_money(total_components["total"]),
         "class_of_travel": source_ticket.get("class_of_travel"),
         "trip_type": source_ticket.get("trip_type"),
-        "passengers_data": json.dumps(cloned_passengers),
-        "segments_data": json.dumps(marked_segments),
-        "journey_data": json.dumps(journey),
-        "raw_data": json.dumps(raw_data),
+        "passengers_data": cloned_passengers,
+        "segments_data": marked_segments,
+        "journey_data": journey,
+        "raw_data": raw_data,
         "status": source_ticket.get("status", "edited"),
         "ticket_status": ticket_status,
         "matched_itinerary_id": source_ticket.get("matched_itinerary_id"),
@@ -1980,21 +2046,23 @@ def _restore_ticket_snapshot(snapshot, user_id):
 def _apply_ticket_payload(ticket, payload):
     for field, value in payload.items():
         setattr(ticket, field, value)
+    journey_data = _json_dict(ticket.journey_data)
+    passengers_data = _json_list(ticket.passengers_data)
     ticket.ledger_hash = _compute_fare_hash(
         ticket.pnr or "",
-        parseFloat(json.loads(ticket.journey_data or "{}").get("consolidated_fare", {}).get("base_fare", 0)),
-        parseFloat(json.loads(ticket.journey_data or "{}").get("consolidated_fare", {}).get("k3_gst", 0)),
-        parseFloat(json.loads(ticket.journey_data or "{}").get("consolidated_fare", {}).get("other_taxes", 0)),
-        parseFloat(json.loads(ticket.journey_data or "{}").get("global_markup", 0)) * len(json.loads(ticket.passengers_data or "[]")),
+        parseFloat(journey_data.get("consolidated_fare", {}).get("base_fare", 0)),
+        parseFloat(journey_data.get("consolidated_fare", {}).get("k3_gst", 0)),
+        parseFloat(journey_data.get("consolidated_fare", {}).get("other_taxes", 0)),
+        parseFloat(journey_data.get("global_markup", 0)) * len(passengers_data),
         ticket.grand_total or 0,
     )
 
 
-def _ticket_dict_with_children(ticket, include_barcodes=True):
-    passengers = json.loads(ticket.passengers_data) if ticket.passengers_data else []
-    segments = json.loads(ticket.segments_data) if ticket.segments_data else []
-    journey = json.loads(ticket.journey_data) if ticket.journey_data else {}
-    raw = json.loads(ticket.raw_data) if ticket.raw_data else {}
+def _ticket_dict_with_children(ticket, include_barcodes=True, include_raw_data=True):
+    passengers = _json_list(ticket.passengers_data)
+    segments = _json_list(ticket.segments_data)
+    journey = _json_dict(ticket.journey_data)
+    raw = _json_dict(ticket.raw_data) if include_raw_data else {}
     _ensure_passenger_internal_ids(passengers)
     if include_barcodes:
         segments = _segments_with_barcodes(ticket, passengers, segments, raw)
@@ -2017,7 +2085,7 @@ def _ticket_dict_with_children(ticket, include_barcodes=True):
         "passengers": passengers,
         "segments": segments,
         "journey": journey,
-        "raw_data": raw,
+        "raw_data": raw if include_raw_data else None,
         "ledger_hash": ticket.ledger_hash,
         "parent_ticket_id": ticket.parent_ticket_id,
         "booking_group_id": ticket.booking_group_id,
@@ -2046,8 +2114,12 @@ def _is_booking_group_lead(ticket):
     return bool(ordered and ordered[0].id == ticket.id)
 
 
-def _merged_ticket_dict(booking_group, lead_ticket, include_barcodes=True):
-    lead_payload = _ticket_dict_with_children(lead_ticket, include_barcodes=include_barcodes)
+def _merged_ticket_dict(booking_group, lead_ticket, include_barcodes=True, include_raw_data=True):
+    lead_payload = _ticket_dict_with_children(
+        lead_ticket,
+        include_barcodes=include_barcodes,
+        include_raw_data=include_raw_data,
+    )
     merged_passengers = []
     merged_total = 0.0
     merged_ticket_ids = []
@@ -2058,9 +2130,9 @@ def _merged_ticket_dict(booking_group, lead_ticket, include_barcodes=True):
     for grouped_ticket in _booking_group_sorted_tickets(booking_group):
         merged_ticket_ids.append(grouped_ticket.id)
         merged_total += parseFloat(grouped_ticket.grand_total or 0)
-        ticket_passengers = json.loads(grouped_ticket.passengers_data or "[]")
+        ticket_passengers = _json_list(grouped_ticket.passengers_data)
         _ensure_passenger_internal_ids(ticket_passengers)
-        grouped_journey = json.loads(grouped_ticket.journey_data or "{}")
+        grouped_journey = _json_dict(grouped_ticket.journey_data)
         grouped_financials = _ticket_financials(ticket_passengers, grouped_journey)
         merged_base += parseFloat(grouped_financials.get("base", 0))
         merged_k3 += parseFloat(grouped_financials.get("k3", 0))
@@ -2283,6 +2355,45 @@ def _create_indexes_if_missing():
     db.session.commit()
 
 
+def _upgrade_ticket_json_columns_for_postgres():
+    engine = db.engine
+    if engine.dialect.name != "postgresql":
+        return
+
+    columns = {
+        column["name"]: str(column.get("type") or "").lower()
+        for column in inspect(engine).get_columns("ticket")
+    }
+    json_columns = {
+        "passengers_data": "[]",
+        "segments_data": "[]",
+        "journey_data": "{}",
+        "raw_data": "{}",
+    }
+
+    for column_name, empty_json in json_columns.items():
+        column_type = columns.get(column_name, "")
+        if "jsonb" in column_type:
+            continue
+        if "json" in column_type:
+            db.session.execute(text(
+                f"ALTER TABLE ticket ALTER COLUMN {column_name} TYPE JSONB USING COALESCE({column_name}, CAST(:empty_json AS json))::jsonb"
+            ), {"empty_json": empty_json})
+            continue
+        db.session.execute(text(
+            f"""
+            ALTER TABLE ticket
+            ALTER COLUMN {column_name}
+            TYPE JSONB
+            USING CASE
+                WHEN {column_name} IS NULL OR btrim({column_name}::text) IN ('', 'null') THEN CAST(:empty_json AS jsonb)
+                ELSE {column_name}::jsonb
+            END
+            """
+        ), {"empty_json": empty_json})
+    db.session.commit()
+
+
 def ensure_schema_compatibility():
     db.create_all()
 
@@ -2312,6 +2423,7 @@ def ensure_schema_compatibility():
     _add_column_if_missing("operation_ledger_link", "ledger_entry_id", "VARCHAR")
 
     _create_indexes_if_missing()
+    _upgrade_ticket_json_columns_for_postgres()
 
 # ==================== LEDGER ROUTES ====================
 
@@ -2475,8 +2587,8 @@ def add_ticket_to_ledger(ticket_id):
     if not ticket:
         return jsonify({"error": "Ticket not found"}), 404
 
-    passengers = json.loads(ticket.passengers_data or '[]')
-    journey = json.loads(ticket.journey_data or '{}')
+    passengers = _json_list(ticket.passengers_data)
+    journey = _json_dict(ticket.journey_data)
     n_pax = len(passengers) if passengers else 1
     mu_per_pax = parseFloat(journey.get('global_markup', 0))
     mu_total = mu_per_pax * n_pax
@@ -3502,10 +3614,10 @@ def receive_ticket():
                 grand_total=final_grand_total,
                 class_of_travel=final_class,
                 trip_type=trip_type,
-                passengers_data=json.dumps(passengers),
-                segments_data=json.dumps(segments),
-                journey_data=json.dumps(journey),
-                raw_data=json.dumps(data),
+                passengers_data=passengers,
+                segments_data=segments,
+                journey_data=journey,
+                raw_data=data,
                 status="unmatched",
                 user_id=user.id,
                 parser_version=metadata.get("parser_version")
@@ -3541,8 +3653,8 @@ def receive_ticket():
                 ).order_by(Ticket.created_at.asc()).all()
 
                 for existing in existing_tickets:
-                    ex_segments = json.loads(existing.segments_data or "[]")
-                    ex_passengers = json.loads(existing.passengers_data or "[]")
+                    ex_segments = _json_list(existing.segments_data)
+                    ex_passengers = _json_list(existing.passengers_data)
 
                     ex_sectors = []
                     for s in ex_segments:
@@ -4054,8 +4166,8 @@ def get_pending_duplicates():
         if dup_ticket.duplicate_of_id:
             original = Ticket.query.filter_by(id=dup_ticket.duplicate_of_id).first()
             if original:
-                orig_passengers = json.loads(original.passengers_data or "[]")
-                orig_segments = json.loads(original.segments_data or "[]")
+                orig_passengers = _json_list(original.passengers_data)
+                orig_segments = _json_list(original.segments_data)
                 route_parts = []
                 for seg in orig_segments:
                     dep = (seg.get("departure") or {}).get("airport", "")
@@ -4180,9 +4292,9 @@ def get_merged_history():
 # ==================== TICKET CRUD ROUTES ====================
 
 def _ticket_signature(ticket):
-    passengers = json.loads(ticket.passengers_data or "[]")
-    segments = json.loads(ticket.segments_data or "[]")
-    journey = json.loads(ticket.journey_data or "{}")
+    passengers = _json_list(ticket.passengers_data)
+    segments = _json_list(ticket.segments_data)
+    journey = _json_dict(ticket.journey_data)
     legs = _build_legs_from_data(segments, journey)
 
     route_parts = []
@@ -4424,6 +4536,50 @@ def get_tickets():
     query = Ticket.query.filter(
         Ticket.user_id == user_id,
         or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status == 'approved'),
+    ).options(
+        load_only(
+            Ticket.id,
+            Ticket.created_at,
+            Ticket.updated_at,
+            Ticket.pnr,
+            Ticket.booking_date,
+            Ticket.phone,
+            Ticket.currency,
+            Ticket.grand_total,
+            Ticket.class_of_travel,
+            Ticket.trip_type,
+            Ticket.passengers_data,
+            Ticket.segments_data,
+            Ticket.journey_data,
+            Ticket.status,
+            Ticket.matched_itinerary_id,
+            Ticket.parser_version,
+            Ticket.ticket_status,
+            Ticket.ledger_hash,
+            Ticket.parent_ticket_id,
+            Ticket.booking_group_id,
+            Ticket.duplicate_status,
+            Ticket.duplicate_of_id,
+            Ticket.cancellation_charge,
+            Ticket.last_aggregator,
+            Ticket.last_booked_by,
+        ),
+        defer(Ticket.raw_data),
+        selectinload(Ticket.children).load_only(
+            Ticket.id,
+            Ticket.pnr,
+            Ticket.ticket_status,
+            Ticket.grand_total,
+        ),
+        selectinload(Ticket.booking_group).selectinload(BookingGroup.tickets).load_only(
+            Ticket.id,
+            Ticket.created_at,
+            Ticket.pnr,
+            Ticket.grand_total,
+            Ticket.passengers_data,
+            Ticket.journey_data,
+            Ticket.ticket_status,
+        ),
     ).order_by(Ticket.created_at.desc())
 
     total_count = query.count()
@@ -4442,10 +4598,15 @@ def get_tickets():
             seen_booking_groups.add(t.booking_group_id)
             grouped_tickets = _booking_group_sorted_tickets(t.booking_group)
             lead_ticket = grouped_tickets[0] if grouped_tickets else t
-            payload = _merged_ticket_dict(t.booking_group, lead_ticket, include_barcodes=False)
+            payload = _merged_ticket_dict(
+                t.booking_group,
+                lead_ticket,
+                include_barcodes=False,
+                include_raw_data=False,
+            )
             scope_tickets = grouped_tickets or [t]
         else:
-            payload = _ticket_dict_with_children(t, include_barcodes=False)
+            payload = _ticket_dict_with_children(t, include_barcodes=False, include_raw_data=False)
             scope_tickets = [t]
         passengers = payload["passengers"]
         segments = payload["segments"]
@@ -4580,9 +4741,9 @@ def get_ticket(ticket_id):
         return jsonify({"error": "Ticket not found"}), 404
 
     ticket_mutated_on_read = False
-    passengers = json.loads(ticket.passengers_data) if ticket.passengers_data else []
+    passengers = _json_list(ticket.passengers_data)
     if _ensure_passenger_internal_ids(passengers):
-        ticket.passengers_data = json.dumps(passengers)
+        ticket.passengers_data = passengers
         ticket_mutated_on_read = True
 
     # Auto-map to ledger if PNR exists there but hash is missing
@@ -4812,20 +4973,20 @@ def update_ticket(ticket_id):
                 if 'trip_type' in data:
                     grouped_ticket.trip_type = data['trip_type']
                 if 'segments' in data:
-                    grouped_ticket.segments_data = json.dumps(_sanitize_segments_for_storage(data['segments']))
+                    grouped_ticket.segments_data = _sanitize_segments_for_storage(data['segments'])
                 if 'raw_data' in data:
-                    grouped_ticket.raw_data = json.dumps(data['raw_data'])
+                    grouped_ticket.raw_data = _clone_json(data['raw_data'] or {})
                 if 'status' in data:
                     grouped_ticket.status = data['status']
 
                 grouped_passengers = passengers_by_ticket.get(grouped_ticket.id)
                 if grouped_passengers is not None:
                     _ensure_passenger_internal_ids(grouped_passengers)
-                    grouped_ticket.passengers_data = json.dumps(grouped_passengers)
+                    grouped_ticket.passengers_data = grouped_passengers
                 else:
-                    grouped_passengers = json.loads(grouped_ticket.passengers_data or "[]")
+                    grouped_passengers = _json_list(grouped_ticket.passengers_data)
                     _ensure_passenger_internal_ids(grouped_passengers)
-                    grouped_ticket.passengers_data = json.dumps(grouped_passengers)
+                    grouped_ticket.passengers_data = grouped_passengers
 
                 if 'journey' in data:
                     grouped_journey = _clone_json(data['journey'] or {})
@@ -4842,9 +5003,9 @@ def update_ticket(ticket_id):
                         "k3_gst": _round_money(k3_total),
                         "other_taxes": _round_money(other_total),
                     }
-                    grouped_ticket.journey_data = json.dumps(grouped_journey)
+                    grouped_ticket.journey_data = grouped_journey
                 else:
-                    grouped_journey = json.loads(grouped_ticket.journey_data or "{}")
+                    grouped_journey = _json_dict(grouped_ticket.journey_data)
 
                 grouped_ticket.grand_total = _ticket_financials(grouped_passengers, grouped_journey)["total"]
                 grouped_ticket.updated_at = datetime.utcnow()
@@ -4878,18 +5039,18 @@ def update_ticket(ticket_id):
         if 'passengers' in data:
             passengers = _merge_concurrent_value(current_snapshot.get('passengers', []), base_snapshot.get('passengers', _MISSING), data['passengers'])
             _ensure_passenger_internal_ids(passengers)
-            ticket.passengers_data = json.dumps(passengers)
+            ticket.passengers_data = passengers
         if 'segments' in data:
             # Segment edits come from a full in-place editor payload, so store the
             # submitted segment list exactly instead of recursively merging stale keys.
-            ticket.segments_data = json.dumps(_sanitize_segments_for_storage(data['segments']))
+            ticket.segments_data = _sanitize_segments_for_storage(data['segments'])
         if 'journey' in data:
             # Journey totals/legs are recalculated client-side from the edited segments
             # and should stay aligned with the submitted segment payload.
-            ticket.journey_data = json.dumps(_clone_json(data['journey'] or {}))
+            ticket.journey_data = _clone_json(data['journey'] or {})
         if 'raw_data' in data:
             raw_data = _merge_concurrent_value(current_snapshot.get('raw_data', {}), base_snapshot.get('raw_data', _MISSING), data['raw_data'])
-            ticket.raw_data = json.dumps(raw_data)
+            ticket.raw_data = raw_data
         if 'status' in data:
             ticket.status = _merge_concurrent_value(current_snapshot.get('status'), base_snapshot.get('status', _MISSING), data['status'])
         
@@ -4957,10 +5118,10 @@ def generate_ticket_pdf(ticket_id):
     )
     passenger_sort = snapshot["passenger_sort"] or request.args.get('passenger_sort', '')
 
-    passengers = snapshot["passengers"] if snapshot["passengers"] is not None else (json.loads(ticket.passengers_data) if ticket.passengers_data else [])
-    segments = snapshot["segments"] if snapshot["segments"] is not None else (json.loads(ticket.segments_data) if ticket.segments_data else [])
-    journey = snapshot["journey"] if snapshot["journey"] is not None else (json.loads(ticket.journey_data) if ticket.journey_data else {})
-    raw = snapshot["raw_data"] if snapshot["raw_data"] is not None else (json.loads(ticket.raw_data) if ticket.raw_data else {})
+    passengers = snapshot["passengers"] if snapshot["passengers"] is not None else _json_list(ticket.passengers_data)
+    segments = snapshot["segments"] if snapshot["segments"] is not None else _json_list(ticket.segments_data)
+    journey = snapshot["journey"] if snapshot["journey"] is not None else _json_dict(ticket.journey_data)
+    raw = snapshot["raw_data"] if snapshot["raw_data"] is not None else _json_dict(ticket.raw_data)
     grand_total = snapshot["grand_total"]
 
     # If this is a merged booking and no editor snapshot was posted, combine passengers from all tickets in the group
@@ -4969,7 +5130,7 @@ def generate_ticket_pdf(ticket_id):
         merged_total = 0.0
         for grouped_ticket in _booking_group_sorted_tickets(ticket.booking_group):
             merged_total += parseFloat(grouped_ticket.grand_total or 0)
-            ticket_passengers = json.loads(grouped_ticket.passengers_data or "[]")
+            ticket_passengers = _json_list(grouped_ticket.passengers_data)
             _ensure_passenger_internal_ids(ticket_passengers)
             for p in ticket_passengers:
                 p_copy = _clone_json(p)
@@ -5106,16 +5267,16 @@ def generate_selected_passenger_pdf(ticket_id):
     if not pax_indices:
         return jsonify({"error": "No passenger indices provided"}), 400
 
-    passengers = snapshot["passengers"] if snapshot["passengers"] is not None else (json.loads(ticket.passengers_data) if ticket.passengers_data else [])
-    segments = snapshot["segments"] if snapshot["segments"] is not None else (json.loads(ticket.segments_data) if ticket.segments_data else [])
-    journey = snapshot["journey"] if snapshot["journey"] is not None else (json.loads(ticket.journey_data) if ticket.journey_data else {})
-    raw = snapshot["raw_data"] if snapshot["raw_data"] is not None else (json.loads(ticket.raw_data) if ticket.raw_data else {})
+    passengers = snapshot["passengers"] if snapshot["passengers"] is not None else _json_list(ticket.passengers_data)
+    segments = snapshot["segments"] if snapshot["segments"] is not None else _json_list(ticket.segments_data)
+    journey = snapshot["journey"] if snapshot["journey"] is not None else _json_dict(ticket.journey_data)
+    raw = snapshot["raw_data"] if snapshot["raw_data"] is not None else _json_dict(ticket.raw_data)
 
     # If this is a merged booking and no editor snapshot was posted, combine passengers from all tickets in the group
     if ticket.booking_group_id and ticket.booking_group and snapshot["passengers"] is None:
         merged_passengers = []
         for grouped_ticket in _booking_group_sorted_tickets(ticket.booking_group):
-            ticket_passengers = json.loads(grouped_ticket.passengers_data or "[]")
+            ticket_passengers = _json_list(grouped_ticket.passengers_data)
             _ensure_passenger_internal_ids(ticket_passengers)
             for p in ticket_passengers:
                 p_copy = _clone_json(p)
@@ -5457,10 +5618,10 @@ def _default_child_pnr(base_pnr, suffix):
 
 
 def _build_operation_plan(ticket, data, action_type):
-    passengers = json.loads(ticket.passengers_data or "[]")
-    segments = json.loads(ticket.segments_data or "[]")
-    journey = json.loads(ticket.journey_data or "{}")
-    raw_data = json.loads(ticket.raw_data or "{}")
+    passengers = _json_list(ticket.passengers_data)
+    segments = _json_list(ticket.segments_data)
+    journey = _json_dict(ticket.journey_data)
+    raw_data = _json_dict(ticket.raw_data)
     _ensure_passenger_internal_ids(passengers)
 
     source_ticket = {
@@ -5681,8 +5842,8 @@ def _build_operation_plan(ticket, data, action_type):
             "label": item["label"],
             "pnr": item["payload"]["pnr"],
             "ticket_status": item["payload"]["ticket_status"],
-            "passenger_count": len(json.loads(item["payload"]["passengers_data"])),
-            "sector_count": len(json.loads(item["payload"]["segments_data"])),
+            "passenger_count": len(_json_list(item["payload"]["passengers_data"])),
+            "sector_count": len(_json_list(item["payload"]["segments_data"])),
             "grand_total": item["payload"]["grand_total"],
         } for item in (ticket_updates + ticket_creates)],
         "new_ticket_required": action_type == "change",

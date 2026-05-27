@@ -1,10 +1,55 @@
+import json
 import uuid
 from datetime import datetime
 from sqlalchemy import UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.types import JSON, Text, TypeDecorator
 from werkzeug.security import generate_password_hash, check_password_hash
 from extensions import db
 
 # ==================== MODELS ====================
+
+
+class CompatJSON(TypeDecorator):
+    """Use JSONB on PostgreSQL while keeping SQLite/text compatibility."""
+
+    impl = Text
+    cache_ok = True
+
+    def __init__(self, empty_factory=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.empty_factory = empty_factory
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(JSONB())
+        if dialect.name == "sqlite":
+            return dialect.type_descriptor(Text())
+        return dialect.type_descriptor(JSON())
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name == "postgresql":
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped:
+                    return self.empty_factory() if callable(self.empty_factory) else None
+                return json.loads(stripped)
+            return value
+        if isinstance(value, str):
+            return value
+        return json.dumps(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return self.empty_factory() if callable(self.empty_factory) else None
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return self.empty_factory() if callable(self.empty_factory) else None
+            return json.loads(stripped)
+        return value
 
 class User(db.Model):
     id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -71,10 +116,10 @@ class Ticket(db.Model):
     # Journey info
     trip_type = db.Column(db.String(20), default='one_way')  # one_way, round_trip, multi_city
     # Full JSON data
-    passengers_data = db.Column(db.Text)  # JSON array of passengers
-    segments_data = db.Column(db.Text)    # JSON array of segments
-    journey_data = db.Column(db.Text)     # JSON journey summary
-    raw_data = db.Column(db.Text)         # Full raw JSON from parser
+    passengers_data = db.Column(CompatJSON(empty_factory=list))  # JSON array of passengers
+    segments_data = db.Column(CompatJSON(empty_factory=list))    # JSON array of segments
+    journey_data = db.Column(CompatJSON(empty_factory=dict))     # JSON journey summary
+    raw_data = db.Column(CompatJSON(empty_factory=dict))         # Full raw JSON from parser
     booking_group_id = db.Column(db.String, db.ForeignKey('booking_group.id'), nullable=True)
     # Status & matching
     status = db.Column(db.String(20), default='unmatched')  # unmatched, matched, edited
