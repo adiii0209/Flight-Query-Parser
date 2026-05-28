@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en" data-crm-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ownership · Travel Ops CRM</title>
+  <meta name="description" content="Travel operations ownership dashboard — manage trips, statuses, subtasks, and team assignments in one place.">
+  <link rel="icon" type="image/png" href="/static/ticket-flight.png">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <link rel="stylesheet" href="/static/ownership.css">
+</head>
+<body>
+{% include 'components/sidebar.html' %}
+
+<div class="crm-page" id="crmPage">
+
+  <!-- ═══════════════════ HEADER ═══════════════════ -->
+  <header class="crm-header">
+    <div class="crm-header-left">
+      <!-- Hamburger (reuse existing sidebar toggle) -->
+      <button id="menuToggle" aria-label="Open menu" style="background:none;border:1.5px solid var(--crm-border);border-radius:8px;width:36px;height:36px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--crm-text-2);position:relative;transition:all .15s;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+        <span id="menuNotificationBadge" style="position:absolute;top:-4px;right:-4px;background:#ef4444;color:white;font-size:.6rem;font-weight:700;padding:1px 4px;border-radius:99px;min-width:16px;height:16px;display:none;align-items:center;justify-content:center;line-height:1;"></span>
+      </button>
+      <div class="crm-header-title">
+        <div class="crm-header-title-icon">🗂️</div>
+        <span>Ownership</span>
+        <span class="crm-count-badge" id="totalTripsBadge">0</span>
+      </div>
+    </div>
+
+    <div class="crm-header-actions">
+      <button class="crm-btn crm-btn-ghost" id="btnTaskTemplates" style="gap:.4rem;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Task Templates
+      </button>
+      <button class="crm-btn crm-btn-ghost" id="btnEmployees" style="gap:.4rem;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>
+        Employees
+      </button>
+      <button class="crm-btn crm-btn-ghost" id="btnTogglePanel">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+        Panel
+      </button>
+      <button class="crm-theme-toggle" id="crmThemeToggle">🌙 Dark</button>
+      <button class="crm-btn crm-btn-primary" id="btnNewTrip">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New Trip
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══════════════════ BODY ═══════════════════ -->
+  <div class="crm-body">
+
+    <!-- ─── MAIN ─── -->
+    <main class="crm-main">
+
+      <!-- KPI Cards -->
+      <div class="crm-kpi-grid" id="kpiGrid">
+        <div class="crm-kpi-card kpi-blue">
+          <div class="crm-kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21.5 4c0 0-2 .5-3.5 2L14.5 9.5 6.3 7.7 4 9l6 4-3.5 3.5L4.5 16l-2 1.5L5 20l2.5 2.5L9 20.5l-1.5-2L11 15l3.5-3.5 4 6z"/></svg></div>
+          <div class="crm-kpi-value" id="kpiTotal">0</div>
+          <div class="crm-kpi-label" style="margin-left:auto;text-align:right;">Total Trips</div>
+        </div>
+        <div class="crm-kpi-card kpi-red">
+          <div class="crm-kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 22h20"/><path d="M6.36 17.4 4 17l-2-4 1.1-.55a2 2 0 0 1 1.8 0l.17.1a2 2 0 0 0 1.8 0L8 12 5 6l.9-.45a2 2 0 0 1 2.09.2l4.02 3 7.4-3.7a2 2 0 0 1 2.74 1.06c.57 1.13-.03 2.5-1.2 3.1l-10 5a2 2 0 0 1-1.74 0L6.36 17.4Z"/></svg></div>
+          <div class="crm-kpi-value" id="kpiFlights">0</div>
+          <div class="crm-kpi-label" style="margin-left:auto;text-align:right;">Flights Pending</div>
+        </div>
+        <div class="crm-kpi-card kpi-amber">
+          <div class="crm-kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg></div>
+          <div class="crm-kpi-value" id="kpiVisa">0</div>
+          <div class="crm-kpi-label" style="margin-left:auto;text-align:right;">Visa Pending</div>
+        </div>
+        <div class="crm-kpi-card kpi-violet">
+          <div class="crm-kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/></svg></div>
+          <div class="crm-kpi-value" id="kpiHotels">0</div>
+          <div class="crm-kpi-label" style="margin-left:auto;text-align:right;">Hotels Pending</div>
+        </div>
+        <div class="crm-kpi-card kpi-indigo">
+          <div class="crm-kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></div>
+          <div class="crm-kpi-value" id="kpiTasks">0</div>
+          <div class="crm-kpi-label" style="margin-left:auto;text-align:right;">Tasks Open</div>
+        </div>
+        <div class="crm-kpi-card kpi-green">
+          <div class="crm-kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+          <div class="crm-kpi-value" id="kpiMonth">0</div>
+          <div class="crm-kpi-label" style="margin-left:auto;text-align:right;">Trips This Month</div>
+        </div>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="crm-toolbar">
+        <div class="crm-search-wrap">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" class="crm-search" id="crmSearch" placeholder="Search trips, guests, destinations…">
+        </div>
+        <select class="crm-filter-select" id="filterStatus">
+          <option value="">All Statuses</option>
+          <option value="complete">Complete</option>
+          <option value="ongoing">Ongoing</option>
+          <option value="pending">Pending</option>
+          <option value="review">In Review</option>
+          <option value="notstarted">Not Started</option>
+        </select>
+        <select class="crm-filter-select" id="filterOwner">
+          <option value="">All Owners</option>
+        </select>
+        <select class="crm-filter-select" id="filterPriority">
+          <option value="">All Priorities</option>
+          <option value="high">🔴 High</option>
+          <option value="medium">🟡 Medium</option>
+          <option value="low">🟢 Low</option>
+        </select>
+        <select class="crm-filter-select" id="filterMonth">
+          <option value="">All Months</option>
+        </select>
+        <button class="crm-btn crm-btn-ghost" id="btnClearFilters" style="font-size:.78rem;">✕ Clear</button>
+        <div style="margin-left:auto;display:flex;gap:.5rem;">
+          <div class="crm-legend">
+            <span class="crm-legend-item"><span class="crm-legend-dot" style="background:var(--s-complete)"></span>Complete</span>
+            <span class="crm-legend-item"><span class="crm-legend-dot" style="background:var(--s-ongoing)"></span>Ongoing</span>
+            <span class="crm-legend-item"><span class="crm-legend-dot" style="background:var(--s-pending)"></span>Pending</span>
+            <span class="crm-legend-item"><span class="crm-legend-dot" style="background:var(--s-review)"></span>In Review</span>
+            <span class="crm-legend-item"><span class="crm-legend-dot" style="background:var(--s-notstarted)"></span>Not Started</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="crm-table-wrap">
+        <div class="crm-table-scroll">
+          <table class="crm-table" id="crmTable">
+            <thead>
+              <tr>
+                <th style="width:40px;"><input type="checkbox" class="crm-checkbox" id="selectAllTrips"></th>
+                <th style="width:40px;"></th>
+                <th data-col="guestName">Guest Name</th>
+                <th data-col="pax">No of Guest</th>
+                <th data-col="destination">Country</th>
+                <th data-col="startDate">Travel Start Date</th>
+                <th data-col="proposalStatus">Initial Proposal</th>
+                <th data-col="flightsStatus">Main Flights</th>
+                <th data-col="visaStatus">Visa</th>
+                <th data-col="hotelsStatus">Hotels</th>
+                <th data-col="sectorTicketsStatus">Sector Tickets</th>
+                <th data-col="sightseeingStatus">Sightseeing</th>
+                <th data-col="insuranceStatus">Insurance</th>
+                <th data-col="travelingStatus">Travefy</th>
+                <th data-col="travefyTaskListStatus">Travefy Task List</th>
+                <th data-col="tripFeedbackFormStatus">Trip Feedback Form</th>
+                <th data-col="owner">Ownership of work</th>
+                <th>Progress</th>
+              </tr>
+            </thead>
+            <tbody id="crmTbody">
+              <!-- Rows injected by JS -->
+            </tbody>
+          </table>
+        </div>
+        <div class="crm-table-footer">
+          <span id="tableFooterInfo">Showing 0 of 0 trips</span>
+          <div class="crm-pagination" id="crmPagination"></div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- ─── RIGHT PANEL ─── -->
+    <aside class="crm-right-panel" id="crmRightPanel">
+
+      <!-- Activity Feed -->
+      <div class="crm-panel-section">
+        <div class="crm-panel-title">Recent Activity</div>
+        <div id="activityFeed"></div>
+      </div>
+
+      <!-- Calendar Widget -->
+      <div class="crm-panel-section">
+        <div class="crm-panel-title">Upcoming Travel</div>
+        <div class="crm-calendar">
+          <div class="crm-cal-header">
+            <button class="crm-cal-nav" id="calPrev">‹</button>
+            <span id="calMonthLabel" style="font-weight:600;font-size:.83rem;color:var(--crm-text)"></span>
+            <button class="crm-cal-nav" id="calNext">›</button>
+          </div>
+          <div class="crm-cal-grid" id="calGrid"></div>
+        </div>
+      </div>
+
+      <!-- Upcoming Trips -->
+      <div class="crm-panel-section" style="flex:1;">
+        <div class="crm-panel-title">Trips Soon</div>
+        <div id="upcomingTrips" style="display:flex;flex-direction:column;gap:.5rem;font-size:.78rem;"></div>
+      </div>
+
+    </aside>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     SUBTASK MODAL
+════════════════════════════════════════════════ -->
+<div class="crm-modal-overlay" id="subtaskModal">
+  <div class="crm-modal" role="dialog" aria-modal="true" aria-labelledby="subtaskModalTitle">
+    <div class="crm-modal-header">
+      <div>
+        <div class="crm-modal-title" id="subtaskModalTitle">Subtasks</div>
+        <div class="crm-modal-subtitle" id="subtaskModalSubtitle"></div>
+      </div>
+      <button class="crm-modal-close" id="subtaskModalClose">✕</button>
+    </div>
+    <div class="crm-modal-body" id="subtaskModalBody">
+      <!-- subtask items injected -->
+    </div>
+    <div class="crm-modal-footer">
+      <button class="crm-btn crm-btn-ghost" id="btnApplyTemplate" style="font-size:.78rem; display:flex; align-items:center; gap:0.25rem;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg> Apply Template
+      </button>
+      <button class="crm-btn crm-btn-primary" id="btnSaveSubtasks">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Employee Modal -->
+<div class="crm-modal-overlay" id="employeeModal">
+  <div class="crm-modal" role="dialog" aria-modal="true" aria-labelledby="employeeModalTitle">
+    <div class="crm-modal-header">
+      <div>
+        <div class="crm-modal-title" id="employeeModalTitle">Employees</div>
+        <div class="crm-modal-subtitle">Add or remove people available for ownership and subtasks</div>
+      </div>
+      <button class="crm-modal-close" id="employeeModalClose">✕</button>
+    </div>
+    <div class="crm-modal-body">
+      <div class="crm-add-subtask-row">
+        <span style="color:var(--crm-text-3)">+</span>
+        <input class="crm-add-subtask-input" id="employeeNameInput" placeholder="Employee name">
+        <button class="crm-btn crm-btn-primary" id="btnAddEmployee" style="padding:.35rem .75rem;font-size:.75rem;">Add</button>
+      </div>
+      <div id="employeeList" style="display:flex;flex-direction:column;gap:.45rem;margin-top:.75rem;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     TASK TEMPLATE MODAL
+════════════════════════════════════════════════ -->
+<div class="crm-modal-overlay" id="templateModal">
+  <div class="crm-modal" role="dialog" aria-modal="true" aria-labelledby="templateModalTitle">
+    <div class="crm-modal-header">
+      <div>
+        <div class="crm-modal-title" id="templateModalTitle">Task Templates</div>
+        <div class="crm-modal-subtitle">Create reusable task lists and apply them to any trip</div>
+      </div>
+      <button class="crm-modal-close" id="templateModalClose">✕</button>
+    </div>
+    <div class="crm-modal-body">
+      <!-- New Template Form -->
+      <div style="padding:.75rem;background:var(--crm-surface-2);border:1.5px dashed var(--crm-border-2);border-radius:var(--crm-radius);display:flex;flex-direction:column;gap:.65rem;">
+        <div class="crm-form-label">New Template</div>
+        <input class="crm-form-input" id="tplNameInput" placeholder="Template name (e.g. Standard Visa Trip)">
+        <div id="tplTasksList" style="display:flex;flex-direction:column;gap:.4rem;">
+          <!-- tasks will be added -->
+        </div>
+        <div class="crm-add-subtask-row">
+          <span style="color:var(--crm-text-3)">+</span>
+          <input class="crm-add-subtask-input" id="tplNewTask" placeholder="Add a task to template…">
+          <button class="crm-btn crm-btn-ghost" id="btnAddTplTask" style="padding:.3rem .65rem;font-size:.75rem;">Add</button>
+        </div>
+        <div class="crm-reminder-row">
+          <span style="font-size:.78rem;color:var(--crm-text-3);">⏰ Remind</span>
+          <input type="number" id="tplReminderDays" min="1" max="90" placeholder="7" value="7">
+          <span style="font-size:.78rem;color:var(--crm-text-3);">days before trip</span>
+        </div>
+        <button class="crm-btn crm-btn-primary" id="btnSaveTemplate">Save Template</button>
+      </div>
+
+      <hr class="crm-divider">
+
+      <div class="crm-form-label">Saved Templates</div>
+      <div id="savedTemplatesList" style="display:flex;flex-direction:column;gap:.4rem;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     NEW / EDIT TRIP MODAL
+════════════════════════════════════════════════ -->
+<div class="crm-modal-overlay" id="tripModal">
+  <div class="crm-modal" role="dialog" aria-modal="true">
+    <div class="crm-modal-header">
+      <div>
+        <div class="crm-modal-title" id="tripModalTitle">New Trip</div>
+        <div class="crm-modal-subtitle">Fill in the trip details below</div>
+      </div>
+      <button class="crm-modal-close" id="tripModalClose">✕</button>
+    </div>
+    <div class="crm-modal-body">
+      <div class="crm-form-row">
+        <div class="crm-form-group" style="grid-column:1/-1;">
+          <label class="crm-form-label">Guest / Trip Name</label>
+          <input class="crm-form-input" id="tf-guestName" placeholder="e.g. Riya Sharma">
+        </div>
+        <div class="crm-form-group">
+          <label class="crm-form-label">Destination / Country</label>
+          <input class="crm-form-input" id="tf-destination" placeholder="e.g. Maldives">
+        </div>
+        <div class="crm-form-group">
+          <label class="crm-form-label">Travel Start Date</label>
+          <input class="crm-form-input" type="date" id="tf-startDate">
+        </div>
+        <div class="crm-form-group">
+          <label class="crm-form-label">Owner / Assigned Staff</label>
+          <select class="crm-form-select" id="tf-owner"></select>
+        </div>
+      </div>
+    </div>
+    <div class="crm-modal-footer">
+      <button class="crm-btn crm-btn-ghost" id="tripModalCancel">Cancel</button>
+      <button class="crm-btn crm-btn-primary" id="tripModalSave">Save Trip</button>
+    </div>
+  </div>
+</div>
+
+<!-- Selection Strip for Bulk Actions -->
+<div class="crm-selection-strip" id="crmSelectionStrip">
+  <div class="crm-selection-info">
+    <span id="crmSelectionCount">0</span> trips selected
+  </div>
+  <div class="crm-selection-actions">
+    <button class="crm-btn crm-btn-ghost" id="btnCancelSelection">Cancel</button>
+    <button class="crm-btn crm-btn-danger" id="btnBulkDelete">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      Delete Selected
+    </button>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="crm-toast-container" id="crmToastContainer"></div>
+
+<script src="/static/ownership.js?v=20260528b"></script>
+<script>
+  // Sync with main app sidebar / theme
+  document.addEventListener('DOMContentLoaded', () => {
+    // Sidebar open button
+    const menuToggle = document.getElementById('menuToggle');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
+    if (menuToggle && sidebar) {
+      menuToggle.addEventListener('click', () => {
+        sidebar.classList.add('active');
+        if (sidebarOverlay) sidebarOverlay.classList.add('active');
+        const menuBadge = document.getElementById('menuNotificationBadge');
+        if (menuBadge) menuBadge.style.display = 'none';
+      });
+    }
+    const closeSidebar = () => {
+      if (sidebar) sidebar.classList.remove('active');
+      if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+    };
+    const sidebarClose = document.getElementById('sidebarClose');
+    if (sidebarClose) sidebarClose.addEventListener('click', closeSidebar);
+    if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
+    // Sidebar auth
+    fetch('/api/user').then(r => r.ok ? r.json() : null).then(user => {
+      if (!user) return;
+      const el = document.getElementById('sidebarUserName');
+      if (el) el.textContent = user.full_name || user.username || 'Guest User';
+      const handle = document.getElementById('sidebarUserHandle');
+      if (handle) handle.textContent = user.username ? '@' + user.username : '';
+      const av = document.getElementById('sidebarAvatar');
+      if (av) av.textContent = (user.full_name || user.username || 'U').charAt(0).toUpperCase();
+      const authBtn = document.getElementById('sidebarAuthBtn');
+      if (authBtn) {
+        authBtn.textContent = '🚪 Logout';
+        authBtn.classList.add('logout');
+        authBtn.onclick = async () => {
+          await fetch('/api/logout', { method: 'POST' });
+          window.location.href = '/login';
+        };
+      }
+    }).catch(() => {});
+
+    // Sidebar theme toggle (dark mode for main app - keep in sync)
+    const sidebarThemeToggle = document.getElementById('sidebarThemeToggle');
+    if (sidebarThemeToggle) {
+      sidebarThemeToggle.addEventListener('click', () => {
+        const html = document.documentElement;
+        const isDark = html.getAttribute('data-theme') === 'dark';
+        html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+        const toggleText = document.getElementById('themeToggleText');
+        if (toggleText) toggleText.textContent = isDark ? 'Dark Mode' : 'Light Mode';
+      });
+    }
+  });
+</script>
+</body>
+</html>

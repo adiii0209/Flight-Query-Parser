@@ -22,11 +22,16 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import defer, load_only, selectinload
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from functools import wraps
 import hashlib
 from query_parser import extract_flight, extract_multiple_flights
-from models import User, Customer, Itinerary, Ticket, TicketRead, Aggregator, LedgerEntry, TicketOperation, OperationLedgerLink, BookingGroup, FareRule
+from models import (
+    User, Customer, Itinerary, Ticket, TicketRead, Aggregator, LedgerEntry,
+    TicketOperation, OperationLedgerLink, BookingGroup, FareRule,
+    OwnershipTrip, OwnershipSubtask, OwnershipReminder, OwnershipTaskTemplate,
+    OwnershipTaskTemplateItem, OwnershipEmployee,
+)
 from extensions import db
 from cache_backend import DashboardCache
 
@@ -286,6 +291,10 @@ def _json_dict(value):
     return parsed if isinstance(parsed, dict) else {}
 _TICKETS_DUPLICATES_CACHE_TTL_SECONDS = max(int(os.getenv("TICKETS_DUPLICATES_CACHE_TTL_SECONDS", "20") or 20), 1)
 _TICKETS_MERGED_HISTORY_CACHE_TTL_SECONDS = max(int(os.getenv("TICKETS_MERGED_HISTORY_CACHE_TTL_SECONDS", "30") or 30), 1)
+_OWNERSHIP_CACHE_TTL_SECONDS = max(int(os.getenv("OWNERSHIP_CACHE_TTL_SECONDS", "120") or 120), 5)
+_ownership_streams = set()
+_ownership_streams_lock = threading.Lock()
+_OWNERSHIP_REDIS_CHANNEL = os.getenv("OWNERSHIP_REDIS_CHANNEL", "ownership-events")
 
 # Register API v2 Blueprint
 # Register API v2 Blueprint
@@ -1024,6 +1033,12 @@ def _build_cards_render_groups(flights, trip_type, unit_flights):
                 "flights": [build_flight_view(flight)],
             })
     return groups
+
+@app.route("/ownership")
+@login_required
+def ownership_page():
+    """Serve the Ownership CRM dashboard"""
+    return render_template('ownership.html')
 
 @app.route("/itineraries")
 def itineraries_page():
@@ -2549,6 +2564,11 @@ def _create_indexes_if_missing():
         "CREATE INDEX IF NOT EXISTS ix_ticket_read_user_id ON ticket_read (user_id)",
         "CREATE INDEX IF NOT EXISTS ix_ticket_read_ticket_id ON ticket_read (ticket_id)",
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_ticket_read_user_ticket ON ticket_read (user_id, ticket_id)",
+        "CREATE INDEX IF NOT EXISTS ix_ownership_trip_user_start ON ownership_trip (user_id, start_date)",
+        "CREATE INDEX IF NOT EXISTS ix_ownership_trip_owner ON ownership_trip (owner)",
+        "CREATE INDEX IF NOT EXISTS ix_ownership_trip_source_row ON ownership_trip (source_row)",
+        "CREATE INDEX IF NOT EXISTS ix_ownership_trip_statuses ON ownership_trip (user_id, owner, start_date, task_status)",
+        "CREATE INDEX IF NOT EXISTS ix_ownership_employee_active ON ownership_employee (is_active)",
     ]
     for statement in statements:
         db.session.execute(text(statement))
@@ -2630,6 +2650,51 @@ def _upgrade_itinerary_json_columns_for_postgres():
     db.session.commit()
 
 
+def _upgrade_ownership_json_columns_for_postgres():
+    engine = db.engine
+    if engine.dialect.name != "postgresql":
+        return
+    if "ownership_trip" not in inspect(engine).get_table_names():
+        return
+
+    columns = {
+        column["name"]: str(column.get("type") or "").lower()
+        for column in inspect(engine).get_columns("ownership_trip")
+    }
+    json_columns = {
+        "subtasks_json": "{}",
+        "reminders_json": "[]",
+        "raw_sheet_data": "{}",
+    }
+    for column_name, empty_json in json_columns.items():
+        column_type = columns.get(column_name, "")
+        if not column_type or "jsonb" in column_type:
+            continue
+        if "json" in column_type:
+            db.session.execute(text(
+                f"ALTER TABLE ownership_trip ALTER COLUMN {column_name} TYPE JSONB USING COALESCE({column_name}, CAST(:empty_json AS json))::jsonb"
+            ), {"empty_json": empty_json})
+        else:
+            db.session.execute(text(
+                f"""
+                ALTER TABLE ownership_trip
+                ALTER COLUMN {column_name}
+                TYPE JSONB
+                USING CASE
+                    WHEN {column_name} IS NULL OR btrim({column_name}::text) IN ('', 'null') THEN CAST(:empty_json AS jsonb)
+                    ELSE {column_name}::jsonb
+                END
+                """
+            ), {"empty_json": empty_json})
+    db.session.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_ownership_trip_subtasks_json_gin ON ownership_trip USING GIN (subtasks_json)"
+    ))
+    db.session.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_ownership_trip_reminders_json_gin ON ownership_trip USING GIN (reminders_json)"
+    ))
+    db.session.commit()
+
+
 def ensure_schema_compatibility():
     db.create_all()
 
@@ -2652,6 +2717,9 @@ def ensure_schema_compatibility():
     _add_column_if_missing("hotel_booking", "check_in_time", "VARCHAR(50)")
     _add_column_if_missing("hotel_booking", "check_out_time", "VARCHAR(50)")
     _add_column_if_missing("hotel_booking", "rooms_json", "TEXT")
+    _add_column_if_missing("ownership_trip", "subtasks_json", "TEXT")
+    _add_column_if_missing("ownership_trip", "reminders_json", "TEXT")
+    _add_column_if_missing("ownership_trip", "raw_sheet_data", "TEXT")
 
     _add_column_if_missing("operation_ledger_link", "created_at", "TIMESTAMP")
     _add_column_if_missing("operation_ledger_link", "user_id", "VARCHAR")
@@ -2661,6 +2729,7 @@ def ensure_schema_compatibility():
     _create_indexes_if_missing()
     _upgrade_ticket_json_columns_for_postgres()
     _upgrade_itinerary_json_columns_for_postgres()
+    _upgrade_ownership_json_columns_for_postgres()
 
 # ==================== LEDGER ROUTES ====================
 
@@ -6364,6 +6433,544 @@ def delete_fare_rule(rule_id):
     db.session.delete(rule)
     db.session.commit()
     return jsonify({"success": True})
+
+
+# ==================== OWNERSHIP ROUTES ====================
+
+OWNERSHIP_SHEET_PATH = os.path.join(os.path.dirname(__file__), "Copy of Ownership Sheet.xlsx")
+OWNERSHIP_STATUS_FIELDS = {
+    "proposalStatus": "proposal_status",
+    "flightsStatus": "flights_status",
+    "visaStatus": "visa_status",
+    "hotelsStatus": "hotels_status",
+    "sectorTicketsStatus": "sector_tickets_status",
+    "sightseeingStatus": "sightseeing_status",
+    "insuranceStatus": "insurance_status",
+    "travelingStatus": "traveling_status",
+    "travefyTaskListStatus": "travefy_task_list_status",
+    "tripFeedbackFormStatus": "trip_feedback_form_status",
+    "taskStatus": "task_status",
+}
+OWNERSHIP_TRIP_FIELDS = {
+    "guestName": "guest_name",
+    "pax": "pax",
+    "destination": "destination",
+    "startDate": "start_date",
+    "endDate": "end_date",
+    "owner": "owner",
+    "currentTask": "current_task",
+    "priority": "priority",
+    "lastStatusUpdateDate": "last_status_update_date",
+    "latestUpdate": "latest_update",
+    "presentWorkAssignedTo": "present_work_assigned_to",
+    **OWNERSHIP_STATUS_FIELDS,
+}
+OWNERSHIP_STATUS_VALUES = {
+    "complete": "complete",
+    "completed": "complete",
+    "ongoing": "ongoing",
+    "in progress": "ongoing",
+    "pending": "pending",
+    "review": "review",
+    "in review": "review",
+    "not started": "notstarted",
+    "notstarted": "notstarted",
+    "not required": "notrequired",
+    "trip updates": "review",
+}
+OWNERSHIP_DEFAULT_SUBTASKS = {
+    "visa": [],
+    "flights": [],
+    "hotels": [],
+    "sectorTickets": [],
+    "sightseeing": [],
+    "insurance": [],
+    "travefy": [],
+    "travefyTaskList": [],
+    "tripFeedbackForm": [],
+}
+
+
+def _ownership_user_id():
+    return session.get("user_id")
+
+
+def _normalize_owner(value):
+    return str(value or "").strip()
+
+
+def _normalize_ownership_status(value, default="pending"):
+    if value is None:
+        return default
+    text_value = str(value).strip()
+    if not text_value:
+        return default
+    return OWNERSHIP_STATUS_VALUES.get(text_value.lower(), text_value.lower().replace(" ", ""))
+
+
+def _parse_ownership_date(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text_value = str(value).strip()
+    if not text_value:
+        return None
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(text_value, fmt).date()
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(text_value.replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
+def _ownership_json_safe(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, (date, time)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _ownership_json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_ownership_json_safe(item) for item in value]
+    return value
+
+
+def _ownership_query():
+    user_id = _ownership_user_id()
+    query = OwnershipTrip.query
+    if user_id:
+        return query.filter(db.or_(OwnershipTrip.user_id == user_id, OwnershipTrip.user_id.is_(None)))
+    return query
+
+
+def _ownership_cache_version():
+    return _dashboard_cache.get_int("ownership:version", default=1)
+
+
+def _ownership_cache_get(kind):
+    key = f"ownership:{kind}:v:{_ownership_cache_version()}"
+    return _dashboard_cache.get_json(key), key
+
+
+def _ownership_cache_set(key, payload):
+    _dashboard_cache.set_json(key, payload, _OWNERSHIP_CACHE_TTL_SECONDS)
+
+
+def _publish_ownership_event(action="refresh", **payload):
+    version = _dashboard_cache.incr("ownership:version")
+    event_payload = {
+        "event": action,
+        "version": version,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        **payload,
+    }
+    with _ownership_streams_lock:
+        listeners = list(_ownership_streams)
+    for listener in listeners:
+        try:
+            listener.put_nowait(event_payload)
+        except queue.Full:
+            continue
+    redis_client = getattr(_dashboard_cache, "_redis", None)
+    if redis_client is not None:
+        try:
+            redis_client.publish(_dashboard_cache.namespaced(_OWNERSHIP_REDIS_CHANNEL), json.dumps(event_payload))
+        except Exception:
+            pass
+    return event_payload
+
+
+def _employee_color(name):
+    palette = ["#8b5cf6", "#3b82f6", "#ec4899", "#14b8a6", "#f59e0b", "#10b981", "#ef4444", "#06b6d4"]
+    total = sum(ord(ch) for ch in (name or ""))
+    return palette[total % len(palette)]
+
+
+def _ensure_ownership_employees():
+    if OwnershipEmployee.query.filter_by(is_active=True).first():
+        return
+    names = [
+        name for (name,) in db.session.query(OwnershipTrip.owner)
+        .filter(OwnershipTrip.owner.isnot(None), OwnershipTrip.owner != "")
+        .distinct()
+        .all()
+    ]
+    for name in sorted(set(n.strip() for n in names if n and n.strip())):
+        db.session.add(OwnershipEmployee(name=name, color=_employee_color(name), is_active=True))
+    db.session.commit()
+
+
+def _apply_trip_payload(trip, payload):
+    for client_field, model_field in OWNERSHIP_TRIP_FIELDS.items():
+        if client_field not in payload:
+            continue
+        value = payload.get(client_field)
+        if model_field in OWNERSHIP_STATUS_FIELDS.values():
+            value = _normalize_ownership_status(value)
+        elif model_field in {"start_date", "end_date", "last_status_update_date"}:
+            value = _parse_ownership_date(value)
+        elif model_field == "pax":
+            try:
+                value = max(int(value or 1), 1)
+            except (TypeError, ValueError):
+                value = 1
+        elif model_field == "owner":
+            value = _normalize_owner(value)
+        elif value is not None:
+            value = str(value).strip()
+        setattr(trip, model_field, value)
+
+    if "subtasks" in payload:
+        _replace_ownership_subtasks(trip, payload.get("subtasks") or {})
+    if "reminders" in payload:
+        _replace_ownership_reminders(trip, payload.get("reminders") or [])
+    return trip
+
+
+def _replace_ownership_subtasks(trip, groups):
+    normalized = deepcopy(OWNERSHIP_DEFAULT_SUBTASKS)
+    if not isinstance(groups, dict):
+        trip.subtasks_json = normalized
+        return
+    for group_name, items in groups.items():
+        if not isinstance(items, list):
+            continue
+        normalized.setdefault(str(group_name), [])
+        for idx, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            text_value = str(item.get("text") or "").strip()
+            if not text_value:
+                continue
+            due_date = _parse_ownership_date(item.get("dueDate"))
+            normalized[str(group_name)].append({
+                "id": str(item.get("id") or uuid.uuid4()),
+                "text": text_value,
+                "done": bool(item.get("done")),
+                "assignee": _normalize_owner(item.get("assignee")),
+                "dueDate": due_date.isoformat() if due_date else "",
+                "metadata": item.get("metadata") if isinstance(item.get("metadata"), dict) else {},
+            })
+    trip.subtasks_json = normalized
+
+
+def _replace_ownership_reminders(trip, reminders):
+    normalized = []
+    if not isinstance(reminders, list):
+        trip.reminders_json = normalized
+        return
+    seen_days = set()
+    for item in reminders:
+        if not isinstance(item, dict):
+            continue
+        try:
+            days = int(item.get("days") or 0)
+        except (TypeError, ValueError):
+            continue
+        if days <= 0 or days in seen_days:
+            continue
+        seen_days.add(days)
+        normalized.append({
+            "id": str(item.get("id") or uuid.uuid4()),
+            "days": days,
+            "label": str(item.get("label") or f"{days} days before").strip(),
+        })
+    trip.reminders_json = normalized
+
+
+def _sheet_row_to_trip_payload(ws, row):
+    values = {col: ws.cell(row, col).value for col in range(1, 20)}
+    return {
+        "guestName": str(values.get(2) or "").strip(),
+        "pax": values.get(3) or 1,
+        "destination": str(values.get(4) or "").strip(),
+        "startDate": _parse_ownership_date(values.get(5)),
+        "proposalStatus": _normalize_ownership_status(values.get(6)),
+        "flightsStatus": _normalize_ownership_status(values.get(7)),
+        "visaStatus": _normalize_ownership_status(values.get(8)),
+        "hotelsStatus": _normalize_ownership_status(values.get(9)),
+        "sectorTicketsStatus": _normalize_ownership_status(values.get(10)),
+        "sightseeingStatus": _normalize_ownership_status(values.get(11)),
+        "insuranceStatus": _normalize_ownership_status(values.get(12)),
+        "travelingStatus": _normalize_ownership_status(values.get(13)),
+        "travefyTaskListStatus": _normalize_ownership_status(values.get(14)),
+        "tripFeedbackFormStatus": _normalize_ownership_status(values.get(15)),
+        "owner": _normalize_owner(values.get(16)),
+        "lastStatusUpdateDate": _parse_ownership_date(values.get(17)),
+        "latestUpdate": str(values.get(18) or "").strip(),
+        "presentWorkAssignedTo": _normalize_owner(values.get(19)),
+        "priority": "medium",
+        "taskStatus": "pending",
+        "subtasks": deepcopy(OWNERSHIP_DEFAULT_SUBTASKS),
+        "reminders": [],
+        "_raw": {str(col): _ownership_json_safe(value) for col, value in values.items()},
+    }
+
+
+def seed_ownership_from_workbook(force=False):
+    if not os.path.exists(OWNERSHIP_SHEET_PATH):
+        return {"created": 0, "updated": 0, "skipped": 0, "reason": "workbook_missing"}
+    if not force and OwnershipTrip.query.first():
+        return {"created": 0, "updated": 0, "skipped": 0, "reason": "already_seeded"}
+
+    try:
+        import openpyxl
+    except Exception as exc:
+        app.logger.warning("openpyxl is required to import ownership workbook: %s", exc)
+        return {"created": 0, "updated": 0, "skipped": 0, "reason": "openpyxl_missing"}
+
+    wb = openpyxl.load_workbook(OWNERSHIP_SHEET_PATH, data_only=False)
+    ws = wb.active
+    created = updated = skipped = 0
+    for row in range(3, ws.max_row + 1):
+        payload = _sheet_row_to_trip_payload(ws, row)
+        if not payload["guestName"]:
+            skipped += 1
+            continue
+        trip = OwnershipTrip.query.filter_by(source="ownership_sheet", source_row=row).first()
+        if trip is None:
+            trip = OwnershipTrip(source="ownership_sheet", source_row=row)
+            created += 1
+        else:
+            updated += 1
+        raw_data = payload.pop("_raw", {})
+        _apply_trip_payload(trip, payload)
+        trip.raw_sheet_data = raw_data
+        db.session.add(trip)
+    db.session.commit()
+    _publish_ownership_event("sheet_imported")
+    return {"created": created, "updated": updated, "skipped": skipped}
+
+
+@app.route("/api/ownership/trips", methods=["GET"])
+def get_ownership_trips():
+    cached, cache_key = _ownership_cache_get("trips")
+    if cached is not None:
+        response = jsonify(cached)
+        response.headers["X-Cache"] = "HIT"
+        response.headers["X-Cache-Backend"] = _dashboard_cache.backend_name
+        return response
+    trips = _ownership_query().order_by(
+        OwnershipTrip.start_date.desc().nullslast(),
+        OwnershipTrip.source_row.asc().nullslast(),
+        OwnershipTrip.created_at.desc(),
+    ).all()
+    payload = {"trips": [trip.to_dict() for trip in trips], "cacheVersion": _ownership_cache_version()}
+    _ownership_cache_set(cache_key, payload)
+    response = jsonify(payload)
+    response.headers["X-Cache"] = "MISS"
+    response.headers["X-Cache-Backend"] = _dashboard_cache.backend_name
+    return response
+
+
+@app.route("/api/ownership/trips/import-sheet", methods=["POST"])
+def import_ownership_sheet():
+    result = seed_ownership_from_workbook(force=True)
+    return jsonify({"success": True, "result": result})
+
+
+@app.route("/api/ownership/trips", methods=["POST"])
+def create_ownership_trip():
+    payload = request.get_json(force=True) or {}
+    if not str(payload.get("guestName") or "").strip():
+        return jsonify({"error": "Guest / trip name is required"}), 400
+    trip = OwnershipTrip(user_id=_ownership_user_id())
+    _apply_trip_payload(trip, payload)
+    db.session.add(trip)
+    db.session.commit()
+    _publish_ownership_event("trip_created", tripId=trip.id)
+    return jsonify({"trip": trip.to_dict()}), 201
+
+
+@app.route("/api/ownership/trips/<trip_id>", methods=["PATCH", "PUT"])
+def update_ownership_trip(trip_id):
+    trip = _ownership_query().filter(OwnershipTrip.id == trip_id).first()
+    if not trip:
+        return jsonify({"error": "Trip not found"}), 404
+    payload = request.get_json(force=True) or {}
+    _apply_trip_payload(trip, payload)
+    db.session.commit()
+    _publish_ownership_event("trip_updated", tripId=trip.id)
+    return jsonify({"trip": trip.to_dict()})
+
+
+@app.route("/api/ownership/trips/<trip_id>", methods=["DELETE"])
+def delete_ownership_trip(trip_id):
+    trip = _ownership_query().filter(OwnershipTrip.id == trip_id).first()
+    if not trip:
+        return jsonify({"error": "Trip not found"}), 404
+    db.session.delete(trip)
+    db.session.commit()
+    _publish_ownership_event("trip_deleted", tripId=trip_id)
+    return jsonify({"success": True})
+
+
+@app.route("/api/ownership/templates", methods=["GET"])
+def get_ownership_templates():
+    user_id = _ownership_user_id()
+    cached, cache_key = _ownership_cache_get(f"templates:{user_id or 'global'}")
+    if cached is not None:
+        response = jsonify(cached)
+        response.headers["X-Cache"] = "HIT"
+        response.headers["X-Cache-Backend"] = _dashboard_cache.backend_name
+        return response
+    query = OwnershipTaskTemplate.query
+    if user_id:
+        query = query.filter(db.or_(OwnershipTaskTemplate.user_id == user_id, OwnershipTaskTemplate.user_id.is_(None)))
+    templates = query.order_by(OwnershipTaskTemplate.name.asc()).all()
+    payload = {"templates": [template.to_dict() for template in templates], "cacheVersion": _ownership_cache_version()}
+    _ownership_cache_set(cache_key, payload)
+    response = jsonify(payload)
+    response.headers["X-Cache"] = "MISS"
+    response.headers["X-Cache-Backend"] = _dashboard_cache.backend_name
+    return response
+
+
+@app.route("/api/ownership/templates", methods=["POST"])
+def create_ownership_template():
+    payload = request.get_json(force=True) or {}
+    name = str(payload.get("name") or "").strip()
+    tasks = payload.get("tasks") or []
+    if not name:
+        return jsonify({"error": "Template name is required"}), 400
+    template = OwnershipTaskTemplate(
+        user_id=_ownership_user_id(),
+        name=name,
+        task_group=str(payload.get("taskGroup") or "").strip(),
+        reminder_days=payload.get("reminderDays") or None,
+    )
+    for idx, text_value in enumerate(tasks):
+        text_value = str(text_value or "").strip()
+        if text_value:
+            template.tasks.append(OwnershipTaskTemplateItem(row_order=idx, text=text_value))
+    db.session.add(template)
+    db.session.commit()
+    _publish_ownership_event("template_created", templateId=template.id)
+    return jsonify({"template": template.to_dict()}), 201
+
+
+@app.route("/api/ownership/templates/<template_id>", methods=["DELETE"])
+def delete_ownership_template(template_id):
+    user_id = _ownership_user_id()
+    query = OwnershipTaskTemplate.query.filter_by(id=template_id)
+    if user_id:
+        query = query.filter(db.or_(OwnershipTaskTemplate.user_id == user_id, OwnershipTaskTemplate.user_id.is_(None)))
+    template = query.first()
+    if not template:
+        return jsonify({"error": "Template not found"}), 404
+    db.session.delete(template)
+    db.session.commit()
+    _publish_ownership_event("template_deleted", templateId=template_id)
+    return jsonify({"success": True})
+
+
+@app.route("/api/ownership/employees", methods=["GET"])
+def get_ownership_employees():
+    _ensure_ownership_employees()
+    cached, cache_key = _ownership_cache_get("employees")
+    if cached is not None:
+        response = jsonify(cached)
+        response.headers["X-Cache"] = "HIT"
+        response.headers["X-Cache-Backend"] = _dashboard_cache.backend_name
+        return response
+    employees = OwnershipEmployee.query.filter_by(is_active=True).order_by(OwnershipEmployee.name.asc()).all()
+    payload = {"employees": [employee.to_dict() for employee in employees], "cacheVersion": _ownership_cache_version()}
+    _ownership_cache_set(cache_key, payload)
+    response = jsonify(payload)
+    response.headers["X-Cache"] = "MISS"
+    response.headers["X-Cache-Backend"] = _dashboard_cache.backend_name
+    return response
+
+
+@app.route("/api/ownership/employees", methods=["POST"])
+def create_ownership_employee():
+    payload = request.get_json(force=True) or {}
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Employee name is required"}), 400
+    employee = OwnershipEmployee.query.filter(db.func.lower(OwnershipEmployee.name) == name.lower()).first()
+    if employee:
+        employee.is_active = True
+        employee.color = str(payload.get("color") or employee.color or _employee_color(name)).strip()
+    else:
+        employee = OwnershipEmployee(
+            name=name,
+            color=str(payload.get("color") or _employee_color(name)).strip(),
+            is_active=True,
+        )
+        db.session.add(employee)
+    db.session.commit()
+    _publish_ownership_event("employee_saved", employeeId=employee.id)
+    return jsonify({"employee": employee.to_dict()}), 201
+
+
+@app.route("/api/ownership/employees/<employee_id>", methods=["DELETE"])
+def delete_ownership_employee(employee_id):
+    employee = OwnershipEmployee.query.get(employee_id)
+    if not employee:
+        return jsonify({"error": "Employee not found"}), 404
+    employee.is_active = False
+    db.session.commit()
+    _publish_ownership_event("employee_deleted", employeeId=employee_id)
+    return jsonify({"success": True})
+
+
+@app.route("/api/ownership/stream", methods=["GET"])
+def ownership_stream():
+    listener = queue.Queue(maxsize=20)
+    with _ownership_streams_lock:
+        _ownership_streams.add(listener)
+
+    redis_client = getattr(_dashboard_cache, "_redis", None)
+    pubsub = None
+    if redis_client is not None:
+        try:
+            pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
+            pubsub.subscribe(_dashboard_cache.namespaced(_OWNERSHIP_REDIS_CHANNEL))
+        except Exception:
+            pubsub = None
+
+    def stream():
+        try:
+            yield f"event: ready\ndata: {json.dumps({'version': _ownership_cache_version()})}\n\n"
+            last_ping = datetime.utcnow()
+            while True:
+                delivered = False
+                try:
+                    event_payload = listener.get(timeout=1)
+                    yield f"event: ownership\ndata: {json.dumps(event_payload)}\n\n"
+                    delivered = True
+                except queue.Empty:
+                    pass
+
+                if pubsub is not None:
+                    try:
+                        message = pubsub.get_message(timeout=0.01)
+                        if message and message.get("data"):
+                            yield f"event: ownership\ndata: {message['data']}\n\n"
+                            delivered = True
+                    except Exception:
+                        pass
+
+                if not delivered and (datetime.utcnow() - last_ping).total_seconds() >= 25:
+                    last_ping = datetime.utcnow()
+                    yield f"event: ping\ndata: {json.dumps({'timestamp': last_ping.isoformat() + 'Z'})}\n\n"
+        finally:
+            with _ownership_streams_lock:
+                _ownership_streams.discard(listener)
+            if pubsub is not None:
+                try:
+                    pubsub.close()
+                except Exception:
+                    pass
+
+    return Response(stream_with_context(stream()), mimetype="text/event-stream")
 
 
 # ==================== DATABASE INITIALIZATION ====================

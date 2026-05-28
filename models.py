@@ -231,6 +231,230 @@ class OperationLedgerLink(db.Model):
     ledger_entry_id = db.Column(db.String, db.ForeignKey('ledger_entry.id'), nullable=False)
 
 
+class OwnershipTrip(db.Model):
+    """Production storage for the travel operations ownership dashboard."""
+    __tablename__ = "ownership_trip"
+    __table_args__ = (
+        db.Index("ix_ownership_trip_user_start", "user_id", "start_date"),
+        db.Index("ix_ownership_trip_owner", "owner"),
+        db.Index("ix_ownership_trip_source_row", "source_row"),
+    )
+
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user_id = db.Column(db.String, db.ForeignKey("user.id"), nullable=True)
+    source_row = db.Column(db.Integer, nullable=True)
+    source = db.Column(db.String(80), default="ownership_sheet")
+
+    guest_name = db.Column(db.String(255), nullable=False)
+    pax = db.Column(db.Integer, default=1)
+    destination = db.Column(db.String(255), default="")
+    start_date = db.Column(db.Date, nullable=True)
+    end_date = db.Column(db.Date, nullable=True)
+
+    proposal_status = db.Column(db.String(30), default="pending", nullable=False)
+    flights_status = db.Column(db.String(30), default="pending", nullable=False)
+    visa_status = db.Column(db.String(30), default="pending", nullable=False)
+    hotels_status = db.Column(db.String(30), default="pending", nullable=False)
+    sector_tickets_status = db.Column(db.String(30), default="pending", nullable=False)
+    sightseeing_status = db.Column(db.String(30), default="pending", nullable=False)
+    insurance_status = db.Column(db.String(30), default="pending", nullable=False)
+    traveling_status = db.Column(db.String(30), default="pending", nullable=False)
+    travefy_task_list_status = db.Column(db.String(30), default="pending", nullable=False)
+    trip_feedback_form_status = db.Column(db.String(30), default="pending", nullable=False)
+
+    owner = db.Column(db.String(120), default="")
+    current_task = db.Column(db.Text, default="")
+    task_status = db.Column(db.String(30), default="pending", nullable=False)
+    priority = db.Column(db.String(20), default="medium", nullable=False)
+    last_status_update_date = db.Column(db.Date, nullable=True)
+    latest_update = db.Column(db.Text, default="")
+    present_work_assigned_to = db.Column(db.String(120), default="")
+    subtasks_json = db.Column(CompatJSON(empty_factory=dict))
+    reminders_json = db.Column(CompatJSON(empty_factory=list))
+    raw_sheet_data = db.Column(CompatJSON(empty_factory=dict))
+
+    subtasks = db.relationship(
+        "OwnershipSubtask",
+        backref="trip",
+        lazy=True,
+        cascade="all, delete-orphan",
+        order_by="OwnershipSubtask.row_order",
+    )
+    reminders = db.relationship(
+        "OwnershipReminder",
+        backref="trip",
+        lazy=True,
+        cascade="all, delete-orphan",
+        order_by="OwnershipReminder.days_before",
+    )
+
+    def to_dict(self):
+        subtask_groups = self.subtasks_json if isinstance(self.subtasks_json, dict) else {
+            "visa": [],
+            "flights": [],
+            "hotels": [],
+            "sectorTickets": [],
+            "sightseeing": [],
+            "insurance": [],
+            "travefy": [],
+            "travefyTaskList": [],
+            "tripFeedbackForm": [],
+        }
+        if not any(subtask_groups.values()) and self.subtasks:
+            for subtask in self.subtasks or []:
+                subtask_groups.setdefault(subtask.task_group, []).append(subtask.to_dict())
+
+        return {
+            "id": self.id,
+            "guestName": self.guest_name or "",
+            "pax": self.pax or 1,
+            "destination": self.destination or "",
+            "startDate": self.start_date.isoformat() if self.start_date else "",
+            "endDate": self.end_date.isoformat() if self.end_date else "",
+            "proposalStatus": self.proposal_status or "pending",
+            "flightsStatus": self.flights_status or "pending",
+            "visaStatus": self.visa_status or "pending",
+            "hotelsStatus": self.hotels_status or "pending",
+            "sectorTicketsStatus": self.sector_tickets_status or "pending",
+            "sightseeingStatus": self.sightseeing_status or "pending",
+            "insuranceStatus": self.insurance_status or "pending",
+            "travelingStatus": self.traveling_status or "pending",
+            "travefyTaskListStatus": self.travefy_task_list_status or "pending",
+            "tripFeedbackFormStatus": self.trip_feedback_form_status or "pending",
+            "owner": self.owner or "",
+            "currentTask": self.current_task or "",
+            "taskStatus": self.task_status or "pending",
+            "priority": self.priority or "medium",
+            "lastStatusUpdateDate": self.last_status_update_date.isoformat() if self.last_status_update_date else "",
+            "latestUpdate": self.latest_update or "",
+            "presentWorkAssignedTo": self.present_work_assigned_to or "",
+            "subtasks": subtask_groups,
+            "reminders": self.reminders_json if isinstance(self.reminders_json, list) else [reminder.to_dict() for reminder in self.reminders or []],
+        }
+
+
+class OwnershipSubtask(db.Model):
+    """Individual actionable checklist items under a trip service area."""
+    __tablename__ = "ownership_subtask"
+    __table_args__ = (
+        db.Index("ix_ownership_subtask_trip_group", "trip_id", "task_group"),
+        db.Index("ix_ownership_subtask_assignee", "assignee"),
+    )
+
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    trip_id = db.Column(db.String, db.ForeignKey("ownership_trip.id"), nullable=False)
+    task_group = db.Column(db.String(40), nullable=False)
+    row_order = db.Column(db.Integer, default=0)
+    text = db.Column(db.Text, nullable=False)
+    done = db.Column(db.Boolean, default=False, nullable=False)
+    assignee = db.Column(db.String(120), default="")
+    due_date = db.Column(db.Date, nullable=True)
+    metadata_json = db.Column(CompatJSON(empty_factory=dict))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "text": self.text or "",
+            "done": bool(self.done),
+            "assignee": self.assignee or "",
+            "dueDate": self.due_date.isoformat() if self.due_date else "",
+            "metadata": self.metadata_json or {},
+        }
+
+
+class OwnershipReminder(db.Model):
+    """Reminder offsets attached to an ownership trip."""
+    __tablename__ = "ownership_reminder"
+    __table_args__ = (
+        UniqueConstraint("trip_id", "days_before", name="uq_ownership_reminder_trip_days"),
+    )
+
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    trip_id = db.Column(db.String, db.ForeignKey("ownership_trip.id"), nullable=False)
+    days_before = db.Column(db.Integer, nullable=False)
+    label = db.Column(db.String(120), default="")
+
+    def to_dict(self):
+        days = self.days_before or 0
+        return {
+            "id": self.id,
+            "days": days,
+            "label": self.label or f"{days} days before",
+        }
+
+
+class OwnershipTaskTemplate(db.Model):
+    """Reusable ownership task templates for repeatable trip workflows."""
+    __tablename__ = "ownership_task_template"
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_ownership_template_user_name"),
+        db.Index("ix_ownership_template_user", "user_id"),
+    )
+
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    user_id = db.Column(db.String, db.ForeignKey("user.id"), nullable=True)
+    name = db.Column(db.String(160), nullable=False)
+    task_group = db.Column(db.String(40), default="")
+    reminder_days = db.Column(db.Integer, nullable=True)
+    tasks = db.relationship(
+        "OwnershipTaskTemplateItem",
+        backref="template",
+        lazy=True,
+        cascade="all, delete-orphan",
+        order_by="OwnershipTaskTemplateItem.row_order",
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "taskGroup": self.task_group or "",
+            "reminderDays": self.reminder_days,
+            "tasks": [task.text for task in self.tasks or []],
+        }
+
+
+class OwnershipTaskTemplateItem(db.Model):
+    __tablename__ = "ownership_task_template_item"
+
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    template_id = db.Column(db.String, db.ForeignKey("ownership_task_template.id"), nullable=False)
+    row_order = db.Column(db.Integer, default=0)
+    text = db.Column(db.Text, nullable=False)
+
+
+class OwnershipEmployee(db.Model):
+    """Assignable team member for ownership work and subtasks."""
+    __tablename__ = "ownership_employee"
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_ownership_employee_name"),
+        db.Index("ix_ownership_employee_active", "is_active"),
+    )
+
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    name = db.Column(db.String(120), nullable=False)
+    color = db.Column(db.String(20), default="")
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "color": self.color or "",
+            "isActive": bool(self.is_active),
+        }
+
+
 class FareRule(db.Model):
     """Global fare rules per airline + fare type. Stores baggage, seat, meal, cancellation & change rules."""
     __tablename__ = 'fare_rule'
