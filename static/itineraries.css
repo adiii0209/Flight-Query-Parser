@@ -441,6 +441,103 @@ body {
   border-color: var(--primary);
 }
 
+.status-group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 34px;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.dashboard-loader,
+.inline-sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.16);
+  color: #059669;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  box-shadow: 0 8px 18px rgba(16, 185, 129, 0.07);
+}
+
+.dashboard-loader.is-complete,
+.status-group.is-complete .dashboard-loader {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.28);
+}
+
+.loader-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #10b981;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.loader-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  animation: pulse-ring 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+
+  100% {
+    transform: scale(3.3);
+    opacity: 0;
+  }
+}
+
+.detail-soft-loader {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+}
+
+.soft-line {
+  height: 12px;
+  width: 68%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.14), rgba(148, 163, 184, 0.26), rgba(148, 163, 184, 0.14));
+  background-size: 220% 100%;
+  animation: soft-shimmer 1.4s ease infinite;
+}
+
+.soft-line.wide {
+  width: 86%;
+}
+
+.soft-line.short {
+  width: 44%;
+}
+
+@keyframes soft-shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+
+  100% {
+    background-position: -120% 0;
+  }
+}
+
 /* ===================== ITINERARY CARDS ===================== */
 .itin-grid {
   display: grid;

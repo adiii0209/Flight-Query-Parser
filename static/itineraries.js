@@ -19,6 +19,8 @@ let dbCorporatesPromise = null;
 let airlinesPromise = null;
 let totalAvailableItineraries = 0;
 let fullItinerariesSyncPromise = null;
+let currentItineraryDetailToken = 0;
+let dashboardLoaderHideHandle = null;
 const INITIAL_ITINERARIES_BATCH_SIZE = 6;
 const ITINERARIES_CACHE_KEY = 'itinerariesDashboard.topCache.v1';
 const ITINERARIES_CACHE_TTL_MS = 60 * 1000;
@@ -265,7 +267,9 @@ function writeCachedJson(key, value) {
 }
 
 function cacheItinerariesSnapshot(itineraries, totalCount) {
-  const safeItineraries = Array.isArray(itineraries) ? itineraries : [];
+  const safeItineraries = Array.isArray(itineraries)
+    ? itineraries.map(removeTransientItineraryFlags)
+    : [];
   const safeTotalCount = Number.isFinite(Number(totalCount))
     ? Number(totalCount)
     : safeItineraries.length;
@@ -278,13 +282,57 @@ function cacheItinerariesSnapshot(itineraries, totalCount) {
 
 function mergeItineraryUpdate(update) {
   if (!update || typeof update !== 'object') return currentItinerary;
-  currentItinerary = { ...(currentItinerary || {}), ...update };
+  const cleanUpdate = removeTransientItineraryFlags(update);
+  currentItinerary = { ...(currentItinerary || {}), ...cleanUpdate };
   const idx = allItineraries.findIndex(it => it.id === update.id);
   if (idx >= 0) {
-    allItineraries[idx] = { ...allItineraries[idx], ...update };
+    allItineraries[idx] = { ...allItineraries[idx], ...cleanUpdate };
     cacheItinerariesSnapshot(allItineraries, totalAvailableItineraries);
   }
   return currentItinerary;
+}
+
+function removeTransientItineraryFlags(itinerary) {
+  if (!itinerary || typeof itinerary !== 'object') return itinerary;
+  const copy = { ...itinerary };
+  delete copy._isLoadingDetail;
+  delete copy._isSaving;
+  return copy;
+}
+
+function setDashboardUpdatingState(state) {
+  const loader = document.getElementById('dashboardLoader');
+  if (!loader) return;
+  const textEl = loader.querySelector('.loader-text');
+  const pulseEl = loader.querySelector('.loader-pulse');
+
+  if (dashboardLoaderHideHandle) {
+    clearTimeout(dashboardLoaderHideHandle);
+    dashboardLoaderHideHandle = null;
+  }
+
+  if (state === true || state === 'updating') {
+    loader.style.display = 'flex';
+    loader.style.opacity = '1';
+    loader.style.transform = 'translateY(0)';
+    loader.classList.remove('is-complete');
+    if (textEl) textEl.textContent = 'Updating Dashboard';
+    if (pulseEl) pulseEl.style.display = 'block';
+    return;
+  }
+
+  if (textEl) textEl.textContent = 'Update Complete';
+  if (pulseEl) pulseEl.style.display = 'none';
+  loader.classList.add('is-complete');
+  dashboardLoaderHideHandle = setTimeout(() => {
+    loader.style.opacity = '0';
+    loader.style.transform = 'translateY(5px)';
+    dashboardLoaderHideHandle = setTimeout(() => {
+      loader.style.display = 'none';
+      loader.classList.remove('is-complete');
+      dashboardLoaderHideHandle = null;
+    }, 300);
+  }, 1200);
 }
 
 function hasFreshItinerariesCache(maxAgeMs = ITINERARIES_CACHE_TTL_MS) {
@@ -325,7 +373,6 @@ function hydrateItinerariesFromCache() {
   const cached = readCachedJson(ITINERARIES_CACHE_KEY);
   const cachedItineraries = Array.isArray(cached && cached.itineraries) ? cached.itineraries : [];
   if (!cachedItineraries.length) {
-    renderItinerarySkeletons();
     return false;
   }
   allItineraries = cachedItineraries;
@@ -386,8 +433,13 @@ async function loadItineraries(options = {}) {
 
 async function syncAllItinerariesInBackground() {
   if (fullItinerariesSyncPromise) return fullItinerariesSyncPromise;
+  setDashboardUpdatingState(true);
   fullItinerariesSyncPromise = (async () => {
-    await loadItineraries({ render: true });
+    try {
+      await loadItineraries({ render: true });
+    } finally {
+      setDashboardUpdatingState(false);
+    }
   })().finally(() => {
     fullItinerariesSyncPromise = null;
   });
@@ -675,19 +727,28 @@ function renderItineraryCards() {
 
 // ==================== OPEN ITINERARY DETAIL ====================
 async function openItinerary(id, preventScroll = false) {
+  const token = ++currentItineraryDetailToken;
+  const cachedItinerary = allItineraries.find(it => it.id === id);
+  currentItinerary = cachedItinerary
+    ? { ...cachedItinerary, _isLoadingDetail: true }
+    : { id, title: 'Itinerary Details', status: 'draft', passengers_data: [], flights: [], _isLoadingDetail: true };
+  window.location.hash = id;
+  renderDetailView();
+  document.getElementById('listView').style.display = 'none';
+  document.getElementById('detailView').style.display = 'block';
+  if (!preventScroll) window.scrollTo({ top: 0, behavior: 'smooth' });
+
   try {
     const r = await fetch('/api/v2/itineraries/' + id);
     if (!r.ok) { showToast('Failed to load itinerary', 'error'); return; }
-    currentItinerary = await r.json();
-    window.location.hash = id;
+    if (token !== currentItineraryDetailToken) return;
+    currentItinerary = removeTransientItineraryFlags(await r.json());
     renderDetailView();
-    document.getElementById('listView').style.display = 'none';
-    document.getElementById('detailView').style.display = 'block';
-    if (!preventScroll) window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch (e) { console.error(e); showToast('Error loading itinerary', 'error'); }
 }
 
 function showListView() {
+  currentItineraryDetailToken++;
   document.getElementById('detailView').style.display = 'none';
   document.getElementById('listView').style.display = 'block';
   window.location.hash = '';
@@ -713,7 +774,34 @@ function renderDetailView() {
   renderBilling();
   renderSupplier();
   renderOutputBoxes();
+  renderDetailSyncState();
   updateHoldTimers();
+}
+
+function renderDetailSyncState() {
+  const it = currentItinerary;
+  if (!it || !it._isLoadingDetail) return;
+
+  const actions = document.getElementById('detailActions');
+  if (actions) {
+    actions.innerHTML = `
+      <div class="inline-sync-pill">
+        <span class="loader-pulse"></span>
+        <span>Opening details</span>
+      </div>`;
+  }
+
+  const flightSection = document.getElementById('flightOptionsSection');
+  const flightContainer = document.getElementById('flightOptionsContainer');
+  if (flightSection && flightContainer && (!Array.isArray(it.flights) || it.flights.length === 0)) {
+    flightSection.style.display = 'block';
+    flightContainer.innerHTML = `
+      <div class="detail-soft-loader">
+        <div class="soft-line wide"></div>
+        <div class="soft-line"></div>
+        <div class="soft-line short"></div>
+      </div>`;
+  }
 }
 
 function getItineraryFinalOutputText(it = currentItinerary) {
@@ -915,6 +1003,11 @@ async function renameItineraryTitle() {
     return;
   }
 
+  const previousItinerary = { ...currentItinerary };
+  mergeItineraryUpdate({ id: it.id, title: trimmedTitle });
+  renderDetailView();
+  renderItineraryCards();
+
   try {
     const r = await fetch('/api/v2/itineraries/' + it.id, {
       method: 'PUT',
@@ -929,10 +1022,18 @@ async function renameItineraryTitle() {
       renderItineraryCards();
       showToast('Itinerary title updated', 'success');
     } else {
+      currentItinerary = previousItinerary;
+      mergeItineraryUpdate(previousItinerary);
+      renderDetailView();
+      renderItineraryCards();
       const err = await r.json().catch(() => ({}));
       showToast(err.error || 'Failed to update title', 'error');
     }
   } catch (e) {
+    currentItinerary = previousItinerary;
+    mergeItineraryUpdate(previousItinerary);
+    renderDetailView();
+    renderItineraryCards();
     showToast('Error updating title', 'error');
   }
 }
@@ -2206,14 +2307,27 @@ function renderBilling() {
 
 // ==================== ACTIONS ====================
 async function selectFlightOption(idx) {
+  const previousItinerary = { ...currentItinerary };
+  mergeItineraryUpdate({ id: currentItinerary.id, selected_flight_option: idx });
+  renderDetailView();
   try {
     const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ selected_flight_option: idx })
     });
     if (r.ok) { const d = await r.json(); mergeItineraryUpdate(d.itinerary); renderDetailView(); showToast('Option selected', 'success'); }
-    else showToast('Failed to select option', 'error');
-  } catch (e) { showToast('Error', 'error'); }
+    else {
+      currentItinerary = previousItinerary;
+      mergeItineraryUpdate(previousItinerary);
+      renderDetailView();
+      showToast('Failed to select option', 'error');
+    }
+  } catch (e) {
+    currentItinerary = previousItinerary;
+    mergeItineraryUpdate(previousItinerary);
+    renderDetailView();
+    showToast('Error', 'error');
+  }
 }
 
 async function approveItinerary() {
@@ -2225,14 +2339,34 @@ async function approveItinerary() {
   let selIdx = it.selected_flight_option;
   if (numOpts === 1 && selIdx === null) selIdx = 0;
 
+  const previousItinerary = { ...currentItinerary };
+  mergeItineraryUpdate({
+    id: it.id,
+    status: 'approved',
+    selected_flight_option: selIdx,
+    approved_at: new Date().toISOString()
+  });
+  renderDetailView();
+
   try {
     if (selIdx !== it.selected_flight_option) {
       await fetch('/api/v2/itineraries/' + it.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selected_flight_option: selIdx }) });
     }
     const r = await fetch('/api/v2/itineraries/' + it.id + '/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
     if (r.ok) { const d = await r.json(); mergeItineraryUpdate(d.itinerary); renderDetailView(); showToast('Itinerary approved!', 'success'); }
-    else { const e = await r.json(); showToast(e.error || 'Failed', 'error'); }
-  } catch (e) { showToast('Error', 'error'); }
+    else {
+      currentItinerary = previousItinerary;
+      mergeItineraryUpdate(previousItinerary);
+      renderDetailView();
+      const e = await r.json();
+      showToast(e.error || 'Failed', 'error');
+    }
+  } catch (e) {
+    currentItinerary = previousItinerary;
+    mergeItineraryUpdate(previousItinerary);
+    renderDetailView();
+    showToast('Error', 'error');
+  }
 }
 
 async function holdItinerary() {
@@ -2251,6 +2385,17 @@ async function submitHoldItinerary() {
   const deadline = new Date(val);
   if (deadline <= new Date()) { showToast('Deadline must be in the future', 'error'); return; }
 
+  const previousItinerary = { ...currentItinerary };
+  mergeItineraryUpdate({
+    id: currentItinerary.id,
+    status: 'on_hold',
+    held_at: new Date().toISOString(),
+    hold_deadline: deadline.toISOString()
+  });
+  renderDetailView();
+  closeModal();
+  showToast('Itinerary on hold until ' + deadline.toLocaleString(), 'success');
+
   try {
     const r = await fetch('/api/v2/itineraries/' + currentItinerary.id + '/hold', {
       method: 'POST',
@@ -2261,37 +2406,90 @@ async function submitHoldItinerary() {
       const d = await r.json();
       mergeItineraryUpdate(d.itinerary);
       renderDetailView();
-      closeModal();
-      showToast('Itinerary on hold until ' + deadline.toLocaleString(), 'success');
     }
-    else showToast('Failed', 'error');
-  } catch (e) { showToast('Error', 'error'); }
+    else {
+      currentItinerary = previousItinerary;
+      mergeItineraryUpdate(previousItinerary);
+      renderDetailView();
+      showToast('Failed', 'error');
+    }
+  } catch (e) {
+    currentItinerary = previousItinerary;
+    mergeItineraryUpdate(previousItinerary);
+    renderDetailView();
+    showToast('Error', 'error');
+  }
 }
 
 async function confirmItinerary() {
   if (!confirm("Are you sure you want to issue this itinerary?")) return;
+  const previousItinerary = { ...currentItinerary };
+  mergeItineraryUpdate({ id: currentItinerary.id, status: 'issued', confirmed_at: new Date().toISOString() });
+  renderDetailView();
+  showToast('Itinerary issued!', 'success');
   try {
     const r = await fetch('/api/v2/itineraries/' + currentItinerary.id + '/confirm', { method: 'POST' });
-    if (r.ok) { const d = await r.json(); mergeItineraryUpdate(d.itinerary); renderDetailView(); showToast('Itinerary issued!', 'success'); }
-    else showToast('Failed', 'error');
-  } catch (e) { showToast('Error', 'error'); }
+    if (r.ok) { const d = await r.json(); mergeItineraryUpdate(d.itinerary); renderDetailView(); }
+    else {
+      currentItinerary = previousItinerary;
+      mergeItineraryUpdate(previousItinerary);
+      renderDetailView();
+      showToast('Failed', 'error');
+    }
+  } catch (e) {
+    currentItinerary = previousItinerary;
+    mergeItineraryUpdate(previousItinerary);
+    renderDetailView();
+    showToast('Error', 'error');
+  }
 }
 
 async function revertItinerary() {
+  const previousItinerary = { ...currentItinerary };
+  mergeItineraryUpdate({ id: currentItinerary.id, status: 'approved', reverted_at: new Date().toISOString() });
+  renderDetailView();
+  showToast('Itinerary reverted', 'success');
   try {
     const r = await fetch('/api/v2/itineraries/' + currentItinerary.id + '/revert', { method: 'POST' });
-    if (r.ok) { const d = await r.json(); mergeItineraryUpdate(d.itinerary); renderDetailView(); showToast('Itinerary reverted', 'success'); }
-    else showToast('Failed', 'error');
-  } catch (e) { showToast('Error', 'error'); }
+    if (r.ok) { const d = await r.json(); mergeItineraryUpdate(d.itinerary); renderDetailView(); }
+    else {
+      currentItinerary = previousItinerary;
+      mergeItineraryUpdate(previousItinerary);
+      renderDetailView();
+      showToast('Failed', 'error');
+    }
+  } catch (e) {
+    currentItinerary = previousItinerary;
+    mergeItineraryUpdate(previousItinerary);
+    renderDetailView();
+    showToast('Error', 'error');
+  }
 }
 
 async function deleteItinerary() {
   if (!confirm('Delete this itinerary?')) return;
+  const deletedItinerary = currentItinerary;
+  allItineraries = allItineraries.filter(it => it.id !== deletedItinerary.id);
+  totalAvailableItineraries = Math.max(0, totalAvailableItineraries - 1);
+  cacheItinerariesSnapshot(allItineraries, totalAvailableItineraries);
+  showToast('Deleted', 'success');
+  showListView();
   try {
-    const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, { method: 'DELETE' });
-    if (r.ok) { showToast('Deleted', 'success'); showListView(); }
-    else showToast('Failed to delete', 'error');
-  } catch (e) { showToast('Error', 'error'); }
+    const r = await fetch('/api/v2/itineraries/' + deletedItinerary.id, { method: 'DELETE' });
+    if (!r.ok) {
+      allItineraries = [deletedItinerary, ...allItineraries];
+      totalAvailableItineraries += 1;
+      cacheItinerariesSnapshot(allItineraries, totalAvailableItineraries);
+      renderItineraryCards();
+      showToast('Failed to delete', 'error');
+    }
+  } catch (e) {
+    allItineraries = [deletedItinerary, ...allItineraries];
+    totalAvailableItineraries += 1;
+    cacheItinerariesSnapshot(allItineraries, totalAvailableItineraries);
+    renderItineraryCards();
+    showToast('Error', 'error');
+  }
 }
 
 function editInParser() { window.location.href = '/?edit=' + currentItinerary.id; }
@@ -2502,12 +2700,14 @@ function closeModal() {
 
 // ---- Unified Passenger Search & Add ----
 async function openUnifiedPassengerModal() {
-  await ensurePassengerDirectoryLoaded();
   const searchInput = document.getElementById('itinPassengerSearch');
   searchInput.value = '';
   document.getElementById('itinPassengerResults').style.display = 'none';
   toggleItinNewPaxForm(false);
   showModal('unifiedPassengerModal');
+  void ensurePassengerDirectoryLoaded().then(() => {
+    if (document.activeElement === searchInput) searchPassengerUnifiedItin();
+  });
 
   // Add click/focus listener to show results if not already there
   if (!searchInput.dataset.listenerAdded) {
@@ -2586,8 +2786,8 @@ async function selectPassengerFromSearch(pId) {
   };
 
   pax.push(newPax);
-  await updateItineraryPassengers(pax);
   closeModal();
+  await updateItineraryPassengers(pax);
 }
 
 function prepareNewPassengerItin(input) {
@@ -2633,11 +2833,17 @@ async function addNewPassengerItin() {
 
   const pax = currentItinerary.passengers_data || [];
   pax.push(newPax);
-  await updateItineraryPassengers(pax);
   closeModal();
+  await updateItineraryPassengers(pax);
 }
 
 async function updateItineraryPassengers(pax) {
+  const previousItinerary = { ...currentItinerary, passengers_data: [...(currentItinerary.passengers_data || [])] };
+  mergeItineraryUpdate({ id: currentItinerary.id, passengers_data: pax, num_passengers: pax.length });
+  renderPassengers();
+  renderFlightSection();
+  renderInfoCards();
+  renderOutputBoxes();
   try {
     const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -2652,31 +2858,69 @@ async function updateItineraryPassengers(pax) {
       renderOutputBoxes();
       showToast('Passengers updated', 'success');
     } else {
+      currentItinerary = previousItinerary;
+      mergeItineraryUpdate(previousItinerary);
+      renderPassengers();
+      renderFlightSection();
+      renderInfoCards();
+      renderOutputBoxes();
       showToast('Failed to update itinerary', 'error');
     }
   } catch (e) {
+    currentItinerary = previousItinerary;
+    mergeItineraryUpdate(previousItinerary);
+    renderPassengers();
+    renderFlightSection();
+    renderInfoCards();
+    renderOutputBoxes();
     showToast('Error', 'error');
   }
 }
 
 async function removePassenger(idx) {
   if (!confirm('Remove this passenger?')) return;
-  const pax = currentItinerary.passengers_data || [];
+  const previousItinerary = { ...currentItinerary, passengers_data: [...(currentItinerary.passengers_data || [])] };
+  const pax = [...(currentItinerary.passengers_data || [])];
   pax.splice(idx, 1);
+  mergeItineraryUpdate({ id: currentItinerary.id, passengers_data: pax, num_passengers: Math.max(pax.length, 1) });
+  renderPassengers();
+  renderFlightSection();
+  renderInfoCards();
+  renderOutputBoxes();
+  showToast('Passenger removed', 'success');
   try {
     const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passengers_data: pax, num_passengers: Math.max(pax.length, 1) }) });
-    if (r.ok) { const d = await r.json(); mergeItineraryUpdate(d.itinerary); renderPassengers(); renderFlightSection(); renderInfoCards(); renderOutputBoxes(); showToast('Passenger removed', 'success'); }
-  } catch (e) { showToast('Error', 'error'); }
+    if (r.ok) { const d = await r.json(); mergeItineraryUpdate(d.itinerary); renderPassengers(); renderFlightSection(); renderInfoCards(); renderOutputBoxes(); }
+    else {
+      currentItinerary = previousItinerary;
+      mergeItineraryUpdate(previousItinerary);
+      renderPassengers();
+      renderFlightSection();
+      renderInfoCards();
+      renderOutputBoxes();
+      showToast('Failed to remove passenger', 'error');
+    }
+  } catch (e) {
+    currentItinerary = previousItinerary;
+    mergeItineraryUpdate(previousItinerary);
+    renderPassengers();
+    renderFlightSection();
+    renderInfoCards();
+    renderOutputBoxes();
+    showToast('Error', 'error');
+  }
 }
 
 // ---- Unified Billing Search & Add ----
 async function openUnifiedBillingModal() {
-  await ensureBillingDirectoryLoaded();
   const searchInput = document.getElementById('itinBillingSearch');
   searchInput.value = '';
   document.getElementById('itinBillingResults').style.display = 'none';
   toggleItinNewBillForm(false);
   showModal('unifiedBillingModal');
+  void ensureBillingDirectoryLoaded().then(() => {
+    if (document.activeElement === searchInput) searchBillingUnifiedItin();
+  });
 
   if (!searchInput.dataset.listenerAdded) {
     ['click', 'focus'].forEach(evt => {
@@ -2823,8 +3067,8 @@ async function selectUnifiedBillingByIndex(idx) {
     billing_type: res.type
   };
 
-  await updateItineraryBilling(payload);
   closeModal();
+  await updateItineraryBilling(payload);
 }
 
 async function selectBillingAccountFromSearch(accId) {
@@ -2841,8 +3085,8 @@ async function selectBillingAccountFromSearch(accId) {
     bill_to_gst: acc.gst_number || ''
   };
 
-  await updateItineraryBilling(data);
   closeModal();
+  await updateItineraryBilling(data);
 }
 
 function prepareNewBillingItin(input) {
@@ -2896,11 +3140,17 @@ async function addNewBillingItin() {
     } catch (e) { console.error('Error saving billing to DB:', e); }
   }
 
-  await updateItineraryBilling(finalBillingData);
   closeModal();
+  await updateItineraryBilling(finalBillingData);
 }
 
 async function updateItineraryBilling(data) {
+  const previousItinerary = { ...currentItinerary };
+  mergeItineraryUpdate({ id: currentItinerary.id, ...data });
+  renderBilling();
+  renderSupplier();
+  renderInfoCards();
+  renderOutputBoxes();
   try {
     const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -2915,9 +3165,21 @@ async function updateItineraryBilling(data) {
       renderOutputBoxes();
       showToast('Billing updated', 'success');
     } else {
+      currentItinerary = previousItinerary;
+      mergeItineraryUpdate(previousItinerary);
+      renderBilling();
+      renderSupplier();
+      renderInfoCards();
+      renderOutputBoxes();
       showToast('Failed to update billing', 'error');
     }
   } catch (e) {
+    currentItinerary = previousItinerary;
+    mergeItineraryUpdate(previousItinerary);
+    renderBilling();
+    renderSupplier();
+    renderInfoCards();
+    renderOutputBoxes();
     showToast('Error', 'error');
   }
 }
@@ -2958,12 +3220,14 @@ function renderSupplier() {
 }
 
 async function openUnifiedSupplierModal() {
-  await ensureSupplierDirectoryLoaded();
   const searchInput = document.getElementById('itinSupplierSearch');
   searchInput.value = '';
   document.getElementById('itinSupplierResults').style.display = 'none';
   toggleItinNewSupForm(false);
   showModal('unifiedSupplierModal');
+  void ensureSupplierDirectoryLoaded().then(() => {
+    if (document.activeElement === searchInput) searchSupplierUnifiedItin();
+  });
 
   if (!searchInput.dataset.listenerAdded) {
     ['click', 'focus'].forEach(evt => {
@@ -3054,8 +3318,8 @@ async function selectUnifiedSupplierByIndex(idx) {
     supplier_address: raw.address || '',
     supplier_gst: raw.gst_number || ''
   };
-  await updateItinerarySupplier(data);
   closeModal();
+  await updateItinerarySupplier(data);
 }
 
 function prepareNewSupplierItin(input) {
@@ -3103,11 +3367,16 @@ async function addNewSupplierItin() {
     } catch (e) { console.error('Error saving supplier to DB:', e); }
   }
 
-  await updateItinerarySupplier(finalData);
   closeModal();
+  await updateItinerarySupplier(finalData);
 }
 
 async function updateItinerarySupplier(data) {
+  const previousItinerary = { ...currentItinerary };
+  mergeItineraryUpdate({ id: currentItinerary.id, ...data });
+  renderSupplier();
+  renderInfoCards();
+  renderOutputBoxes();
   try {
     const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -3121,9 +3390,21 @@ async function updateItinerarySupplier(data) {
       renderOutputBoxes();
       showToast('Supplier updated', 'success');
     } else {
+      currentItinerary = previousItinerary;
+      mergeItineraryUpdate(previousItinerary);
+      renderSupplier();
+      renderInfoCards();
+      renderOutputBoxes();
       showToast('Failed to update supplier', 'error');
     }
-  } catch (e) { showToast('Error', 'error'); }
+  } catch (e) {
+    currentItinerary = previousItinerary;
+    mergeItineraryUpdate(previousItinerary);
+    renderSupplier();
+    renderInfoCards();
+    renderOutputBoxes();
+    showToast('Error', 'error');
+  }
 }
 
 // ---- Billing ----
@@ -3134,22 +3415,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   initializeSidebar();
   await checkAuth();
   const initialItineraryId = window.location.hash ? window.location.hash.substring(1) : '';
-  hydrateItinerariesFromCache();
-  const hasWarmItinerariesCache = allItineraries.length > 0 && hasFreshItinerariesCache();
+  const hasCachedItineraries = hydrateItinerariesFromCache();
+  const hasWarmItinerariesCache = hasCachedItineraries && hasFreshItinerariesCache();
+
   if (!hasWarmItinerariesCache) {
-    await loadItineraries({
+    setDashboardUpdatingState(true);
+    void loadItineraries({
       limit: INITIAL_ITINERARIES_BATCH_SIZE,
-      showLoading: allItineraries.length === 0,
+      showLoading: false,
       render: true
-    });
+    }).finally(() => setDashboardUpdatingState(false));
   } else {
     renderItineraryCards();
   }
-  if (allItineraries.length < totalAvailableItineraries || totalAvailableItineraries === 0 || hasWarmItinerariesCache) {
+  if (hasWarmItinerariesCache || (hasCachedItineraries && allItineraries.length < totalAvailableItineraries)) {
     void syncAllItinerariesInBackground();
   }
   if (initialItineraryId) {
-    await openItinerary(initialItineraryId, true);
+    void openItinerary(initialItineraryId, true);
   }
 });
 
