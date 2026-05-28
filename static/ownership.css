@@ -723,6 +723,36 @@ input[type=number].no-spin {
   cursor: pointer;
   border: 1px solid color-mix(in srgb, var(--crm-primary) 25%, transparent);
 }
+.crm-subtask-reminder,
+.crm-icon-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--crm-border);
+  border-radius: 7px;
+  background: var(--crm-surface);
+  color: var(--crm-text-3);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.crm-subtask-reminder:hover,
+.crm-icon-btn:hover,
+.crm-subtask-reminder.active {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #d97706;
+}
+[data-crm-theme="dark"] .crm-subtask-reminder:hover,
+[data-crm-theme="dark"] .crm-icon-btn:hover,
+[data-crm-theme="dark"] .crm-subtask-reminder.active {
+  background: #451a03;
+  border-color: #78350f;
+  color: #fbbf24;
+}
 .crm-subtask-del {
   background: none; border: none; cursor: pointer;
   color: var(--crm-text-3); font-size: 0.85rem;
@@ -856,6 +886,42 @@ input[type=number].no-spin {
 .crm-right-panel::-webkit-scrollbar-thumb:hover { background: var(--crm-text-3); }
 
 /* ─── Animations ─── */
+.crm-mini-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  background: rgba(15, 23, 42, 0.28);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.crm-mini-modal-overlay.open { display: flex; }
+.crm-mini-modal {
+  width: min(360px, 100%);
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: 10px;
+  box-shadow: var(--crm-shadow-lg);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.crm-mini-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--crm-text);
+}
+.crm-mini-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
 @keyframes crm-fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .crm-fade-in { animation: crm-fade-in 0.3s ease forwards; }
 

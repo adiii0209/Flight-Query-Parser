@@ -41,6 +41,7 @@ const PAGE_SIZE = 99999;
 let expandedRows = new Set();
 let selectedTrips = new Set();
 let subtaskContext = null; // { tripId, statusKey }
+let pendingNewSubtaskReminder = null;
 let editingTripId = null;
 let calMonth = new Date().getMonth();
 let calYear = new Date().getFullYear();
@@ -89,6 +90,16 @@ async function saveTripPatch(trip, patch) {
     cacheTripsForFastPaint(trips);
   }
   return saved;
+}
+
+function refreshOwnershipViews() {
+  cacheTripsForFastPaint(trips);
+  renderTable();
+  renderActivityFeed();
+  renderCalendar();
+  renderUpcomingTrips();
+  populateOwnerFilter();
+  populateMonthFilter();
 }
 
 function saveTemplates(template = null) {
@@ -619,6 +630,108 @@ const STATUS_KEY_MAP = {
   travefyTaskList: 'travefyTaskListStatus', tripFeedbackForm: 'tripFeedbackFormStatus'
 };
 
+const BELL_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path><path d="M18 8A6 6 0 0 0 6 8c0 7-3 7-3 9h18c0-2-3-2-3-9"></path></svg>';
+
+function subtaskReminder(sub) {
+  return sub?.metadata?.reminder || null;
+}
+
+function reminderLabel(reminder) {
+  const days = parseInt(reminder?.days, 10);
+  return days > 0 ? `${days} days before` : '';
+}
+
+function openSubtaskReminderModal(subtaskId) {
+  const trip = trips.find(t => t.id === subtaskContext?.tripId);
+  const sub = (trip?.subtasks?.[subtaskContext?.key] || []).find(item => item.id === subtaskId);
+  if (!trip || !sub) return;
+
+  let modal = document.getElementById('subtaskReminderModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'crm-mini-modal-overlay';
+    modal.id = 'subtaskReminderModal';
+    modal.innerHTML = `
+      <div class="crm-mini-modal" role="dialog" aria-modal="true">
+        <div class="crm-mini-modal-title">${BELL_ICON}<span>Subtask Reminder</span></div>
+        <div class="crm-reminder-row">
+          <span>Alert</span>
+          <input type="number" id="subtaskReminderDays" min="1" max="180" value="7">
+          <span>days before departure</span>
+        </div>
+        <div class="crm-mini-modal-actions">
+          <button class="crm-btn crm-btn-ghost" id="clearSubtaskReminder">Clear</button>
+          <button class="crm-btn crm-btn-ghost" id="cancelSubtaskReminder">Cancel</button>
+          <button class="crm-btn crm-btn-primary" id="saveSubtaskReminder">Save</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
+  modal.dataset.subtaskId = subtaskId;
+  document.getElementById('subtaskReminderDays').value = subtaskReminder(sub)?.days || 7;
+  modal.classList.add('open');
+
+  document.getElementById('cancelSubtaskReminder').onclick = () => modal.classList.remove('open');
+  modal.onclick = e => { if (e.target === modal) modal.classList.remove('open'); };
+  document.getElementById('clearSubtaskReminder').onclick = () => {
+    sub.metadata = { ...(sub.metadata || {}) };
+    delete sub.metadata.reminder;
+    modal.classList.remove('open');
+    renderSubtaskBody(trip.subtasks[subtaskContext.key]);
+  };
+  document.getElementById('saveSubtaskReminder').onclick = () => {
+    const days = parseInt(document.getElementById('subtaskReminderDays').value, 10);
+    if (isNaN(days) || days < 1) return;
+    sub.metadata = { ...(sub.metadata || {}), reminder: { days, label: `${days} days before` } };
+    modal.classList.remove('open');
+    renderSubtaskBody(trip.subtasks[subtaskContext.key]);
+  };
+}
+
+function openNewSubtaskReminderModal() {
+  let modal = document.getElementById('newSubtaskReminderModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'crm-mini-modal-overlay';
+    modal.id = 'newSubtaskReminderModal';
+    modal.innerHTML = `
+      <div class="crm-mini-modal" role="dialog" aria-modal="true">
+        <div class="crm-mini-modal-title">${BELL_ICON}<span>New Subtask Reminder</span></div>
+        <div class="crm-reminder-row">
+          <span>Alert</span>
+          <input type="number" id="newSubtaskReminderDays" min="1" max="180" value="7">
+          <span>days before departure</span>
+        </div>
+        <div class="crm-mini-modal-actions">
+          <button class="crm-btn crm-btn-ghost" id="clearNewSubtaskReminder">Clear</button>
+          <button class="crm-btn crm-btn-ghost" id="cancelNewSubtaskReminder">Cancel</button>
+          <button class="crm-btn crm-btn-primary" id="saveNewSubtaskReminder">Save</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
+  document.getElementById('newSubtaskReminderDays').value = pendingNewSubtaskReminder?.days || 7;
+  modal.classList.add('open');
+  modal.onclick = e => { if (e.target === modal) modal.classList.remove('open'); };
+  document.getElementById('cancelNewSubtaskReminder').onclick = () => modal.classList.remove('open');
+  document.getElementById('clearNewSubtaskReminder').onclick = () => {
+    pendingNewSubtaskReminder = null;
+    modal.classList.remove('open');
+    document.getElementById('newSubtaskReminderBtn')?.classList.remove('active');
+  };
+  document.getElementById('saveNewSubtaskReminder').onclick = () => {
+    const days = parseInt(document.getElementById('newSubtaskReminderDays').value, 10);
+    if (isNaN(days) || days < 1) return;
+    pendingNewSubtaskReminder = { days, label: `${days} days before` };
+    modal.classList.remove('open');
+    document.getElementById('newSubtaskReminderBtn')?.classList.add('active');
+  };
+}
+
 window.openSubtaskModal = function(event, tripId, key) {
   event.stopPropagation();
   statusMenu.style.display = 'none'; // hide single-click dropdown
@@ -641,6 +754,7 @@ function renderSubtaskBody(subtasks) {
   for (const sub of subtasks) {
     const item = document.createElement('div');
     item.className = 'crm-subtask-item';
+    const reminder = subtaskReminder(sub);
     item.innerHTML = `
       <input type="checkbox" class="crm-subtask-check" ${sub.done ? 'checked' : ''} data-sid="${sub.id}">
       <input class="crm-subtask-text ${sub.done ? 'done' : ''}" value="${escHtml(sub.text)}" data-sid="${sub.id}">
@@ -648,6 +762,7 @@ function renderSubtaskBody(subtasks) {
         <option value="">Unassigned</option>
         ${ownerOptions(sub.assignee || '')}
       </select>
+      <button class="crm-subtask-reminder ${reminder ? 'active' : ''}" data-sid="${sub.id}" title="${reminder ? escHtml(reminderLabel(reminder)) : 'Set reminder'}">${BELL_ICON}</button>
       <button class="crm-subtask-del" data-sid="${sub.id}" title="Delete">🗑</button>
     `;
     body.appendChild(item);
@@ -664,6 +779,9 @@ function renderSubtaskBody(subtasks) {
     // assignee edit
     item.querySelector('.crm-subtask-assignee').addEventListener('change', e => {
       sub.assignee = e.target.value;
+    });
+    item.querySelector('.crm-subtask-reminder').addEventListener('click', () => {
+      openSubtaskReminderModal(sub.id);
     });
     // delete
     item.querySelector('.crm-subtask-del').addEventListener('click', () => {
@@ -687,6 +805,13 @@ function renderSubtaskBody(subtasks) {
   addAssignee.style.cssText = 'font-size:.75rem;min-width:130px;';
   addAssignee.innerHTML = `<option value="">Assign to...</option>${ownerOptions('')}`;
   addRow.appendChild(addAssignee);
+  const addReminderBtn = document.createElement('button');
+  addReminderBtn.className = `crm-subtask-reminder ${pendingNewSubtaskReminder ? 'active' : ''}`;
+  addReminderBtn.id = 'newSubtaskReminderBtn';
+  addReminderBtn.type = 'button';
+  addReminderBtn.title = pendingNewSubtaskReminder ? reminderLabel(pendingNewSubtaskReminder) : 'Set reminder';
+  addReminderBtn.innerHTML = BELL_ICON;
+  addRow.appendChild(addReminderBtn);
   const addBtn = document.createElement('button');
   addBtn.className = 'crm-btn crm-btn-ghost';
   addBtn.style.cssText = 'padding:.3rem .65rem;font-size:.75rem;';
@@ -700,11 +825,16 @@ function renderSubtaskBody(subtasks) {
     const trip = trips.find(t => t.id === subtaskContext.tripId);
     const assignee = addAssignee.value || '';
     const newSub = { id: uid(), text: val, done: false, assignee };
+    if (pendingNewSubtaskReminder) {
+      newSub.metadata = { reminder: pendingNewSubtaskReminder };
+      pendingNewSubtaskReminder = null;
+    }
     trip.subtasks[subtaskContext.key].push(newSub);
     renderSubtaskBody(trip.subtasks[subtaskContext.key]);
     addInput.focus();
   };
   addBtn.addEventListener('click', doAdd);
+  addReminderBtn.addEventListener('click', openNewSubtaskReminderModal);
   addInput.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
 
   // Reminder section
@@ -719,7 +849,7 @@ function renderSubtaskBody(subtasks) {
       <span style="font-size:.78rem;color:var(--crm-text-3);">Alert me</span>
       <input type="number" id="reminderDaysInput" min="1" max="180" value="7" placeholder="7">
       <span style="font-size:.78rem;color:var(--crm-text-3);">days before departure</span>
-      <button class="crm-btn crm-btn-ghost" id="addReminderBtn" style="font-size:.72rem;padding:.3rem .65rem;">+ Add</button>
+      <button class="crm-btn crm-btn-ghost crm-icon-btn" id="addReminderBtn" title="Add reminder">${BELL_ICON}</button>
     </div>
     <div id="reminderTagsWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;">
       ${(trip.reminders||[]).map(r => `<span class="crm-reminder-tag"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:text-bottom; margin-right:2px;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> ${escHtml(r.label)} <button onclick="removeReminder(${r.days})" style="background:none;border:none;cursor:pointer;font-size:.75rem;margin-left:.2rem;">✕</button></span>`).join('')}
@@ -747,13 +877,25 @@ window.removeReminder = function(days) {
 
 document.getElementById('btnSaveSubtasks').addEventListener('click', () => {
   const trip = trips.find(t => t.id === subtaskContext?.tripId);
-  if (trip) saveTripPatch(trip, { subtasks: trip.subtasks, reminders: trip.reminders }).catch(err => {
+  if (trip) {
+    document.querySelectorAll('#subtaskModalBody .crm-subtask-item').forEach(item => {
+      const id = item.querySelector('.crm-subtask-text')?.dataset.sid;
+      const sub = (trip.subtasks?.[subtaskContext.key] || []).find(s => s.id === id);
+      if (!sub) return;
+      sub.text = item.querySelector('.crm-subtask-text')?.value.trim() || sub.text;
+      sub.done = !!item.querySelector('.crm-subtask-check')?.checked;
+      sub.assignee = item.querySelector('.crm-subtask-assignee')?.value || '';
+      sub.metadata = sub.metadata || {};
+    });
+    refreshOwnershipViews();
+    saveTripPatch(trip, { subtasks: trip.subtasks, reminders: trip.reminders || [] }).then(() => {
+      toast('Subtasks saved!');
+    }).catch(err => {
     console.error('Subtask save failed', err);
     toast('Could not save subtasks', '⚠️');
-  });
-  renderTable();
+    });
+  }
   closeModal('subtaskModal');
-  toast('Subtasks saved!');
 });
 
 document.getElementById('btnApplyTemplate').addEventListener('click', () => {
@@ -1065,22 +1207,36 @@ document.getElementById('tripModalSave').addEventListener('click', async () => {
       toast('Trip updated!');
     }
   } else {
-    const { trip: newTrip } = await apiJson('/api/ownership/trips', {
+    const tempId = `tmp-${uid()}`;
+    const optimisticTrip = {
+      id: tempId,
+      ...data,
+      subtasks: { visa:[], flights:[], hotels:[], sectorTickets:[], sightseeing:[], insurance:[], travefy:[], travefyTaskList:[], tripFeedbackForm:[] },
+      reminders: [],
+    };
+    trips.unshift(optimisticTrip);
+    logActivity(`New trip added: ${name}`, '#10b981');
+    toast('Trip created!');
+    refreshOwnershipViews();
+    closeModal('tripModal');
+    apiJson('/api/ownership/trips', {
       method: 'POST',
-      body: JSON.stringify({ ...data, subtasks: { visa:[], flights:[], hotels:[], sectorTickets:[], sightseeing:[], insurance:[], travefy:[], travefyTaskList:[], tripFeedbackForm:[] }, reminders: [] }),
+      body: JSON.stringify({ ...data, subtasks: optimisticTrip.subtasks, reminders: [] }),
+    }).then(({ trip: newTrip }) => {
+      const idx = trips.findIndex(t => t.id === tempId);
+      if (idx !== -1 && newTrip) {
+        trips[idx] = newTrip;
+        refreshOwnershipViews();
+      }
     }).catch(err => {
       console.error('Trip create failed', err);
+      trips = trips.filter(t => t.id !== tempId);
+      refreshOwnershipViews();
       toast('Could not create trip', '⚠️');
-      return {};
     });
-    if (!newTrip) return;
-    trips.unshift(newTrip);
-    logActivity(`New trip added: ${name}`, '#10b981');
-    toast('Trip created!', '🗺️');
+    return;
   }
-  renderTable();
-  populateOwnerFilter();
-  populateMonthFilter();
+  refreshOwnershipViews();
   closeModal('tripModal');
 });
 
@@ -1091,9 +1247,13 @@ window.deleteTrip = function(id) {
   expandedRows.delete(id);
   apiJson(`/api/ownership/trips/${id}`, { method: 'DELETE' }).catch(err => {
     console.error('Trip delete failed', err);
+    if (trip) {
+      trips.unshift(trip);
+      refreshOwnershipViews();
+    }
     toast('Could not delete from database', '⚠️');
   });
-  renderTable();
+  refreshOwnershipViews();
   if (trip) logActivity(`Trip deleted: ${trip.guestName}`, '#ef4444');
   toast('Trip deleted', '🗑️');
 };
@@ -1521,22 +1681,24 @@ document.addEventListener('DOMContentLoaded', () => {
       btnBulkDelete.innerHTML = 'Deleting...';
       btnBulkDelete.disabled = true;
 
-      let successCount = 0;
-      for (const id of idsToDelete) {
-        try {
-          const res = await fetch(`/api/ownership/trips/${id}`, { method: 'DELETE' });
-          if (res.ok) successCount++;
-        } catch (e) {
-          console.error('Delete failed for', id, e);
-        }
-      }
-
-      toast(`Deleted ${successCount} trips`);
+      const deletedTrips = trips.filter(t => idsToDelete.includes(t.id));
+      trips = trips.filter(t => !idsToDelete.includes(t.id));
       selectedTrips.clear();
+      refreshOwnershipViews();
       updateSelectionStrip();
       btnBulkDelete.innerHTML = originalText;
       btnBulkDelete.disabled = false;
-      reloadOwnershipData();
+      toast(`Deleted ${deletedTrips.length} trips`);
+
+      const results = await Promise.allSettled(
+        idsToDelete.map(id => fetch(`/api/ownership/trips/${id}`, { method: 'DELETE' }))
+      );
+      const failedIds = idsToDelete.filter((id, idx) => results[idx].status !== 'fulfilled' || !results[idx].value.ok);
+      if (failedIds.length) {
+        trips = [...deletedTrips.filter(t => failedIds.includes(t.id)), ...trips];
+        refreshOwnershipViews();
+        toast(`Could not delete ${failedIds.length} trips`, '⚠️');
+      }
     });
   }
 });
