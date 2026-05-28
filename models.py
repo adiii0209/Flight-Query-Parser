@@ -88,7 +88,7 @@ class Itinerary(db.Model):
     markup = db.Column(db.Integer)
     status = db.Column(db.String(20), default='draft')  # draft, approved, cancelled
     final_text = db.Column(db.Text)
-    flights_data = db.Column(db.Text)  # JSON string of flight data
+    flights_data = db.Column(CompatJSON(empty_factory=list))
     user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
     customer_id = db.Column(db.String, db.ForeignKey('customer.id'))
     billing_type = db.Column(db.String(20))  # 'passenger' or 'corporate'

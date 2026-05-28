@@ -4,6 +4,7 @@ Provides session management and database utilities.
 """
 
 from sqlalchemy import create_engine
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import sessionmaker, scoped_session
 from models_v2 import Base
 import models_enterprise
@@ -46,8 +47,56 @@ def init_db():
     """Initialize the database by creating all tables."""
     Base.metadata.create_all(bind=engine)
     models_enterprise.Base.metadata.create_all(bind=engine)
+    upgrade_itinerary_json_columns_for_postgres()
     seed_airlines()
     print("Travel Agent database initialized successfully! (V2 + Enterprise)")
+
+
+def upgrade_itinerary_json_columns_for_postgres():
+    """Convert existing itinerary JSON text columns to JSONB on PostgreSQL."""
+    if engine.dialect.name != "postgresql":
+        return
+
+    inspector = inspect(engine)
+    if "itineraries_v2" not in inspector.get_table_names():
+        return
+
+    columns = {
+        column["name"]: str(column.get("type") or "").lower()
+        for column in inspector.get_columns("itineraries_v2")
+    }
+    json_columns = {
+        "passengers_data": "[]",
+        "flights_data": "[]",
+        "raw_input_data": "{}",
+    }
+
+    with engine.begin() as conn:
+        for column_name, empty_json in json_columns.items():
+            column_type = columns.get(column_name, "")
+            if not column_type or "jsonb" in column_type:
+                continue
+            if "json" in column_type:
+                conn.execute(text(
+                    f"""
+                    ALTER TABLE itineraries_v2
+                    ALTER COLUMN {column_name}
+                    TYPE JSONB
+                    USING COALESCE({column_name}, CAST(:empty_json AS json))::jsonb
+                    """
+                ), {"empty_json": empty_json})
+                continue
+            conn.execute(text(
+                f"""
+                ALTER TABLE itineraries_v2
+                ALTER COLUMN {column_name}
+                TYPE JSONB
+                USING CASE
+                    WHEN {column_name} IS NULL OR btrim({column_name}::text) IN ('', 'null') THEN CAST(:empty_json AS jsonb)
+                    ELSE {column_name}::jsonb
+                END
+                """
+            ), {"empty_json": empty_json})
 
 
 def get_db():

@@ -290,7 +290,7 @@ _TICKETS_MERGED_HISTORY_CACHE_TTL_SECONDS = max(int(os.getenv("TICKETS_MERGED_HI
 # Register API v2 Blueprint
 # Register API v2 Blueprint
 from routes_v2 import api_v2
-from extensions_v2 import db_session
+from extensions_v2 import db_session, upgrade_itinerary_json_columns_for_postgres as upgrade_v2_itinerary_json_columns
 from ocr import ocr_bp
 app.register_blueprint(api_v2)
 app.register_blueprint(ocr_bp)
@@ -2594,6 +2594,42 @@ def _upgrade_ticket_json_columns_for_postgres():
     db.session.commit()
 
 
+def _upgrade_itinerary_json_columns_for_postgres():
+    engine = db.engine
+    if engine.dialect.name != "postgresql":
+        return
+
+    columns = {
+        column["name"]: str(column.get("type") or "").lower()
+        for column in inspect(engine).get_columns("itinerary")
+    }
+    column_type = columns.get("flights_data", "")
+    if not column_type or "jsonb" in column_type:
+        return
+    if "json" in column_type:
+        db.session.execute(text(
+            """
+            ALTER TABLE itinerary
+            ALTER COLUMN flights_data
+            TYPE JSONB
+            USING COALESCE(flights_data, CAST(:empty_json AS json))::jsonb
+            """
+        ), {"empty_json": "[]"})
+    else:
+        db.session.execute(text(
+            """
+            ALTER TABLE itinerary
+            ALTER COLUMN flights_data
+            TYPE JSONB
+            USING CASE
+                WHEN flights_data IS NULL OR btrim(flights_data::text) IN ('', 'null') THEN CAST(:empty_json AS jsonb)
+                ELSE flights_data::jsonb
+            END
+            """
+        ), {"empty_json": "[]"})
+    db.session.commit()
+
+
 def ensure_schema_compatibility():
     db.create_all()
 
@@ -2624,6 +2660,7 @@ def ensure_schema_compatibility():
 
     _create_indexes_if_missing()
     _upgrade_ticket_json_columns_for_postgres()
+    _upgrade_itinerary_json_columns_for_postgres()
 
 # ==================== LEDGER ROUTES ====================
 
@@ -3505,7 +3542,7 @@ def get_itineraries():
             "status": i.status,
             "billing_type": i.billing_type,
             "bill_to_name": i.bill_to_name,
-            "flights_count": len(json.loads(i.flights_data)) if i.flights_data else 0,
+            "flights_count": len(_json_list(i.flights_data)),
             "hold_deadline": i.hold_deadline.isoformat() if i.hold_deadline else None,
             "customer": {
                 "name": i.customer.name if i.customer else None
@@ -3530,7 +3567,7 @@ def get_itinerary(itinerary_id):
         "markup": itinerary.markup,
         "status": itinerary.status,
         "final_text": itinerary.final_text,
-        "flights": json.loads(itinerary.flights_data) if itinerary.flights_data else [],
+        "flights": _json_list(itinerary.flights_data),
         "billing_type": itinerary.billing_type,
         "bill_to_name": itinerary.bill_to_name,
         "bill_to_email": itinerary.bill_to_email,
@@ -3889,7 +3926,7 @@ def receive_ticket():
                     Itinerary.status.in_(['confirmed', 'issued'])
                 ).all()
                 for itin in issued_itineraries:
-                    if itin.flights_data and pnr.lower() in itin.flights_data.lower():
+                    if pnr.lower() in json.dumps(_json_list(itin.flights_data)).lower():
                         ticket.matched_itinerary_id = itin.id
                         ticket.status = "matched"
                         matched = True
@@ -6343,6 +6380,7 @@ def init_db():
 
 with app.app_context():
     ensure_schema_compatibility()
+    upgrade_v2_itinerary_json_columns()
 
 def apply_global_db_retry(app_instance):
     """Wraps all view functions to automatically retry on transient database OperationalError."""

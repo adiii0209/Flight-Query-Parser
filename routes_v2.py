@@ -7,6 +7,8 @@ import json
 from datetime import datetime, date
 from functools import wraps
 from flask import Blueprint, request, jsonify, session
+from sqlalchemy import String, cast
+from sqlalchemy.orm import joinedload, load_only
 
 from extensions_v2 import db_session
 from models_v2 import (
@@ -47,6 +49,110 @@ def normalize_str(s):
     """Normalize string for comparison (trim, lowercase, None check)."""
     if not s: return None
     return s.strip().lower()
+
+
+def _itinerary_summary_options():
+    return (
+        load_only(
+            Itinerary.id,
+            Itinerary.status,
+            Itinerary.title,
+            Itinerary.description,
+            Itinerary.reference_number,
+            Itinerary.trip_type,
+            Itinerary.num_passengers,
+            Itinerary.passengers_data,
+            Itinerary.selected_flight_option,
+            Itinerary.total_amount,
+            Itinerary.markup,
+            Itinerary.service_charge,
+            Itinerary.gst_amount,
+            Itinerary.discount_amount,
+            Itinerary.promo_code_used,
+            Itinerary.billing_type,
+            Itinerary.billing_account_id,
+            Itinerary.bill_to_name,
+            Itinerary.bill_to_email,
+            Itinerary.bill_to_phone,
+            Itinerary.bill_to_address,
+            Itinerary.bill_to_company,
+            Itinerary.bill_to_gst,
+            Itinerary.requires_approval,
+            Itinerary.approved_by,
+            Itinerary.approved_at,
+            Itinerary.approval_remarks,
+            Itinerary.held_at,
+            Itinerary.hold_deadline,
+            Itinerary.confirmed_at,
+            Itinerary.reverted_at,
+            Itinerary.created_at,
+            Itinerary.updated_at,
+            Itinerary.user_id,
+            Itinerary.passenger_id,
+            Itinerary.corporate_id,
+            Itinerary.flights_data,
+            Itinerary.raw_input_data,
+            Itinerary.supplier_account_id,
+            Itinerary.supplier_name,
+            Itinerary.supplier_email,
+            Itinerary.supplier_phone,
+            Itinerary.supplier_address,
+            Itinerary.supplier_company,
+            Itinerary.supplier_gst,
+        ),
+        joinedload(Itinerary.billing_account).load_only(
+            BillingAccount.id,
+            BillingAccount.account_type,
+            BillingAccount.display_name,
+            BillingAccount.company_name,
+            BillingAccount.contact_name,
+            BillingAccount.email,
+            BillingAccount.phone,
+            BillingAccount.address,
+            BillingAccount.gst_number,
+        ),
+        joinedload(Itinerary.supplier_account).load_only(
+            SupplierAccount.id,
+            SupplierAccount.account_type,
+            SupplierAccount.display_name,
+            SupplierAccount.company_name,
+            SupplierAccount.contact_name,
+            SupplierAccount.email,
+            SupplierAccount.phone,
+            SupplierAccount.address,
+            SupplierAccount.gst_number,
+        ),
+    )
+
+
+def _itinerary_detail_options():
+    return (
+        joinedload(Itinerary.passenger),
+        joinedload(Itinerary.corporate),
+        joinedload(Itinerary.billing_account),
+        joinedload(Itinerary.supplier_account),
+    )
+
+
+def _get_itinerary_detail_record(itinerary_id, user_id):
+    return db_session.query(Itinerary).options(
+        *_itinerary_detail_options()
+    ).filter_by(
+        id=itinerary_id,
+        user_id=user_id
+    ).first()
+
+
+def _json_or_none(value):
+    if value is None or value == "":
+        return None
+    return value
+
+
+def _itinerary_response(itinerary, include_flights=False):
+    if include_flights:
+        return itinerary.to_detail_dict(include_flights=True)
+    return itinerary.to_summary_dict(include_flights=False)
 
 # ==================== AIRLINE ROUTES ====================
 
@@ -539,12 +645,12 @@ def update_passenger(passenger_id):
             search_pattern = f'"{passenger_id}"'
             affected_itineraries = db_session.query(Itinerary).filter(
                 Itinerary.user_id == session['user_id'],
-                (Itinerary.passenger_id == passenger_id) | (Itinerary.passengers_data.like(f"%{search_pattern}%"))
+                (Itinerary.passenger_id == passenger_id) | (cast(Itinerary.passengers_data, String).like(f"%{search_pattern}%"))
             ).all()
 
             for itin in affected_itineraries:
                 if itin.passengers_data:
-                    p_list = json.loads(itin.passengers_data)
+                    p_list = itin._parse_json_field(itin.passengers_data, [])
                     updated_itin = False
                     for p_entry in p_list:
                         if p_entry.get('passenger_id') == passenger_id or p_entry.get('id') == passenger_id:
@@ -557,7 +663,7 @@ def update_passenger(passenger_id):
                             p_entry['name'] = f"{passenger.first_name} {passenger.last_name}".strip()
                             updated_itin = True
                     if updated_itin:
-                        itin.passengers_data = json.dumps(p_list)
+                        itin.passengers_data = p_list
             
             db_session.commit()
         except Exception as sync_err:
@@ -1063,7 +1169,9 @@ def get_itineraries():
     except (TypeError, ValueError):
         offset = 0
     
-    query = db_session.query(Itinerary).filter_by(user_id=session['user_id'])
+    query = db_session.query(Itinerary).options(
+        *_itinerary_summary_options()
+    ).filter_by(user_id=session['user_id'])
     
     if status_filter:
         query = query.filter_by(status=status_filter)
@@ -1073,18 +1181,23 @@ def get_itineraries():
         query = query.filter_by(corporate_id=corporate_id)
     
     query = query.order_by(Itinerary.created_at.desc())
-    total_count = query.count()
+    fetch_limit = limit + 1 if limit else 0
     itineraries_query = query.offset(offset)
-    if limit:
-        itineraries_query = itineraries_query.limit(limit)
+    if fetch_limit:
+        itineraries_query = itineraries_query.limit(fetch_limit)
     itineraries = itineraries_query.all()
+    has_more = bool(limit and len(itineraries) > limit)
+    if has_more:
+        itineraries = itineraries[:limit]
+    returned_count = len(itineraries)
+    total_count = len(itineraries) if not limit else (offset + returned_count + (1 if has_more else 0))
     
     return jsonify({
-        "itineraries": [it.to_dict(include_flights=True) for it in itineraries],
+        "itineraries": [it.to_summary_dict(include_flights=False) for it in itineraries],
         "total_count": total_count,
         "offset": offset,
-        "returned_count": len(itineraries),
-        "has_more": (offset + len(itineraries)) < total_count,
+        "returned_count": returned_count,
+        "has_more": has_more,
     })
 
 
@@ -1109,9 +1222,9 @@ def create_itinerary():
             reference_number=data.get('reference_number'),
             trip_type=data.get('trip_type', 'one_way'),
             status=data.get('status', 'draft'),
-            flights_data=json.dumps(data.get('flights', [])) if data.get('flights') else None,
+            flights_data=_json_or_none(data.get('flights', [])),
             parser_output_text=data.get('parser_output_text') or data.get('final_text'),
-            raw_input_data=json.dumps(data.get('raw_input_data')) if data.get('raw_input_data') else None,
+            raw_input_data=_json_or_none(data.get('raw_input_data')),
             selected_flight_option=data.get('selected_flight_option'),
             total_amount=safe_float(data.get('total_amount')),
             markup=safe_float(data.get('markup')),
@@ -1128,7 +1241,7 @@ def create_itinerary():
             bill_to_gst=data.get('bill_to_gst'),
             requires_approval=data.get('requires_approval', False),
             num_passengers=int(safe_float(data.get('num_passengers')) or 1),
-            passengers_data=json.dumps(data.get('passengers_data', [])) if data.get('passengers_data') else None,
+            passengers_data=_json_or_none(data.get('passengers_data', [])),
             user_id=session['user_id'],
             passenger_id=data.get('passenger_id'),
             corporate_id=data.get('corporate_id'),
@@ -1145,9 +1258,10 @@ def create_itinerary():
         db_session.add(itinerary)
         db_session.commit()
         
+        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'])
         return jsonify({
             "message": "Itinerary created successfully",
-            "itinerary": itinerary.to_dict(include_flights=True)
+            "itinerary": detail_itinerary.to_detail_dict(include_flights=True)
         }), 201
         
     except Exception as e:
@@ -1159,15 +1273,12 @@ def create_itinerary():
 @login_required
 def get_itinerary(itinerary_id):
     """Get a specific itinerary with full details."""
-    itinerary = db_session.query(Itinerary).filter_by(
-        id=itinerary_id,
-        user_id=session['user_id']
-    ).first()
+    itinerary = _get_itinerary_detail_record(itinerary_id, session['user_id'])
     
     if not itinerary:
         return jsonify({"error": "Itinerary not found"}), 404
     
-    return jsonify(itinerary.to_dict(include_flights=True))
+    return jsonify(itinerary.to_detail_dict(include_flights=True))
 
 
 @api_v2.route('/itineraries/<itinerary_id>', methods=['PUT'])
@@ -1175,10 +1286,7 @@ def get_itinerary(itinerary_id):
 def update_itinerary(itinerary_id):
     """Update an itinerary."""
     try:
-        itinerary = db_session.query(Itinerary).filter_by(
-            id=itinerary_id,
-            user_id=session['user_id']
-        ).first()
+        itinerary = _get_itinerary_detail_record(itinerary_id, session['user_id'])
         
         if not itinerary:
             return jsonify({"error": "Itinerary not found"}), 404
@@ -1222,13 +1330,13 @@ def update_itinerary(itinerary_id):
             itinerary.billing_type = data['billing_type']
         
         if 'passengers_data' in data:
-            itinerary.passengers_data = json.dumps(data['passengers_data'])
+            itinerary.passengers_data = _json_or_none(data['passengers_data'])
         
         if 'flights' in data:
-            itinerary.flights_data = json.dumps(data['flights'])
+            itinerary.flights_data = _json_or_none(data['flights'])
         
         if 'raw_input_data' in data:
-            itinerary.raw_input_data = json.dumps(data['raw_input_data']) if data['raw_input_data'] else None
+            itinerary.raw_input_data = _json_or_none(data['raw_input_data'])
         
         if 'final_text' in data:
             itinerary.parser_output_text = data['final_text']
@@ -1245,9 +1353,13 @@ def update_itinerary(itinerary_id):
         
         db_session.commit()
         
+        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'])
         return jsonify({
             "message": "Itinerary updated successfully",
-            "itinerary": itinerary.to_dict(include_flights=True)
+            "itinerary": _itinerary_response(
+                detail_itinerary,
+                include_flights=request.args.get('response') == 'detail'
+            )
         })
         
     except Exception as e:
@@ -1303,10 +1415,11 @@ def approve_itinerary(itinerary_id):
         itinerary.approval_remarks = data.get('remarks')
         
         db_session.commit()
+        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'])
         
         return jsonify({
             "message": "Itinerary approved successfully",
-            "itinerary": itinerary.to_dict(include_flights=True)
+            "itinerary": _itinerary_response(detail_itinerary)
         })
         
     except Exception as e:
@@ -1345,10 +1458,11 @@ def hold_itinerary(itinerary_id):
             itinerary.hold_deadline = None
         
         db_session.commit()
+        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'])
         
         return jsonify({
             "message": "Itinerary put on hold",
-            "itinerary": itinerary.to_dict(include_flights=True)
+            "itinerary": _itinerary_response(detail_itinerary)
         })
         
     except Exception as e:
@@ -1373,10 +1487,11 @@ def confirm_itinerary(itinerary_id):
         itinerary.confirmed_at = datetime.utcnow()
         
         db_session.commit()
+        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'])
         
         return jsonify({
             "message": "Itinerary confirmed",
-            "itinerary": itinerary.to_dict(include_flights=True)
+            "itinerary": _itinerary_response(detail_itinerary)
         })
         
     except Exception as e:
@@ -1401,10 +1516,11 @@ def revert_itinerary(itinerary_id):
         itinerary.reverted_at = datetime.utcnow()
         
         db_session.commit()
+        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'])
         
         return jsonify({
             "message": "Itinerary reverted to approved",
-            "itinerary": itinerary.to_dict(include_flights=True)
+            "itinerary": _itinerary_response(detail_itinerary)
         })
         
     except Exception as e:

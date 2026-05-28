@@ -6,17 +6,65 @@ Python 3.11+ compatible with proper typing, UUID keys, and bidirectional relatio
 from __future__ import annotations  # Required for Python 3.14 compatibility
 
 import uuid
+import json
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Any, Optional, List
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from sqlalchemy import String, Text, Integer, Float, Boolean, DateTime, Date, ForeignKey, Index, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship, DeclarativeBase
+from sqlalchemy.types import JSON, TypeDecorator
 
 
 class Base(DeclarativeBase):
     """Base class for all models using SQLAlchemy 2.0 declarative style."""
     pass
+
+
+class CompatJSON(TypeDecorator):
+    """Use JSONB on PostgreSQL while keeping SQLite/text compatibility."""
+
+    impl = Text
+    cache_ok = True
+
+    def __init__(self, empty_factory=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.empty_factory = empty_factory
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(JSONB())
+        if dialect.name == "sqlite":
+            return dialect.type_descriptor(Text())
+        return dialect.type_descriptor(JSON())
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name == "postgresql":
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped:
+                    return self.empty_factory() if callable(self.empty_factory) else None
+                return json.loads(stripped)
+            return value
+        if isinstance(value, str):
+            return value
+        return json.dumps(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return self.empty_factory() if callable(self.empty_factory) else None
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return self.empty_factory() if callable(self.empty_factory) else None
+            try:
+                return json.loads(stripped)
+            except json.JSONDecodeError:
+                return value
+        return value
 
 
 # ==================== UTILITY FUNCTIONS ====================
@@ -558,15 +606,15 @@ class Itinerary(Base):
     
     # Passenger Management
     num_passengers: Mapped[int] = mapped_column(Integer, default=1)
-    passengers_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON string of secondary passenger data
+    passengers_data: Mapped[Optional[Any]] = mapped_column(CompatJSON(empty_factory=list), nullable=True)
     
     # Flight Parser Output
-    flights_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON string of flight data
+    flights_data: Mapped[Optional[Any]] = mapped_column(CompatJSON(empty_factory=list), nullable=True)
     parser_output_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Original parser output
     selected_flight_option: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # Index of selected flight
     
     # Raw input data for edit capability (preserves original parser input state)
-    raw_input_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: {flights_text, fares, layover_flags, etc.}
+    raw_input_data: Mapped[Optional[Any]] = mapped_column(CompatJSON(empty_factory=dict), nullable=True)
     
     # Financials
     total_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -635,7 +683,133 @@ class Itinerary(Base):
         Index("idx_itinerary_supplier_account", "supplier_account_id"),
     )
     
-    def to_dict(self, include_flights: bool = False) -> dict:
+    def _parse_json_field(self, value, default):
+        if not value:
+            return default
+        if isinstance(value, (dict, list)):
+            return value
+        try:
+            return json.loads(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _get_flight_summary(self) -> dict:
+        flights = self._parse_json_field(self.flights_data, [])
+        raw_input_data = self._parse_json_field(self.raw_input_data, None)
+        if not isinstance(flights, list):
+            flights = []
+
+        route_text = None
+        option_count = 0
+        has_layover = any(
+            bool(f.get("has_layover")) or len(f.get("segments") or []) > 1
+            for f in flights
+            if isinstance(f, dict)
+        )
+
+        if flights:
+            if self.trip_type == "multi_city":
+                unit_flights = raw_input_data.get("unit_flights") if isinstance(raw_input_data, dict) else None
+                if isinstance(unit_flights, dict) and unit_flights:
+                    option_count = len(unit_flights)
+                    first_indices = next(iter(unit_flights.values()), [])
+                    option_flights = [
+                        flights[i] for i in first_indices
+                        if isinstance(i, int) and 0 <= i < len(flights)
+                    ]
+                else:
+                    first_unit = str(flights[0].get("unit_id") or flights[0].get("unitId") or "1")
+                    option_flights = [
+                        f for f in flights
+                        if str(f.get("unit_id") or f.get("unitId") or "1") == first_unit
+                    ]
+                    option_count = len({str(f.get("unit_id") or f.get("unitId") or "1") for f in flights})
+
+                route_parts = []
+                for idx, flight in enumerate(option_flights):
+                    if not isinstance(flight, dict):
+                        continue
+                    origin = flight.get("departure_code") or flight.get("departure_airport") or flight.get("from") or ""
+                    destination = flight.get("arrival_code") or flight.get("arrival_airport") or flight.get("to") or ""
+                    if idx == 0 and origin:
+                        route_parts.append(str(origin).upper())
+                    if destination:
+                        route_parts.append(str(destination).upper())
+                if len(route_parts) >= 2:
+                    route_text = " -> ".join(route_parts)
+            else:
+                first = flights[0] if isinstance(flights[0], dict) else {}
+                origin = first.get("departure_code") or first.get("departure_airport") or first.get("from") or ""
+                destination = first.get("arrival_code") or first.get("arrival_airport") or first.get("to") or ""
+                if origin or destination:
+                    arrow = " <-> " if self.trip_type == "round_trip" else " -> "
+                    route_text = f"{str(origin).upper()}{arrow}{str(destination).upper()}"
+                option_count = (len(flights) + 1) // 2 if self.trip_type == "round_trip" else len(flights)
+
+        return {
+            "route_text": route_text,
+            "flight_options_count": option_count,
+            "has_layover": has_layover,
+        }
+
+    def to_summary_dict(self, include_flights: bool = False) -> dict:
+        flight_summary = self._get_flight_summary()
+        data = {
+            "id": self.id,
+            "status": self.status,
+            "title": self.title,
+            "description": self.description,
+            "reference_number": self.reference_number,
+            "trip_type": self.trip_type,
+            "num_passengers": self.num_passengers,
+            "passengers_data": self._parse_json_field(self.passengers_data, []),
+            "selected_flight_option": self.selected_flight_option,
+            "total_amount": self.total_amount,
+            "markup": self.markup,
+            "service_charge": self.service_charge,
+            "gst_amount": self.gst_amount,
+            "discount_amount": self.discount_amount,
+            "promo_code_used": self.promo_code_used,
+            "billing_type": self.billing_type,
+            "billing_account_id": self.billing_account_id,
+            "bill_to_name": self.bill_to_name,
+            "bill_to_email": self.bill_to_email,
+            "bill_to_phone": self.bill_to_phone,
+            "bill_to_address": self.bill_to_address,
+            "bill_to_company": self.bill_to_company,
+            "bill_to_gst": self.bill_to_gst,
+            "requires_approval": self.requires_approval,
+            "approved_by": self.approved_by,
+            "approved_at": self.approved_at.isoformat() if self.approved_at else None,
+            "approval_remarks": self.approval_remarks,
+            "held_at": self.held_at.isoformat() if self.held_at else None,
+            "hold_deadline": self.hold_deadline.isoformat() if self.hold_deadline else None,
+            "confirmed_at": self.confirmed_at.isoformat() if self.confirmed_at else None,
+            "reverted_at": self.reverted_at.isoformat() if self.reverted_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "user_id": self.user_id,
+            "passenger_id": self.passenger_id,
+            "corporate_id": self.corporate_id,
+            "billing_account": self.billing_account.to_dict() if self.billing_account else None,
+            "supplier_account_id": self.supplier_account_id,
+            "supplier_name": self.supplier_name,
+            "supplier_email": self.supplier_email,
+            "supplier_phone": self.supplier_phone,
+            "supplier_address": self.supplier_address,
+            "supplier_company": self.supplier_company,
+            "supplier_gst": self.supplier_gst,
+            "supplier_account": self.supplier_account.to_dict() if self.supplier_account else None,
+            **flight_summary,
+        }
+
+        if include_flights:
+            data["flights"] = self._parse_json_field(self.flights_data, [])
+            data["raw_input_data"] = self._parse_json_field(self.raw_input_data, None)
+
+        return data
+
+    def to_detail_dict(self, include_flights: bool = False) -> dict:
         import json
         
         data = {
@@ -646,7 +820,7 @@ class Itinerary(Base):
             "reference_number": self.reference_number,
             "trip_type": self.trip_type,
             "num_passengers": self.num_passengers,
-            "passengers_data": json.loads(self.passengers_data) if self.passengers_data else [],
+            "passengers_data": self._parse_json_field(self.passengers_data, []),
             "selected_flight_option": self.selected_flight_option,
             "total_amount": self.total_amount,
             "markup": self.markup,
@@ -689,11 +863,14 @@ class Itinerary(Base):
         }
         
         if include_flights:
-            data["flights"] = json.loads(self.flights_data) if self.flights_data else []
+            data["flights"] = self._parse_json_field(self.flights_data, [])
             data["parser_output_text"] = self.parser_output_text
-            data["raw_input_data"] = json.loads(self.raw_input_data) if self.raw_input_data else None
+            data["raw_input_data"] = self._parse_json_field(self.raw_input_data, None)
         
         return data
+
+    def to_dict(self, include_flights: bool = False) -> dict:
+        return self.to_detail_dict(include_flights=include_flights)
 
 
 # ==================== BILLING ACCOUNT MODEL ====================

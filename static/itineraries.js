@@ -264,6 +264,29 @@ function writeCachedJson(key, value) {
   }
 }
 
+function cacheItinerariesSnapshot(itineraries, totalCount) {
+  const safeItineraries = Array.isArray(itineraries) ? itineraries : [];
+  const safeTotalCount = Number.isFinite(Number(totalCount))
+    ? Number(totalCount)
+    : safeItineraries.length;
+  writeCachedJson(ITINERARIES_CACHE_KEY, {
+    cached_at: Date.now(),
+    total_count: safeTotalCount,
+    itineraries: safeItineraries
+  });
+}
+
+function mergeItineraryUpdate(update) {
+  if (!update || typeof update !== 'object') return currentItinerary;
+  currentItinerary = { ...(currentItinerary || {}), ...update };
+  const idx = allItineraries.findIndex(it => it.id === update.id);
+  if (idx >= 0) {
+    allItineraries[idx] = { ...allItineraries[idx], ...update };
+    cacheItinerariesSnapshot(allItineraries, totalAvailableItineraries);
+  }
+  return currentItinerary;
+}
+
 function hasFreshItinerariesCache(maxAgeMs = ITINERARIES_CACHE_TTL_MS) {
   const cached = readCachedJson(ITINERARIES_CACHE_KEY);
   const cachedAt = Number(cached && cached.cached_at);
@@ -336,11 +359,7 @@ async function loadItineraries(options = {}) {
       ? Number(d.total_count)
       : incomingItineraries.length;
     allItineraries = incomingItineraries;
-    writeCachedJson(ITINERARIES_CACHE_KEY, {
-      cached_at: Date.now(),
-      total_count: totalAvailableItineraries,
-      itineraries: allItineraries.slice(0, INITIAL_ITINERARIES_BATCH_SIZE)
-    });
+    cacheItinerariesSnapshot(allItineraries, totalAvailableItineraries);
     if (render) {
       renderItineraryCards();
     }
@@ -600,20 +619,22 @@ function renderItineraryCards() {
 
   container.innerHTML = items.map(it => {
     const flights = it.flights || [];
-    const routeText = getCardRoute(flights, it.trip_type, it.raw_input_data);
+    const routeText = it.route_text || getCardRoute(flights, it.trip_type, it.raw_input_data);
 
     // Count options based on trip type
-    let numOpts = 0;
-    if (it.trip_type === 'round_trip') {
-      numOpts = Math.ceil(flights.length / 2);
-    } else if (it.trip_type === 'multi_city') {
-      numOpts = getFlightOptionCount(flights, it.trip_type, it.raw_input_data);
-    } else {
-      numOpts = flights.length;
+    let numOpts = Number(it.flight_options_count || 0);
+    if (!numOpts) {
+      if (it.trip_type === 'round_trip') {
+        numOpts = Math.ceil(flights.length / 2);
+      } else if (it.trip_type === 'multi_city') {
+        numOpts = getFlightOptionCount(flights, it.trip_type, it.raw_input_data);
+      } else {
+        numOpts = flights.length;
+      }
     }
 
     // Detect layovers
-    const hasLayover = flights.some(f => f.has_layover === true || (f.segments && f.segments.length > 1));
+    const hasLayover = Boolean(it.has_layover) || flights.some(f => f.has_layover === true || (f.segments && f.segments.length > 1));
 
     // Billing info
     let billingInfo = '';
@@ -903,7 +924,7 @@ async function renameItineraryTitle() {
 
     if (r.ok) {
       const d = await r.json();
-      currentItinerary = d.itinerary;
+      mergeItineraryUpdate(d.itinerary);
       renderDetailView();
       renderItineraryCards();
       showToast('Itinerary title updated', 'success');
@@ -2190,7 +2211,7 @@ async function selectFlightOption(idx) {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ selected_flight_option: idx })
     });
-    if (r.ok) { const d = await r.json(); currentItinerary = d.itinerary; renderDetailView(); showToast('Option selected', 'success'); }
+    if (r.ok) { const d = await r.json(); mergeItineraryUpdate(d.itinerary); renderDetailView(); showToast('Option selected', 'success'); }
     else showToast('Failed to select option', 'error');
   } catch (e) { showToast('Error', 'error'); }
 }
@@ -2209,7 +2230,7 @@ async function approveItinerary() {
       await fetch('/api/v2/itineraries/' + it.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selected_flight_option: selIdx }) });
     }
     const r = await fetch('/api/v2/itineraries/' + it.id + '/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
-    if (r.ok) { const d = await r.json(); currentItinerary = d.itinerary; renderDetailView(); showToast('Itinerary approved!', 'success'); }
+    if (r.ok) { const d = await r.json(); mergeItineraryUpdate(d.itinerary); renderDetailView(); showToast('Itinerary approved!', 'success'); }
     else { const e = await r.json(); showToast(e.error || 'Failed', 'error'); }
   } catch (e) { showToast('Error', 'error'); }
 }
@@ -2238,7 +2259,7 @@ async function submitHoldItinerary() {
     });
     if (r.ok) {
       const d = await r.json();
-      currentItinerary = d.itinerary;
+      mergeItineraryUpdate(d.itinerary);
       renderDetailView();
       closeModal();
       showToast('Itinerary on hold until ' + deadline.toLocaleString(), 'success');
@@ -2251,7 +2272,7 @@ async function confirmItinerary() {
   if (!confirm("Are you sure you want to issue this itinerary?")) return;
   try {
     const r = await fetch('/api/v2/itineraries/' + currentItinerary.id + '/confirm', { method: 'POST' });
-    if (r.ok) { const d = await r.json(); currentItinerary = d.itinerary; renderDetailView(); showToast('Itinerary issued!', 'success'); }
+    if (r.ok) { const d = await r.json(); mergeItineraryUpdate(d.itinerary); renderDetailView(); showToast('Itinerary issued!', 'success'); }
     else showToast('Failed', 'error');
   } catch (e) { showToast('Error', 'error'); }
 }
@@ -2259,7 +2280,7 @@ async function confirmItinerary() {
 async function revertItinerary() {
   try {
     const r = await fetch('/api/v2/itineraries/' + currentItinerary.id + '/revert', { method: 'POST' });
-    if (r.ok) { const d = await r.json(); currentItinerary = d.itinerary; renderDetailView(); showToast('Itinerary reverted', 'success'); }
+    if (r.ok) { const d = await r.json(); mergeItineraryUpdate(d.itinerary); renderDetailView(); showToast('Itinerary reverted', 'success'); }
     else showToast('Failed', 'error');
   } catch (e) { showToast('Error', 'error'); }
 }
@@ -2624,7 +2645,7 @@ async function updateItineraryPassengers(pax) {
     });
     if (r.ok) {
       const d = await r.json();
-      currentItinerary = d.itinerary;
+      mergeItineraryUpdate(d.itinerary);
       renderPassengers();
       renderFlightSection();
       renderInfoCards();
@@ -2644,7 +2665,7 @@ async function removePassenger(idx) {
   pax.splice(idx, 1);
   try {
     const r = await fetch('/api/v2/itineraries/' + currentItinerary.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passengers_data: pax, num_passengers: Math.max(pax.length, 1) }) });
-    if (r.ok) { const d = await r.json(); currentItinerary = d.itinerary; renderPassengers(); renderFlightSection(); renderInfoCards(); renderOutputBoxes(); showToast('Passenger removed', 'success'); }
+    if (r.ok) { const d = await r.json(); mergeItineraryUpdate(d.itinerary); renderPassengers(); renderFlightSection(); renderInfoCards(); renderOutputBoxes(); showToast('Passenger removed', 'success'); }
   } catch (e) { showToast('Error', 'error'); }
 }
 
@@ -2887,7 +2908,7 @@ async function updateItineraryBilling(data) {
     });
     if (r.ok) {
       const d = await r.json();
-      currentItinerary = d.itinerary;
+      mergeItineraryUpdate(d.itinerary);
       renderBilling();
       renderSupplier();
       renderInfoCards();
@@ -3094,7 +3115,7 @@ async function updateItinerarySupplier(data) {
     });
     if (r.ok) {
       const d = await r.json();
-      currentItinerary = d.itinerary;
+      mergeItineraryUpdate(d.itinerary);
       renderSupplier();
       renderInfoCards(); // maybe not needed but safe
       renderOutputBoxes();
