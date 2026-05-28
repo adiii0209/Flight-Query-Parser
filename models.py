@@ -291,7 +291,7 @@ class OwnershipTrip(db.Model):
         order_by="OwnershipReminder.days_before",
     )
 
-    def to_dict(self):
+    def to_dict(self, include_legacy_relationships=False):
         subtask_groups = self.subtasks_json if isinstance(self.subtasks_json, dict) else {
             "visa": [],
             "flights": [],
@@ -303,9 +303,12 @@ class OwnershipTrip(db.Model):
             "travefyTaskList": [],
             "tripFeedbackForm": [],
         }
-        if not any(subtask_groups.values()) and self.subtasks:
+        if include_legacy_relationships and not any(subtask_groups.values()) and self.subtasks:
             for subtask in self.subtasks or []:
                 subtask_groups.setdefault(subtask.task_group, []).append(subtask.to_dict())
+        reminders = self.reminders_json if isinstance(self.reminders_json, list) else []
+        if include_legacy_relationships and not reminders:
+            reminders = [reminder.to_dict() for reminder in self.reminders or []]
 
         return {
             "id": self.id,
@@ -332,7 +335,7 @@ class OwnershipTrip(db.Model):
             "latestUpdate": self.latest_update or "",
             "presentWorkAssignedTo": self.present_work_assigned_to or "",
             "subtasks": subtask_groups,
-            "reminders": self.reminders_json if isinstance(self.reminders_json, list) else [reminder.to_dict() for reminder in self.reminders or []],
+            "reminders": reminders,
         }
 
 

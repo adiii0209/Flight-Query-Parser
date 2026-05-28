@@ -24,6 +24,7 @@ from sqlalchemy.orm import defer, load_only, selectinload
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import date, datetime, time, timedelta
 from functools import wraps
+from time import perf_counter
 import hashlib
 from query_parser import extract_flight, extract_multiple_flights
 from models import (
@@ -2565,6 +2566,7 @@ def _create_indexes_if_missing():
         "CREATE INDEX IF NOT EXISTS ix_ticket_read_ticket_id ON ticket_read (ticket_id)",
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_ticket_read_user_ticket ON ticket_read (user_id, ticket_id)",
         "CREATE INDEX IF NOT EXISTS ix_ownership_trip_user_start ON ownership_trip (user_id, start_date)",
+        "CREATE INDEX IF NOT EXISTS ix_ownership_trip_user_list_order ON ownership_trip (user_id, start_date DESC, source_row ASC, created_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_ownership_trip_owner ON ownership_trip (owner)",
         "CREATE INDEX IF NOT EXISTS ix_ownership_trip_source_row ON ownership_trip (source_row)",
         "CREATE INDEX IF NOT EXISTS ix_ownership_trip_statuses ON ownership_trip (user_id, owner, start_date, task_status)",
@@ -6554,7 +6556,7 @@ def _ownership_cache_version():
 
 
 def _ownership_cache_get(kind):
-    key = f"ownership:{kind}:v:{_ownership_cache_version()}"
+    key = _ownership_cache_key(kind)
     return _dashboard_cache.get_json(key), key
 
 
@@ -6562,8 +6564,90 @@ def _ownership_cache_set(key, payload):
     _dashboard_cache.set_json(key, payload, _OWNERSHIP_CACHE_TTL_SECONDS)
 
 
-def _publish_ownership_event(action="refresh", **payload):
-    version = _dashboard_cache.incr("ownership:version")
+def _ownership_cache_key(kind, version=None):
+    version = _ownership_cache_version() if version is None else version
+    user_id = _ownership_user_id() or "anonymous"
+    return f"ownership:{kind}:user:{user_id}:v:{version}"
+
+
+def _ownership_cache_upsert_trip(trip):
+    cached, cache_key = _ownership_cache_get("trips")
+    if cached is None:
+        return
+    trip_payload = trip.to_dict()
+    cached_trips = cached.get("trips") if isinstance(cached, dict) else None
+    if not isinstance(cached_trips, list):
+        return
+    for idx, cached_trip in enumerate(cached_trips):
+        if cached_trip.get("id") == trip.id:
+            cached_trips[idx] = trip_payload
+            break
+    else:
+        cached_trips.insert(0, trip_payload)
+    _ownership_cache_set(cache_key, cached)
+
+
+def _ownership_cache_delete_trip(trip_id):
+    cached, cache_key = _ownership_cache_get("trips")
+    if cached is None:
+        return
+    cached_trips = cached.get("trips") if isinstance(cached, dict) else None
+    if not isinstance(cached_trips, list):
+        return
+    cached["trips"] = [trip for trip in cached_trips if trip.get("id") != trip_id]
+    _ownership_cache_set(cache_key, cached)
+
+
+def _ownership_trips_query():
+    return _ownership_query().options(
+        load_only(
+            OwnershipTrip.id,
+            OwnershipTrip.created_at,
+            OwnershipTrip.user_id,
+            OwnershipTrip.source_row,
+            OwnershipTrip.guest_name,
+            OwnershipTrip.pax,
+            OwnershipTrip.destination,
+            OwnershipTrip.start_date,
+            OwnershipTrip.end_date,
+            OwnershipTrip.proposal_status,
+            OwnershipTrip.flights_status,
+            OwnershipTrip.visa_status,
+            OwnershipTrip.hotels_status,
+            OwnershipTrip.sector_tickets_status,
+            OwnershipTrip.sightseeing_status,
+            OwnershipTrip.insurance_status,
+            OwnershipTrip.traveling_status,
+            OwnershipTrip.travefy_task_list_status,
+            OwnershipTrip.trip_feedback_form_status,
+            OwnershipTrip.owner,
+            OwnershipTrip.current_task,
+            OwnershipTrip.task_status,
+            OwnershipTrip.priority,
+            OwnershipTrip.last_status_update_date,
+            OwnershipTrip.latest_update,
+            OwnershipTrip.present_work_assigned_to,
+            OwnershipTrip.subtasks_json,
+            OwnershipTrip.reminders_json,
+        ),
+        defer(OwnershipTrip.raw_sheet_data),
+    )
+
+
+def _ownership_trip_response(payload, cache_status, started_at, **timings):
+    response = jsonify(payload)
+    response.headers["X-Cache"] = cache_status
+    response.headers["X-Cache-Backend"] = _dashboard_cache.backend_name
+    response.headers["X-Trip-Count"] = str(len(payload.get("trips") or []))
+    total_ms = (perf_counter() - started_at) * 1000
+    timing_parts = [f"total;dur={total_ms:.1f}"]
+    timing_parts.extend(f"{name};dur={duration:.1f}" for name, duration in timings.items())
+    response.headers["Server-Timing"] = ", ".join(timing_parts)
+    return response
+
+
+def _publish_ownership_event(action="refresh", bump_version=True, **payload):
+    version = _dashboard_cache.incr("ownership:version") if bump_version else _ownership_cache_version()
     event_payload = {
         "event": action,
         "version": version,
@@ -6750,23 +6834,31 @@ def seed_ownership_from_workbook(force=False):
 
 @app.route("/api/ownership/trips", methods=["GET"])
 def get_ownership_trips():
+    started_at = perf_counter()
     cached, cache_key = _ownership_cache_get("trips")
     if cached is not None:
-        response = jsonify(cached)
-        response.headers["X-Cache"] = "HIT"
-        response.headers["X-Cache-Backend"] = _dashboard_cache.backend_name
-        return response
-    trips = _ownership_query().order_by(
+        return _ownership_trip_response(cached, "HIT", started_at)
+    query_started_at = perf_counter()
+    trips = _ownership_trips_query().order_by(
         OwnershipTrip.start_date.desc().nullslast(),
         OwnershipTrip.source_row.asc().nullslast(),
         OwnershipTrip.created_at.desc(),
     ).all()
+    query_ms = (perf_counter() - query_started_at) * 1000
+    serialize_started_at = perf_counter()
     payload = {"trips": [trip.to_dict() for trip in trips], "cacheVersion": _ownership_cache_version()}
+    serialize_ms = (perf_counter() - serialize_started_at) * 1000
+    cache_started_at = perf_counter()
     _ownership_cache_set(cache_key, payload)
-    response = jsonify(payload)
-    response.headers["X-Cache"] = "MISS"
-    response.headers["X-Cache-Backend"] = _dashboard_cache.backend_name
-    return response
+    cache_ms = (perf_counter() - cache_started_at) * 1000
+    return _ownership_trip_response(
+        payload,
+        "MISS",
+        started_at,
+        db=query_ms,
+        serialize=serialize_ms,
+        cache_write=cache_ms,
+    )
 
 
 @app.route("/api/ownership/trips/import-sheet", methods=["POST"])
@@ -6784,7 +6876,8 @@ def create_ownership_trip():
     _apply_trip_payload(trip, payload)
     db.session.add(trip)
     db.session.commit()
-    _publish_ownership_event("trip_created", tripId=trip.id)
+    _ownership_cache_upsert_trip(trip)
+    _publish_ownership_event("trip_created", bump_version=False, tripId=trip.id)
     return jsonify({"trip": trip.to_dict()}), 201
 
 
@@ -6796,7 +6889,8 @@ def update_ownership_trip(trip_id):
     payload = request.get_json(force=True) or {}
     _apply_trip_payload(trip, payload)
     db.session.commit()
-    _publish_ownership_event("trip_updated", tripId=trip.id)
+    _ownership_cache_upsert_trip(trip)
+    _publish_ownership_event("trip_updated", bump_version=False, tripId=trip.id)
     return jsonify({"trip": trip.to_dict()})
 
 
@@ -6807,7 +6901,8 @@ def delete_ownership_trip(trip_id):
         return jsonify({"error": "Trip not found"}), 404
     db.session.delete(trip)
     db.session.commit()
-    _publish_ownership_event("trip_deleted", tripId=trip_id)
+    _ownership_cache_delete_trip(trip_id)
+    _publish_ownership_event("trip_deleted", bump_version=False, tripId=trip_id)
     return jsonify({"success": True})
 
 

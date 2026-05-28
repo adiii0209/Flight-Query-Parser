@@ -20,6 +20,7 @@ const STATUS_LABELS = {
 };
 
 const ACTIVITY_LOG = [];
+const OWNERSHIP_TRIPS_STORAGE_KEY = 'ownership_trips_cache_v1';
 
 // ═══════════════════════════════════════════════════════════
 // STATE
@@ -85,6 +86,7 @@ async function saveTripPatch(trip, patch) {
   if (saved) {
     const idx = trips.findIndex(t => t.id === saved.id);
     if (idx !== -1) trips[idx] = saved;
+    cacheTripsForFastPaint(trips);
   }
   return saved;
 }
@@ -1402,8 +1404,38 @@ async function loadOwnershipData() {
     apiJson('/api/ownership/employees'),
   ]);
   trips = tripData.trips || [];
+  cacheTripsForFastPaint(trips);
   taskTemplates = templateData.templates || [];
   employees = employeeData.employees || [];
+}
+
+function cacheTripsForFastPaint(nextTrips) {
+  try {
+    localStorage.setItem(OWNERSHIP_TRIPS_STORAGE_KEY, JSON.stringify({
+      savedAt: Date.now(),
+      trips: Array.isArray(nextTrips) ? nextTrips : [],
+    }));
+  } catch (err) {
+    // Storage can fail in private mode or under quota pressure; the API remains authoritative.
+  }
+}
+
+function restoreTripsForFastPaint() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(OWNERSHIP_TRIPS_STORAGE_KEY) || 'null');
+    if (!cached || !Array.isArray(cached.trips)) return false;
+    trips = cached.trips;
+    refreshOwnerControls();
+    populateMonthFilter();
+    renderTable();
+    renderActivityFeed();
+    renderCalendar();
+    renderUpcomingTrips();
+    return true;
+  } catch (err) {
+    localStorage.removeItem(OWNERSHIP_TRIPS_STORAGE_KEY);
+    return false;
+  }
 }
 
 async function reloadOwnershipData({ silent = true } = {}) {
@@ -1429,12 +1461,13 @@ async function init() {
   if (saved === 'dark') { isDark = true; syncTheme(); }
 
   renderSkeleton();
+  const renderedCachedTrips = restoreTripsForFastPaint();
   let loadError = null;
   try {
     await loadOwnershipData();
   } catch (err) {
     console.error('Ownership load failed', err);
-    trips = [];
+    if (!renderedCachedTrips) trips = [];
     taskTemplates = [];
     employees = [];
     loadError = err;
@@ -1443,7 +1476,7 @@ async function init() {
   refreshOwnerControls();
   populateMonthFilter();
 
-  if (loadError) {
+  if (loadError && !renderedCachedTrips) {
     const tbody = document.getElementById('crmTbody');
     if (tbody) tbody.innerHTML = `<tr><td colspan="18"><div class="crm-empty"><div class="crm-empty-icon">⚠️</div><div class="crm-empty-title">Could not load ownership data</div><div class="crm-empty-sub">Please check your connection and refresh. ${loadError.message || ''}</div></div></td></tr>`;
     document.getElementById('tableFooterInfo').textContent = 'Database error — please refresh';
