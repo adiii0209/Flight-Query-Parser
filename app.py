@@ -1041,6 +1041,13 @@ def ownership_page():
     """Serve the Ownership CRM dashboard"""
     return render_template('ownership.html')
 
+@app.route("/ownership/employees")
+@app.route("/ownership/employees/<employee_id>")
+@login_required
+def employees_page(employee_id=None):
+    """Serve the Employee Workspace dashboard"""
+    return render_template('employees.html', initial_employee_id=employee_id or "")
+
 @app.route("/itineraries")
 def itineraries_page():
     """Serve the itineraries management page"""
@@ -2569,7 +2576,6 @@ def _create_indexes_if_missing():
         "CREATE INDEX IF NOT EXISTS ix_ownership_trip_user_list_order ON ownership_trip (user_id, start_date DESC, source_row ASC, created_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_ownership_trip_owner ON ownership_trip (owner)",
         "CREATE INDEX IF NOT EXISTS ix_ownership_trip_source_row ON ownership_trip (source_row)",
-        "CREATE INDEX IF NOT EXISTS ix_ownership_trip_statuses ON ownership_trip (user_id, owner, start_date, task_status)",
         "CREATE INDEX IF NOT EXISTS ix_ownership_employee_active ON ownership_employee (is_active)",
     ]
     for statement in statements:
@@ -2722,6 +2728,12 @@ def ensure_schema_compatibility():
     _add_column_if_missing("ownership_trip", "subtasks_json", "TEXT")
     _add_column_if_missing("ownership_trip", "reminders_json", "TEXT")
     _add_column_if_missing("ownership_trip", "raw_sheet_data", "TEXT")
+    _add_column_if_missing("ownership_trip", "master_sheet_url", "TEXT")
+    _add_column_if_missing("ownership_task_template_item", "reminder_days", "INTEGER")
+    _drop_index_if_exists("ix_ownership_trip_statuses")
+    _drop_ownership_column_if_exists("current_task")
+    _drop_ownership_column_if_exists("task_status")
+    _drop_ownership_column_if_exists("priority")
 
     _add_column_if_missing("operation_ledger_link", "created_at", "TIMESTAMP")
     _add_column_if_missing("operation_ledger_link", "user_id", "VARCHAR")
@@ -6451,7 +6463,6 @@ OWNERSHIP_STATUS_FIELDS = {
     "travelingStatus": "traveling_status",
     "travefyTaskListStatus": "travefy_task_list_status",
     "tripFeedbackFormStatus": "trip_feedback_form_status",
-    "taskStatus": "task_status",
 }
 OWNERSHIP_TRIP_FIELDS = {
     "guestName": "guest_name",
@@ -6460,8 +6471,7 @@ OWNERSHIP_TRIP_FIELDS = {
     "startDate": "start_date",
     "endDate": "end_date",
     "owner": "owner",
-    "currentTask": "current_task",
-    "priority": "priority",
+    "masterSheetUrl": "master_sheet_url",
     "lastStatusUpdateDate": "last_status_update_date",
     "latestUpdate": "latest_update",
     "presentWorkAssignedTo": "present_work_assigned_to",
@@ -6481,6 +6491,7 @@ OWNERSHIP_STATUS_VALUES = {
     "trip updates": "review",
 }
 OWNERSHIP_DEFAULT_SUBTASKS = {
+    "proposal": [],
     "visa": [],
     "flights": [],
     "hotels": [],
@@ -6570,6 +6581,48 @@ def _ownership_cache_key(kind, version=None):
     return f"ownership:{kind}:user:{user_id}:v:{version}"
 
 
+_OWNERSHIP_TRIP_COLUMN_CACHE = {}
+
+
+def _ownership_trip_has_column(column_name):
+    cached = _OWNERSHIP_TRIP_COLUMN_CACHE.get(column_name)
+    if cached is not None:
+        return cached
+    try:
+        columns = {column["name"] for column in inspect(db.engine).get_columns("ownership_trip")}
+        result = column_name in columns
+    except Exception:
+        result = False
+    _OWNERSHIP_TRIP_COLUMN_CACHE[column_name] = result
+    return result
+
+
+def _drop_ownership_column_if_exists(column_name):
+    try:
+        columns = {column["name"] for column in inspect(db.engine).get_columns("ownership_trip")}
+        if column_name not in columns:
+            return False
+        db.session.execute(text(f"ALTER TABLE ownership_trip DROP COLUMN {column_name}"))
+        db.session.commit()
+        _OWNERSHIP_TRIP_COLUMN_CACHE.pop(column_name, None)
+        return True
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.warning("Could not drop obsolete ownership column %s: %s", column_name, exc)
+        return False
+
+
+def _drop_index_if_exists(index_name):
+    try:
+        db.session.execute(text(f"DROP INDEX IF EXISTS {index_name}"))
+        db.session.commit()
+        return True
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.warning("Could not drop obsolete index %s: %s", index_name, exc)
+        return False
+
+
 def _ownership_cache_upsert_trip(trip):
     cached, cache_key = _ownership_cache_get("trips")
     if cached is None:
@@ -6621,9 +6674,7 @@ def _ownership_trips_query():
             OwnershipTrip.travefy_task_list_status,
             OwnershipTrip.trip_feedback_form_status,
             OwnershipTrip.owner,
-            OwnershipTrip.current_task,
-            OwnershipTrip.task_status,
-            OwnershipTrip.priority,
+            OwnershipTrip.master_sheet_url,
             OwnershipTrip.last_status_update_date,
             OwnershipTrip.latest_update,
             OwnershipTrip.present_work_assigned_to,
@@ -6708,6 +6759,10 @@ def _apply_trip_payload(trip, payload):
             value = _normalize_owner(value)
         elif value is not None:
             value = str(value).strip()
+        if model_field == "master_sheet_url":
+            raw_sheet_data = trip.raw_sheet_data if isinstance(trip.raw_sheet_data, dict) else {}
+            raw_sheet_data["masterSheetUrl"] = value or ""
+            trip.raw_sheet_data = raw_sheet_data
         setattr(trip, model_field, value)
 
     if "subtasks" in payload:
@@ -6739,6 +6794,8 @@ def _replace_ownership_subtasks(trip, groups):
                 "done": bool(item.get("done")),
                 "assignee": _normalize_owner(item.get("assignee")),
                 "dueDate": due_date.isoformat() if due_date else "",
+                "createdAt": str(item.get("createdAt") or item.get("created_at") or "").strip(),
+                "updatedAt": str(item.get("updatedAt") or item.get("updated_at") or "").strip(),
                 "metadata": item.get("metadata") if isinstance(item.get("metadata"), dict) else {},
             })
     trip.subtasks_json = normalized
@@ -6789,8 +6846,6 @@ def _sheet_row_to_trip_payload(ws, row):
         "lastStatusUpdateDate": _parse_ownership_date(values.get(17)),
         "latestUpdate": str(values.get(18) or "").strip(),
         "presentWorkAssignedTo": _normalize_owner(values.get(19)),
-        "priority": "medium",
-        "taskStatus": "pending",
         "subtasks": deepcopy(OWNERSHIP_DEFAULT_SUBTASKS),
         "reminders": [],
         "_raw": {str(col): _ownership_json_safe(value) for col, value in values.items()},
@@ -6930,20 +6985,31 @@ def get_ownership_templates():
 @app.route("/api/ownership/templates", methods=["POST"])
 def create_ownership_template():
     payload = request.get_json(force=True) or {}
-    name = str(payload.get("name") or "").strip()
+    task_group = str(payload.get("taskGroup") or "").strip()
     tasks = payload.get("tasks") or []
-    if not name:
-        return jsonify({"error": "Template name is required"}), 400
+    generated_name = f"{task_group or 'category'}-{uuid.uuid4().hex[:8]}"
+    name = str(payload.get("name") or "").strip() or generated_name
     template = OwnershipTaskTemplate(
         user_id=_ownership_user_id(),
         name=name,
-        task_group=str(payload.get("taskGroup") or "").strip(),
+        task_group=task_group,
         reminder_days=payload.get("reminderDays") or None,
     )
     for idx, text_value in enumerate(tasks):
-        text_value = str(text_value or "").strip()
-        if text_value:
-            template.tasks.append(OwnershipTaskTemplateItem(row_order=idx, text=text_value))
+        if isinstance(text_value, dict):
+            task_text = str(text_value.get("text") or "").strip()
+            task_reminder_days = text_value.get("reminderDays") or None
+        else:
+            task_text = str(text_value or "").strip()
+            task_reminder_days = None
+        if task_text:
+            template.tasks.append(
+                OwnershipTaskTemplateItem(
+                    row_order=idx,
+                    text=task_text,
+                    reminder_days=task_reminder_days,
+                )
+            )
     db.session.add(template)
     db.session.commit()
     _publish_ownership_event("template_created", templateId=template.id)
@@ -6983,6 +7049,35 @@ def get_ownership_employees():
     return response
 
 
+def _ownership_cache_upsert_employee(employee):
+    cached, cache_key = _ownership_cache_get("employees")
+    if cached is None:
+        return
+    cached_employees = cached.get("employees") if isinstance(cached, dict) else None
+    if not isinstance(cached_employees, list):
+        return
+    employee_payload = employee.to_dict()
+    for idx, cached_employee in enumerate(cached_employees):
+        if cached_employee.get("id") == employee.id:
+            cached_employees[idx] = employee_payload
+            break
+    else:
+        cached_employees.append(employee_payload)
+        cached_employees.sort(key=lambda item: (item.get("name") or "").lower())
+    _ownership_cache_set(cache_key, cached)
+
+
+def _ownership_cache_delete_employee(employee_id):
+    cached, cache_key = _ownership_cache_get("employees")
+    if cached is None:
+        return
+    cached_employees = cached.get("employees") if isinstance(cached, dict) else None
+    if not isinstance(cached_employees, list):
+        return
+    cached["employees"] = [employee for employee in cached_employees if employee.get("id") != employee_id]
+    _ownership_cache_set(cache_key, cached)
+
+
 @app.route("/api/ownership/employees", methods=["POST"])
 def create_ownership_employee():
     payload = request.get_json(force=True) or {}
@@ -7001,6 +7096,7 @@ def create_ownership_employee():
         )
         db.session.add(employee)
     db.session.commit()
+    _ownership_cache_upsert_employee(employee)
     _publish_ownership_event("employee_saved", employeeId=employee.id)
     return jsonify({"employee": employee.to_dict()}), 201
 
@@ -7012,6 +7108,7 @@ def delete_ownership_employee(employee_id):
         return jsonify({"error": "Employee not found"}), 404
     employee.is_active = False
     db.session.commit()
+    _ownership_cache_delete_employee(employee_id)
     _publish_ownership_event("employee_deleted", employeeId=employee_id)
     return jsonify({"success": True})
 

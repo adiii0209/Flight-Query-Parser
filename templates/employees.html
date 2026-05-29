@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en" data-crm-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Employees • Travel Ops CRM</title>
+  <meta name="description" content="Employee workspace dashboard">
+  <link rel="icon" type="image/png" href="/static/ticket-flight.png">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <link rel="stylesheet" href="/static/ownership.css">
+  <link rel="stylesheet" href="/static/employees.css">
+</head>
+<body>
+{% include 'components/sidebar.html' %}
+
+<div class="crm-page" id="crmPage" style="display:none;">
+    <!-- Used just to maintain layout if needed, but we'll hide it. -->
+</div>
+
+<!-- ════════════════════════════════════════════════
+     EMPLOYEE PICKER SCREEN (NETFLIX STYLE)
+════════════════════════════════════════════════ -->
+<div id="employeePickerScreen" class="emp-picker-screen">
+  <div class="emp-picker-logo">TIMETOURS</div>
+  <div class="emp-picker-content">
+    <h1 class="emp-picker-title">Who's working?</h1>
+    <div class="emp-picker-grid" id="empPickerGrid">
+      <!-- Cards injected by JS -->
+    </div>
+    <button class="emp-picker-manage-btn" id="empManageBtn">Manage Profiles</button>
+    <a href="/ownership" class="emp-picker-back-btn" id="empPickerBackBtn">← Back to Dashboard</a>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     EMPLOYEE WORKSPACE
+════════════════════════════════════════════════ -->
+<div id="employeeWorkspace" class="ew-workspace" style="display:none; padding-left: 80px; padding-top: 1rem;">
+  <!-- Header -->
+  <div class="ew-header">
+    <button class="ew-back-btn" id="ewBackBtn">← Back</button>
+    <div class="ew-user-info">
+      <div class="ew-user-avatar" id="ewUserAvatar">U</div>
+      <div class="ew-user-name" id="ewUserName">User Name</div>
+    </div>
+    <div class="ew-tabs">
+      <button class="ew-tab active" data-view="trip">Trips</button>
+      <button class="ew-tab" data-view="subtasks">Subtasks</button>
+      <button class="ew-tab" data-view="timeline">Timeline</button>
+      <button class="ew-tab" data-view="kanban">Kanban</button>
+      <button class="ew-tab" data-view="calendar">Calendar</button>
+    </div>
+  </div>
+
+  <!-- Stats Row -->
+  <div class="ew-stats-row" id="ewStatsRow"></div>
+
+  <!-- Toolbar -->
+  <div class="ew-toolbar">
+    <div class="ew-search-wrap">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input type="text" class="ew-search" id="ewSearchInput" placeholder="Search tasks, trips, destinations...">
+    </div>
+    <button class="crm-btn crm-btn-primary" id="ewAddSubtaskBtn" style="margin-left:auto;">+ Add Subtask</button>
+  </div>
+
+  <!-- View Container -->
+  <div class="ew-view-container" id="ewViewContainer"></div>
+
+  <!-- Detail Panel Overlay -->
+  <div class="ew-detail-overlay" id="ewDetailOverlay"></div>
+  
+  <!-- Detail Panel -->
+  <div class="ew-detail-panel" id="ewDetailPanel">
+    <div class="ew-detail-header">
+      <div>
+        <div class="ew-task-trip" id="ewDetailTripName">Trip Name</div>
+        <div class="ew-task-type" id="ewDetailTaskType">Task Type</div>
+      </div>
+      <button class="crm-modal-close" id="ewDetailClose">✕</button>
+    </div>
+    <div class="ew-detail-body">
+      <div class="crm-form-group">
+        <label class="crm-form-label">Status</label>
+        <select class="crm-form-select" id="ewDetailStatusSelect">
+          <option value="notstarted">Not Started</option>
+          <option value="pending">Pending</option>
+          <option value="ongoing">In Progress</option>
+          <option value="review">Under Review</option>
+          <option value="complete">Completed</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="na">N/A</option>
+        </select>
+      </div>
+      <div class="crm-form-group">
+        <label class="crm-form-label">Subtasks</label>
+        <div class="ew-detail-subtasks" id="ewDetailSubtaskList"></div>
+        <div class="emp-add-input-wrapper" style="margin-top:1rem;">
+          <span style="color:var(--crm-text-3)">+</span>
+          <input type="text" class="crm-form-input" id="ewDetailNewSubtaskInput" placeholder="Add a subtask..." style="flex:1;">
+          <button class="crm-btn crm-btn-primary" id="ewDetailAddSubtaskBtn" style="padding:0.4rem 0.8rem;">Add</button>
+        </div>
+      </div>
+    </div>
+  <div class="ew-detail-footer">
+      <button class="ew-btn-complete" id="ewDetailCompleteBtn">✓ Mark Complete</button>
+    </div>
+  </div>
+
+  <div class="crm-modal-overlay" id="ewAddSubtaskModal">
+    <div class="crm-modal" role="dialog" aria-modal="true" style="max-width:560px;">
+      <div class="crm-modal-header">
+        <div>
+          <div class="crm-modal-title">Add Subtask</div>
+          <div class="crm-modal-subtitle">Pick the trip and task, then save the new subtask.</div>
+        </div>
+        <button class="crm-modal-close" id="ewAddSubtaskClose">✕</button>
+      </div>
+      <div class="crm-modal-body">
+        <div class="crm-form-group">
+          <label class="crm-form-label">Trip</label>
+          <select class="crm-form-select" id="ewAddSubtaskTripSelect"></select>
+        </div>
+        <div class="crm-form-group">
+          <label class="crm-form-label">Task</label>
+          <select class="crm-form-select" id="ewAddSubtaskTaskSelect"></select>
+        </div>
+        <div class="crm-form-group">
+          <label class="crm-form-label">Subtask</label>
+          <input class="crm-form-input" id="ewAddSubtaskText" type="text" placeholder="Write the subtask...">
+        </div>
+      </div>
+      <div class="crm-modal-footer">
+        <button class="crm-btn crm-btn-ghost" id="ewAddSubtaskCancel">Cancel</button>
+        <button class="crm-btn crm-btn-primary" id="ewAddSubtaskSave">Save Subtask</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="crm-toast-container" id="crmToastContainer"></div>
+
+<script>
+  window.__INITIAL_EMPLOYEE_ID__ = {{ initial_employee_id|default('', true)|tojson }};
+  window.__EMPLOYEE_BASE_PATH__ = '/ownership/employees';
+</script>
+<script src="/static/employees.js?v=20260529c"></script>
+<script>
+  // Sync with main app sidebar / theme
+  document.addEventListener('DOMContentLoaded', () => {
+    // Sidebar open button
+    const menuToggle = document.getElementById('menuToggle');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
+    if (menuToggle && sidebar) {
+      menuToggle.addEventListener('click', () => {
+        sidebar.classList.add('active');
+        if (sidebarOverlay) sidebarOverlay.classList.add('active');
+        const menuBadge = document.getElementById('menuNotificationBadge');
+        if (menuBadge) menuBadge.style.display = 'none';
+      });
+    }
+    const closeSidebar = () => {
+      if (sidebar) sidebar.classList.remove('active');
+      if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+    };
+    const sidebarClose = document.getElementById('sidebarClose');
+    if (sidebarClose) sidebarClose.addEventListener('click', closeSidebar);
+    if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
+    // Sidebar auth
+    fetch('/api/user').then(r => r.ok ? r.json() : null).then(user => {
+      if (!user) return;
+      const el = document.getElementById('sidebarUserName');
+      if (el) el.textContent = user.full_name || user.username || 'Guest User';
+      const handle = document.getElementById('sidebarUserHandle');
+      if (handle) handle.textContent = user.username ? '@' + user.username : '';
+      const av = document.getElementById('sidebarAvatar');
+      if (av) av.textContent = (user.full_name || user.username || 'U').charAt(0).toUpperCase();
+      const authBtn = document.getElementById('sidebarAuthBtn');
+      if (authBtn) {
+        authBtn.textContent = '🚪 Logout';
+        authBtn.classList.add('logout');
+        authBtn.onclick = async () => {
+          await fetch('/api/logout', { method: 'POST' });
+          window.location.href = '/login';
+        };
+      }
+    }).catch(() => {});
+
+    // Sidebar theme toggle
+    const sidebarThemeToggle = document.getElementById('sidebarThemeToggle');
+    if (sidebarThemeToggle) {
+      sidebarThemeToggle.addEventListener('click', () => {
+        const html = document.documentElement;
+        const isDark = html.getAttribute('data-theme') === 'dark';
+        html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+        const toggleText = document.getElementById('themeToggleText');
+        if (toggleText) toggleText.textContent = isDark ? 'Dark Mode' : 'Light Mode';
+      });
+    }
+  });
+</script>
+</body>
+</html>

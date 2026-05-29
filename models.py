@@ -266,9 +266,7 @@ class OwnershipTrip(db.Model):
     trip_feedback_form_status = db.Column(db.String(30), default="pending", nullable=False)
 
     owner = db.Column(db.String(120), default="")
-    current_task = db.Column(db.Text, default="")
-    task_status = db.Column(db.String(30), default="pending", nullable=False)
-    priority = db.Column(db.String(20), default="medium", nullable=False)
+    master_sheet_url = db.Column(db.Text, default="")
     last_status_update_date = db.Column(db.Date, nullable=True)
     latest_update = db.Column(db.Text, default="")
     present_work_assigned_to = db.Column(db.String(120), default="")
@@ -293,6 +291,7 @@ class OwnershipTrip(db.Model):
 
     def to_dict(self, include_legacy_relationships=False):
         subtask_groups = self.subtasks_json if isinstance(self.subtasks_json, dict) else {
+            "proposal": [],
             "visa": [],
             "flights": [],
             "hotels": [],
@@ -309,6 +308,7 @@ class OwnershipTrip(db.Model):
         reminders = self.reminders_json if isinstance(self.reminders_json, list) else []
         if include_legacy_relationships and not reminders:
             reminders = [reminder.to_dict() for reminder in self.reminders or []]
+        raw_sheet_data = self.raw_sheet_data if isinstance(self.raw_sheet_data, dict) else {}
 
         return {
             "id": self.id,
@@ -328,9 +328,7 @@ class OwnershipTrip(db.Model):
             "travefyTaskListStatus": self.travefy_task_list_status or "pending",
             "tripFeedbackFormStatus": self.trip_feedback_form_status or "pending",
             "owner": self.owner or "",
-            "currentTask": self.current_task or "",
-            "taskStatus": self.task_status or "pending",
-            "priority": self.priority or "medium",
+            "masterSheetUrl": self.master_sheet_url or raw_sheet_data.get("masterSheetUrl") or "",
             "lastStatusUpdateDate": self.last_status_update_date.isoformat() if self.last_status_update_date else "",
             "latestUpdate": self.latest_update or "",
             "presentWorkAssignedTo": self.present_work_assigned_to or "",
@@ -366,6 +364,8 @@ class OwnershipSubtask(db.Model):
             "done": bool(self.done),
             "assignee": self.assignee or "",
             "dueDate": self.due_date.isoformat() if self.due_date else "",
+            "createdAt": self.created_at.isoformat() if self.created_at else "",
+            "updatedAt": self.updated_at.isoformat() if self.updated_at else "",
             "metadata": self.metadata_json or {},
         }
 
@@ -421,7 +421,13 @@ class OwnershipTaskTemplate(db.Model):
             "name": self.name,
             "taskGroup": self.task_group or "",
             "reminderDays": self.reminder_days,
-            "tasks": [task.text for task in self.tasks or []],
+            "tasks": [
+                {
+                    "text": task.text or "",
+                    "reminderDays": task.reminder_days,
+                }
+                for task in self.tasks or []
+            ],
         }
 
 
@@ -432,6 +438,7 @@ class OwnershipTaskTemplateItem(db.Model):
     template_id = db.Column(db.String, db.ForeignKey("ownership_task_template.id"), nullable=False)
     row_order = db.Column(db.Integer, default=0)
     text = db.Column(db.Text, nullable=False)
+    reminder_days = db.Column(db.Integer, nullable=True)
 
 
 class OwnershipEmployee(db.Model):

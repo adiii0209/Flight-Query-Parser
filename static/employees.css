@@ -1,0 +1,1054 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&display=swap');
+
+/* ════════════════════════════════════════════════
+   EMPLOYEE PICKER SCREEN (NETFLIX STYLE)
+════════════════════════════════════════════════ */
+.emp-picker-screen {
+  position: fixed;
+  inset: 0;
+  background: #141414 !important;
+  color: #fff !important;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Inter', sans-serif;
+}
+.emp-picker-logo {
+  position: absolute;
+  top: 2rem;
+  right: 3rem;
+  font-family: 'Outfit', sans-serif;
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: #E50914;
+  letter-spacing: 2px;
+  opacity: 0;
+  animation: fadeIn 0.4s forwards;
+}
+.emp-picker-content {
+  text-align: center;
+  max-width: 900px;
+  width: 100%;
+  padding: 2rem;
+}
+.emp-picker-title {
+  font-size: 3rem;
+  font-weight: 500;
+  color: #fff !important;
+  margin-bottom: 2.5rem;
+  opacity: 0;
+  animation: fadeIn 0.5s forwards;
+}
+.emp-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+  justify-content: center;
+  margin-bottom: 3rem;
+}
+.emp-picker-grid:hover .emp-card:not(:hover) {
+  filter: brightness(0.5);
+}
+.emp-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), filter 0.2s;
+  opacity: 0;
+  animation: scaleIn .3s forwards;
+}
+.emp-card:hover {
+  transform: scale(1.1);
+}
+.emp-selected-anim {
+  transform: scale(1.3) !important;
+  z-index: 10;
+  opacity: 1 !important;
+  filter: brightness(1.2) !important;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.emp-avatar {
+  width: 140px;
+  height: 140px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 4rem;
+  font-weight: 600;
+  color: white;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  border: 3px solid transparent;
+  transition: border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.emp-card:hover .emp-avatar {
+  border-color: white;
+}
+.emp-card-name {
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: #a3a3a3 !important;
+  transition: color 0.3s;
+}
+.emp-card:hover .emp-card-name {
+  color: #fff !important;
+}
+.emp-add-btn {
+  background: transparent;
+  border: 2px dashed var(--crm-border);
+  color: var(--crm-text-2);
+}
+.emp-picker-manage-btn {
+  background: transparent;
+  border: 1px solid #808080 !important;
+  color: #808080 !important;
+  padding: 0.8rem 2.5rem;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+.emp-picker-manage-btn:hover {
+  border-color: #fff !important;
+  color: #fff !important;
+}
+.emp-picker-back-btn {
+  position: absolute;
+  top: 2rem;
+  left: 2rem;
+  background: transparent;
+  border: none;
+  color: #808080 !important;
+  font-size: 1rem;
+  cursor: pointer;
+  text-decoration: none;
+}
+.emp-picker-back-btn:hover {
+  color: #fff !important;
+}
+.emp-delete-badge {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  border: 2px solid var(--crm-bg);
+  cursor: pointer;
+  display: none;
+}
+.emp-card.edit-mode .emp-delete-badge {
+  display: flex;
+}
+.emp-add-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.emp-add-input {
+  background: var(--crm-surface-2);
+  border: 1px solid var(--crm-border);
+  color: var(--crm-text);
+  padding: 0.4rem;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  width: 130px;
+  text-align: center;
+}
+
+@keyframes fadeIn { to { opacity: 1; } }
+@keyframes scaleIn { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+/* ════════════════════════════════════════════════
+   EMPLOYEE WORKSPACE
+════════════════════════════════════════════════ */
+.ew-workspace {
+  padding: 1.5rem 2rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.ew-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+.ew-back-btn {
+  background: var(--crm-surface-2);
+  border: 1px solid var(--crm-border);
+  color: var(--crm-text);
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.ew-back-btn:hover {
+  background: var(--crm-border);
+}
+.ew-user-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.ew-user-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+.ew-user-name {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--crm-text);
+}
+.ew-tabs {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+  background: var(--crm-surface-2);
+  padding: 0.3rem;
+  border-radius: 8px;
+  border: 1px solid var(--crm-border);
+}
+.ew-tab {
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--crm-text-2);
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.2s;
+  background: transparent;
+  border: none;
+}
+.ew-tab:hover {
+  color: var(--crm-text);
+}
+.ew-tab.active {
+  background: var(--crm-surface);
+  color: var(--crm-primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Stats Row */
+.ew-stats-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1rem;
+}
+.ew-stat-card {
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+.ew-stat-title {
+  color: var(--crm-text-3);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+.ew-stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--crm-text);
+}
+
+/* Toolbar */
+.ew-toolbar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+.ew-search-wrap {
+  position: relative;
+  flex: 1;
+  max-width: 400px;
+}
+.ew-search-wrap svg {
+  position: absolute;
+  left: 0.8rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--crm-text-3);
+}
+.ew-search {
+  width: 100%;
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  padding: 0.6rem 1rem 0.6rem 2.2rem;
+  border-radius: 8px;
+  color: var(--crm-text);
+  font-size: 0.9rem;
+}
+
+/* View Container */
+.ew-view-container {
+  flex: 1;
+  min-height: 400px;
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  overflow: auto;
+  position: relative;
+}
+
+/* Kanban */
+.ew-kanban {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  height: 100%;
+}
+.ew-kanban-col {
+  background: var(--crm-surface-2);
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.ew-kanban-header {
+  font-weight: 600;
+  color: var(--crm-text);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ew-kanban-count {
+  background: var(--crm-border);
+  padding: 0.1rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+}
+.ew-kanban-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Task Card */
+.ew-task-card {
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: 8px;
+  padding: 1rem;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
+}
+.ew-task-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  border-color: var(--crm-primary);
+}
+.ew-task-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}
+.ew-task-badge {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.ew-task-trip {
+  font-weight: 600;
+  color: var(--crm-text);
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+}
+.ew-task-type {
+  color: var(--crm-text-2);
+  font-size: 0.8rem;
+  margin-bottom: 0.75rem;
+}
+.ew-task-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  color: var(--crm-text-3);
+}
+
+/* Trip View */
+.ew-trip-group {
+  border: 1px solid var(--crm-border);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  background: var(--crm-surface-2);
+  overflow: hidden;
+}
+.ew-trip-header {
+  padding: 1rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+.ew-trip-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--crm-text);
+}
+.ew-trip-meta {
+  color: var(--crm-text-3);
+  font-size: 0.85rem;
+}
+.ew-trip-body {
+  padding: 1.5rem;
+  background: var(--crm-surface);
+  border-top: 1px solid var(--crm-border);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+/* Subtasks View */
+.ew-subtasks-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.ew-subtasks-table th {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid var(--crm-border);
+  color: var(--crm-text-3);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+.ew-subtasks-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--crm-border);
+  font-size: 0.85rem;
+}
+.ew-subtask-section {
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ew-subtask-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  background: var(--crm-surface-2);
+  border-bottom: 1px solid var(--crm-border);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--crm-text);
+}
+.ew-subtask-section-count {
+  font-size: 0.72rem;
+  color: var(--crm-text-3);
+  background: var(--crm-border);
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+}
+.ew-subtask-row:hover td {
+  background: var(--crm-surface-2);
+}
+.ew-subtask-done {
+  text-decoration: line-through;
+  color: var(--crm-text-3);
+}
+.ew-subtask-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem;
+}
+.ew-subtask-card {
+  border: 1px solid var(--crm-border);
+  border-radius: 12px;
+  background: var(--crm-surface);
+  overflow: hidden;
+}
+.ew-subtask-card[open] {
+  background: var(--crm-surface-2);
+}
+.ew-subtask-card-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  cursor: pointer;
+  user-select: none;
+}
+.ew-subtask-card-summary::-webkit-details-marker {
+  display: none;
+}
+.ew-subtask-card-checkwrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ew-subtask-card-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.ew-subtask-card-title {
+  font-weight: 700;
+  font-size: 0.86rem;
+  color: var(--crm-text);
+  line-height: 1.35;
+}
+.ew-subtask-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--crm-text-3);
+}
+.ew-subtask-card-meta span {
+  padding-right: 0.4rem;
+  border-right: 1px solid color-mix(in srgb, var(--crm-border) 75%, transparent);
+}
+.ew-subtask-card-meta span:last-child {
+  border-right: none;
+  padding-right: 0;
+}
+.ew-subtask-card-badges {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+.ew-subtask-card-count {
+  font-size: 0.66rem;
+  font-weight: 700;
+  background: var(--crm-primary-light);
+  color: var(--crm-primary);
+  padding: 0.14rem 0.45rem;
+  border-radius: 999px;
+}
+.ew-subtask-card-created {
+  font-size: 0.68rem;
+  color: var(--crm-text-3);
+}
+.ew-subtask-card-body {
+  padding: 0 0.9rem 0.9rem;
+  border-top: 1px solid var(--crm-border);
+}
+
+.ew-remark-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-width: 100%;
+}
+.ew-remark-details {
+  border: 1px solid var(--crm-border);
+  border-radius: 12px;
+  background: var(--crm-surface);
+  overflow: hidden;
+}
+.ew-remark-details[open] {
+  background: var(--crm-surface-2);
+}
+.ew-remark-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.55rem;
+  cursor: pointer;
+  user-select: none;
+}
+.ew-remark-summary::-webkit-details-marker {
+  display: none;
+}
+.ew-remark-summary-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--crm-text-3);
+  font-weight: 700;
+}
+.ew-remark-summary-preview {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.76rem;
+  color: var(--crm-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ew-remark-summary-count {
+  font-size: 0.64rem;
+  font-weight: 800;
+  color: var(--crm-primary);
+  background: var(--crm-primary-light);
+  border: 1px solid color-mix(in srgb, var(--crm-primary) 25%, transparent);
+  border-radius: 999px;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.25rem;
+}
+.ew-remark-thread-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.35rem 0.55rem 0.55rem;
+}
+.ew-remark-empty {
+  font-size: 0.72rem;
+  color: var(--crm-text-3);
+}
+.ew-remark-bubble {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  align-self: flex-start;
+  max-width: 100%;
+  background: var(--crm-surface-2);
+  border: 1px solid var(--crm-border);
+  border-radius: 12px;
+  padding: 0.4rem 0.55rem;
+}
+.ew-remark-bubble-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.ew-remark-text {
+  font-size: 0.78rem;
+  color: var(--crm-text);
+  line-height: 1.35;
+  word-break: break-word;
+  white-space: pre-wrap;
+  flex: 1;
+}
+.ew-remark-meta {
+  font-size: 0.65rem;
+  color: var(--crm-text-3);
+}
+.ew-remark-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+.ew-remark-action {
+  border: 1px solid var(--crm-border);
+  background: var(--crm-surface);
+  color: var(--crm-text-2);
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.62rem;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.ew-remark-action:hover {
+  background: var(--crm-surface-2);
+  color: var(--crm-text);
+}
+.ew-remark-action.danger {
+  color: #ef4444;
+}
+.ew-remark-compose {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+.ew-remark-input {
+  flex: 1;
+  min-width: 140px;
+  background: var(--crm-surface);
+  border: 1px solid var(--crm-border);
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  color: var(--crm-text);
+  font-size: 0.78rem;
+}
+.ew-remark-textarea {
+  min-height: 2.4rem;
+  resize: vertical;
+  line-height: 1.35;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+.ew-remark-send {
+  border: 1px solid var(--crm-border);
+  background: var(--crm-surface-2);
+  color: var(--crm-text);
+  border-radius: 999px;
+  padding: 0.35rem 0.55rem;
+  min-width: 2.1rem;
+  min-height: 2.1rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ew-remark-send:hover {
+  background: var(--crm-border);
+}
+
+/* Timeline View */
+.ew-timeline {
+  position: relative;
+  padding: 2rem 0;
+  max-width: 800px;
+  margin: 0 auto;
+}
+.ew-timeline::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 150px;
+  width: 2px;
+  background: var(--crm-border);
+}
+.ew-timeline-item {
+  display: flex;
+  margin-bottom: 2rem;
+  position: relative;
+}
+.ew-timeline-date {
+  width: 130px;
+  text-align: right;
+  padding-right: 2rem;
+  font-weight: 600;
+  color: var(--crm-text-2);
+  font-size: 0.9rem;
+  padding-top: 0.5rem;
+}
+.ew-timeline-marker {
+  position: absolute;
+  left: 146px;
+  top: 0.7rem;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--crm-primary);
+  border: 2px solid var(--crm-surface);
+}
+.ew-timeline-content {
+  flex: 1;
+  padding-left: 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Calendar View */
+.ew-calendar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.ew-cal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 0 0.5rem;
+}
+.ew-cal-nav {
+  background: var(--crm-surface-2);
+  border: 1px solid var(--crm-border);
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--crm-text);
+}
+.ew-cal-nav:hover {
+  background: var(--crm-border);
+}
+.ew-cal-title {
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+.ew-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: var(--crm-border);
+  border: 1px solid var(--crm-border);
+  border-radius: 8px;
+  overflow: hidden;
+  flex: 1;
+}
+.ew-cal-day-header {
+  background: var(--crm-surface-2);
+  text-align: center;
+  padding: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--crm-text-3);
+  text-transform: uppercase;
+}
+.ew-cal-cell {
+  background: var(--crm-surface);
+  min-height: 100px;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.ew-cal-cell.other-month {
+  background: var(--crm-surface-2);
+  opacity: 0.6;
+}
+.ew-cal-date {
+  font-size: 0.85rem;
+  color: var(--crm-text-2);
+  text-align: right;
+  margin-bottom: 0.5rem;
+}
+.ew-cal-cell.today .ew-cal-date {
+  color: var(--crm-primary);
+  font-weight: 700;
+}
+.ew-cal-task {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+.ew-cal-task:hover {
+  filter: brightness(1.1);
+}
+
+/* Detail Panel Overlay */
+.ew-detail-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 100;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s;
+}
+.ew-detail-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+.ew-detail-panel {
+  position: absolute;
+  top: 0;
+  right: -450px;
+  bottom: 0;
+  width: 450px;
+  background: var(--crm-surface);
+  border-left: 1px solid var(--crm-border);
+  z-index: 101;
+  transition: right 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -5px 0 20px rgba(0,0,0,0.05);
+}
+.ew-detail-panel.active {
+  right: 0;
+}
+.ew-detail-header {
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--crm-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.ew-detail-body {
+  padding: 1.5rem;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.ew-detail-footer {
+  padding: 1.5rem;
+  border-top: 1px solid var(--crm-border);
+}
+.ew-btn-complete {
+  width: 100%;
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: background 0.2s;
+}
+.ew-btn-complete:hover {
+  background: #059669;
+}
+
+/* Subtask list inside detail */
+.ew-detail-subtasks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.ew-detail-subtask {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--crm-surface-2);
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--crm-border);
+}
+.ew-detail-subtask-text {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--crm-text);
+  font-size: 0.85rem;
+  outline: none;
+}
+.ew-detail-subtask-text.done {
+  text-decoration: line-through;
+  color: var(--crm-text-3);
+}
+/* ════════════════════════════════════════════════
+   TRIP VIEW (SIDEBAR LAYOUT)
+════════════════════════════════════════════════ */
+.ew-trip-layout {
+  display: flex;
+  gap: 1.5rem;
+  height: 100%;
+  min-height: 500px;
+}
+.ew-trip-sidebar {
+  width: 320px;
+  background: var(--crm-surface-2);
+  border: 1px solid var(--crm-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.ew-trip-tab {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--crm-border);
+  cursor: pointer;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+}
+.ew-trip-tab:hover {
+  background: var(--crm-surface);
+}
+.ew-trip-tab.active {
+  background: var(--crm-surface);
+  border-left-color: var(--crm-primary);
+}
+.ew-trip-tab-title {
+  font-weight: 600;
+  color: var(--crm-text);
+  font-size: 0.95rem;
+  margin-bottom: 0.2rem;
+}
+.ew-trip-tab-meta {
+  color: var(--crm-text-3);
+  font-size: 0.8rem;
+  margin-bottom: 0.8rem;
+}
+.ew-trip-tab-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.ew-trip-progress-text {
+  font-size: 0.75rem;
+  color: var(--crm-text-2);
+  display: flex;
+  justify-content: space-between;
+}
+.ew-trip-progress-bar {
+  height: 6px;
+  background: var(--crm-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.ew-trip-progress-fill {
+  height: 100%;
+  background: var(--crm-primary);
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+.ew-trip-content {
+  flex: 1;
+  background: var(--crm-surface-2);
+  border: 1px solid var(--crm-border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  overflow-y: auto;
+}
+.ew-trip-content-header {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--crm-border);
+}
+.ew-trip-content-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--crm-text);
+}
+.ew-trip-content-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
