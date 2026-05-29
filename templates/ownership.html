@@ -135,12 +135,12 @@
           <table class="crm-table" id="crmTable">
             <thead>
               <tr>
-                <th style="width:40px;"><input type="checkbox" class="crm-checkbox" id="selectAllTrips"></th>
-                <th style="width:40px;"></th>
-                <th data-col="guestName">Guest Name</th>
-                <th data-col="pax">No of Guest</th>
-                <th data-col="destination">Country</th>
-                <th data-col="startDate">Travel Start Date</th>
+                <th class="col-sticky-1"><input type="checkbox" class="crm-checkbox" id="selectAllTrips"></th>
+                <th class="col-sticky-2"></th>
+                <th class="col-sticky-3" data-col="guestName">Guest Name</th>
+                <th class="col-sticky-4" data-col="pax">No of Guest</th>
+                <th class="col-sticky-5" data-col="destination">Country</th>
+                <th class="col-sticky-6" data-col="startDate">Travel Start Date</th>
                 <th data-col="proposalStatus">Initial Proposal</th>
                 <th data-col="flightsStatus">Main Flights</th>
                 <th data-col="visaStatus">Visa</th>
@@ -183,7 +183,10 @@
         <div class="crm-calendar">
           <div class="crm-cal-header">
             <button class="crm-cal-nav" id="calPrev">‹</button>
-            <span id="calMonthLabel" style="font-weight:600;font-size:.83rem;color:var(--crm-text)"></span>
+            <div style="display:inline-flex;align-items:center;gap:.35rem;">
+              <span id="calMonthLabel" style="font-weight:600;font-size:.83rem;color:var(--crm-text)"></span>
+              <button class="crm-cal-today-btn" id="calToday" title="Go to Current Date" style="background:none;border:none;cursor:pointer;font-size:.85rem;padding:0.1rem;display:inline-flex;align-items:center;color:var(--crm-text-3);transition:color .15s;">📅</button>
+            </div>
             <button class="crm-cal-nav" id="calNext">›</button>
           </div>
           <div class="crm-cal-grid" id="calGrid"></div>
@@ -192,7 +195,7 @@
 
       <!-- Upcoming Trips -->
       <div class="crm-panel-section" style="flex:1;">
-        <div class="crm-panel-title">Trips Soon</div>
+        <div class="crm-panel-title" id="upcomingTripsTitle">Trips Soon</div>
         <div id="upcomingTrips" style="display:flex;flex-direction:column;gap:.5rem;font-size:.78rem;"></div>
       </div>
 

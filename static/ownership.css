@@ -626,6 +626,60 @@ input[type=number].no-spin {
 }
 .crm-cal-day.other-month { color: var(--crm-text-3); }
 
+/* Selected day in calendar */
+.crm-cal-day.selected {
+  background: var(--crm-primary-light);
+  color: var(--crm-primary) !important;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1.5px var(--crm-primary);
+}
+.crm-cal-day.today.selected {
+  background: var(--crm-primary);
+  color: white !important;
+  box-shadow: 0 0 0 2px var(--crm-surface), 0 0 0 4px var(--crm-primary);
+}
+
+/* Today button styles */
+.crm-cal-today-btn {
+  opacity: 0.6;
+  transition: opacity 0.15s, transform 0.15s;
+}
+.crm-cal-today-btn:hover {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+/* Interactive Trip Card in Trips Soon list */
+.crm-cal-trip-card {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--crm-surface-2);
+  border: 1px solid var(--crm-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.crm-cal-trip-card:hover {
+  transform: translateY(-1.5px);
+  border-color: var(--crm-primary);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--crm-primary) 12%, transparent);
+}
+
+/* Table Row highlight animation */
+@keyframes row-flash {
+  0% {
+    background-color: color-mix(in srgb, var(--crm-primary) 40%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.row-highlight-flash {
+  animation: row-flash 2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
 /* ─── Subtask Modal ─── */
 .crm-modal-overlay {
   position: fixed;
@@ -1093,4 +1147,76 @@ input[type=number].no-spin {
 }
 [data-crm-theme="dark"] .crm-selection-strip .crm-btn-ghost:hover {
   background: var(--crm-surface);
+}
+
+/* ─── Sticky / Frozen Columns ─── */
+.col-sticky-1,
+.col-sticky-2,
+.col-sticky-3,
+.col-sticky-4,
+.col-sticky-5,
+.col-sticky-6 {
+  position: sticky;
+  background-color: var(--crm-surface);
+  z-index: 2;
+}
+
+/* Left offsets for each column */
+.col-sticky-1 { left: 0; width: 44px; min-width: 44px; max-width: 44px; }
+.col-sticky-2 { left: 44px; width: 44px; min-width: 44px; max-width: 44px; }
+.col-sticky-3 { left: 88px; width: 200px; min-width: 200px; max-width: 200px; }
+.col-sticky-4 { left: 288px; width: 80px; min-width: 80px; max-width: 80px; }
+.col-sticky-5 { left: 368px; width: 140px; min-width: 140px; max-width: 140px; }
+.col-sticky-6 { 
+  left: 508px; 
+  width: 140px; 
+  min-width: 140px; 
+  max-width: 140px; 
+  border-right: 2px solid var(--crm-border) !important;
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.05);
+}
+
+[data-crm-theme="dark"] .col-sticky-6 {
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
+}
+
+/* Sticky Header Cells Override */
+thead th.col-sticky-1,
+thead th.col-sticky-2,
+thead th.col-sticky-3,
+thead th.col-sticky-4,
+thead th.col-sticky-5,
+thead th.col-sticky-6 {
+  background-color: var(--crm-surface-2);
+  z-index: 12; /* Stays above standard sticky headers (z-index 10) and body tds (z-index 2) */
+}
+
+/* Sync background color on row hover for frozen columns */
+.crm-table tbody tr:hover td.col-sticky-1,
+.crm-table tbody tr:hover td.col-sticky-2,
+.crm-table tbody tr:hover td.col-sticky-3,
+.crm-table tbody tr:hover td.col-sticky-4,
+.crm-table tbody tr:hover td.col-sticky-5,
+.crm-table tbody tr:hover td.col-sticky-6 {
+  background-color: color-mix(in srgb, var(--crm-primary) 3%, var(--crm-surface));
+}
+
+/* Sync background color on expanded rows */
+.crm-table tbody tr.row-expanded td.col-sticky-1,
+.crm-table tbody tr.row-expanded td.col-sticky-2,
+.crm-table tbody tr.row-expanded td.col-sticky-3,
+.crm-table tbody tr.row-expanded td.col-sticky-4,
+.crm-table tbody tr.row-expanded td.col-sticky-5,
+.crm-table tbody tr.row-expanded td.col-sticky-6 {
+  background-color: var(--crm-primary-light);
+}
+
+/* Sync row flash animation color on frozen columns */
+.crm-table tbody tr.row-highlight-flash td.col-sticky-1,
+.crm-table tbody tr.row-highlight-flash td.col-sticky-2,
+.crm-table tbody tr.row-highlight-flash td.col-sticky-3,
+.crm-table tbody tr.row-highlight-flash td.col-sticky-4,
+.crm-table tbody tr.row-highlight-flash td.col-sticky-5,
+.crm-table tbody tr.row-highlight-flash td.col-sticky-6 {
+  animation: row-flash 2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }

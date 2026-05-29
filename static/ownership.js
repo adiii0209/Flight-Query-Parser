@@ -45,6 +45,7 @@ let pendingNewSubtaskReminder = null;
 let editingTripId = null;
 let calMonth = new Date().getMonth();
 let calYear = new Date().getFullYear();
+let selectedCalDay = null;
 let newTplTasks = [];
 let isDark = false;
 
@@ -326,25 +327,25 @@ function renderTable() {
       if (isExpanded) row.classList.add('row-expanded');
 
       row.innerHTML = `
-        <td><input type="checkbox" class="crm-checkbox row-check" data-id="${trip.id}" ${selectedTrips.has(trip.id) ? 'checked' : ''}></td>
-        <td>
+        <td class="col-sticky-1"><input type="checkbox" class="crm-checkbox row-check" data-id="${trip.id}" ${selectedTrips.has(trip.id) ? 'checked' : ''}></td>
+        <td class="col-sticky-2">
           <button class="crm-expand-btn ${isExpanded ? 'expanded' : ''}" data-id="${trip.id}" title="Expand row">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
         </td>
-        <td>
+        <td class="col-sticky-3">
           <div class="crm-guest-cell">
             <div class="crm-guest-avatar" style="background:${avatar}">${initials}</div>
             <input class="crm-inline-edit crm-guest-name" style="background:transparent;width:140px;display:block;margin-left:-0.3rem;" value="${escHtml(trip.guestName)}" data-id="${trip.id}" data-field="guestName" title="Edit Guest Name">
           </div>
         </td>
-        <td>
+        <td class="col-sticky-4">
           <input type="number" class="crm-inline-edit crm-edit-flush no-spin" style="background:transparent;font-size:inherit;color:inherit;width:4ch;text-align:center;" value="${trip.pax || 1}" data-id="${trip.id}" data-field="pax" title="Edit Pax" min="1">
         </td>
-        <td style="font-weight:500;white-space:nowrap;">
+        <td class="col-sticky-5" style="font-weight:500;white-space:nowrap;">
           <input class="crm-inline-edit" style="background:transparent;width:110px;font-weight:inherit;" value="${escHtml(trip.destination || '')}" data-id="${trip.id}" data-field="destination" title="Edit Country" placeholder="Country">
         </td>
-        <td>
+        <td class="col-sticky-6">
           <input type="date" class="crm-inline-edit crm-date-cell ${dateClass}" style="background:transparent;font-size:.75rem;width:110px;" value="${trip.startDate}" data-id="${trip.id}" data-field="startDate" title="Edit Start Date">
         </td>
         <td>${statusBadge(trip.proposalStatus, 'proposalStatus')}</td>
@@ -1458,7 +1459,19 @@ function renderCalendar() {
     const isToday = d === today.getDate() && calMonth === today.getMonth() && calYear === today.getFullYear();
     if (isToday) el.classList.add('today');
     if (tripDates.has(d)) el.classList.add('has-trip');
+    if (selectedCalDay === d) el.classList.add('selected');
     el.title = tripDates.has(d) ? `Trip departure on ${months[calMonth]} ${d}` : '';
+    
+    el.addEventListener('click', () => {
+      if (selectedCalDay === d) {
+        selectedCalDay = null;
+      } else {
+        selectedCalDay = d;
+      }
+      renderCalendar();
+      renderUpcomingTrips();
+    });
+
     grid.appendChild(el);
   }
 }
@@ -1466,12 +1479,24 @@ function renderCalendar() {
 document.getElementById('calPrev').addEventListener('click', () => {
   calMonth--;
   if (calMonth < 0) { calMonth = 11; calYear--; }
+  selectedCalDay = null;
   renderCalendar();
+  renderUpcomingTrips();
 });
 document.getElementById('calNext').addEventListener('click', () => {
   calMonth++;
   if (calMonth > 11) { calMonth = 0; calYear++; }
+  selectedCalDay = null;
   renderCalendar();
+  renderUpcomingTrips();
+});
+document.getElementById('calToday')?.addEventListener('click', () => {
+  const todayObj = new Date();
+  calMonth = todayObj.getMonth();
+  calYear = todayObj.getFullYear();
+  selectedCalDay = null;
+  renderCalendar();
+  renderUpcomingTrips();
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -1480,34 +1505,213 @@ document.getElementById('calNext').addEventListener('click', () => {
 
 function renderUpcomingTrips() {
   const el = document.getElementById('upcomingTrips');
+  const titleEl = document.getElementById('upcomingTripsTitle');
   const now = new Date();
-  const upcoming = trips
-    .filter(t => t.startDate && new Date(t.startDate + 'T00:00:00') >= now)
-    .sort((a, b) => a.startDate.localeCompare(b.startDate))
-    .slice(0, 6);
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const isCurrentMonthYear = calMonth === now.getMonth() && calYear === now.getFullYear();
+  
+  let filteredList = [];
+  let mode = ''; // 'default', 'day', 'month'
+  
+  if (selectedCalDay !== null) {
+    mode = 'day';
+    filteredList = trips
+      .filter(t => {
+        if (!t.startDate) return false;
+        const d = new Date(t.startDate + 'T00:00:00');
+        return d.getDate() === selectedCalDay && d.getMonth() === calMonth && d.getFullYear() === calYear;
+      })
+      .sort((a, b) => a.guestName.localeCompare(b.guestName));
+    
+    if (titleEl) {
+      titleEl.textContent = `Trips on ${selectedCalDay} ${months[calMonth]} ${calYear}`;
+    }
+  } else if (!isCurrentMonthYear) {
+    mode = 'month';
+    filteredList = trips
+      .filter(t => {
+        if (!t.startDate) return false;
+        const d = new Date(t.startDate + 'T00:00:00');
+        return d.getMonth() === calMonth && d.getFullYear() === calYear;
+      })
+      .sort((a, b) => a.startDate.localeCompare(b.startDate));
+      
+    if (titleEl) {
+      titleEl.textContent = `Trips in ${months[calMonth]} ${calYear}`;
+    }
+  } else {
+    mode = 'default';
+    filteredList = trips
+      .filter(t => t.startDate && new Date(t.startDate + 'T00:00:00') >= todayStart)
+      .sort((a, b) => a.startDate.localeCompare(b.startDate))
+      .slice(0, 6);
+      
+    if (titleEl) {
+      titleEl.textContent = 'Trips Soon';
+    }
+  }
 
-  if (!upcoming.length) {
-    el.innerHTML = '<div style="color:var(--crm-text-3);font-size:.78rem;">No upcoming trips</div>';
+  if (!filteredList.length) {
+    const emptyMsg = mode === 'day' 
+      ? `No departures on ${selectedCalDay} ${months[calMonth]}` 
+      : mode === 'month' 
+      ? `No departures in ${months[calMonth]} ${calYear}` 
+      : 'No upcoming trips';
+    el.innerHTML = `<div style="color:var(--crm-text-3);font-size:.78rem;text-align:center;padding:1.5rem 0;">${emptyMsg}</div>`;
     return;
   }
 
-  el.innerHTML = upcoming.map(t => {
+  el.innerHTML = filteredList.map(t => {
     const col = guestColor(t.guestName);
     const initials = t.guestName.split(' ').map(w => w[0]).slice(0,2).join('');
-    const diff = Math.ceil((new Date(t.startDate + 'T00:00:00') - now) / 86400000);
-    const diffLabel = diff === 0 ? 'Today!' : diff === 1 ? 'Tomorrow' : `${diff}d away`;
+    
+    const d = new Date(t.startDate + 'T00:00:00');
+    const tripStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diff = Math.round((tripStart - todayStart) / 86400000);
+    
+    let diffLabel = '';
+    let labelColor = '';
+    
+    if (diff === 0) {
+      diffLabel = 'Today!';
+      labelColor = '#ef4444';
+    } else if (diff === 1) {
+      diffLabel = 'Tomorrow';
+      labelColor = '#f59e0b';
+    } else if (diff > 1 && diff <= 7) {
+      diffLabel = `${diff}d away`;
+      labelColor = '#ef4444';
+    } else if (diff > 7 && diff <= 14) {
+      diffLabel = `${diff}d away`;
+      labelColor = '#f59e0b';
+    } else if (diff > 14) {
+      diffLabel = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      labelColor = '#10b981';
+    } else {
+      diffLabel = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      labelColor = 'var(--crm-text-3)';
+    }
+
     return `
-      <div style="display:flex;align-items:center;gap:.55rem;padding:.5rem .6rem;background:var(--crm-surface-2);border:1px solid var(--crm-border);border-radius:8px;">
+      <div class="crm-cal-trip-card" onclick="highlightTripRow('${t.id}')" title="Click to scroll to this trip">
         <div style="width:24px;height:24px;border-radius:50%;background:${col};display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:700;color:white;flex-shrink:0;">${initials}</div>
         <div style="flex:1;min-width:0;">
           <div style="font-size:.75rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(t.guestName)}</div>
           <div style="font-size:.65rem;color:var(--crm-text-3);">${escHtml(t.destination)}</div>
         </div>
-        <span style="font-size:.65rem;font-weight:600;color:${diff <= 7 ? '#ef4444' : diff <= 14 ? '#f59e0b' : '#10b981'};white-space:nowrap;">${diffLabel}</span>
+        <span style="font-size:.65rem;font-weight:600;color:${labelColor};white-space:nowrap;">${diffLabel}</span>
       </div>
     `;
   }).join('');
 }
+
+function smoothScrollTrip(tripId, callback) {
+  const row = document.querySelector(`tr[data-id="${tripId}"]`);
+  const tableScroll = document.querySelector('.crm-table-scroll');
+  const mainScroll = document.querySelector('.crm-main');
+  
+  if (!row) return;
+
+  const startTableScrollTop = tableScroll ? tableScroll.scrollTop : 0;
+  let targetTableScrollTop = startTableScrollTop;
+  if (tableScroll) {
+    const rowTop = row.offsetTop;
+    const rowHeight = row.offsetHeight;
+    const containerHeight = tableScroll.clientHeight;
+    targetTableScrollTop = Math.max(0, rowTop - (containerHeight / 2) + (rowHeight / 2));
+    const maxScroll = tableScroll.scrollHeight - tableScroll.clientHeight;
+    targetTableScrollTop = Math.min(targetTableScrollTop, maxScroll);
+  }
+
+  const startMainScrollTop = mainScroll ? mainScroll.scrollTop : 0;
+  let targetMainScrollTop = startMainScrollTop;
+  if (mainScroll) {
+    targetMainScrollTop = 0; // Keep the toolbar and table top visible
+  }
+
+  const tableChange = targetTableScrollTop - startTableScrollTop;
+  const mainChange = targetMainScrollTop - startMainScrollTop;
+
+  const distance = Math.abs(tableChange);
+  
+  // If the target is near (scroll distance < 50px), show it immediately (duration = 0)
+  // If it is far, scroll smoothly with a duration of exactly 1 second (1000ms)
+  const duration = distance < 50 ? 0 : 1000;
+
+  if (duration === 0) {
+    if (tableScroll) tableScroll.scrollTop = targetTableScrollTop;
+    if (mainScroll) mainScroll.scrollTop = targetMainScrollTop;
+    if (callback) callback();
+    return;
+  }
+
+  const startTime = performance.now();
+
+  function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3);
+  }
+
+  function animate(currentTime) {
+    const timeElapsed = currentTime - startTime;
+    const progress = Math.min(timeElapsed / duration, 1);
+    const eased = easeOutCubic(progress);
+
+    if (tableScroll) {
+      tableScroll.scrollTop = startTableScrollTop + tableChange * eased;
+    }
+    if (mainScroll) {
+      mainScroll.scrollTop = startMainScrollTop + mainChange * eased;
+    }
+
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      if (tableScroll) tableScroll.scrollTop = targetTableScrollTop;
+      if (mainScroll) mainScroll.scrollTop = targetMainScrollTop;
+      if (callback) callback();
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+window.highlightTripRow = function(tripId) {
+  let row = document.querySelector(`tr[data-id="${tripId}"]`);
+  if (!row) {
+    // Clear all filters so the row is displayed
+    searchQuery = '';
+    filterStatus = '';
+    filterOwner = '';
+    filterPriority = '';
+    filterMonth = '';
+    
+    const searchInput = document.getElementById('crmSearch');
+    if (searchInput) searchInput.value = '';
+    
+    ['filterStatus', 'filterOwner', 'filterPriority', 'filterMonth'].forEach(id => {
+      const select = document.getElementById(id);
+      if (select) select.value = '';
+    });
+    
+    currentPage = 1;
+    renderTable(); // Re-render unfiltered
+    row = document.querySelector(`tr[data-id="${tripId}"]`);
+  }
+  
+  if (row) {
+    // Scroll programmatically (instant if near, 1s if far), and trigger flash highlight AFTER scrolling finishes
+    smoothScrollTrip(tripId, () => {
+      row.classList.add('row-highlight-flash');
+      setTimeout(() => {
+        row.classList.remove('row-highlight-flash');
+      }, 2000);
+    });
+  } else {
+    toast('Trip not found in table', '⚠️');
+  }
+};
 
 // ═══════════════════════════════════════════════════════════
 // MODAL HELPERS
