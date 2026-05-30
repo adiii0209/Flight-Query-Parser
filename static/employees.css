@@ -301,9 +301,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 2.7rem;
-  height: 1.4rem;
-  padding: 0 0.3rem 0 1.1rem;
+  min-width: 1.9rem;
+  height: 1.12rem;
+  padding: 0 0.12rem;
   border-radius: 999px;
   border: 1px solid var(--crm-border);
   background: linear-gradient(180deg, var(--crm-surface), var(--crm-surface-2));
@@ -311,10 +311,9 @@
   cursor: pointer;
   transition: all 0.2s ease;
   line-height: 1;
-  font-size: 0.62rem;
+  font-size: 0;
   font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
   overflow: hidden;
 }
 .ew-priority-toggle.is-priority {
@@ -325,10 +324,10 @@
 .ew-priority-toggle::before {
   content: '';
   position: absolute;
-  left: 0.16rem;
+  left: 0.1rem;
   top: 50%;
-  width: 0.92rem;
-  height: 0.92rem;
+  width: 0.76rem;
+  height: 0.76rem;
   border-radius: 50%;
   background: var(--crm-text-3);
   transform: translateY(-50%);
@@ -336,26 +335,22 @@
   box-shadow: 0 1px 3px rgba(0,0,0,0.18);
 }
 .ew-priority-toggle.is-priority::before {
-  left: calc(100% - 1.08rem);
+  left: calc(100% - 0.86rem);
   background: #ef4444;
 }
 .ew-priority-toggle-track {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.18rem;
   width: 100%;
   pointer-events: none;
 }
 .ew-priority-toggle-thumb {
-  width: 0.65rem;
-  height: 0.65rem;
+  width: 0.46rem;
+  height: 0.46rem;
   border-radius: 50%;
   background: transparent;
   flex: 0 0 auto;
-}
-.ew-priority-toggle-label {
-  transform: translateY(0.01rem);
 }
 .ew-priority-toggle:hover {
   transform: translateY(-1px);
@@ -695,6 +690,17 @@
   border-radius: 10px;
   overflow: hidden;
 }
+.ew-subtask-section-collapsible {
+  padding: 0;
+}
+.ew-subtask-section-summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.ew-subtask-section-summary::-webkit-details-marker {
+  display: none;
+}
 .ew-subtask-section-title {
   display: flex;
   align-items: center;
@@ -714,6 +720,9 @@
   background: var(--crm-border);
   padding: 0.12rem 0.45rem;
   border-radius: 999px;
+}
+.ew-subtask-section-collapsible > .ew-subtasks-table {
+  border-top: 1px solid var(--crm-border);
 }
 .ew-subtask-row:hover td {
   background: var(--crm-surface-2);
@@ -763,6 +772,17 @@
   justify-content: center;
   flex-shrink: 0;
 }
+.ew-subtask-card-checkwrap input[type="checkbox"],
+.ew-subtask-row input[type="checkbox"],
+.ew-detail-subtask input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  min-width: 1rem;
+  min-height: 1rem;
+  margin: 0;
+  accent-color: var(--crm-primary);
+  cursor: pointer;
+}
 .ew-subtask-card-copy {
   flex: 1;
   min-width: 0;
@@ -804,10 +824,12 @@
 }
 .ew-subtask-card-badges {
   display: flex;
-  align-items: flex-end;
-  flex-direction: column;
+  align-items: center;
+  flex-direction: row;
   gap: 0.35rem;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .ew-subtask-card-count {
   font-size: 0.66rem;
