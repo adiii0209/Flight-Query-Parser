@@ -1339,7 +1339,11 @@ async function toggleSubtaskDone(tripId, subtaskId, isDone) {
   });
   if (found) {
     trip.subtasks = subsObj;
-    replaceSubtaskCardDom(tripId, subtaskId);
+    if (currentView === "workspace") {
+      renderWorkspace();
+    } else {
+      replaceSubtaskCardDom(tripId, subtaskId);
+    }
     if (currentDetailContext && currentDetailContext.tripId === tripId) {
       refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
     }
@@ -1373,7 +1377,11 @@ async function appendSubtaskRemark(tripId, subtaskId, remarks) {
   });
   if (found) {
     trip.subtasks = subsObj;
-    replaceSubtaskCardDom(tripId, subtaskId);
+    if (currentView === "workspace") {
+      renderWorkspace();
+    } else {
+      replaceSubtaskCardDom(tripId, subtaskId);
+    }
     if (currentDetailContext && currentDetailContext.tripId === tripId) {
       refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
     }
