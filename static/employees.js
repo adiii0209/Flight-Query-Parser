@@ -47,6 +47,10 @@ function restoreActiveEmployeeId() {
   }
 }
 
+function isSameEmployeeId(a, b) {
+  return String(a ?? '') === String(b ?? '');
+}
+
 window.selectTripViewTab = function(tripId) {
   selectedTripId = tripId;
   renderWorkspace();
@@ -135,6 +139,103 @@ function normalizeRemarkEntries(raw) {
   return [];
 }
 
+function buildSubtaskCardHtml(s) {
+  const catLabel = s.taskCategory ? s.taskCategory.charAt(0).toUpperCase() + s.taskCategory.slice(1) : '';
+  const dest = s.trip.destination ? s.trip.destination : '';
+  const tripDate = s.tripDate ? formatDate(s.tripDate) : '';
+  const createdAt = formatCompactDateTime(getSubtaskCreatedAt(s));
+  const remarkCount = normalizeRemarkEntries(s.metadata?.remarks).length;
+  return `
+    <details class="ew-subtask-card" data-subtask-id="${escHtml(s.id)}">
+      <summary class="ew-subtask-card-summary">
+        <label class="ew-subtask-card-checkwrap" onclick="event.stopPropagation();">
+          <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${s.tripId}', '${s.id}', this.checked)">
+        </label>
+        <div class="ew-subtask-card-copy">
+          <div class="ew-subtask-card-title ${s.done ? 'ew-subtask-done' : ''}">${escHtml(s.text)}</div>
+          <div class="ew-subtask-card-meta">
+            <span>${escHtml(s.trip.guestName || 'Unnamed Trip')}</span>
+            ${dest ? `<span>${escHtml(dest)}</span>` : ''}
+            ${tripDate ? `<span>${escHtml(tripDate)}</span>` : ''}
+            ${catLabel ? `<span>[${escHtml(catLabel)}]</span>` : ''}
+          </div>
+        </div>
+        <div class="ew-subtask-card-badges">
+          <span class="ew-subtask-card-count">${remarkCount} remark${remarkCount === 1 ? '' : 's'}</span>
+          <span class="ew-subtask-card-created">${escHtml(createdAt || '—')}</span>
+        </div>
+      </summary>
+      <div class="ew-subtask-card-body">
+        <div class="ew-remark-thread">${remarkThreadHtml(s)}</div>
+        <div class="ew-remark-compose">
+          <textarea class="ew-remark-input ew-remark-textarea" rows="2" placeholder="Add remark..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();appendSubtaskRemark('${s.tripId}', '${s.id}', this.value); this.value='';}"></textarea>
+          <button type="button" class="ew-remark-send" title="Send remark" aria-label="Send remark" onclick="appendSubtaskRemark('${s.tripId}', '${s.id}', this.parentElement.querySelector('textarea').value); this.parentElement.querySelector('textarea').value='';">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M22 2L11 13"></path>
+              <path d="M22 2L15 22 11 13 2 9 22 2Z"></path>
+            </svg>
+          </button>
+          <button class="crm-btn crm-btn-ghost" style="color:#ef4444;font-size:1rem;padding:0.2rem;line-height:1;" title="Delete Subtask" onclick="deleteSubtask('${s.tripId}', '${s.id}')">✕</button>
+        </div>
+      </div>
+    </details>
+  `;
+}
+
+function buildDetailSubtaskHtml(trip, s) {
+  return `
+    <div class="ew-detail-subtask" data-subtask-id="${escHtml(s.id)}" style="display:flex;flex-direction:column;gap:0.5rem;align-items:stretch;">
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${trip.id}', '${s.id}', this.checked)">
+        <input type="text" class="ew-detail-subtask-text ${s.done ? 'done' : ''}" value="${escHtml(s.text)}" readonly style="flex:1;">
+        <button class="crm-btn crm-btn-ghost" style="color:#ef4444;font-size:1rem;padding:0.2rem;line-height:1;" title="Delete Subtask" onclick="deleteSubtask('${trip.id}', '${s.id}')">✕</button>
+      </div>
+      <div class="ew-remark-thread">${remarkThreadHtml(s)}</div>
+      <div class="ew-remark-compose">
+        <textarea class="ew-remark-input ew-remark-textarea" rows="2" placeholder="Add remark..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();appendSubtaskRemark('${trip.id}', '${s.id}', this.value); this.value='';}"></textarea>
+        <button type="button" class="ew-remark-send" title="Send remark" aria-label="Send remark" onclick="appendSubtaskRemark('${trip.id}', '${s.id}', this.parentElement.querySelector('textarea').value); this.parentElement.querySelector('textarea').value='';">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 2L11 13"></path>
+            <path d="M22 2L15 22 11 13 2 9 22 2Z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function refreshWorkspaceStats() {
+  renderStatsRow(getEmployeeData().stats);
+}
+
+function replaceSubtaskCardDom(tripId, subtaskId) {
+  const data = getEmployeeData();
+  const subtask = data.subtasks.find(s => s.tripId === tripId && s.id === subtaskId);
+  const card = document.querySelector(`details.ew-subtask-card[data-subtask-id="${CSS.escape(String(subtaskId))}"]`);
+  if (!card) return false;
+  if (!subtask) {
+    card.remove();
+    return true;
+  }
+  const wasOpen = card.open;
+  card.outerHTML = buildSubtaskCardHtml(subtask);
+  const next = document.querySelector(`details.ew-subtask-card[data-subtask-id="${CSS.escape(String(subtaskId))}"]`);
+  if (wasOpen && next) next.open = true;
+  return true;
+}
+
+function removeSubtaskCardDom(subtaskId) {
+  const card = document.querySelector(`details.ew-subtask-card[data-subtask-id="${CSS.escape(String(subtaskId))}"]`);
+  if (!card) return false;
+  card.remove();
+  return true;
+}
+
+function refreshDetailSubtaskList(trip, taskKey) {
+  if (!currentDetailContext || currentDetailContext.tripId !== trip.id) return;
+  renderDetailSubtasks(trip, taskKey);
+}
+
 function remarkThreadHtml(subtask) {
   const remarks = normalizeRemarkEntries(subtask?.metadata?.remarks);
   if (!remarks.length) {
@@ -186,6 +287,10 @@ function appendSubtaskRemark(tripId, subtaskId, rawText) {
     found = true;
   });
   if (!found) return;
+  replaceSubtaskCardDom(tripId, subtaskId);
+  if (currentDetailContext && currentDetailContext.tripId === tripId) {
+    refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
+  }
   updateTripField(tripId, 'subtasks', trip.subtasks).catch(() => {});
 }
 
@@ -219,9 +324,10 @@ async function editSubtaskRemark(tripId, subtaskId, remarkIndex) {
     found = true;
   });
   if (!found) return;
-  await updateTripField(tripId, 'subtasks', trip.subtasks);
+  updateTripField(tripId, 'subtasks', trip.subtasks).catch(() => {});
+  replaceSubtaskCardDom(tripId, subtaskId);
   if (currentDetailContext && currentDetailContext.tripId === tripId) {
-    renderDetailSubtasks(trip, currentDetailContext.taskKey);
+    refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
   }
 }
 
@@ -242,9 +348,10 @@ async function deleteSubtaskRemark(tripId, subtaskId, remarkIndex) {
     found = true;
   });
   if (!found) return;
-  await updateTripField(tripId, 'subtasks', trip.subtasks);
+  updateTripField(tripId, 'subtasks', trip.subtasks).catch(() => {});
+  replaceSubtaskCardDom(tripId, subtaskId);
   if (currentDetailContext && currentDetailContext.tripId === tripId) {
-    renderDetailSubtasks(trip, currentDetailContext.taskKey);
+    refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
   }
 }
 
@@ -309,7 +416,7 @@ function restoreEmployeeWorkspaceState() {
 }
 
 function activateEmployeeById(employeeId, { replaceRoute = false, animate = false } = {}) {
-  const emp = employees.find(x => x.id === employeeId);
+  const emp = employees.find(x => isSameEmployeeId(x.id, employeeId));
   if (!emp) return false;
 
   activeEmployee = emp;
@@ -366,7 +473,7 @@ async function loadData() {
 
   const requestedEmployeeId = getRequestedEmployeeId();
   if (requestedEmployeeId) {
-    const matched = employees.find(emp => emp.id === requestedEmployeeId);
+    const matched = employees.find(emp => isSameEmployeeId(emp.id, requestedEmployeeId));
     if (matched) {
       activateEmployeeById(matched.id, { replaceRoute: true, animate: false });
       return;
@@ -485,7 +592,7 @@ async function deleteEmployee(id) {
   try {
     await apiJson(`/api/ownership/employees/${id}`, { method: 'DELETE' });
     employees = employees.filter(e => e.id !== id);
-    if (activeEmployee && activeEmployee.id === id) {
+    if (activeEmployee && isSameEmployeeId(activeEmployee.id, id)) {
       activeEmployee = null;
       selectedTripId = null;
       cacheActiveEmployeeId('');
@@ -501,7 +608,7 @@ async function deleteEmployee(id) {
 
 window.selectEmployee = function(id, el) {
   if (isEditMode) return;
-  const emp = employees.find(x => x.id === id);
+  const emp = employees.find(x => isSameEmployeeId(x.id, id));
   if (!emp) return;
   
   activeEmployee = emp;
@@ -700,11 +807,21 @@ function renderWorkspace() {
   syncActiveTabButtons();
   
   const container = document.getElementById('ewViewContainer');
+  const openSubtaskCards = currentTab === 'subtasks'
+    ? [...container.querySelectorAll('details.ew-subtask-card[open]')].map(card => card.dataset.subtaskId).filter(Boolean)
+    : [];
   if (currentTab === 'kanban') container.innerHTML = renderKanban(data.tasks);
   else if (currentTab === 'trip') container.innerHTML = renderTripView(data.tasks, data.subtasks);
   else if (currentTab === 'subtasks') container.innerHTML = renderSubtasks(data.subtasks);
   else if (currentTab === 'timeline') container.innerHTML = renderTimeline(data.tasks);
   else if (currentTab === 'calendar') container.innerHTML = renderCalendar(data.tasks);
+
+  if (currentTab === 'subtasks' && openSubtaskCards.length) {
+    openSubtaskCards.forEach(id => {
+      const card = container.querySelector(`details.ew-subtask-card[data-subtask-id="${CSS.escape(id)}"]`);
+      if (card) card.open = true;
+    });
+  }
 }
 
 window.openAddSubtaskModal = openAddSubtaskModal;
@@ -1100,32 +1217,40 @@ function renderDetailSubtasks(trip, taskKey) {
   if (mySubs.length === 0) {
     el.innerHTML = '<div style="font-size:0.8rem;color:var(--crm-text-3)">No subtasks for you on this trip.</div>';
   } else {
-    el.innerHTML = mySubs.map(s => `
-      <div class="ew-detail-subtask" style="display:flex; gap:0.5rem; align-items:center;">
-        <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${trip.id}', '${s.id}', this.checked)">
-        <input type="text" class="ew-detail-subtask-text ${s.done ? 'done' : ''}" value="${escHtml(s.text)}" readonly style="flex:1;">
-        <button class="crm-btn crm-btn-ghost" style="color:#ef4444;font-size:1rem;padding:0.2rem;line-height:1;" title="Delete Subtask" onclick="deleteSubtask('${trip.id}', '${s.id}')">✕</button>
-      </div>
-    `).join('');
+    el.innerHTML = mySubs.map(s => buildDetailSubtaskHtml(trip, s)).join('');
   }
 }
 
 // API Updates
 async function updateTripField(tripId, field, value) {
+  const trip = trips.find(x => x.id === tripId);
+  if (!trip) return;
+  const snapshot = JSON.parse(JSON.stringify(trip));
+  if (field === 'subtasks') trip.subtasks = value;
+  else trip[field] = value;
+  refreshWorkspaceStats();
+  if (field === currentDetailContext?.taskKey && currentDetailContext.tripId === tripId) {
+    const detailStatus = document.getElementById('ewDetailStatusSelect');
+    if (detailStatus) detailStatus.value = value;
+  }
   try {
     await apiJson(`/api/ownership/trips/${tripId}`, {
       method: 'PATCH',
       body: JSON.stringify({ [field]: value })
     });
-    // Optimistic update
-    const t = trips.find(x => x.id === tripId);
-    if (t) {
-      if (field === 'subtasks') t.subtasks = value; // map back to local state
-      else t[field] = value;
-    }
-    renderWorkspace();
     toast('Saved');
   } catch (e) {
+    const idx = trips.findIndex(x => x.id === tripId);
+    if (idx !== -1) trips[idx] = snapshot;
+    refreshWorkspaceStats();
+    if (currentDetailContext && currentDetailContext.tripId === tripId) {
+      const matched = trips.find(x => x.id === tripId);
+      if (matched) {
+        document.getElementById('ewDetailStatusSelect').value = matched[currentDetailContext.taskKey] || 'notstarted';
+        refreshDetailSubtaskList(matched, currentDetailContext.taskKey);
+      }
+    }
+    renderWorkspace();
     toast('Failed to save', '⚠️');
   }
 }
@@ -1146,10 +1271,11 @@ async function toggleSubtaskDone(tripId, subtaskId, isDone) {
   });
   if (found) {
     trip.subtasks = subsObj;
-    await updateTripField(tripId, 'subtasks', subsObj); // Use 'subtasks' for API payload
+    replaceSubtaskCardDom(tripId, subtaskId);
     if (currentDetailContext && currentDetailContext.tripId === tripId) {
-      renderDetailSubtasks(trip, currentDetailContext.taskKey);
+      refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
     }
+    updateTripField(tripId, 'subtasks', subsObj).catch(() => {});
   }
 }
 
@@ -1179,10 +1305,11 @@ async function appendSubtaskRemark(tripId, subtaskId, remarks) {
   });
   if (found) {
     trip.subtasks = subsObj;
-    await updateTripField(tripId, 'subtasks', subsObj);
+    replaceSubtaskCardDom(tripId, subtaskId);
     if (currentDetailContext && currentDetailContext.tripId === tripId) {
-      renderDetailSubtasks(trip, currentDetailContext.taskKey);
+      refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
     }
+    updateTripField(tripId, 'subtasks', subsObj).catch(() => {});
   }
 }
 
@@ -1206,10 +1333,12 @@ async function deleteSubtask(tripId, subtaskId) {
   
   if (found) {
     trip.subtasks = subsObj;
-    await updateTripField(tripId, 'subtasks', subsObj);
+    refreshWorkspaceStats();
+    removeSubtaskCardDom(subtaskId);
     if (currentDetailContext && currentDetailContext.tripId === tripId) {
-      renderDetailSubtasks(trip, currentDetailContext.taskKey);
+      refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
     }
+    updateTripField(tripId, 'subtasks', subsObj).catch(() => {});
   }
 }
 
@@ -1225,7 +1354,7 @@ document.getElementById('ewDetailCompleteBtn')?.addEventListener('click', () => 
   closeTaskDetail();
 });
 
-document.getElementById('ewDetailAddSubtaskBtn')?.addEventListener('click', async () => {
+document.getElementById('ewDetailAddSubtaskBtn')?.addEventListener('click', () => {
   if (!currentDetailContext) return;
   const input = document.getElementById('ewDetailNewSubtaskInput');
   const text = input.value.trim();
@@ -1245,11 +1374,12 @@ document.getElementById('ewDetailAddSubtaskBtn')?.addEventListener('click', asyn
     assignee: activeEmployee.name,
     createdAt: new Date().toISOString()
   });
-  
+
   trip.subtasks = subsObj;
   input.value = '';
-  await updateTripField(trip.id, 'subtasks', subsObj);
-  renderDetailSubtasks(trip, currentDetailContext.taskKey);
+  refreshWorkspaceStats();
+  refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
+  updateTripField(trip.id, 'subtasks', subsObj).catch(() => {});
 });
 
 renderSubtasks = function(subtasks) {
@@ -1363,7 +1493,7 @@ window.addEventListener('popstate', () => {
     return;
   }
 
-  const matched = employees.find(emp => emp.id === routeEmployeeId);
+  const matched = employees.find(emp => isSameEmployeeId(emp.id, routeEmployeeId));
   if (matched) {
     activeEmployee = matched;
     currentTab = 'subtasks';
@@ -1410,7 +1540,7 @@ renderSubtasks = function(subtasks) {
             const createdAt = formatCompactDateTime(getSubtaskCreatedAt(s));
             const remarkCount = normalizeRemarkEntries(s.metadata?.remarks).length;
             return `
-              <details class="ew-subtask-card">
+              <details class="ew-subtask-card" data-subtask-id="${s.id}">
                 <summary class="ew-subtask-card-summary">
                   <label class="ew-subtask-card-checkwrap" onclick="event.stopPropagation();">
                     <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${s.tripId}', '${s.id}', this.checked)">

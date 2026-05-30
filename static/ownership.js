@@ -50,6 +50,11 @@ let selectedCalDay = null;
 let newTplTasks = [];
 let isDark = false;
 let ownershipRefreshQueued = false;
+let ownershipRefreshTimer = null;
+let ownershipCacheTimer = null;
+let ownershipCachePendingTrips = null;
+let subtaskModalRefreshTimer = null;
+let subtaskModalRefreshState = null;
 
 // ═══════════════════════════════════════════════════════════
 // UTILS
@@ -91,6 +96,7 @@ async function saveTripPatch(trip, patch) {
     const idx = trips.findIndex(t => t.id === saved.id);
     if (idx !== -1) trips[idx] = saved;
     cacheTripsForFastPaint(trips);
+    syncTripRowDom(saved, { refreshExpanded: true });
   }
   return saved;
 }
@@ -113,6 +119,34 @@ function scheduleOwnershipRefresh() {
     renderCalendar();
     renderUpcomingTrips();
   });
+}
+
+function scheduleOwnershipRefreshDeferred(delayMs = 220) {
+  if (ownershipRefreshTimer) clearTimeout(ownershipRefreshTimer);
+  ownershipRefreshTimer = setTimeout(() => {
+    ownershipRefreshTimer = null;
+    const runRefresh = () => scheduleOwnershipRefresh();
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(runRefresh, { timeout: 1200 });
+    } else {
+      setTimeout(runRefresh, 0);
+    }
+  }, delayMs);
+}
+
+function scheduleSubtaskModalRefresh(delayMs = 0) {
+  if (!subtaskContext) return;
+  subtaskModalRefreshState = { tripId: subtaskContext.tripId, key: subtaskContext.key };
+  if (subtaskModalRefreshTimer) clearTimeout(subtaskModalRefreshTimer);
+  subtaskModalRefreshTimer = setTimeout(() => {
+    subtaskModalRefreshTimer = null;
+    const state = subtaskModalRefreshState;
+    subtaskModalRefreshState = null;
+    if (!state) return;
+    const trip = trips.find(t => t.id === state.tripId);
+    if (!trip || !trip.subtasks || !trip.subtasks[state.key]) return;
+    renderSubtaskBody(trip.subtasks[state.key]);
+  }, delayMs);
 }
 
 function saveTemplates(template = null) {
@@ -146,7 +180,31 @@ function guestColor(name) {
 function statusBadge(status, field) {
   const label = STATUS_LABELS[status] || 'Not Started';
   const cls = status || 'notstarted';
-  return `<span class="crm-badge ${cls}" data-tooltip="${label}" data-field="${field}" onclick="openBadgeMenu(this, event)">${label}</span>`;
+  return `<span class="crm-badge ${cls}" data-field="${field}" onclick="openBadgeMenu(this, event)">${label}</span>`;
+}
+
+function statusLabelFor(value) {
+  return STATUS_LABELS[value] || 'Not Started';
+}
+
+function findTripRow(tripId) {
+  return Array.from(document.querySelectorAll('tr[data-id]')).find(row => row.dataset.id === tripId) || null;
+}
+
+function paintStatusBadgeInPlace(badge, value) {
+  if (!badge) return;
+  const label = statusLabelFor(value);
+  badge.className = `crm-badge ${value || 'notstarted'}`;
+  delete badge.dataset.tooltip;
+  badge.textContent = label;
+}
+
+function applyOwnershipStatusOptimistically(trip, field, value) {
+  if (!trip) return;
+  const previous = trip[field];
+  trip[field] = value;
+  cacheTripsForFastPaint(trips);
+  return previous;
 }
 
 const TASK_GROUP_OPTIONS = [
@@ -170,7 +228,94 @@ function statusBadgeWithCount(trip, statusField, subtaskKey) {
   const status = trip?.[statusField] || 'notstarted';
   const count = ((trip?.subtasks || {})[subtaskKey] || []).filter(sub => sub && !sub.done).length;
   const countBadge = count ? `<button type="button" class="crm-task-count crm-task-count-inline" title="${count} pending subtasks" onclick="openTripExpandedFromCount(event, '${trip.id}')">${count}</button>` : '';
-  return `<span class="crm-badge ${status}" data-tooltip="${STATUS_LABELS[status] || 'Not Started'}" data-field="${statusField}" onclick="openBadgeMenu(this, event)" ondblclick="openSubtaskModal(event, '${trip.id}', '${subtaskKey}')">${STATUS_LABELS[status] || 'Not Started'}</span>${countBadge}`;
+  return `<span class="crm-badge ${status}" data-field="${statusField}" onclick="openBadgeMenu(this, event)" ondblclick="openSubtaskModal(event, '${trip.id}', '${subtaskKey}')">${STATUS_LABELS[status] || 'Not Started'}</span>${countBadge}`;
+}
+
+const STATUS_CELL_MAP = {
+  proposalStatus: 'proposal',
+  flightsStatus: 'flights',
+  visaStatus: 'visa',
+  hotelsStatus: 'hotels',
+  sectorTicketsStatus: 'sectorTickets',
+  sightseeingStatus: 'sightseeing',
+  insuranceStatus: 'insurance',
+  travelingStatus: 'travefy',
+  travefyTaskListStatus: 'travefyTaskList',
+  tripFeedbackFormStatus: 'tripFeedbackForm',
+};
+
+function syncTripRowDom(trip, { refreshExpanded = false } = {}) {
+  if (!trip || !trip.id) return false;
+  const row = findTripRow(trip.id);
+  if (!row) return false;
+
+  const avatar = row.querySelector('.crm-link-avatar');
+  if (avatar) {
+    const masterSheetUrl = tripMasterSheetUrl(trip);
+    avatar.style.background = guestColor(trip.guestName);
+    avatar.textContent = initialsFor(trip.guestName, 'G');
+    avatar.dataset.id = trip.id;
+    avatar.dataset.url = escHtml(masterSheetUrl);
+    avatar.title = masterSheetUrl ? 'Open master sheet link' : 'Link the master sheet';
+    avatar.classList.toggle('has-link', !!masterSheetUrl);
+    avatar.classList.toggle('no-link', !masterSheetUrl);
+  }
+
+  const guestName = row.querySelector('.crm-guest-name');
+  if (guestName) {
+    guestName.value = trip.guestName || '';
+    guestName.style.height = 'auto';
+    guestName.style.height = guestName.scrollHeight + 'px';
+  }
+
+  const pax = row.querySelector('input[data-field="pax"]');
+  if (pax) pax.value = trip.pax || 1;
+
+  const destination = row.querySelector('textarea[data-field="destination"]');
+  if (destination) {
+    destination.value = trip.destination || '';
+    destination.style.height = 'auto';
+    destination.style.height = destination.scrollHeight + 'px';
+  }
+
+  const startDate = row.querySelector('input[data-field="startDate"]');
+  if (startDate) {
+    startDate.value = trip.startDate || '';
+    startDate.className = `crm-inline-edit crm-date-cell ${dateSoonClass(trip.startDate)}`;
+  }
+
+  const ownerSelect = row.querySelector('select[data-field="owner"]');
+  if (ownerSelect) ownerSelect.value = trip.owner || '';
+  const ownerAvatar = row.querySelector('.crm-owner-avatar');
+  if (ownerAvatar) {
+    ownerAvatar.style.background = employeeColor(trip.owner);
+    ownerAvatar.dataset.tooltip = escHtml(trip.owner || '');
+    ownerAvatar.textContent = initialsFor(trip.owner, 'O');
+  }
+
+  const progressFill = row.querySelector('.crm-progress-bar-fill');
+  const progressLabel = row.querySelector('.crm-progress-label');
+  if (progressFill && progressLabel) {
+    const prog = calcProgress(trip);
+    progressFill.style.width = `${prog}%`;
+    progressLabel.textContent = `${prog}%`;
+  }
+
+  for (const [field, key] of Object.entries(STATUS_CELL_MAP)) {
+    const badge = row.querySelector(`.crm-badge[data-field="${field}"]`);
+    if (!badge) continue;
+    const cell = badge.closest('td');
+    if (cell) cell.innerHTML = statusBadgeWithCount(trip, field, key);
+  }
+
+  if (refreshExpanded) {
+    const expRow = row.nextElementSibling;
+    if (expRow && expRow.classList.contains('crm-expanded-row') && expRow.dataset.expandFor === trip.id) {
+      expRow.innerHTML = `<td colspan="18">${renderExpandedContent(trip)}</td>`;
+    }
+  }
+
+  return true;
 }
 
 const PENCIL_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
@@ -629,13 +774,13 @@ function attachTableEvents() {
       const val = inp.isContentEditable ? inp.innerText.trim() : inp.value;
       if (trip && trip[field] !== val) {
         trip[field] = val;
+        syncTripRowDom(trip);
         saveTripPatch(trip, { [field]: val }).catch(err => {
           console.error('Ownership field save failed', err);
           toast('Could not save to database', '⚠️');
         });
         logActivity(`${trip.guestName} — ${field} updated`, '#6366f1');
         toast('Saved!');
-        scheduleOwnershipRefresh();
       }
     };
     if (inp.isContentEditable) {
@@ -733,6 +878,7 @@ const statusMenu = (() => {
 
 window.openBadgeMenu = function(badge, event) {
   event.stopPropagation();
+  cancelPendingOwnershipWork();
   const row = badge.closest('tr');
   const tripId = row?.dataset.id;
   const field = badge.dataset.field;
@@ -752,13 +898,18 @@ window.openBadgeMenu = function(badge, event) {
       e.stopPropagation();
       const trip = trips.find(t => t.id === tripId);
       if (trip) {
-        trip[field] = val;
+        const previous = applyOwnershipStatusOptimistically(trip, field, val);
+        syncTripRowDom(trip);
         saveTripPatch(trip, { [field]: val }).catch(err => {
           console.error('Ownership status save failed', err);
+          if (previous !== undefined) {
+            trip[field] = previous;
+            cacheTripsForFastPaint(trips);
+            syncTripRowDom(trip);
+          }
           toast('Could not save status', '⚠️');
         });
         logActivity(`${trip.guestName} — ${field} → ${label}`, '#6366f1');
-        scheduleOwnershipRefresh();
         toast(`Status updated to ${label}`);
       }
       statusMenu.style.display = 'none';
@@ -829,7 +980,7 @@ function persistTripMasterSheet(trip, url) {
   if (!trip) return null;
   trip.masterSheetUrl = normalizeUrl(url);
   cacheTripsForFastPaint(trips);
-  scheduleOwnershipRefresh();
+  syncTripRowDom(trip, { refreshExpanded: true });
   const patch = { masterSheetUrl: trip.masterSheetUrl };
   saveTripPatch(trip, patch).catch(err => {
     console.error('Master sheet save failed', err);
@@ -957,14 +1108,14 @@ function openSubtaskReminderModal(subtaskId) {
     sub.metadata = { ...(sub.metadata || {}) };
     delete sub.metadata.reminder;
     modal.classList.remove('open');
-    renderSubtaskBody(trip.subtasks[subtaskContext.key]);
+    scheduleSubtaskModalRefresh();
   };
   document.getElementById('saveSubtaskReminder').onclick = () => {
     const days = parseInt(document.getElementById('subtaskReminderDays').value, 10);
     if (isNaN(days) || days < 1) return;
     sub.metadata = { ...(sub.metadata || {}), reminder: { days, label: `${days} days before` } };
     modal.classList.remove('open');
-    renderSubtaskBody(trip.subtasks[subtaskContext.key]);
+    scheduleSubtaskModalRefresh();
   };
 }
 
@@ -1080,7 +1231,7 @@ window.openSubtaskModal = function(event, tripId, key) {
 
   document.getElementById('subtaskModalTitle').textContent = `${escHtml(trip.guestName)} · ${key.charAt(0).toUpperCase()+key.slice(1)} Subtasks`;
   document.getElementById('subtaskModalSubtitle').textContent = `${trip.destination} · ${formatDate(trip.startDate)}`;
-  renderSubtaskBody(trip.subtasks[key]);
+  scheduleSubtaskModalRefresh();
   openModal('subtaskModal');
 };
 
@@ -1124,7 +1275,7 @@ function renderSubtaskBody(subtasks) {
     item.querySelector('.crm-subtask-del').addEventListener('click', () => {
       const trip = trips.find(t => t.id === subtaskContext.tripId);
       trip.subtasks[subtaskContext.key] = trip.subtasks[subtaskContext.key].filter(s => s.id !== sub.id);
-      renderSubtaskBody(trip.subtasks[subtaskContext.key]);
+      scheduleSubtaskModalRefresh();
     });
   }
 
@@ -1168,7 +1319,7 @@ function renderSubtaskBody(subtasks) {
       pendingNewSubtaskReminder = null;
     }
     trip.subtasks[subtaskContext.key].push(newSub);
-    renderSubtaskBody(trip.subtasks[subtaskContext.key]);
+    scheduleSubtaskModalRefresh();
     addInput.focus();
   };
   addBtn.addEventListener('click', doAdd);
@@ -1202,7 +1353,7 @@ function renderSubtaskBody(subtasks) {
     if (!trip.reminders) trip.reminders = [];
     if (!trip.reminders.find(r => r.days === days)) {
       trip.reminders.push({ days, label: `${days} days before` });
-      renderSubtaskBody(trip.subtasks[subtaskContext.key]);
+      scheduleSubtaskModalRefresh();
     }
   });
 }
@@ -1210,7 +1361,7 @@ function renderSubtaskBody(subtasks) {
 window.removeReminder = function(days) {
   const trip = trips.find(t => t.id === subtaskContext.tripId);
   if (trip) trip.reminders = (trip.reminders||[]).filter(r => r.days !== days);
-  renderSubtaskBody(trip.subtasks[subtaskContext.key]);
+  scheduleSubtaskModalRefresh();
 };
 
 function renderSubtaskBody(subtasks) {
@@ -1250,7 +1401,7 @@ function renderSubtaskBody(subtasks) {
     item.querySelector('.crm-subtask-del').addEventListener('click', () => {
       const trip = trips.find(t => t.id === subtaskContext.tripId);
       trip.subtasks[subtaskContext.key] = trip.subtasks[subtaskContext.key].filter(s => s.id !== sub.id);
-      renderSubtaskBody(trip.subtasks[subtaskContext.key]);
+      scheduleSubtaskModalRefresh();
     });
   }
 
@@ -1352,7 +1503,7 @@ function renderSubtaskBody(subtasks) {
     if (!trip.reminders) trip.reminders = [];
     if (!trip.reminders.find(r => r.days === days)) {
       trip.reminders.push({ days, label: `${days} days before` });
-      renderSubtaskBody(trip.subtasks[subtaskContext.key]);
+      scheduleSubtaskModalRefresh();
     }
   });
 }
@@ -1360,44 +1511,57 @@ function renderSubtaskBody(subtasks) {
 document.getElementById('btnSaveSubtasks').addEventListener('click', () => {
   const trip = trips.find(t => t.id === subtaskContext?.tripId);
   if (trip) {
-    const nextSubs = [];
-    document.querySelectorAll('#subtaskModalBody .crm-subtask-item').forEach(item => {
-      const text = item.querySelector('.crm-subtask-text')?.value.trim();
-      if (!text) return;
-    nextSubs.push({
-        id: item.querySelector('.crm-subtask-text')?.dataset.sid || uid(),
-        text,
-        done: !!item.querySelector('.crm-subtask-check')?.checked,
-        assignee: item.querySelector('.crm-subtask-assignee')?.value || trip.owner || '',
-        createdAt: (trip.subtasks?.[subtaskContext.key] || []).find(s => s.id === item.querySelector('.crm-subtask-text')?.dataset.sid)?.createdAt || '',
-        metadata: (() => {
-          const subId = item.querySelector('.crm-subtask-text')?.dataset.sid;
-          const existing = (trip.subtasks?.[subtaskContext.key] || []).find(s => s.id === subId);
-          return existing?.metadata || {};
-        })(),
-      });
-    });
-    document.querySelectorAll('#subtaskModalBody .crm-subtask-draft-row').forEach(row => {
-      const text = row.querySelector('.crm-subtask-draft-input')?.value.trim();
-      if (!text) return;
-      const reminder = draftReminderFromRow(row);
-      nextSubs.push({
-        id: uid(),
-        text,
-        done: false,
-        assignee: row.querySelector('.crm-subtask-draft-assignee')?.value || trip.owner || '',
-        createdAt: new Date().toISOString(),
-        ...(reminder ? { metadata: { reminder } } : {}),
-      });
-    });
-    trip.subtasks[subtaskContext.key] = nextSubs;
-    cacheTripsForFastPaint(trips);
     closeModal('subtaskModal');
-    scheduleOwnershipRefresh();
     toast('Subtasks saved!');
-    saveTripPatch(trip, { subtasks: trip.subtasks, reminders: trip.reminders || [] }).catch(err => {
-      console.error('Subtask save failed', err);
-      toast('Could not save subtasks', '⚠️');
+    const tripId = trip.id;
+    const key = subtaskContext.key;
+    requestAnimationFrame(() => {
+      const currentTrip = trips.find(t => t.id === tripId);
+      if (!currentTrip) return;
+      const body = document.getElementById('subtaskModalBody');
+      if (!body) return;
+
+      const nextSubs = [];
+      body.querySelectorAll('.crm-subtask-item').forEach(item => {
+        const text = item.querySelector('.crm-subtask-text')?.value.trim();
+        if (!text) return;
+        const sid = item.querySelector('.crm-subtask-text')?.dataset.sid || uid();
+        const existing = (currentTrip.subtasks?.[key] || []).find(s => s.id === sid);
+        nextSubs.push({
+          id: sid,
+          text,
+          done: !!item.querySelector('.crm-subtask-check')?.checked,
+          assignee: item.querySelector('.crm-subtask-assignee')?.value || currentTrip.owner || '',
+          createdAt: existing?.createdAt || '',
+          metadata: existing?.metadata || {},
+        });
+      });
+
+      body.querySelectorAll('.crm-subtask-draft-row').forEach(row => {
+        const text = row.querySelector('.crm-subtask-draft-input')?.value.trim();
+        if (!text) return;
+        const reminder = draftReminderFromRow(row);
+        nextSubs.push({
+          id: uid(),
+          text,
+          done: false,
+          assignee: row.querySelector('.crm-subtask-draft-assignee')?.value || currentTrip.owner || '',
+          createdAt: new Date().toISOString(),
+          ...(reminder ? { metadata: { reminder } } : {}),
+        });
+      });
+
+      const previousSubtasks = currentTrip.subtasks ? JSON.parse(JSON.stringify(currentTrip.subtasks)) : {};
+      currentTrip.subtasks[key] = nextSubs;
+      cacheTripsForFastPaint(trips);
+      syncTripRowDom(currentTrip, { refreshExpanded: true });
+      saveTripPatch(currentTrip, { subtasks: currentTrip.subtasks, reminders: currentTrip.reminders || [] }).catch(err => {
+        console.error('Subtask save failed', err);
+        currentTrip.subtasks = previousSubtasks;
+        cacheTripsForFastPaint(trips);
+        syncTripRowDom(currentTrip, { refreshExpanded: true });
+        toast('Could not save subtasks', '⚠️');
+      });
     });
   }
 });
@@ -1528,7 +1692,7 @@ document.getElementById('btnApplyTemplate').addEventListener('click', () => {
     }
     trip.subtasks[key].push(newTask);
   }
-  renderSubtaskBody(trip.subtasks[key]);
+  scheduleSubtaskModalRefresh();
   toast(`Category list for ${taskGroupLabel(tpl.taskGroup)} applied!`);
 });
 
@@ -1629,9 +1793,9 @@ function applySelectedTemplateTasks() {
   }
   saveTripPatch(trip, { subtasks: trip.subtasks }).catch(() => {});
   if (subtaskContext?.tripId === trip.id && subtaskContext?.key === key) {
-    renderSubtaskBody(trip.subtasks[key]);
+    scheduleSubtaskModalRefresh();
   } else {
-    scheduleOwnershipRefresh();
+    syncTripRowDom(trip, { refreshExpanded: true });
   }
   closeModal('applyTemplateModal');
   toast(`Applied ${added} task${added === 1 ? '' : 's'} to ${trip.guestName || 'the trip'}`);
@@ -1873,13 +2037,22 @@ document.getElementById('tripModalSave').addEventListener('click', async () => {
   if (editingTripId) {
     const idx = trips.findIndex(t => t.id === editingTripId);
     if (idx !== -1) {
-      trips[idx] = { ...trips[idx], ...data };
-      saveTripPatch(trips[idx], data).catch(err => {
-        console.error('Trip update failed', err);
-        toast('Could not update trip', '⚠️');
-      });
+      const previousTrip = trips[idx];
+      const optimisticTrip = { ...previousTrip, ...data };
+      trips[idx] = optimisticTrip;
+      cacheTripsForFastPaint(trips);
+      closeModal('tripModal');
       logActivity(`${name} — trip updated`, '#3b82f6');
       toast('Trip updated!');
+      syncTripRowDom(optimisticTrip, { refreshExpanded: true });
+      saveTripPatch(optimisticTrip, data).catch(err => {
+        console.error('Trip update failed', err);
+        trips[idx] = previousTrip;
+        cacheTripsForFastPaint(trips);
+        syncTripRowDom(previousTrip, { refreshExpanded: true });
+        toast('Could not update trip', '⚠️');
+      });
+      return;
     }
   } else {
     const tempId = `tmp-${uid()}`;
@@ -1892,7 +2065,7 @@ document.getElementById('tripModalSave').addEventListener('click', async () => {
     trips.unshift(optimisticTrip);
     logActivity(`New trip added: ${name}`, '#10b981');
     toast('Trip created!');
-    scheduleOwnershipRefresh();
+    scheduleOwnershipRefreshDeferred();
     closeModal('tripModal');
     apiJson('/api/ownership/trips', {
       method: 'POST',
@@ -1901,18 +2074,16 @@ document.getElementById('tripModalSave').addEventListener('click', async () => {
       const idx = trips.findIndex(t => t.id === tempId);
       if (idx !== -1 && newTrip) {
         trips[idx] = newTrip;
-        scheduleOwnershipRefresh();
+        scheduleOwnershipRefreshDeferred(0);
       }
     }).catch(err => {
       console.error('Trip create failed', err);
       trips = trips.filter(t => t.id !== tempId);
-      scheduleOwnershipRefresh();
+      scheduleOwnershipRefreshDeferred(0);
       toast('Could not create trip', '⚠️');
     });
     return;
   }
-  scheduleOwnershipRefresh();
-  closeModal('tripModal');
 });
 
 window.deleteTrip = function(id) {
@@ -2460,13 +2631,33 @@ async function loadOwnershipData() {
 }
 
 function cacheTripsForFastPaint(nextTrips) {
-  try {
-    localStorage.setItem(OWNERSHIP_TRIPS_STORAGE_KEY, JSON.stringify({
-      savedAt: Date.now(),
-      trips: Array.isArray(nextTrips) ? nextTrips : [],
-    }));
-  } catch (err) {
-    // Storage can fail in private mode or under quota pressure; the API remains authoritative.
+  ownershipCachePendingTrips = Array.isArray(nextTrips) ? nextTrips : [];
+  if (ownershipCacheTimer) clearTimeout(ownershipCacheTimer);
+  ownershipCacheTimer = setTimeout(() => {
+    ownershipCacheTimer = null;
+    try {
+      localStorage.setItem(OWNERSHIP_TRIPS_STORAGE_KEY, JSON.stringify({
+        savedAt: Date.now(),
+        trips: ownershipCachePendingTrips || [],
+      }));
+    } catch (err) {
+      // Storage can fail in private mode or under quota pressure; the API remains authoritative.
+    }
+  }, 150);
+}
+
+function cancelPendingOwnershipWork() {
+  if (ownershipRefreshTimer) {
+    clearTimeout(ownershipRefreshTimer);
+    ownershipRefreshTimer = null;
+  }
+  if (ownershipCacheTimer) {
+    clearTimeout(ownershipCacheTimer);
+    ownershipCacheTimer = null;
+  }
+  if (subtaskModalRefreshTimer) {
+    clearTimeout(subtaskModalRefreshTimer);
+    subtaskModalRefreshTimer = null;
   }
 }
 

@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/sidebar.css">
   <link rel="stylesheet" href="/static/ownership.css">
-  <link rel="stylesheet" href="/static/employees.css">
+  <link rel="stylesheet" href="/static/employees.css?v=20260530a">
 </head>
 <body>
 {% include 'components/sidebar.html' %}
@@ -36,7 +36,7 @@
 <!-- ════════════════════════════════════════════════
      EMPLOYEE WORKSPACE
 ════════════════════════════════════════════════ -->
-<div id="employeeWorkspace" class="ew-workspace" style="display:none; padding-left: 80px; padding-top: 1rem;">
+<div id="employeeWorkspace" class="ew-workspace" style="display:none;">
   <!-- Header -->
   <div class="ew-header">
     <button class="ew-back-btn" id="ewBackBtn">← Back</button>
@@ -146,7 +146,7 @@
   window.__INITIAL_EMPLOYEE_ID__ = {{ initial_employee_id|default('', true)|tojson }};
   window.__EMPLOYEE_BASE_PATH__ = '/ownership/employees';
 </script>
-<script src="/static/employees.js?v=20260529c"></script>
+<script src="/static/employees.js?v=20260530b"></script>
 <script>
   // Sync with main app sidebar / theme
   document.addEventListener('DOMContentLoaded', () => {
