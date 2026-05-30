@@ -228,7 +228,7 @@ function statusBadgeWithCount(trip, statusField, subtaskKey) {
   const status = trip?.[statusField] || 'notstarted';
   const count = ((trip?.subtasks || {})[subtaskKey] || []).filter(sub => sub && !sub.done).length;
   const countBadge = count ? `<button type="button" class="crm-task-count crm-task-count-inline" title="${count} pending subtasks" onclick="openTripExpandedFromCount(event, '${trip.id}')">${count}</button>` : '';
-  return `<span class="crm-badge ${status}" data-field="${statusField}" onclick="openBadgeMenu(this, event)" ondblclick="openSubtaskModal(event, '${trip.id}', '${subtaskKey}')">${STATUS_LABELS[status] || 'Not Started'}</span>${countBadge}`;
+  return `<div class="crm-status-cell"><span class="crm-badge ${status}" data-field="${statusField}" onclick="openBadgeMenu(this, event)" ondblclick="openSubtaskModal(event, '${trip.id}', '${subtaskKey}')">${STATUS_LABELS[status] || 'Not Started'}</span>${countBadge}</div>`;
 }
 
 const STATUS_CELL_MAP = {
@@ -473,8 +473,19 @@ function getFiltered() {
   }
 
   data.sort((a, b) => {
+    if (sortCol === 'startDate') {
+      const aHasDate = !!a.startDate;
+      const bHasDate = !!b.startDate;
+      if (aHasDate && !bHasDate) return -1;
+      if (!aHasDate && bHasDate) return 1;
+      if (!aHasDate && !bHasDate) return 0;
+      const av = new Date(`${a.startDate}T00:00:00`).getTime();
+      const bv = new Date(`${b.startDate}T00:00:00`).getTime();
+      if (av < bv) return -sortDir;
+      if (av > bv) return sortDir;
+      return 0;
+    }
     let av = a[sortCol] ?? '', bv = b[sortCol] ?? '';
-    if (sortCol === 'startDate') { av = av || '9999'; bv = bv || '9999'; }
     if (av < bv) return -sortDir;
     if (av > bv) return sortDir;
     return 0;

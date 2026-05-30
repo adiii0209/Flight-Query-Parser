@@ -9,7 +9,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/sidebar.css">
   <link rel="stylesheet" href="/static/ownership.css">
-  <link rel="stylesheet" href="/static/employees.css?v=20260530a">
+  <link rel="stylesheet" href="/static/employees.css?v=20260530c">
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 </head>
 <body>
 {% include 'components/sidebar.html' %}
@@ -55,6 +56,50 @@
 
   <!-- Stats Row -->
   <div class="ew-stats-row" id="ewStatsRow"></div>
+
+  <div class="ew-subtasks-banner" id="ewSubtasksBanner" aria-hidden="true">
+    <div class="ew-subtasks-banner-copy">
+      <div class="ew-subtasks-banner-kicker">Tasks in motion</div>
+      <div class="ew-subtasks-banner-title">Keeping things moving, one task at a time</div>
+    </div>
+    <div class="ew-road-scene" aria-hidden="true">
+      <div class="ew-road-lane">
+        <div class="ew-car-wrap">
+          <svg class="ew-car" viewBox="0 0 240 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M20 70 C15 70 10 65 10 60 L10 50 C10 40 15 35 30 35 L55 35 L80 15 C90 5 130 5 150 15 L185 35 L215 35 C225 35 230 40 230 50 L230 60 C230 65 225 70 220 70 L20 70 Z" fill="currentColor"/>
+            <path d="M85 18 C92 12 125 12 143 18 L170 34 L62 34 L85 18 Z" fill="#dbe4ff" opacity="0.7"/>
+            <line x1="120" y1="15" x2="115" y2="34" stroke="currentColor" stroke-width="4"/>
+            <path d="M225 45 C232 45 235 48 235 52 L225 52 Z" fill="#fffbe6"/>
+            <path d="M10 45 C5 45 2 48 2 52 L10 52 Z" fill="#ff4d4f"/>
+            <line x1="80" y1="45" x2="95" y2="45" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+            <line x1="130" y1="45" x2="145" y2="45" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+            <g class="ew-wheel" style="transform-origin: 180px 70px;">
+              <circle cx="180" cy="70" r="16" fill="#fff" opacity="0.1"/>
+              <circle cx="180" cy="70" r="14" fill="#0f1629"/>
+              <line x1="180" y1="56" x2="180" y2="84" stroke="#dbe4ff" stroke-width="3"/>
+              <line x1="166" y1="70" x2="194" y2="70" stroke="#dbe4ff" stroke-width="3"/>
+              <line x1="170" y1="60" x2="190" y2="80" stroke="#dbe4ff" stroke-width="3"/>
+              <line x1="170" y1="80" x2="190" y2="60" stroke="#dbe4ff" stroke-width="3"/>
+              <circle cx="180" cy="70" r="7" fill="#dbe4ff"/>
+              <circle cx="180" cy="70" r="3" fill="#0f1629"/>
+            </g>
+            <g class="ew-wheel" style="transform-origin: 55px 70px;">
+              <circle cx="55" cy="70" r="16" fill="#fff" opacity="0.1"/>
+              <circle cx="55" cy="70" r="14" fill="#0f1629"/>
+              <line x1="55" y1="56" x2="55" y2="84" stroke="#dbe4ff" stroke-width="3"/>
+              <line x1="41" y1="70" x2="69" y2="70" stroke="#dbe4ff" stroke-width="3"/>
+              <line x1="45" y1="60" x2="65" y2="80" stroke="#dbe4ff" stroke-width="3"/>
+              <line x1="45" y1="80" x2="65" y2="60" stroke="#dbe4ff" stroke-width="3"/>
+              <circle cx="55" cy="70" r="7" fill="#dbe4ff"/>
+              <circle cx="55" cy="70" r="3" fill="#0f1629"/>
+            </g>
+          </svg>
+          <div class="ew-exhaust"></div>
+          <div class="ew-exhaust" style="animation-delay: 0.5s;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Toolbar -->
   <div class="ew-toolbar">
@@ -146,7 +191,7 @@
   window.__INITIAL_EMPLOYEE_ID__ = {{ initial_employee_id|default('', true)|tojson }};
   window.__EMPLOYEE_BASE_PATH__ = '/ownership/employees';
 </script>
-<script src="/static/employees.js?v=20260530b"></script>
+<script src="/static/employees.js?v=20260530d"></script>
 <script>
   // Sync with main app sidebar / theme
   document.addEventListener('DOMContentLoaded', () => {

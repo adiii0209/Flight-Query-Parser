@@ -506,6 +506,30 @@
 }
 .crm-badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; display: inline-block; }
 
+.crm-status-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  width: 100%;
+  min-height: 1.3rem;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.crm-status-cell .crm-badge {
+  flex: 0 0 auto;
+}
+
+.crm-status-cell .crm-task-count-inline {
+  margin: 0;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
 /* ─── Priority Badge ─── */
 .crm-priority { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; font-weight: 600; }
 .crm-priority.high { color: var(--p-high); }
@@ -746,7 +770,6 @@ input[type=number].no-spin {
   transform: scale(1.03);
 }
 .crm-task-count-inline {
-  margin-left: 0.2rem;
   vertical-align: middle;
 }
 .crm-task-meta {

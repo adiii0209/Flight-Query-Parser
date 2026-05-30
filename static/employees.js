@@ -444,9 +444,20 @@ function activateEmployeeById(employeeId, { replaceRoute = false, animate = fals
 
 async function loadData() {
   const hadCache = restoreEmployeeWorkspaceState();
+  const initialRequestedId = getRequestedEmployeeId();
+  
   if (hadCache) {
-    if (currentView === 'picker') renderPicker();
-    else if (activeEmployee) renderWorkspace();
+    if (initialRequestedId) {
+      const matched = employees.find(emp => isSameEmployeeId(emp.id, initialRequestedId));
+      if (matched) {
+        activateEmployeeById(matched.id, { replaceRoute: true, animate: false });
+      } else {
+        renderPicker();
+      }
+    } else {
+      if (currentView === 'picker') renderPicker();
+      else if (activeEmployee) renderWorkspace();
+    }
   }
 
   const [tRes, eRes] = await Promise.allSettled([
@@ -507,6 +518,7 @@ function showView(view) {
   } else if (view === 'workspace') {
     renderWorkspace();
   }
+  syncWorkspaceTopStrip();
 }
 
 function syncActiveTabButtons() {
@@ -656,10 +668,12 @@ window.selectEmployee = function(id, el) {
     
     // Prepare workspace
     targetAvatar.style.opacity = '0';
+    currentView = 'workspace';
     renderWorkspace();
     workspace.style.display = 'flex';
     workspace.style.opacity = '0';
     workspace.style.transition = 'opacity 0.6s ease';
+    syncWorkspaceTopStrip(); // ensure banner is visible during animation
     
     // Animate
     requestAnimationFrame(() => {
@@ -681,9 +695,7 @@ window.selectEmployee = function(id, el) {
       }, 600);
     });
   } else {
-    screen.style.display = 'none';
-    renderWorkspace();
-    workspace.style.display = 'flex';
+    showView('workspace');
   }
 };
 
@@ -777,6 +789,13 @@ function getEmployeeData() {
       s.tripName.toLowerCase().includes(q)
     );
   }
+
+  // Sort subtasks by priority index
+  allSubtasks.sort((a, b) => {
+    const pA = a.priority !== undefined ? a.priority : 9999;
+    const pB = b.priority !== undefined ? b.priority : 9999;
+    return pA - pB;
+  });
   
   // Calculate Stats
   const stats = {
@@ -804,6 +823,7 @@ function getEmployeeData() {
 function renderWorkspace() {
   const data = getEmployeeData();
   renderStatsRow(data.stats);
+  syncWorkspaceTopStrip();
   syncActiveTabButtons();
   
   const container = document.getElementById('ewViewContainer');
@@ -822,6 +842,54 @@ function renderWorkspace() {
       if (card) card.open = true;
     });
   }
+
+  if (currentTab === 'subtasks') {
+    const pendingList = container.querySelector('#ewPendingSubtasksList');
+    if (pendingList && window.Sortable) {
+      Sortable.create(pendingList, {
+        animation: 250,
+        ghostClass: 'ew-subtask-ghost',
+        onEnd: function () {
+          const cards = pendingList.querySelectorAll('details.ew-subtask-card');
+          const affectedTripIds = new Set();
+          
+          cards.forEach((card, index) => {
+            const subtaskId = card.getAttribute('data-subtask-id');
+            trips.forEach(t => {
+              if (t.subtasks) {
+                Object.values(t.subtasks).forEach(arr => {
+                  if (Array.isArray(arr)) {
+                    const s = arr.find(x => x.id === subtaskId);
+                    if (s && s.priority !== index) {
+                      s.priority = index;
+                      affectedTripIds.add(t.id);
+                    }
+                  }
+                });
+              }
+            });
+          });
+
+          if (affectedTripIds.size > 0) {
+            affectedTripIds.forEach(tripId => {
+              const trip = trips.find(t => t.id === tripId);
+              if (trip) {
+                updateTripField(tripId, 'subtasks', trip.subtasks).catch(() => {});
+              }
+            });
+          }
+        }
+      });
+    }
+  }
+}
+
+function syncWorkspaceTopStrip() {
+  const statsRow = document.getElementById('ewStatsRow');
+  const banner = document.getElementById('ewSubtasksBanner');
+  const showBanner = currentView === 'workspace' && currentTab === 'subtasks' && !!activeEmployee;
+  if (statsRow) statsRow.style.display = showBanner ? 'none' : 'grid';
+  if (banner) banner.style.display = showBanner ? 'flex' : 'none';
 }
 
 window.openAddSubtaskModal = openAddSubtaskModal;
@@ -1529,10 +1597,12 @@ renderSubtasks = function(subtasks) {
       `;
     }
 
+    const listIdAttr = title === 'Pending' ? ' id="ewPendingSubtasksList"' : '';
+
     return `
       <div class="ew-subtask-section">
         <div class="ew-subtask-section-title">${title} <span class="ew-subtask-section-count">${items.length}</span></div>
-        <div class="ew-subtask-card-list">
+        <div class="ew-subtask-card-list"${listIdAttr}>
           ${items.map(s => {
             const catLabel = s.taskCategory ? s.taskCategory.charAt(0).toUpperCase() + s.taskCategory.slice(1) : '';
             const dest = s.trip.destination ? s.trip.destination : '';
