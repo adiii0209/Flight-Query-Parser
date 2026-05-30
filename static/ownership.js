@@ -228,7 +228,7 @@ function statusBadgeWithCount(trip, statusField, subtaskKey) {
   const status = trip?.[statusField] || 'notstarted';
   const count = ((trip?.subtasks || {})[subtaskKey] || []).filter(sub => sub && !sub.done).length;
   const countBadge = count ? `<button type="button" class="crm-task-count crm-task-count-inline" title="${count} pending subtasks" onclick="openTripExpandedFromCount(event, '${trip.id}')">${count}</button>` : '';
-  return `<div class="crm-status-cell"><span class="crm-badge ${status}" data-field="${statusField}" onclick="openBadgeMenu(this, event)" ondblclick="openSubtaskModal(event, '${trip.id}', '${subtaskKey}')">${STATUS_LABELS[status] || 'Not Started'}</span>${countBadge}</div>`;
+  return `<div class="crm-status-cell"><div style="position: relative; display: inline-flex; align-items: center; justify-content: center;"><span class="crm-badge ${status}" data-field="${statusField}" onclick="openBadgeMenu(this, event)" ondblclick="openSubtaskModal(event, '${trip.id}', '${subtaskKey}')">${STATUS_LABELS[status] || 'Not Started'}</span>${countBadge}</div></div>`;
 }
 
 const STATUS_CELL_MAP = {

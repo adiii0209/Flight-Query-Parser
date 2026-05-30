@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/sidebar.css">
   <link rel="stylesheet" href="/static/ownership.css">
-  <link rel="stylesheet" href="/static/employees.css?v=20260530c">
+  <link rel="stylesheet" href="/static/employees.css?v=20260530priority5">
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 </head>
 <body>
@@ -191,7 +191,7 @@
   window.__INITIAL_EMPLOYEE_ID__ = {{ initial_employee_id|default('', true)|tojson }};
   window.__EMPLOYEE_BASE_PATH__ = '/ownership/employees';
 </script>
-<script src="/static/employees.js?v=20260530d"></script>
+<script src="/static/employees.js?v=20260530priority5"></script>
 <script>
   // Sync with main app sidebar / theme
   document.addEventListener('DOMContentLoaded', () => {
@@ -240,8 +240,8 @@
     if (sidebarThemeToggle) {
       sidebarThemeToggle.addEventListener('click', () => {
         const html = document.documentElement;
-        const isDark = html.getAttribute('data-theme') === 'dark';
-        html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+        const isDark = html.getAttribute('data-crm-theme') === 'dark';
+        html.setAttribute('data-crm-theme', isDark ? 'light' : 'dark');
         const toggleText = document.getElementById('themeToggleText');
         if (toggleText) toggleText.textContent = isDark ? 'Dark Mode' : 'Light Mode';
       });

@@ -139,6 +139,57 @@ function normalizeRemarkEntries(raw) {
   return [];
 }
 
+function isSubtaskHighPriority(subtask) {
+  return !!subtask?.metadata?.isHighPriority;
+}
+
+function buildPriorityBadgeHtml(subtask) {
+  if (subtask?.done) return '';
+  return isSubtaskHighPriority(subtask) ? '<span class="ew-priority-badge">Priority</span>' : '';
+}
+
+function buildPriorityToggleHtml(subtask, tripId) {
+  if (subtask?.done) return '';
+  const isPriority = isSubtaskHighPriority(subtask);
+  const resolvedTripId = tripId || subtask.tripId || '';
+  const label = isPriority ? 'P' : 'N';
+  return `
+    <button
+      type="button"
+      class="ew-priority-toggle ${isPriority ? 'is-priority' : ''}"
+      aria-pressed="${isPriority ? 'true' : 'false'}"
+      aria-label="Toggle priority for this subtask"
+      title="Toggle Priority"
+      onclick="toggleSubtaskPriority('${resolvedTripId}', '${subtask.id}')"
+    >
+      <span class="ew-priority-toggle-track" aria-hidden="true">
+        <span class="ew-priority-toggle-thumb"></span>
+        <span class="ew-priority-toggle-label">${label}</span>
+      </span>
+    </button>
+  `;
+}
+
+function buildDeleteSubtaskButtonHtml(tripId, subtaskId) {
+  return `
+    <button
+      type="button"
+      class="ew-delete-subtask-btn"
+      title="Delete Subtask"
+      aria-label="Delete Subtask"
+      onclick="deleteSubtask('${tripId}', '${subtaskId}')"
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 6h18"></path>
+        <path d="M8 6V4h8v2"></path>
+        <path d="M19 6l-1 14H6L5 6"></path>
+        <path d="M10 11v5"></path>
+        <path d="M14 11v5"></path>
+      </svg>
+    </button>
+  `;
+}
+
 function buildSubtaskCardHtml(s) {
   const catLabel = s.taskCategory ? s.taskCategory.charAt(0).toUpperCase() + s.taskCategory.slice(1) : '';
   const dest = s.trip.destination ? s.trip.destination : '';
@@ -161,6 +212,7 @@ function buildSubtaskCardHtml(s) {
           </div>
         </div>
         <div class="ew-subtask-card-badges">
+          ${buildPriorityBadgeHtml(s)}
           <span class="ew-subtask-card-count">${remarkCount} remark${remarkCount === 1 ? '' : 's'}</span>
           <span class="ew-subtask-card-created">${escHtml(createdAt || '—')}</span>
         </div>
@@ -175,7 +227,8 @@ function buildSubtaskCardHtml(s) {
               <path d="M22 2L15 22 11 13 2 9 22 2Z"></path>
             </svg>
           </button>
-          <button class="crm-btn crm-btn-ghost" style="color:#ef4444;font-size:1rem;padding:0.2rem;line-height:1;" title="Delete Subtask" onclick="deleteSubtask('${s.tripId}', '${s.id}')">✕</button>
+          ${buildPriorityToggleHtml(s)}
+          ${buildDeleteSubtaskButtonHtml(s.tripId, s.id)}
         </div>
       </div>
     </details>
@@ -188,7 +241,7 @@ function buildDetailSubtaskHtml(trip, s) {
       <div style="display:flex;gap:0.5rem;align-items:center;">
         <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${trip.id}', '${s.id}', this.checked)">
         <input type="text" class="ew-detail-subtask-text ${s.done ? 'done' : ''}" value="${escHtml(s.text)}" readonly style="flex:1;">
-        <button class="crm-btn crm-btn-ghost" style="color:#ef4444;font-size:1rem;padding:0.2rem;line-height:1;" title="Delete Subtask" onclick="deleteSubtask('${trip.id}', '${s.id}')">✕</button>
+        ${buildDeleteSubtaskButtonHtml(trip.id, s.id)}
       </div>
       <div class="ew-remark-thread">${remarkThreadHtml(s)}</div>
       <div class="ew-remark-compose">
@@ -199,6 +252,8 @@ function buildDetailSubtaskHtml(trip, s) {
             <path d="M22 2L15 22 11 13 2 9 22 2Z"></path>
           </svg>
         </button>
+        ${buildPriorityToggleHtml(s, trip.id)}
+        ${buildDeleteSubtaskButtonHtml(trip.id, s.id)}
       </div>
     </div>
   `;
@@ -1113,7 +1168,7 @@ function renderTripView(tasks, subtasks = []) {
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center;">
               <input type="text" style="background:transparent;border:1px solid var(--crm-border);border-radius:4px;padding:0.3rem 0.5rem;color:var(--crm-text);font-size:0.8rem;width:200px;" placeholder="Add remark..." value="${escHtml(s.metadata?.remarks || '')}" onchange="updateSubtaskRemarks('${s.tripId}', '${s.id}', this.value)">
-              <button class="crm-btn crm-btn-ghost" style="color:#ef4444;font-size:1rem;padding:0.2rem;line-height:1;" title="Delete Subtask" onclick="deleteSubtask('${s.tripId}', '${s.id}')">✕</button>
+              ${buildDeleteSubtaskButtonHtml(s.tripId, s.id)}
             </div>
           </div>
           `;
@@ -1177,7 +1232,7 @@ function renderSubtasks(subtasks) {
       html += `
         <tr class="ew-subtask-row">
           <td><input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${s.tripId}', '${s.id}', this.checked)"></td>
-          <td class="${s.done ? 'ew-subtask-done' : ''}">${escHtml(s.text)}</td>
+          <td class="${s.done ? 'ew-subtask-done' : ''}">${escHtml(s.text)} ${buildPriorityBadgeHtml(s)}</td>
           <td>
             <div style="font-weight:500;">${escHtml(s.trip.guestName || 'Unnamed Trip')}</div>
             ${dest ? `<div style="font-size:0.75rem;color:var(--crm-text-2);">${escHtml(dest)}</div>` : ''}
@@ -1195,7 +1250,8 @@ function renderSubtasks(subtasks) {
                   <path d="M22 2L15 22 11 13 2 9 22 2Z"></path>
                 </svg>
               </button>
-              <button class="crm-btn crm-btn-ghost" style="color:#ef4444;font-size:1rem;padding:0.2rem;line-height:1;" title="Delete Subtask" onclick="deleteSubtask('${s.tripId}', '${s.id}')">✕</button>
+              ${buildPriorityToggleHtml(s)}
+              ${buildDeleteSubtaskButtonHtml(s.tripId, s.id)}
             </div>
           </td>
         </tr>
@@ -1320,6 +1376,31 @@ async function updateTripField(tripId, field, value) {
     }
     renderWorkspace();
     toast('Failed to save', '⚠️');
+  }
+}
+
+async function toggleSubtaskPriority(tripId, subtaskId) {
+  const trip = trips.find(t => t.id === tripId);
+  if (!trip) return;
+  let subsObj = trip.subtasks || {};
+  let found = false;
+  Object.values(subsObj).forEach(arr => {
+    if (Array.isArray(arr)) {
+      const s = arr.find(x => x.id === subtaskId);
+      if (s) {
+        if (!s.metadata) s.metadata = {};
+        s.metadata.isHighPriority = !s.metadata.isHighPriority;
+        found = true;
+      }
+    }
+  });
+  if (found) {
+    trip.subtasks = subsObj;
+    replaceSubtaskCardDom(tripId, subtaskId);
+    if (currentDetailContext && currentDetailContext.tripId === tripId) {
+      refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
+    }
+    updateTripField(tripId, 'subtasks', subsObj).catch(() => {});
   }
 }
 
@@ -1481,7 +1562,7 @@ renderSubtasks = function(subtasks) {
     html += `
       <tr class="ew-subtask-row">
         <td><input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${s.tripId}', '${s.id}', this.checked)"></td>
-        <td class="${s.done ? 'ew-subtask-done' : ''}">${escHtml(s.text)}</td>
+        <td class="${s.done ? 'ew-subtask-done' : ''}">${escHtml(s.text)} ${buildPriorityBadgeHtml(s)}</td>
         <td>
           <div style="font-weight:500;">${escHtml(s.trip.guestName || 'Unnamed Trip')}</div>
           ${dest ? `<div style="font-size:0.75rem;color:var(--crm-text-2);">${escHtml(dest)}</div>` : ''}
@@ -1499,6 +1580,7 @@ renderSubtasks = function(subtasks) {
                 <path d="M22 2L15 22 11 13 2 9 22 2Z"></path>
               </svg>
             </button>
+        ${buildPriorityToggleHtml(s)}
           </div>
         </td>
       </tr>
@@ -1526,7 +1608,7 @@ renderDetailSubtasks = function(trip, taskKey) {
       <div style="display:flex;gap:0.5rem;align-items:center;">
         <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${trip.id}', '${s.id}', this.checked)">
         <input type="text" class="ew-detail-subtask-text ${s.done ? 'done' : ''}" value="${escHtml(s.text)}" readonly style="flex:1;">
-        <button class="crm-btn crm-btn-ghost" style="color:#ef4444;font-size:1rem;padding:0.2rem;line-height:1;" title="Delete Subtask" onclick="deleteSubtask('${trip.id}', '${s.id}')">✕</button>
+        ${buildDeleteSubtaskButtonHtml(trip.id, s.id)}
       </div>
       <div class="ew-remark-thread">${remarkThreadHtml(s)}</div>
       <div class="ew-remark-compose">
@@ -1537,6 +1619,7 @@ renderDetailSubtasks = function(trip, taskKey) {
             <path d="M22 2L15 22 11 13 2 9 22 2Z"></path>
           </svg>
         </button>
+                    ${buildPriorityToggleHtml(s)}
       </div>
     </div>
   `).join('');
@@ -1633,7 +1716,8 @@ renderSubtasks = function(subtasks) {
                     </div>
                   </div>
                   <div class="ew-subtask-card-badges">
-                    <span class="ew-subtask-card-count">${remarkCount} remark${remarkCount === 1 ? '' : 's'}</span>
+                    ${buildPriorityBadgeHtml(s)}
+          <span class="ew-subtask-card-count">${remarkCount} remark${remarkCount === 1 ? '' : 's'}</span>
                     <span class="ew-subtask-card-created">${escHtml(createdAt || '—')}</span>
                   </div>
                 </summary>
@@ -1647,7 +1731,8 @@ renderSubtasks = function(subtasks) {
                         <path d="M22 2L15 22 11 13 2 9 22 2Z"></path>
                       </svg>
                     </button>
-                    <button class="crm-btn crm-btn-ghost" style="color:#ef4444;font-size:1rem;padding:0.2rem;line-height:1;" title="Delete Subtask" onclick="deleteSubtask('${s.tripId}', '${s.id}')">✕</button>
+                    ${buildPriorityToggleHtml(s)}
+                    ${buildDeleteSubtaskButtonHtml(s.tripId, s.id)}
                   </div>
                 </div>
               </details>
@@ -1665,3 +1750,6 @@ renderSubtasks = function(subtasks) {
     </div>
   `;
 };
+
+
+

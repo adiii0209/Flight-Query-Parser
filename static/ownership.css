@@ -510,7 +510,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.2rem;
   width: 100%;
   min-height: 1.3rem;
   white-space: nowrap;
@@ -518,12 +517,16 @@
 }
 
 .crm-status-cell .crm-badge {
-  flex: 0 0 auto;
+  /* Reset */
 }
 
 .crm-status-cell .crm-task-count-inline {
-  margin: 0;
-  align-self: center;
+  position: absolute;
+  left: 100%;
+  margin-left: 0.4rem;
+  margin-top: 0;
+  margin-bottom: 0;
+  margin-right: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2264,4 +2267,33 @@ thead th.col-sticky-6 {
 .ew-detail-subtask-text.done {
   text-decoration: line-through;
   color: var(--crm-text-3);
+}
+.ew-priority-toggle {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--crm-border);
+  background: var(--crm-surface-2);
+  color: var(--crm-text-2);
+  cursor: pointer;
+  transition: all 0.2s;
+  line-height: 1.5;
+  height: 24px;
+}
+.ew-priority-toggle.is-priority {
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  color: #ef4444;
+  border-color: color-mix(in srgb, #ef4444 30%, transparent);
+}
+.ew-priority-badge {
+  color: #ef4444;
+  font-weight: 700;
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+  padding: 0.1rem 0.35rem;
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  border-radius: 4px;
+  margin-left: 0.4rem;
 }
