@@ -6794,6 +6794,7 @@ def _replace_ownership_subtasks(trip, groups):
                 "done": bool(item.get("done")),
                 "assignee": _normalize_owner(item.get("assignee")),
                 "dueDate": due_date.isoformat() if due_date else "",
+                  "priority": int(item.get("priority", 9999)) if item.get("priority") is not None else 9999,
                 "createdAt": str(item.get("createdAt") or item.get("created_at") or "").strip(),
                 "updatedAt": str(item.get("updatedAt") or item.get("updated_at") or "").strip(),
                 "metadata": item.get("metadata") if isinstance(item.get("metadata"), dict) else {},
