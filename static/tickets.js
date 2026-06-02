@@ -79,6 +79,16 @@ let webCheckinWindowDays = 7;
 let webCheckinExpandedIds = new Set();
 let webCheckinDoneByTicket = {};
 let webCheckinStatusFilter = 'pending';
+let webCheckinFocusedTicketId = null;
+const INDIA_AIRPORT_CODES = new Set([
+    'DEL', 'BOM', 'NMI', 'BLR', 'MAA', 'CCU', 'HYD', 'AMD', 'PNQ', 'COK', 'CCJ', 'GOI', 'VTZ',
+    'JAI', 'TRV', 'GAU', 'LKO', 'NAG', 'IXC', 'VNS', 'PAT', 'BBI', 'IXB', 'IXR', 'IDR', 'RPR',
+    'VGA', 'IXE', 'IXM', 'IXU', 'SXR', 'IXZ', 'IMF', 'DIB', 'JRH', 'IXJ', 'ATQ', 'IXL', 'UDR',
+    'BDQ', 'RAJ', 'STV', 'PBD', 'BHJ', 'BHO', 'JLR', 'GWL', 'AGR', 'IXD', 'VDY', 'RJA', 'TIR',
+    'BEP', 'HBX', 'IXG', 'GOP', 'DED', 'PGH', 'TNI', 'KUU', 'SHL', 'IXS', 'AJL', 'IXA', 'DMU',
+    'CBD', 'IXV', 'CNN', 'TRZ', 'JDH', 'JSA', 'JGA', 'BKB', 'GAY', 'DBG', 'JRG', 'GBI', 'CDP',
+    'KJB', 'SDW', 'KBK', 'NDC', 'DPA', 'TEI', 'HDO'
+]);
 
 function getInlineSvgIcon(name, className = '') {
     const cssClass = className ? ` class="${className}"` : '';
@@ -146,6 +156,199 @@ function getPassengerLastName(ticket) {
     if (!name) return 'N/A';
     const parts = name.split(/\s+/).filter(Boolean);
     return parts.length ? parts[parts.length - 1].toUpperCase() : 'N/A';
+}
+
+function isValidWebCheckinTicket(ticket) {
+    if (!ticket || !ticket.id) return false;
+    if ((ticket.ticket_status || 'live') === 'cancelled') return false;
+    return Number.isFinite(getTicketDepartureTimestamp(ticket)) && getHoursUntilDeparture(ticket) >= 0;
+}
+
+function getTicketSegmentCodes(ticket) {
+    return (ticket?.segments || [])
+        .flatMap((segment) => {
+            const dep = safe((segment?.departure || {}).airport, '').toString().trim().toUpperCase();
+            const arr = safe((segment?.arrival || {}).airport, '').toString().trim().toUpperCase();
+            return [dep, arr].filter(Boolean);
+        })
+        .filter(Boolean);
+}
+
+function isDomesticFlight(ticket) {
+    const codes = getTicketSegmentCodes(ticket);
+    return codes.length > 0 && codes.every((code) => INDIA_AIRPORT_CODES.has(code));
+}
+
+function collectUniqueTicketValues(values) {
+    const seen = new Set();
+    const result = [];
+    (values || []).forEach((value) => {
+        const text = normalizeAncillaryValue(value);
+        if (!text) return;
+        const key = text.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        result.push(text);
+    });
+    return result.length ? result.join(', ') : 'N/A';
+}
+
+function getTicketPassengerValues(ticket, fieldName) {
+    return (ticket?.passengers || []).map((passenger) => passenger?.[fieldName]);
+}
+
+function getTicketFrequentFlyerText(ticket) {
+    return collectUniqueTicketValues([
+        ...getTicketPassengerValues(ticket, 'frequent_flyer_number'),
+        ...(ticket?.frequent_flyer_numbers || []),
+        ticket?.frequent_flyer_number
+    ]);
+}
+
+function getTicketSeatText(ticket) {
+    const seatValues = [];
+    (ticket?.passengers || []).forEach((passenger) => {
+        seatValues.push(passenger?.seat);
+        (passenger?.seats || []).forEach((seat) => {
+            seatValues.push(typeof seat === 'string' ? seat : seat?.seat_number);
+        });
+    });
+    return collectUniqueTicketValues(seatValues);
+}
+
+function getTicketMealText(ticket) {
+    const mealValues = [];
+    (ticket?.passengers || []).forEach((passenger) => {
+        mealValues.push(passenger?.meal);
+        (passenger?.meals || []).forEach((meal) => {
+            mealValues.push(meal?.name || meal?.code || meal);
+        });
+    });
+    return collectUniqueTicketValues(mealValues);
+}
+
+function getTicketFastForwardText(ticket) {
+    const directValue = ticket?.fast_forward_express || ticket?.fast_forward || ticket?.express || ticket?.fastForward || ticket?.express_service;
+    if (normalizeAncillaryValue(directValue)) return normalizeAncillaryValue(directValue);
+    const ancillaryValues = [];
+    (ticket?.passengers || []).forEach((passenger) => {
+        (passenger?.ancillaries || []).forEach((ancillary) => {
+            const name = ancillary?.name || ancillary?.code || ancillary;
+            if (!name) return;
+            const normalized = String(name).trim();
+            if (!normalized) return;
+            if (/fast\s*forward|express/i.test(normalized)) ancillaryValues.push(normalized);
+        });
+    });
+    return collectUniqueTicketValues(ancillaryValues);
+}
+
+function getTicketTravelDateText(ticket) {
+    const firstSeg = (ticket?.segments || [])[0] || {};
+    return safe((firstSeg.departure || {}).date, 'N/A');
+}
+
+function getTicketLegGroupIndices(ticket) {
+    const segments = ticket?.segments || [];
+    const journey = ticket?.journey || {};
+    if (Array.isArray(journey.legs) && journey.legs.length) {
+        const legIndices = journey.legs
+            .map((leg) => Array.isArray(leg?.segments) ? leg.segments.filter((idx) => Number.isInteger(idx)) : [])
+            .filter((leg) => leg.length > 0);
+        if (legIndices.length) return legIndices;
+    }
+    return groupSegmentsIntoLegs(segments);
+}
+
+function formatTicketLegSector(ticket, legIndices, fallbackSegments = [], tripType = '') {
+    const segments = ticket?.segments || fallbackSegments;
+    if (!segments.length) return '';
+    const indices = Array.isArray(legIndices) && legIndices.length ? legIndices : [0];
+    const firstSeg = segments[indices[0]] || segments[0] || {};
+    const lastSeg = segments[indices[indices.length - 1]] || segments[segments.length - 1] || {};
+    const dep = safe((firstSeg.departure || {}).airport, '').trim().toUpperCase();
+    const arr = safe((lastSeg.arrival || {}).airport, '').trim().toUpperCase();
+    if (!dep && !arr) return '';
+    if (!dep) return arr || '';
+    if (!arr) return dep || '';
+    if (dep === arr) return dep;
+    const arrow = tripType === 'round_trip' ? ' ↔ ' : ' -> ';
+    return `${dep}${arrow}${arr}`;
+}
+
+function getTicketSectorText(ticket) {
+    const segments = ticket?.segments || [];
+    if (!segments.length) return 'N/A';
+    const tripType = ticket?.trip_type || ticket?.journey?.trip_type || '';
+    const legTexts = getTicketLegGroupIndices(ticket)
+        .map((legIndices) => formatTicketLegSector(ticket, legIndices, segments, tripType))
+        .filter(Boolean);
+    if (!legTexts.length) {
+        const routeLabel = safe(ticket?.route, '').trim();
+        return routeLabel || 'N/A';
+    }
+    if (tripType === 'round_trip') {
+        return legTexts[0];
+    }
+    return legTexts.join(' / ');
+}
+
+function buildWebCheckinCopyMessage(ticket) {
+    const pnr = safe(ticket?.pnr, 'N/A') || 'N/A';
+    const dateOfTravel = getTicketTravelDateText(ticket);
+    const sector = getTicketSectorText(ticket);
+    const frequentFlyer = getTicketFrequentFlyerText(ticket);
+    const seatNo = getTicketSeatText(ticket);
+    const meal = getTicketMealText(ticket);
+    const fastForward = getTicketFastForwardText(ticket);
+    const domesticNote = '*Note: Please carefully check the ticket copy and inform us within an hour if there is any discrepancy in flight timing / date / other particulars*';
+    const internationalNote = '*As additional document checks are required, digital boarding passes are currently unavailable. Please collect your boarding pass at the airport.*';
+
+    if (isDomesticFlight(ticket)) {
+        return [
+            '*Domestic*',
+            '',
+            `PNR - ${pnr}`,
+            '',
+            `Date of Travel - ${dateOfTravel}`,
+            '',
+            `Sector - ${sector}`,
+            '',
+            `Frequent flyer - ${frequentFlyer}`,
+            '',
+            `Seat No - ${seatNo}`,
+            '',
+            `Meal - ${meal}`,
+            '',
+            `Fast forward / express - ${fastForward}`,
+            '',
+            domesticNote
+        ].join('\n');
+    }
+
+    return [
+        '*International*',
+        '',
+        `PNR - ${pnr}`,
+        '',
+        `Date of Travel - ${dateOfTravel}`,
+        '',
+        `Sector - ${sector}`,
+        '',
+        `Frequent flyer - ${frequentFlyer}`,
+        '',
+        `Seat No - ${seatNo}`,
+        '',
+        `Meal - ${meal}`,
+        '',
+        `Fast forward / express - ${fastForward}`,
+        '',
+        'Web check in - Done',
+        '',
+        'Boarding pass - Collect at Airport',
+        '',
+        internationalNote
+    ].join('\n');
 }
 
 function getTicketDepartureTimestamp(ticket) {
@@ -360,7 +563,7 @@ function renderWebCheckinCard(ticket, { showOpenButton = false } = {}) {
                 </div>
             </div>
             <div class="web-checkin-actions">
-                <button class="mini-btn ${done ? 'done' : 'primary'}" onclick="event.stopPropagation(); toggleWebCheckinDone('${ticketId}')">${done ? 'Undo Done' : 'Web Check-in Done'}</button>
+                <button class="mini-btn ${done ? 'done' : 'primary'}" onclick="event.stopPropagation(); handleWebCheckinDone('${ticketId}')">${done ? 'Undo Done' : 'Web Check-in Done'}</button>
                 ${openButton}
             </div>
             <div class="web-checkin-expandable ${expanded ? 'open' : ''}">
@@ -392,6 +595,7 @@ function renderWebCheckinPanel() {
     const overlay = document.getElementById('webCheckinOverlay');
     if (!body || !badge || !panel || !overlay) return;
 
+    const focusedTicket = webCheckinFocusedTicketId ? findTicketById(webCheckinFocusedTicketId) : null;
     const urgentFlights = filterWebCheckinTicketsByStatus(getFlightsWithinHours(48));
     const upcomingFlights = filterWebCheckinTicketsByStatus(getUpcomingFlights(webCheckinWindowDays));
     const badgeCount = getFlightsWithinHours(48).filter((ticket) => !webCheckinDoneByTicket[ticket?.id]).length;
@@ -399,7 +603,24 @@ function renderWebCheckinPanel() {
     badge.textContent = String(badgeCount);
     badge.style.display = badgeCount ? 'inline-flex' : 'none';
 
-    body.innerHTML = `
+    body.innerHTML = focusedTicket
+        ? `
+        <section class="web-checkin-section">
+            <div class="web-checkin-section-header">
+                <h4>Selected ticket</h4>
+                <div class="web-checkin-filter-group">
+                    <button class="web-checkin-filter-chip active">Focused</button>
+                    <button class="web-checkin-filter-chip" onclick="clearWebCheckinFocus()">Show all</button>
+                </div>
+            </div>
+            <div class="web-checkin-focus-banner">
+                This panel is focused on one ticket. Use the card below to mark it done and copy the prepared message.
+            </div>
+            <div class="web-checkin-list">
+                ${renderWebCheckinCard(focusedTicket, { showOpenButton: true })}
+            </div>
+        </section>`
+        : `
         <section class="web-checkin-section">
             <div class="web-checkin-section-header">
                 <h4>Flights within 48 hrs</h4>
@@ -444,6 +665,7 @@ function renderWebCheckinPanel() {
 }
 
 function openWebCheckinPanel() {
+    webCheckinFocusedTicketId = null;
     webCheckinPanelOpen = true;
     renderWebCheckinPanel();
 }
@@ -451,11 +673,25 @@ function openWebCheckinPanel() {
 function closeWebCheckinPanel() {
     webCheckinPanelOpen = false;
     renderWebCheckinPanel();
+    if (currentTicket && currentTicket.id === webCheckinFocusedTicketId) {
+        renderDetailView();
+    }
 }
 
 function toggleWebCheckinPanel() {
+    if (!webCheckinPanelOpen) {
+        webCheckinFocusedTicketId = null;
+    }
     webCheckinPanelOpen = !webCheckinPanelOpen;
     renderWebCheckinPanel();
+}
+
+function clearWebCheckinFocus() {
+    webCheckinFocusedTicketId = null;
+    renderWebCheckinPanel();
+    if (currentTicket) {
+        renderDetailView();
+    }
 }
 
 function toggleWebCheckinExpanded(ticketId) {
@@ -509,9 +745,33 @@ function toggleWebCheckinDone(ticketId) {
     renderWebCheckinPanel();
 }
 
+async function handleWebCheckinDone(ticketId) {
+    const ticket = findTicketById(ticketId);
+    if (!ticket) {
+        showToast('Ticket not found', 'error');
+        return;
+    }
+    toggleWebCheckinDone(ticketId);
+    await copyWebCheckinValue(buildWebCheckinCopyMessage(ticket), 'Web check-in message copied');
+}
+
 function openWebCheckinTicket(ticketId) {
     closeWebCheckinPanel();
     void openTicket(ticketId);
+}
+
+async function openFocusedWebCheckinTicket(ticketId) {
+    const ticket = findTicketById(ticketId);
+    if (!isValidWebCheckinTicket(ticket)) {
+        showToast('This ticket is not eligible for web check-in', 'error');
+        return;
+    }
+    webCheckinFocusedTicketId = ticketId;
+    webCheckinPanelOpen = true;
+    renderWebCheckinPanel();
+    if (currentTicket && currentTicket.id === ticketId) {
+        renderDetailView();
+    }
 }
 
 // ==================== SIDEBAR & THEME ====================
@@ -3699,6 +3959,7 @@ async function openTicket(id, { syncUrl = true, replaceUrl = false } = {}) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
     try {
+        webCheckinFocusedTicketId = null;
         ticketSelectionMode = false;
         selectedTicketIds.clear();
         const listedTicket = findTicketById(id);
@@ -3804,6 +4065,7 @@ async function showListView({ syncUrl = true, replaceUrl = false } = {}) {
     }
     document.getElementById('detailView').style.display = 'none';
     document.getElementById('listView').style.display = 'block';
+    webCheckinFocusedTicketId = null;
     currentTicket = null;
     editedData = {};
     fareQuickFillDraft = '';
@@ -4958,6 +5220,9 @@ function renderDetailView() {
         : detailTStatus === 'changed'
         ? renderStatusBadge('Changed', 'changed')
         : renderStatusBadge('Live', 'live');
+    const webCheckinButtonHtml = isValidWebCheckinTicket(t) && !(webCheckinPanelOpen && webCheckinFocusedTicketId === t.id)
+        ? `<button class="web-checkin-detail-fab" onclick="openFocusedWebCheckinTicket('${t.id}')" title="Open this ticket's web check-in card">Web Check In</button>`
+        : '';
 
     // Cancellation charge display
     const charge = parseFloat(t.cancellation_charge) || 0;
@@ -4979,6 +5244,7 @@ function renderDetailView() {
         </div>
         <div class="detail-actions">
             <button class="btn-action small danger" onclick="deleteTicket()">${renderActionLabel('Delete', 'trash')}</button>
+            ${webCheckinButtonHtml}
         </div>`;
     renderBookingSection();
     renderSegmentsSection();
