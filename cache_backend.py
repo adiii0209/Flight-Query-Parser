@@ -61,6 +61,33 @@ class DashboardCache:
                 pass
         self._memory_set(namespaced_key, value, ttl_seconds)
 
+    def get_bytes(self, key: str) -> Optional[bytes]:
+        import base64
+        namespaced_key = self.namespaced(key)
+        if self._redis is not None:
+            try:
+                value = self._redis.get(namespaced_key)
+                if value is not None:
+                    return base64.b64decode(value)
+            except Exception:
+                pass
+        val = self._memory_get(namespaced_key)
+        if val is not None:
+            return base64.b64decode(val)
+        return None
+
+    def set_bytes(self, key: str, value: bytes, ttl_seconds: int) -> None:
+        import base64
+        namespaced_key = self.namespaced(key)
+        b64_val = base64.b64encode(value).decode("utf-8")
+        if self._redis is not None:
+            try:
+                self._redis.setex(namespaced_key, max(int(ttl_seconds), 1), b64_val)
+                return
+            except Exception:
+                pass
+        self._memory_set(namespaced_key, b64_val, ttl_seconds)
+
     def get_int(self, key: str, default: int = 1) -> int:
         namespaced_key = self.namespaced(key)
         if self._redis is not None:

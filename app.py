@@ -340,6 +340,11 @@ def serve_icon_file(filename):
     return send_from_directory("icons", filename)
 
 
+@app.route("/resort.png")
+def serve_resort_image():
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "resort.png")
+
+
 def _render_log(level, message, **kwargs):
     details = " ".join(f"{key}={value}" for key, value in kwargs.items() if value is not None)
     suffix = f" {details}" if details else ""
@@ -4066,7 +4071,14 @@ def tickets_page():
 @login_required
 def hotels_page():
     """Serve the hotel bookings dashboard page."""
-    return render_template('hotels.html')
+    return render_template('hotels.html', booking_id="")
+
+
+@app.route("/hotels/<booking_id>")
+@login_required
+def hotel_detail_page(booking_id):
+    """Serve the hotel booking detail page."""
+    return render_template('hotels.html', booking_id=booking_id)
 
 
 @app.route("/api/hotels/parse", methods=["POST"])
@@ -4215,10 +4227,19 @@ def hotel_create():
 def hotel_list():
     """List all hotel bookings for the current user."""
     from models import HotelBooking
+    user_id = session["user_id"]
+    cache_key = f"hotels_list_{user_id}"
+    cached = _dashboard_cache.get_json(cache_key)
+    if cached is not None:
+        return jsonify(cached), 200
+
     bookings = HotelBooking.query.filter_by(
-        user_id=session["user_id"]
+        user_id=user_id
     ).order_by(HotelBooking.created_at.desc()).all()
-    return jsonify([b.to_dict() for b in bookings]), 200
+    
+    result = [b.to_dict() for b in bookings]
+    _dashboard_cache.set_json(cache_key, result, 60)
+    return jsonify(result), 200
 
 
 @app.route("/api/hotels/<booking_id>", methods=["GET"])
@@ -4226,12 +4247,21 @@ def hotel_list():
 def hotel_get(booking_id):
     """Get a single hotel booking."""
     from models import HotelBooking
+    user_id = session["user_id"]
+    cache_key = f"hotel_{booking_id}_{user_id}"
+    cached = _dashboard_cache.get_json(cache_key)
+    if cached is not None:
+        return jsonify(cached), 200
+
     b = HotelBooking.query.filter_by(
-        id=booking_id, user_id=session["user_id"]
+        id=booking_id, user_id=user_id
     ).first()
     if not b:
         return jsonify({"error": "Hotel booking not found"}), 404
-    return jsonify(b.to_dict()), 200
+        
+    result = b.to_dict()
+    _dashboard_cache.set_json(cache_key, result, 60)
+    return jsonify(result), 200
 
 
 @app.route("/api/hotels/<booking_id>", methods=["PUT"])
@@ -4239,8 +4269,9 @@ def hotel_get(booking_id):
 def hotel_update(booking_id):
     """Update a hotel booking (editable dashboard fields + image override)."""
     from models import HotelBooking
+    user_id = session["user_id"]
     b = HotelBooking.query.filter_by(
-        id=booking_id, user_id=session["user_id"]
+        id=booking_id, user_id=user_id
     ).first()
     if not b:
         return jsonify({"error": "Hotel booking not found"}), 404
@@ -4258,6 +4289,10 @@ def hotel_update(booking_id):
     if "rooms" in data:
         b.rooms_json = json.dumps(data["rooms"] or [])
     db.session.commit()
+    
+    _dashboard_cache.set_json(f"hotels_list_{user_id}", None, 1)
+    _dashboard_cache.set_json(f"hotel_{booking_id}_{user_id}", None, 1)
+    
     return jsonify({"success": True, "data": b.to_dict()}), 200
 
 
@@ -4266,13 +4301,18 @@ def hotel_update(booking_id):
 def hotel_delete(booking_id):
     """Delete a hotel booking."""
     from models import HotelBooking
+    user_id = session["user_id"]
     b = HotelBooking.query.filter_by(
-        id=booking_id, user_id=session["user_id"]
+        id=booking_id, user_id=user_id
     ).first()
     if not b:
         return jsonify({"error": "Hotel booking not found"}), 404
     db.session.delete(b)
     db.session.commit()
+    
+    _dashboard_cache.set_json(f"hotels_list_{user_id}", None, 1)
+    _dashboard_cache.set_json(f"hotel_{booking_id}_{user_id}", None, 1)
+    
     return jsonify({"success": True}), 200
 
 
@@ -4307,6 +4347,26 @@ def hotel_pdf_generate(booking_id):
     # Image override: if uploaded_image_url is in payload, use it
     if payload.get("uploaded_image_url"):
         data["image_url"] = payload["uploaded_image_url"]
+    elif not data.get("image_url"):
+        data["image_url"] = "/resort.png"
+    data["show_paid_logo"] = bool(payload.get("show_paid_logo"))
+    
+    image_url = data.get("image_url")
+    img_bytes = None
+    if image_url and not (image_url == "/resort.png" or str(image_url).endswith("/resort.png") or image_url.startswith("/uploads/")):
+        cache_key = f"hotel_img:{image_url}"
+        img_bytes = _dashboard_cache.get_bytes(cache_key)
+        if not img_bytes:
+            try:
+                import urllib.request
+                req = urllib.request.Request(image_url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    img_bytes = resp.read()
+                if img_bytes:
+                    _dashboard_cache.set_bytes(cache_key, img_bytes, 86400 * 7) # 7 days caching
+            except Exception as e:
+                print(f"Failed to fetch hotel image: {e}")
+    data["img_bytes"] = img_bytes
 
     buffer = _io.BytesIO()
     c = pdf_canvas.Canvas(buffer, pagesize=A4)

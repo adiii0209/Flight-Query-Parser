@@ -4,120 +4,131 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Hotel Bookings | Time Tours</title>
-<meta name="description" content="Manage hotel bookings — parse, edit, and generate voucher PDFs.">
+<meta name="description" content="Manage hotel bookings - parse, edit, and generate voucher PDFs.">
 <link rel="icon" type="image/png" href="/static/ticket-flight.png">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/dashboard.css">
 <link rel="stylesheet" href="/static/sidebar.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Outfit',sans-serif;background:#f0f2f7;color:#0f172a;min-height:100vh}
-.app-header{background:#04060e;color:#fff;padding:1.25rem 1.5rem;display:flex;align-items:center;gap:1rem;position:sticky;top:0;z-index:1000;box-shadow:0 4px 30px rgba(0,0,0,.5)}
-.menu-toggle{background:none;border:none;cursor:pointer;padding:.4rem;display:flex;flex-direction:column;gap:5px}
-.menu-bar{display:block;width:22px;height:2px;background:#fff;border-radius:2px}
-.header-brand{margin-left:auto;font-size:1rem;font-weight:800;color:#fff;letter-spacing:.04em}
-.header-brand span{color:#10b981}
+body{font-family:'Outfit',sans-serif;background:#f4f7fb;color:#0f172a;min-height:100vh}
+body.detail-mode{background:#eef2f8}
+.app-header{background:#04060e;color:#fff;padding:1.15rem 1.5rem;box-shadow:0 4px 30px rgba(0,0,0,.5);position:relative;overflow:hidden;z-index:1000}
+.app-header::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(16,185,129,.1) 1px, transparent 1px),linear-gradient(90deg, rgba(16,185,129,.1) 1px, transparent 1px);background-size:40px 40px;pointer-events:none;opacity:1;animation:grid-move 60s linear infinite;transform-origin:center center;transform:perspective(500px) rotateX(25deg) scale(2)}
+.app-header::after{content:'';position:absolute;inset:0;background:linear-gradient(rgba(16,185,129,.08) 50%, transparent 50%);background-size:100% 4px;pointer-events:none;opacity:1;animation:scanline 8s linear infinite}
+@keyframes grid-move{from{background-position:0 0}to{background-position:400px 400px}}
+@keyframes scanline{from{background-position:0 0}to{background-position:0 100%}}
+.header-content{position:relative;z-index:2;max-width:1200px;margin:0 auto;width:100%;display:flex;justify-content:space-between;align-items:center;gap:1rem;min-height:3rem}
+.menu-toggle{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);color:#fff;width:42px;height:42px;border-radius:10px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:5px;cursor:pointer;transition:all .2s ease;flex-shrink:0}
+.menu-toggle:hover{background:rgba(255,255,255,.25);transform:scale(1.04)}
+.menu-bar{width:22px;height:2px;background:#fff;border-radius:2px}
+.header-brand{position:absolute;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none;white-space:nowrap}
+.brand-name{font-family:'Syne',sans-serif;font-size:1.55rem;font-weight:800;letter-spacing:-.04em;color:#fff;text-transform:uppercase;line-height:1;text-shadow:0 0 30px rgba(147,197,253,.3)}
+.brand-name span{background:linear-gradient(90deg,#34d399 0%, #10b981 50%, #6ee7b7 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.brand-sub{font-size:.7rem;color:rgba(255,255,255,.45);letter-spacing:.12em;text-transform:uppercase;margin-top:.2rem}
+.header-actions{min-width:42px}
 .main-content{max-width:1300px;margin:0 auto;padding:1.5rem}
-.page-title{font-size:1.6rem;font-weight:800;color:#0f172a;margin-bottom:1.5rem}
+.page-title{font-size:1.6rem;font-weight:800;color:#0f172a;margin-bottom:1.5rem;letter-spacing:-.03em}
 .page-title span{color:#10b981}
-
-/* ── Smart Import Modal ── */
-.smart-import-btn{background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:.6rem 1.2rem;border-radius:8px;font-size:.95rem;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:.5rem;box-shadow:0 4px 10px rgba(16,185,129,0.2);transition:.2s}
-.smart-import-btn:hover{transform:translateY(-2px);box-shadow:0 6px 15px rgba(16,185,129,0.3)}
-.parser-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem}
-.parser-header h2{margin-bottom:0}
-
-.import-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,0.6);backdrop-filter:blur(4px);z-index:2000;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .3s}
-.import-modal-overlay.open{opacity:1;pointer-events:auto}
-.import-modal{background:#fff;border-radius:20px;width:90%;max-width:550px;padding:2rem;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);transform:translateY(20px) scale(0.95);transition:all .3s cubic-bezier(0.175,0.885,0.32,1.275)}
-.import-modal-overlay.open .import-modal{transform:translateY(0) scale(1)}
-.import-modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem}
-.import-modal-title{font-size:1.3rem;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:.5rem}
-.import-modal-close{background:rgba(241,245,249,1);border:none;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#64748b;cursor:pointer;transition:.2s}
-.import-modal-close:hover{background:#e2e8f0;color:#0f172a;transform:rotate(90deg)}
-
-.modal-drop-zone{border:2px dashed #cbd5e1;border-radius:16px;background:#f8fafc;padding:3rem 2rem;text-align:center;cursor:pointer;transition:.2s;display:block;position:relative;overflow:hidden}
-.modal-drop-zone:hover,.modal-drop-zone.drag-over{border-color:#10b981;background:#f0fdf4}
-.modal-drop-zone .icon{font-size:3.5rem;margin-bottom:1rem;display:inline-block;transition:transform .3s}
-.modal-drop-zone:hover .icon{transform:translateY(-5px)}
-.modal-drop-zone h3{font-size:1.15rem;font-weight:800;color:#0f172a;margin-bottom:.5rem}
-.modal-drop-zone p{font-size:.9rem;color:#64748b}
-.modal-drop-zone input[type=file]{display:none}
-
-.import-processing{display:none;flex-direction:column;align-items:center;justify-content:center;padding:2rem 0}
-.import-processing.active{display:flex}
-.scan-animation{width:80px;height:100px;position:relative;margin-bottom:1.5rem}
-.scan-doc{width:100%;height:100%;background:#e2e8f0;border-radius:8px;position:relative;overflow:hidden}
-.scan-line{position:absolute;top:0;left:0;right:0;height:4px;background:#10b981;box-shadow:0 0 10px 2px rgba(16,185,129,0.5);animation:scan 1.5s ease-in-out infinite alternate}
-@keyframes scan{0%{top:0}100%{top:calc(100% - 4px)}}
-.import-processing h3{font-size:1.2rem;font-weight:800;color:#0f172a;margin-bottom:.5rem}
-.import-processing p{font-size:.95rem;color:#64748b}
-
-/* ── Parser card ── */
-.parser-card{background:#fff;border-radius:16px;border:1px solid #e2e8f0;padding:1.5rem;margin-bottom:2rem;box-shadow:0 4px 15px rgba(0,0,0,0.03)}
-.parser-card h2{font-size:1.1rem;font-weight:800;margin-bottom:1.25rem;color:#0f172a;display:flex;align-items:center;gap:0.5rem;}
+.dashboard-shell{display:block}
+body.detail-mode .dashboard-shell{display:none}
+body.detail-mode #hotelDetailPage{display:block}
+.parser-card{background:linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.96));border-radius:18px;border:1px solid rgba(226,232,240,.9);padding:1.35rem 1.35rem 1.2rem;margin-bottom:2rem;box-shadow:0 12px 30px rgba(15,23,42,.05)}
+.parser-header{display:flex;justify-content:space-between;align-items:center;gap:1rem}
+.parser-header h2{font-size:1.08rem;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:.5rem}
+.parser-copy{margin-top:.45rem;color:#64748b;font-size:.95rem;line-height:1.55;max-width:62rem}
+.parser-clock-wrap{display:flex;flex-direction:column;gap:.15rem;min-width:220px}
+.parser-clock-label{font-size:.72rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#64748b}
+.parser-clock{font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:.08em;color:#0f172a;text-shadow:0 0 18px rgba(16,185,129,.16);animation:clock-pulse 2.2s ease-in-out infinite}
+@keyframes clock-pulse{0%,100%{transform:translateY(0);opacity:1}50%{transform:translateY(-1px);opacity:.88}}
+.smart-import-btn{background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:.72rem 1.05rem;border-radius:12px;font-size:.92rem;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:.55rem;box-shadow:0 10px 22px rgba(16,185,129,.2);transition:all .2s ease;flex-shrink:0}
+.smart-import-btn:hover{transform:translateY(-1px);box-shadow:0 14px 26px rgba(16,185,129,.26)}
+.hotel-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:1.25rem}
+.hotel-card{background:#fff;border-radius:16px;border:1px solid #e2e8f0;overflow:hidden;transition:.2s;cursor:pointer;display:flex;flex-direction:column}
+.hotel-card:hover{box-shadow:0 12px 30px rgba(0,0,0,.08);transform:translateY(-4px);border-color:#cbd5e1}
+.hotel-card-img{width:100%;height:180px;object-fit:cover;background:#f8fafc;display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:#cbd5e1}
+.hotel-card-img img{width:100%;height:100%;object-fit:cover;display:block}
+.hotel-card-img img.fallback-fit,
+.detail-img-wrap img.fallback-fit{
+  object-fit:contain;
+  background:#fff;
+  padding:14px;
+}
+.hotel-card-body{padding:1.15rem;flex-grow:1;display:flex;flex-direction:column}
+.hotel-card-name{font-size:1.08rem;font-weight:800;color:#0f172a;margin-bottom:.3rem;line-height:1.3}
+.hotel-card-meta{font-size:.85rem;color:#64748b;margin-bottom:.75rem}
+.hotel-card-dates{display:flex;gap:.35rem;font-size:.8rem;font-weight:700;margin-bottom:1rem;flex-wrap:wrap;color:#059669}
+.hotel-card-dates .date-range{color:#059669}
+.hotel-card-footer{display:flex;justify-content:space-between;align-items:center;margin-top:auto;gap:.75rem}
+.hotel-amount{font-size:1.1rem;font-weight:800;color:#0f172a}
+.hotel-card-actions{display:flex;gap:.5rem}
+.detail-fixed-back{position:fixed;left:1rem;top:1rem;z-index:3000;background:rgba(4,6,14,.95);color:#fff;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:.7rem 1rem;display:none;align-items:center;gap:.5rem;font-weight:800;box-shadow:0 12px 32px rgba(0,0,0,.22);backdrop-filter:blur(10px);cursor:pointer}
+body.detail-mode .detail-fixed-back{display:inline-flex}
+.detail-fixed-back:hover{transform:translateY(-1px);background:#0b1220}
+.empty-state{text-align:center;padding:5rem 2rem;color:#94a3b8}
+.empty-state .icon{font-size:4rem;margin-bottom:1rem;opacity:0.8}
+.detail-page{display:none;margin:1.25rem auto 0;max-width:1300px;padding:0 1.5rem 2rem}
+.detail-page-header{background:linear-gradient(180deg,#04060e,#0f172a);color:#fff;padding:1.1rem 1.2rem;border-radius:18px 18px 0 0;display:flex;align-items:center;justify-content:space-between;gap:1rem;box-shadow:0 18px 40px rgba(0,0,0,.12);position:relative;overflow:hidden}
+.detail-page-header::after{content:'';position:absolute;inset:0;background:linear-gradient(135deg, rgba(16,185,129,.08), transparent 42%);pointer-events:none}
+.detail-page-header h2{font-size:1.15rem;font-weight:800;line-height:1.2}
+.detail-page-subtitle{font-size:.82rem;color:rgba(255,255,255,.72);margin-top:.2rem}
+.detail-header-actions{position:relative;z-index:1;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.detail-page-body{background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 18px 18px;padding:1.35rem;box-shadow:0 18px 40px rgba(0,0,0,.08)}
+.detail-sections{display:flex;flex-direction:column;gap:1rem}
+.section-card{border:1px solid #e2e8f0;border-radius:18px;padding:1rem 1rem 1.05rem;background:linear-gradient(180deg,#fff,#fafcff);box-shadow:0 10px 26px rgba(15,23,42,.04)}
+.section-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:.8rem}
+.section-card-title{font-size:1rem;font-weight:800;color:#0f172a;letter-spacing:-.02em}
+.section-card-subtitle{font-size:.85rem;color:#64748b;margin-top:.18rem;line-height:1.4}
+.hero-card{padding:1rem}
+.hero-image{height:260px;margin-bottom:1rem}
+.hero-copy{display:flex;flex-direction:column;gap:.7rem}
+.hero-top-row{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap}
+.hero-kicker{display:inline-flex;align-items:center;gap:.45rem;font-size:.72rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#64748b;margin-bottom:.35rem}
+.hero-title{font-size:1.4rem;font-weight:800;letter-spacing:-.04em;color:#0f172a;line-height:1.1}
+.hero-subtitle{font-size:.92rem;color:#475569;line-height:1.45;margin-top:.25rem}
+.hero-meta{display:flex;flex-wrap:wrap;gap:.45rem}
+.info-pill{display:inline-flex;align-items:center;min-height:30px;padding:.3rem .7rem;border-radius:999px;background:#f8fafc;border:1px solid #e2e8f0;color:#475569;font-size:.78rem;font-weight:800}
+.hero-description{font-size:.92rem;color:#64748b;line-height:1.55}
+.compact-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}
+.compact-grid .full-span{grid-column:1 / -1}
+.compact-grid .input-group{margin-bottom:0}
+.compact-grid .input-group input,.compact-grid .input-group textarea,.compact-grid .input-group select{padding:.65rem .85rem;border-radius:11px;font-size:.91rem}
+.currency-field .currency-stack{display:flex;flex-direction:column;gap:.45rem}
+.currency-field select,.currency-field input{width:100%}
+.currency-field select{padding:.65rem .85rem;border:1px solid #cbd5e1;border-radius:11px;background:#fff;font-family:inherit;font-size:.91rem;font-weight:700;color:#0f172a}
+.currency-field input{padding:.65rem .85rem;border:1px solid #cbd5e1;border-radius:11px;background:#fff;font-family:inherit;font-size:.91rem}
+.compact-textarea textarea{min-height:110px}
+.amenity-add-row input{border-radius:8px; margin-bottom:0}
+.amenity-add-row .btn{border-radius:8px;white-space:nowrap}
+.detail-actions{display:flex;flex-wrap:wrap;gap:.75rem;margin-top:0}
+.detail-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:1rem}
+.detail-panel{border:1px solid #e2e8f0;border-radius:16px;padding:1rem;background:#fff}
+.detail-panel h3{font-size:1rem;font-weight:800;margin-bottom:.75rem;color:#0f172a}
+.section-title{font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin:1.5rem 0 1rem;padding-bottom:.4rem;border-bottom:1px solid #f1f5f9}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 .input-group{display:flex;flex-direction:column;gap:.4rem;margin-bottom:1rem}
-.input-group label{font-size:.8rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.05em}
-.input-group input,.input-group textarea,.input-group select{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:.7rem .9rem;font-family:inherit;font-size:.9rem;color:#0f172a;background:#fff;transition:.2s;box-shadow:inset 0 1px 2px rgba(0,0,0,0.02)}
-.input-group input:focus,.input-group textarea:focus,.input-group select:focus{outline:none;border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,0.1)}
-.input-group textarea{min-height:120px;resize:vertical;line-height:1.5}
-.form-row{display:grid;grid-template-columns:1fr 1fr;gap:0 1.25rem}
-@media(max-width:640px){.form-row{grid-template-columns:1fr}}
-
-/* ── Buttons ── */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.6rem 1.2rem;border-radius:8px;border:none;cursor:pointer;font-family:inherit;font-size:.9rem;font-weight:700;transition:.2s}
-.btn-primary{background:linear-gradient(135deg,#059669,#10b981);color:#fff;box-shadow:0 4px 10px rgba(16,185,129,0.2)}
-.btn-primary:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 6px 12px rgba(16,185,129,0.3)}
+.input-group label{font-size:.8rem;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.05em}
+.input-group input,.input-group textarea,.input-group select{width:100%;border:1px solid #cbd5e1;border-radius:12px;padding:.75rem .95rem;font-family:inherit;font-size:.93rem;color:#0f172a;background:#fff;transition:.2s;box-shadow:inset 0 1px 2px rgba(0,0,0,.02)}
+.input-group input:focus,.input-group textarea:focus,.input-group select:focus{outline:none;border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,.1)}
+.input-group textarea{min-height:110px;resize:vertical;line-height:1.55}
+.detail-actions{display:flex;flex-wrap:wrap;gap:.75rem;margin-top:1.1rem}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.65rem 1.15rem;border-radius:10px;border:none;cursor:pointer;font-family:inherit;font-size:.9rem;font-weight:800;transition:.2s}
+.btn-primary{background:linear-gradient(135deg,#059669,#10b981);color:#fff;box-shadow:0 10px 20px rgba(16,185,129,.18)}
+.btn-primary:hover{filter:brightness(1.05);transform:translateY(-1px);box-shadow:0 14px 24px rgba(16,185,129,.24)}
 .btn-secondary{background:#f1f5f9;color:#0f172a;border:1px solid #e2e8f0}
 .btn-secondary:hover{background:#e2e8f0}
 .btn-danger{background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.2)}
 .btn-danger:hover{background:#ef4444;color:#fff}
-.btn-pdf{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;box-shadow:0 4px 10px rgba(37,99,235,0.2)}
-.btn-pdf:hover{filter:brightness(1.1);transform:translateY(-1px);box-shadow:0 6px 12px rgba(37,99,235,0.3)}
-.btn-sm{padding:.4rem .8rem;font-size:.8rem;border-radius:6px}
-.action-row{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1.25rem}
-
-/* ── Hotel grid ── */
-.hotel-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:1.5rem}
-.hotel-card{background:#fff;border-radius:16px;border:1px solid #e2e8f0;overflow:hidden;transition:.2s;cursor:pointer;display:flex;flex-direction:column}
-.hotel-card:hover{box-shadow:0 12px 30px rgba(0,0,0,.08);transform:translateY(-4px);border-color:#cbd5e1}
-.hotel-card-img{width:100%;height:180px;object-fit:cover;background:#f8fafc;display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:#cbd5e1}
-.hotel-card-img img{width:100%;height:100%;object-fit:cover}
-.hotel-card-body{padding:1.25rem;flex-grow:1;display:flex;flex-direction:column}
-.hotel-card-name{font-size:1.1rem;font-weight:800;color:#0f172a;margin-bottom:.3rem;line-height:1.3}
-.hotel-card-meta{font-size:.85rem;color:#64748b;margin-bottom:.75rem}
-.hotel-card-dates{display:flex;gap:.5rem;font-size:.75rem;font-weight:700;margin-bottom:1rem}
-.date-chip{background:#f0fdf4;color:#059669;border:1px solid #bbf7d0;padding:.3rem .7rem;border-radius:6px}
-.hotel-card-footer{display:flex;justify-content:space-between;align-items:center;margin-top:auto}
-.hotel-amount{font-size:1.15rem;font-weight:800;color:#0f172a}
-.hotel-card-actions{display:flex;gap:.5rem}
-
-/* ── Detail panel ── */
-.detail-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;backdrop-filter:blur(4px)}
-.detail-panel{position:fixed;right:0;top:0;bottom:0;width:min(600px,100vw);background:#fff;z-index:501;overflow-y:auto;box-shadow:-8px 0 40px rgba(0,0,0,.2);transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)}
-.detail-panel.open{transform:none}
-.detail-overlay.open{display:block}
-.detail-header{background:#04060e;color:#fff;padding:1.25rem 1.5rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
-.detail-header h2{font-size:1.2rem;font-weight:800}
-.detail-close{background:none;border:none;color:#fff;font-size:1.8rem;cursor:pointer;opacity:.7;line-height:1;transition:.2s}
-.detail-close:hover{opacity:1;transform:rotate(90deg)}
-.detail-body{padding:1.5rem}
-.detail-img-wrap{width:100%;height:240px;background:#f8fafc;border-radius:12px;overflow:hidden;margin-bottom:1.5rem;position:relative;display:flex;align-items:center;justify-content:center;font-size:3rem;color:#cbd5e1;border:1px solid #e2e8f0}
+.btn-pdf{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;box-shadow:0 10px 20px rgba(37,99,235,.18)}
+.btn-pdf:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 14px 24px rgba(37,99,235,.22)}
+.btn-sm{padding:.42rem .8rem;font-size:.8rem;border-radius:8px}
+.toggle-btn{background:#fff7ed;color:#9a3412;border:1px solid #fdba74;box-shadow:none}
+.toggle-btn.active{background:#dc2626;color:#fff;border-color:#dc2626}
+.detail-img-wrap{width:100%;height:240px;background:#f8fafc;border-radius:12px;overflow:hidden;margin-bottom:1rem;position:relative;display:flex;align-items:center;justify-content:center;font-size:3rem;color:#cbd5e1;border:1px solid #e2e8f0}
 .detail-img-wrap img{width:100%;height:100%;object-fit:cover}
-.img-overlay-btn{position:absolute;bottom:1rem;right:1rem;background:rgba(15,23,42,.75);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:.5rem 1rem;font-size:.85rem;font-weight:700;cursor:pointer;backdrop-filter:blur(8px);transition:.2s;display:flex;align-items:center;gap:0.4rem;}
+.img-overlay-btn{position:absolute;bottom:1rem;right:1rem;background:rgba(15,23,42,.75);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:.5rem 1rem;font-size:.85rem;font-weight:800;cursor:pointer;backdrop-filter:blur(8px);transition:.2s;display:flex;align-items:center;gap:.4rem}
 .img-overlay-btn:hover{background:rgba(15,23,42,.9)}
-.img-paste-hint{position:absolute;top:1rem;left:1rem;background:rgba(15,23,42,.75);color:#fff;padding:0.3rem 0.6rem;border-radius:6px;font-size:0.75rem;font-weight:600;backdrop-filter:blur(8px);pointer-events:none;}
-
-.section-title{font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin:1.75rem 0 1rem;padding-bottom:0.4rem;border-bottom:1px solid #f1f5f9}
-.amenity-chips{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem}
-.amenity-chip{display:inline-flex;align-items:center;gap:.35rem;background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:.3rem .45rem .3rem .8rem;border-radius:999px;font-size:.8rem;font-weight:600}
-.amenity-chip-label{line-height:1.2}
-.amenity-chip-actions{display:inline-flex;align-items:center;gap:.15rem}
-.chip-icon-btn{width:18px;height:18px;border:none;background:transparent;color:#92400e;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:.65rem;padding:0;opacity:.8}
-.chip-icon-btn:hover{background:rgba(146,64,14,.12);opacity:1}
-.amenity-add-row{display:flex;gap:.55rem;align-items:center}
-.amenity-add-row input{margin-bottom:0}
-.currency-amount-row{display:grid;grid-template-columns:150px 1fr;gap:1rem}
+.img-paste-hint{position:absolute;top:1rem;left:1rem;background:rgba(15,23,42,.75);color:#fff;padding:.3rem .6rem;border-radius:6px;font-size:.75rem;font-weight:700;backdrop-filter:blur(8px);pointer-events:none}
 .room-list{display:flex;flex-direction:column;gap:.9rem;margin-bottom:1rem}
 .room-card{border:1px solid #e2e8f0;border-radius:12px;padding:1rem;background:#f8fafc}
 .room-card-header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.85rem}
@@ -126,115 +137,218 @@ body{font-family:'Outfit',sans-serif;background:#f0f2f7;color:#0f172a;min-height
 .guest-fields{display:flex;flex-direction:column;gap:.65rem}
 .guest-field-row{display:grid;grid-template-columns:110px 1fr;gap:.75rem;align-items:center}
 .guest-field-row span{font-size:.8rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
-@media(max-width:640px){.currency-amount-row{grid-template-columns:1fr}}
-@media(max-width:640px){.guest-field-row{grid-template-columns:1fr}}
-.empty-state{text-align:center;padding:5rem 2rem;color:#94a3b8}
-.empty-state .icon{font-size:4rem;margin-bottom:1rem;opacity:0.8}
-
-/* ── Toast & Loading ── */
+.amenity-chips{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem}
+.amenity-chip{display:inline-flex;align-items:center;gap:.35rem;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;padding:.3rem .45rem .3rem .8rem;border-radius:999px;font-size:.8rem;font-weight:700}
+.amenity-chip-actions{display:inline-flex;align-items:center;gap:.15rem}
+.chip-icon-btn{width:18px;height:18px;border:none;background:transparent;color:#475569;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:.65rem;padding:0;opacity:.8}
+.chip-icon-btn:hover{background:rgba(100,116,139,.15);opacity:1}
+.amenity-add-row{display:flex;gap:.55rem;align-items:center}
+.switch{position:relative;display:inline-block;width:40px;height:22px;flex-shrink:0}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background-color:#cbd5e1;transition:.3s;border-radius:24px}
+.slider:before{position:absolute;content:"";height:16px;width:16px;left:3px;bottom:3px;background-color:white;transition:.3s;border-radius:50%}
+input:checked + .slider{background-color:#10b981}
+input:checked + .slider:before{transform:translateX(18px)}
+.currency-amount-row{display:grid;grid-template-columns:150px 1fr;gap:1rem}
 .toast{position:fixed;bottom:2rem;left:50%;transform:translateX(-50%) translateY(20px);background:#0f172a;color:#fff;padding:.8rem 1.5rem;border-radius:10px;font-size:.9rem;font-weight:600;z-index:9999;opacity:0;transition:all .3s cubic-bezier(0.175, 0.885, 0.32, 1.275);pointer-events:none;box-shadow:0 10px 25px rgba(0,0,0,0.2)}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .loading-overlay{display:none;position:fixed;inset:0;background:rgba(255,255,255,.85);z-index:800;align-items:center;justify-content:center;flex-direction:column;gap:1.2rem;backdrop-filter:blur(5px)}
 .loading-overlay.active{display:flex}
 .spinner{width:48px;height:48px;border:4px solid #e2e8f0;border-top-color:#10b981;border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+.import-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.66);backdrop-filter:blur(8px);z-index:2000;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .24s ease;padding:1rem}
+.import-modal-overlay.open{opacity:1;pointer-events:auto}
+.import-modal{background:#fff;border-radius:24px;width:min(92vw, 620px);max-width:620px;padding:1.25rem;box-shadow:0 25px 70px rgba(15,23,42,.28);transform:translateY(18px) scale(.98);transition:all .24s cubic-bezier(.2,.8,.2,1);border:1px solid rgba(226,232,240,.9)}
+.import-modal-overlay.open .import-modal{transform:translateY(0) scale(1)}
+.import-modal-header{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;padding:0.2rem 0.15rem 1rem}
+.import-modal-title{font-size:1.1rem;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:.55rem}
+.import-modal-close{background:rgba(241,245,249,1);border:none;width:36px;height:36px;border-radius:999px;display:flex;align-items:center;justify-content:center;color:#64748b;cursor:pointer;transition:.2s;font-size:1rem;flex-shrink:0}
+.import-modal-close:hover{background:#e2e8f0;color:#0f172a;transform:rotate(90deg)}
+.import-tabs{display:flex;justify-content:center;gap:.35rem;padding:.35rem;background:#f1f5f9;border-radius:14px;border:1px solid #e2e8f0;margin:0 auto 1rem;width:max-content;max-width:100%}
+.import-tab{border:none;background:transparent;color:#64748b;border-radius:10px;padding:.65rem .95rem;cursor:pointer;font-family:inherit;font-weight:800;font-size:.86rem;transition:all .2s ease}
+.import-tab.active{background:#fff;color:#0f172a;box-shadow:0 8px 18px rgba(15,23,42,.08)}
+.import-panel{display:none}
+.import-panel.active{display:block}
+.import-modal-columns{display:grid;grid-template-columns:1fr;gap:1rem}
+.modal-drop-zone{border:2px dashed #cbd5e1;border-radius:18px;background:#f8fafc;padding:2.2rem 1.4rem;text-align:center;cursor:pointer;transition:.2s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.35rem;position:relative;overflow:hidden;min-height:220px}
+.modal-drop-zone:hover,.modal-drop-zone.drag-over{border-color:#10b981;background:#f0fdf4}
+.modal-drop-zone .icon{font-size:3rem;margin-bottom:.35rem;display:inline-block;transition:transform .3s}
+.modal-drop-zone:hover .icon{transform:translateY(-4px)}
+.modal-drop-zone h3{font-size:1.08rem;font-weight:800;color:#0f172a}
+.modal-drop-zone p{font-size:.9rem;color:#64748b}
+.modal-drop-zone input[type=file]{display:none}
+.import-processing{display:none;flex-direction:column;align-items:center;justify-content:center;padding:1rem 0;min-height:220px}
+.import-processing.active{display:flex}
+.scan-animation{width:84px;height:106px;position:relative;margin-bottom:1.1rem}
+.scan-doc{width:100%;height:100%;background:#e2e8f0;border-radius:10px;position:relative;overflow:hidden}
+.scan-line{position:absolute;top:0;left:0;right:0;height:4px;background:#10b981;box-shadow:0 0 10px 2px rgba(16,185,129,.5);animation:scan 1.5s ease-in-out infinite alternate}
+@keyframes scan{0%{top:0}100%{top:calc(100% - 4px)}}
+.import-processing h3{font-size:1.15rem;font-weight:800;color:#0f172a;margin-bottom:.4rem}
+.import-processing p{font-size:.92rem;color:#64748b;text-align:center}
+.text-import-area{display:flex;flex-direction:column;gap:.8rem}
+.input-group textarea{min-height:210px;resize:vertical;line-height:1.55}
+@media(max-width:900px){.compact-grid,.form-row,.currency-amount-row{grid-template-columns:1fr}}
+@media(max-width:700px){.header-brand{position:static;transform:none;margin:0 auto}.header-content{gap:.75rem}.brand-name{font-size:1.2rem}.brand-sub{font-size:.58rem;letter-spacing:.08em}.smart-import-btn{width:100%;justify-content:center}.parser-header{flex-direction:column;align-items:flex-start}.parser-clock-wrap{min-width:0;width:100%}.detail-page{padding:0 1rem 2rem}.hero-top-row{flex-direction:column}.hero-image{height:220px}.detail-fixed-back{left:.75rem;top:.75rem}}
 </style>
 </head>
-<body>
+<body class="{% if booking_id %}detail-mode{% endif %}">
 {% include 'components/sidebar.html' %}
 
 <header class="app-header">
-  <button class="menu-toggle" id="menuToggle" aria-label="Open Menu">
-    <span class="menu-bar"></span><span class="menu-bar"></span><span class="menu-bar"></span>
-  </button>
-  <div class="header-brand">Time <span>Tours</span> Hotels</div>
+  <div class="header-content">
+    <button class="menu-toggle" id="menuToggle" aria-label="Open Menu">
+      <span class="menu-bar"></span><span class="menu-bar"></span><span class="menu-bar"></span>
+    </button>
+    <div class="header-brand">
+      <div class="brand-name">Time <span>Tours</span></div>
+      <div class="brand-sub">Hotels dashboard</div>
+    </div>
+    <div class="header-actions"></div>
+  </div>
 </header>
 
 <div class="loading-overlay" id="loadingOverlay">
   <div class="spinner"></div>
-  <p style="font-weight:800;color:#0f172a;font-size:1.1rem;letter-spacing:0.02em;">Processing booking…</p>
+  <p style="font-weight:800;color:#0f172a;font-size:1.1rem;letter-spacing:0.02em;">Processing booking...</p>
 </div>
 
-<div class="detail-overlay" id="detailOverlay" onclick="closeDetail()"></div>
-<div class="detail-panel" id="detailPanel">
-  <div class="detail-header">
-    <h2 id="detailTitle">Hotel Booking</h2>
-    <button class="detail-close" onclick="closeDetail()">&times;</button>
+<button class="detail-fixed-back" onclick="closeDetail()" aria-label="Back to dashboard">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+  Back to dashboard
+</button>
+
+<div class="dashboard-shell">
+  <div class="main-content">
+    <h1 class="page-title"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#10b981;margin-right:0.5rem;vertical-align:text-bottom"><path d="M3 20v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8"/><path d="M5 10V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/><path d="M11 4v6"/><path d="M8 11v4"/><path d="M16 11v4"/><path d="M4 15h16"/></svg>Hotel <span>Bookings</span></h1>
+    <div class="parser-card">
+      <div class="parser-header">
+        <div class="parser-clock-wrap">
+          <div class="parser-clock-label">Indian Standard Time</div>
+          <div class="parser-clock" id="istClock">00:00:00</div>
+        </div>
+        <button class="smart-import-btn" onclick="openImportModal()">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color:#ffffff"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+          Smart Import
+        </button>
+      </div>
+    </div>
+
+    <div id="hotelGrid" class="hotel-grid"></div>
+    <div id="emptyState" class="empty-state" style="display:none">
+      <div class="icon"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:#cbd5e1"><path d="M3 20v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8"/><path d="M5 10V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/><path d="M11 4v6"/><path d="M8 11v4"/><path d="M16 11v4"/><path d="M4 15h16"/></svg></div>
+      <p style="font-weight:800;font-size:1.2rem;margin-bottom:.5rem;color:#475569">No hotel bookings yet</p>
+    </div>
   </div>
-  <div class="detail-body" id="detailBody"></div>
 </div>
 
-<div class="main-content">
-  <h1 class="page-title"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#10b981;margin-right:0.5rem;vertical-align:text-bottom"><path d="M3 20v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8"/><path d="M5 10V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/><path d="M11 4v6"/><path d="M8 11v4"/><path d="M16 11v4"/><path d="M4 15h16"/></svg>Hotel <span>Bookings</span></h1>
-
-  <!-- Input card -->
-  <div class="parser-card">
-    <div class="parser-header">
-      <h2 style="display:flex;align-items:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color:#64748b;margin-right:0.4rem"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Parse New Booking</h2>
-      <button class="smart-import-btn" onclick="openImportModal()">
-        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-        Smart Import PDF
-      </button>
+<div id="hotelDetailPage" class="detail-page">
+  <div class="detail-page-header">
+    <div style="position:relative;z-index:1">
+      <h2 id="detailTitle">Hotel Booking</h2>
+      <div class="detail-page-subtitle" id="detailPageSubtitle"></div>
     </div>
-    <div class="input-group">
-      <label>Raw Booking Text</label>
-      <textarea id="rawText" placeholder="Paste confirmation email or booking details here…"></textarea>
-    </div>
-    <div class="action-row">
-      <button class="btn btn-primary" onclick="parseBooking()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg> Parse & Extract</button>
-      <button class="btn btn-secondary" onclick="clearParser()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg> Clear</button>
+    <div class="detail-header-actions">
+      <button class="btn btn-danger btn-sm" type="button" onclick="deleteCurrentBooking()">Delete Booking</button>
     </div>
   </div>
-
-  <!-- Hotel grid -->
-  <div id="hotelGrid" class="hotel-grid"></div>
-  <div id="emptyState" class="empty-state" style="display:none">
-    <div class="icon"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:#cbd5e1"><path d="M3 20v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8"/><path d="M5 10V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/><path d="M11 4v6"/><path d="M8 11v4"/><path d="M16 11v4"/><path d="M4 15h16"/></svg></div>
-    <p style="font-weight:800;font-size:1.2rem;margin-bottom:.5rem;color:#475569">No hotel bookings yet</p>
-    <p style="font-size:.95rem">Parse a PDF or paste booking text above to get started.</p>
-  </div>
+  <div class="detail-page-body" id="detailBody"></div>
 </div>
 
 <div class="import-modal-overlay" id="importModalOverlay">
   <div class="import-modal">
     <div class="import-modal-header">
-      <h2 class="import-modal-title"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color:#10b981"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg> Smart Import</h2>
-      <button class="import-modal-close" onclick="closeImportModal()">✕</button>
+      <div>
+        <div class="import-modal-title"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color:#10b981"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg> Smart Import</div>
+      </div>
+      <button class="import-modal-close" onclick="closeImportModal()">&times;</button>
     </div>
-    
-    <label class="modal-drop-zone" id="modalDropZone" for="modalFileInput">
-      <div class="icon"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:#cbd5e1"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg></div>
-      <h3>Drop hotel voucher here</h3>
-      <p>Or click to browse from your computer</p>
-      <input type="file" id="modalFileInput" accept=".pdf" onchange="handleModalFileSelected(this)">
-    </label>
-    
-    <div class="import-processing" id="importProcessing">
-      <div class="scan-animation">
-        <div class="scan-doc">
-          <div class="scan-line"></div>
+    <div class="import-tabs" role="tablist" aria-label="Hotel import tabs" id="importTabsContainer">
+      <button class="import-tab active" id="pdfTabBtn" type="button" onclick="switchImportTab('pdf')">PDF Upload</button>
+      <button class="import-tab" id="textTabBtn" type="button" onclick="switchImportTab('text')">Text Input</button>
+    </div>
+    <div class="import-panel active" id="pdfImportPanel">
+      <label class="modal-drop-zone" id="modalDropZone" for="modalFileInput">
+        <div class="icon"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:#cbd5e1"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg></div>
+        <h3>Drop hotel voucher here</h3>
+        <p>Or click to browse from your computer</p>
+        <input type="file" id="modalFileInput" accept=".pdf" onchange="handleModalFileSelected(this)">
+      </label>
+    </div>
+    <div class="import-panel" id="textImportPanel">
+      <div class="text-import-area">
+        <div class="input-group">
+          <label for="rawText">Booking Text</label>
+          <textarea id="rawText" placeholder="Paste booking details here..."></textarea>
+        </div>
+        <div class="detail-actions" style="margin-top:0">
+          <button class="btn btn-primary" type="button" onclick="parseBookingText()">Parse & Extract</button>
+          <button class="btn btn-secondary" type="button" onclick="clearParser()">Clear</button>
         </div>
       </div>
+    </div>
+    <div class="import-processing" id="importProcessing">
+      <div class="scan-animation">
+        <div class="scan-doc"><div class="scan-line"></div></div>
+      </div>
       <h3>Extracting Details</h3>
-      <p>Our AI is reading your booking...</p>
+      <p>This may take a few seconds...</p>
+    </div>
+  </div>
+</div>
+
+<div class="import-modal-overlay" id="specialRequestModalOverlay">
+  <div class="import-modal" style="max-width: 850px;">
+    <div class="import-modal-header">
+      <div>
+        <div class="import-modal-title">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color:#10b981"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg> 
+          Special Requests
+        </div>
+      </div>
+      <button class="import-modal-close" onclick="closeSpecialRequestModal()">&times;</button>
+    </div>
+    
+    <div style="margin-bottom: 0.75rem; color: #64748b; font-size: 0.95rem;">Select the requests you'd like to include:</div>
+    <div class="amenity-chips" id="specialRequestChips" style="max-height: 200px; overflow-y: auto; gap: 0.6rem; margin-bottom: 1.25rem;">
+      <!-- chips go here -->
+    </div>
+
+    <div style="margin-bottom: 0.5rem; color: #64748b; font-size: 0.95rem;">Generated Email Preview:</div>
+    <textarea id="specialRequestEmailText" style="width: 100%; height: 320px; font-family: monospace; font-size: 0.95rem; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 6px; resize: vertical; line-height: 1.4;"></textarea>
+    
+    <div class="detail-actions" style="margin-top: 1.5rem; justify-content: flex-end; align-items: center; gap: 0.5rem;">
+      <button class="btn btn-secondary" type="button" onclick="closeSpecialRequestModal()">Cancel</button>
+      <button class="btn btn-secondary" type="button" style="padding: 0.5rem; display: flex; align-items: center;" onclick="copySpecialRequestEmail()" title="Copy Email Text">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"/></svg>
+      </button>
+      <button class="btn btn-primary" type="button" style="background-color: #ea4335; border-color: #ea4335; padding: 0.5rem; display: flex; align-items: center;" onclick="openSpecialRequestInGmail()" title="Send via Gmail">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+      </button>
     </div>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 <script>
-// ── State ─────────────────────────────────────────────────────────────────────
+window.HOTEL_BOOKING_ID = {{ booking_id|tojson }};
 const HOTEL_SVG = '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:#cbd5e1"><path d="M3 20v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8"/><path d="M5 10V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/><path d="M11 4v6"/><path d="M8 11v4"/><path d="M16 11v4"/><path d="M4 15h16"/></svg>';
+const RESORT_FALLBACK_IMAGE = '/resort.png';
+const CURRENCY_OPTIONS = ['INR', 'USD', 'AED'];
 let bookings = [];
 let currentBooking = null;
 let uploadedImageUrl = null;
+let currentBookingSnapshot = null;
 
-// ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   setupSidebar();
-  loadBookings();
-  setupDragDrop();
+  setupImportModal();
   setupClipboardPaste();
+  startIstClock();
+  if (window.HOTEL_BOOKING_ID) {
+    loadDetail(window.HOTEL_BOOKING_ID);
+  } else {
+    loadBookings();
+  }
 });
 
 function setupSidebar() {
@@ -247,9 +361,28 @@ function setupSidebar() {
   }
 }
 
+function setupImportModal() {
+  const zone = document.getElementById('modalDropZone');
+  if (!zone) return;
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      const input = document.getElementById('modalFileInput');
+      if (input) input.files = e.dataTransfer.files;
+      handleModalFileSelected({ files: e.dataTransfer.files });
+    }
+  });
+}
+
 function openImportModal() {
   document.getElementById('importModalOverlay').classList.add('open');
-  document.getElementById('modalDropZone').style.display = 'block';
+  document.getElementById('importTabsContainer').style.display = 'flex';
+  switchImportTab('pdf');
+  document.getElementById('modalDropZone').style.display = 'flex';
   document.getElementById('importProcessing').classList.remove('active');
   const fileInput = document.getElementById('modalFileInput');
   if (fileInput) fileInput.value = '';
@@ -259,193 +392,311 @@ function closeImportModal() {
   document.getElementById('importModalOverlay').classList.remove('open');
 }
 
-function setupDragDrop() {
-  const zone = document.getElementById('modalDropZone');
-  if(!zone) return;
-  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
-  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-  zone.addEventListener('drop', e => {
-    e.preventDefault(); zone.classList.remove('drag-over');
-    const file = e.dataTransfer.files[0];
-    if (file) { document.getElementById('modalFileInput').files = e.dataTransfer.files; handleModalFileSelected({ files: e.dataTransfer.files }); }
-  });
-}
-
-function setupClipboardPaste() {
-  document.addEventListener('paste', async (e) => {
-    const isDetailOpen = document.getElementById('detailPanel').classList.contains('open');
-    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
-    
-    let imagePasted = false;
-    for (let index in items) {
-      const item = items[index];
-      if (item.kind === 'file' && item.type.startsWith('image/')) {
-        imagePasted = true;
-        const blob = item.getAsFile();
-        
-        if (isDetailOpen && currentBooking) {
-          const fd = new FormData();
-          fd.append('image', blob, "pasted_image.png");
-          await uploadImageFormData(fd);
-        } else {
-          showToast('Open a hotel booking to paste an image.', 'error');
-        }
-        break;
-      }
-    }
-    
-    // Allow default text paste into textareas, but block it if it was an image
-    if (imagePasted) {
-      e.preventDefault();
-    }
-  });
+function switchImportTab(tab) {
+  const pdfBtn = document.getElementById('pdfTabBtn');
+  const textBtn = document.getElementById('textTabBtn');
+  const pdfPanel = document.getElementById('pdfImportPanel');
+  const textPanel = document.getElementById('textImportPanel');
+  const isPdf = tab === 'pdf';
+  pdfBtn?.classList.toggle('active', isPdf);
+  textBtn?.classList.toggle('active', !isPdf);
+  pdfPanel?.classList.toggle('active', isPdf);
+  textPanel?.classList.toggle('active', !isPdf);
+  
+  if (pdfPanel) pdfPanel.style.display = '';
+  if (textPanel) textPanel.style.display = '';
+  
+  if (!isPdf) {
+    const rawText = document.getElementById('rawText');
+    setTimeout(() => rawText?.focus(), 0);
+  }
 }
 
 function handleModalFileSelected(input) {
   const file = input.files?.[0];
   if (!file) return;
-  
-  // Show processing animation in modal
+  document.getElementById('importTabsContainer').style.display = 'none';
   document.getElementById('modalDropZone').style.display = 'none';
   document.getElementById('importProcessing').classList.add('active');
-  
-  // Directly trigger parse
   parseFile(file);
 }
 
-// Modify parseBooking to handle raw text only, and parseFile for PDF
+function setupClipboardPaste() {
+  document.addEventListener('paste', async (e) => {
+    const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items || [];
+    for (const item of items) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const blob = item.getAsFile();
+        if (currentBooking && blob) {
+          const fd = new FormData();
+          fd.append('image', blob, 'pasted_image.png');
+          await uploadImageFormData(fd);
+        } else {
+          showToast('Open a hotel booking to paste an image.', 'error');
+        }
+        e.preventDefault();
+        return;
+      }
+    }
+  });
+}
+
+function startIstClock() {
+  const clock = document.getElementById('istClock');
+  if (!clock) return;
+  const tick = () => {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date());
+    const map = Object.fromEntries(parts.filter(p => p.type !== 'literal').map(p => [p.type, p.value]));
+    clock.textContent = `${map.hour || '00'}:${map.minute || '00'}:${map.second || '00'}`;
+  };
+  tick();
+  setInterval(tick, 1000);
+}
+
 async function parseFile(file) {
   try {
     const fd = new FormData();
     fd.append('file', file);
-    
     const r = await fetch('/api/hotels/parse', { method: 'POST', body: fd });
     const json = await r.json();
-    if (!r.ok || !json.success) { 
-      showToast(json.error || 'Parse failed', 'error'); 
+    if (!r.ok || !json.success) {
+      showToast(json.error || 'Parse failed', 'error');
       closeImportModal();
-      return; 
+      return;
     }
-
-    const saveR = await fetch('/api/hotels', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(json.data)
-    });
-    const saved = await saveR.json();
-    if (!saveR.ok) { showToast(saved.error || 'Save failed', 'error'); closeImportModal(); return; }
-
-    showToast('Booking parsed & saved ✓');
-    closeImportModal();
-    await loadBookings();
-    const newBooking = bookings.find(b => b.id === saved.id);
-    if (newBooking) openDetail(newBooking);
-  } catch(e) {
+    await saveParsedBooking(json.data);
+  } catch (err) {
     showToast('Network error', 'error');
     closeImportModal();
   }
 }
 
-async function parseBooking() {
+async function parseBookingText() {
   const rawText = document.getElementById('rawText').value.trim();
-  if (!rawText) { showToast('Please paste booking text, or use Smart Import for PDFs.', 'warning'); return; }
-
-  showLoading(true);
+  if (!rawText) {
+    showToast('Please paste booking text first.', 'warning');
+    return;
+  }
+  
+  document.getElementById('importTabsContainer').style.display = 'none';
+  document.getElementById('textImportPanel').style.display = 'none';
+  document.getElementById('importProcessing').classList.add('active');
+  
   try {
     const fd = new FormData();
     fd.append('text', rawText);
-
     const r = await fetch('/api/hotels/parse', { method: 'POST', body: fd });
     const json = await r.json();
-    if (!r.ok || !json.success) { showToast(json.error || 'Parse failed', 'error'); return; }
-
-    const saveR = await fetch('/api/hotels', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(json.data)
-    });
-    const saved = await saveR.json();
-    if (!saveR.ok) { showToast(saved.error || 'Save failed', 'error'); return; }
-
-    showToast('Booking parsed & saved ✓');
-    clearParser();
-    await loadBookings();
-    const newBooking = bookings.find(b => b.id === saved.id);
-    if (newBooking) openDetail(newBooking);
-  } catch(e) {
+    if (!r.ok || !json.success) {
+      showToast(json.error || 'Parse failed', 'error');
+      closeImportModal();
+      return;
+    }
+    await saveParsedBooking(json.data);
+  } catch (err) {
     showToast('Network error', 'error');
-  } finally {
-    showLoading(false);
+    closeImportModal();
   }
 }
 
-function clearParser() {
-  document.getElementById('rawText').value = '';
+async function saveParsedBooking(payload) {
+  const saveR = await fetch('/api/hotels', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const saved = await saveR.json();
+  if (!saveR.ok) {
+    showToast(saved.error || 'Save failed', 'error');
+    closeImportModal();
+    return;
+  }
+  showToast('Booking parsed and saved');
+  closeImportModal();
+  if (window.HOTEL_BOOKING_ID) {
+    window.location.href = `/hotels/${saved.id}`;
+    return;
+  }
+  await loadBookings();
+  window.location.href = `/hotels/${saved.id}`;
 }
 
-// ── Load bookings ─────────────────────────────────────────────────────────────
+function clearParser() {
+  const rawText = document.getElementById('rawText');
+  if (rawText) rawText.value = '';
+}
+
 async function loadBookings() {
   try {
     const r = await fetch('/api/hotels');
     bookings = await r.json();
     renderGrid();
-  } catch(e) { console.error(e); }
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 function renderGrid() {
   const grid = document.getElementById('hotelGrid');
   const empty = document.getElementById('emptyState');
-  if (!bookings.length) { grid.innerHTML = ''; empty.style.display = 'block'; return; }
-  empty.style.display = 'none';
-  grid.innerHTML = bookings.map(b => `
-    <div class="hotel-card" onclick="openDetail(bookings.find(x=>x.id==='${b.id}'))">
+  const inDetail = Boolean(window.HOTEL_BOOKING_ID);
+  if (!grid || !empty) return;
+  if (!bookings.length) {
+    grid.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = inDetail ? 'none' : 'none';
+  grid.innerHTML = bookings.map(renderCard).join('');
+}
+
+function renderCard(b) {
+  return `
+    <div class="hotel-card" onclick="openDetailRoute('${b.id}')">
       <div class="hotel-card-img">
-        ${b.image_url ? `<img src="${b.image_url}" alt="${b.hotel_name||'Hotel'}" onerror="this.parentElement.innerHTML=HOTEL_SVG">` : HOTEL_SVG}
+        ${b.image_url ? `<img src="${b.image_url}" alt="${esc(b.hotel_name || 'Hotel')}" onerror="this.parentElement.innerHTML=HOTEL_SVG">` : HOTEL_SVG}
       </div>
       <div class="hotel-card-body">
-        <div class="hotel-card-name">${esc(b.hotel_name||'Unknown Hotel')}</div>
+        <div class="hotel-card-name">${esc(b.hotel_name || 'Unknown Hotel')}</div>
         <div class="hotel-card-meta">${formatCardMeta(b)}</div>
         <div class="hotel-card-dates">
-          ${b.check_in_date?`<span class="date-chip">IN ${b.check_in_date}</span>`:''}
-          ${b.check_out_date?`<span class="date-chip">OUT ${b.check_out_date}</span>`:''}
+          ${b.check_in_date ? `<span class="date-chip">IN ${esc(b.check_in_date)}</span>` : ''}
+          ${b.check_out_date ? `<span class="date-chip">OUT ${esc(b.check_out_date)}</span>` : ''}
         </div>
         <div class="hotel-card-footer">
           <span class="hotel-amount">${formatHotelAmount(b)}</span>
           <div class="hotel-card-actions" onclick="event.stopPropagation()">
-            <button class="btn btn-pdf btn-sm" onclick="downloadPDF('${b.id}')">PDF</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteBooking('${b.id}')">✕</button>
+            <button class="btn btn-pdf btn-sm" onclick="downloadPDF('${b.id}', this)">PDF</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteBooking('${b.id}')">&times;</button>
           </div>
         </div>
       </div>
-    </div>`).join('');
+    </div>`;
 }
 
-// ── Detail panel ──────────────────────────────────────────────────────────────
-function openDetail(b) {
-  if (!b) return;
-  currentBooking = b;
-  uploadedImageUrl = null;
+function openDetailRoute(id) {
+  window.location.href = `/hotels/${id}`;
+}
+
+async function loadDetail(id) {
+  try {
+    const r = await fetch(`/api/hotels/${id}`);
+    if (!r.ok) {
+      showToast('Hotel booking not found', 'error');
+      window.location.href = '/hotels';
+      return;
+    }
+    const booking = await r.json();
+    currentBooking = booking;
+    uploadedImageUrl = null;
+    renderDetail(booking);
+  } catch (err) {
+    showToast('Unable to load booking', 'error');
+    window.location.href = '/hotels';
+  }
+}
+
+function togglePaidLogo() {
+  if (!currentBooking) return;
+  const paidToggle = document.getElementById('paidLogoToggle');
+  if (paidToggle) {
+    currentBooking.show_paid_logo = !currentBooking.show_paid_logo;
+    paidToggle.classList.toggle('active', currentBooking.show_paid_logo);
+    paidToggle.textContent = currentBooking.show_paid_logo ? 'Paid in Full: On' : 'Paid in Full: Off';
+  }
+}
+
+function renderDetail(b) {
   document.getElementById('detailTitle').textContent = b.hotel_name || 'Hotel Booking';
+  document.getElementById('detailSubtitle').textContent = [b.booking_id, b.guest_name, b.check_in_date ? `Check-in ${b.check_in_date}` : ''].filter(Boolean).join(' · ');
   document.getElementById('detailBody').innerHTML = buildDetailHTML(b);
-  const primaryInput = document.getElementById('f_guest_name');
-  if (primaryInput) primaryInput.dataset.autoPrimary = primaryInput.value.trim() ? 'false' : 'true';
-  const roomTypeInput = document.getElementById('f_room_type');
-  if (roomTypeInput) roomTypeInput.dataset.autoRoomType = roomTypeInput.value.trim() ? 'false' : 'true';
-  syncGuestSummaryFields();
-  document.getElementById('detailPanel').classList.add('open');
-  document.getElementById('detailOverlay').classList.add('open');
+  const paidToggle = document.getElementById('paidLogoToggle');
+  if (paidToggle) {
+    const active = Boolean(b.show_paid_logo);
+    paidToggle.classList.toggle('active', active);
+    paidToggle.textContent = active ? 'Paid in Full: On' : 'Paid in Full: Off';
+  }
+  document.getElementById('hotelDetailPage').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function closeDetail() {
-  document.getElementById('detailPanel').classList.remove('open');
-  document.getElementById('detailOverlay').classList.remove('open');
-  currentBooking = null;
+  window.location.href = '/hotels';
 }
 
-function formatHotelAmount(b) {
-  if (b?.total_amount == null || b.total_amount === '') return '-';
-  const prefix = b?.currency ? `${esc(b.currency)} ` : '';
-  return `${prefix}${Number(b.total_amount).toLocaleString('en-IN',{minimumFractionDigits:0,maximumFractionDigits:2})}`;
+function buildDetailHTML(b) {
+  const rooms = getRoomsForDisplay(b);
+  const amenities = Array.isArray(b.amenities) ? b.amenities : [];
+  return `
+    <div class="detail-grid">
+      <div class="detail-panel">
+        <div class="detail-img-wrap" id="detailImgWrap" title="Paste an image into this booking">
+          <div class="img-paste-hint">Ctrl+V / Cmd+V to paste image</div>
+          ${b.image_url ? `<img id="detailImg" src="${b.image_url}" alt="Hotel">` : `<span id="detailImg">${HOTEL_SVG}</span>`}
+          <button class="img-overlay-btn" type="button" onclick="triggerImageUpload()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+            Upload Custom Image
+          </button>
+        </div>
+        <input type="file" id="imgUploadInput" accept="image/*" style="display:none" onchange="uploadCustomImage(this)">
+        <div class="section-title">Hotel Details</div>
+        <div class="form-row">
+          <div class="input-group"><label>Hotel Name</label><input id="f_hotel_name" value="${esc(b.hotel_name || '')}"></div>
+          <div class="input-group"><label>Phone</label><input id="f_hotel_phone" value="${esc(b.hotel_phone || '')}"></div>
+        </div>
+        <div class="input-group"><label>Address</label><input id="f_hotel_address" value="${esc(b.hotel_address || '')}"></div>
+        <div class="form-row">
+          <div class="input-group"><label>Booking Reference</label><input id="f_booking_id" value="${esc(b.booking_id || b.booking_confirmation || '')}"></div>
+          <div class="input-group"><label>Primary Guest</label><input id="f_guest_name" value="${esc(b.guest_name || '')}" oninput="updatePrimaryGuest(this.value)"></div>
+        </div>
+        <div class="form-row">
+          <div class="input-group"><label>Check-in Date</label><input id="f_check_in_date" type="date" value="${b.check_in_date || ''}"></div>
+          <div class="input-group"><label>Check-out Date</label><input id="f_check_out_date" type="date" value="${b.check_out_date || ''}"></div>
+        </div>
+        <div class="form-row">
+          <div class="input-group"><label>Check-in Time</label><input id="f_check_in_time" value="${esc(b.check_in_time || '')}" placeholder="2:00 PM"></div>
+          <div class="input-group"><label>Check-out Time</label><input id="f_check_out_time" value="${esc(b.check_out_time || '')}" placeholder="11:00 AM"></div>
+        </div>
+        <div class="form-row">
+          <div class="input-group"><label>Total Guests</label><input id="f_num_guests" type="number" min="1" value="${b.num_guests || 1}"></div>
+          <div class="input-group"><label>Room Count</label><input id="f_room_count" type="number" min="1" value="${b.room_count || Math.max(1, rooms.length || 1)}"></div>
+        </div>
+        <div class="form-row">
+          <div class="input-group"><label>Room Type</label><input id="f_room_type" value="${esc(b.room_type || '')}" oninput="updatePrimaryRoomType(this.value)"></div>
+          <div class="input-group"><label>Meal Plan</label><input id="f_meal_plan" value="${esc(b.meal_plan || '')}"></div>
+        </div>
+        <div class="currency-amount-row">
+          <div class="input-group"><label>Currency</label><input id="f_currency" value="${esc(b.currency || '')}" placeholder="INR / USD / AED"></div>
+          <div class="input-group"><label>Total Amount</label><input id="f_total_amount" type="text" inputmode="decimal" value="${b.total_amount ?? ''}"></div>
+        </div>
+        <div class="input-group"><label>Special Instructions</label><textarea id="f_special_instructions">${esc(b.special_instructions || '')}</textarea></div>
+      </div>
+      <div class="detail-panel">
+        <h3>Rooms and Guests</h3>
+        ${renderRoomsEditor(rooms)}
+        <div class="section-title">Amenities</div>
+        ${renderAmenitiesEditor(amenities)}
+      </div>
+    </div>
+    <div class="detail-actions" style="align-items:center;">
+      <button class="btn btn-primary" id="saveChangesBtn" type="button" onclick="saveDetail()">Save Changes</button>
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-right:auto; margin-left:0.5rem;">
+        <span style="font-size:0.9rem; color:#475569; font-weight:600;">Paid in Full</span>
+        <label class="switch">
+          <input type="checkbox" id="paidLogoToggle" onchange="togglePaidLogo()">
+          <span class="slider round"></span>
+        </label>
+      </div>
+      <button class="btn btn-secondary" type="button" onclick="openSpecialRequestModal()">Special Requests</button>
+      <button class="btn btn-pdf" id="downloadPdfBtn" type="button" onclick="downloadPDF('${b.id}', this)">Download PDF</button>
+      <button class="btn btn-danger" type="button" onclick="deleteBooking('${b.id}')">Delete</button>
+    </div>`;
 }
 
 function getRoomsForDisplay(b) {
@@ -481,6 +732,13 @@ function formatCardMeta(b) {
   return parts.join(' · ');
 }
 
+function formatHotelAmount(b) {
+  if (b?.total_amount == null || b.total_amount === '') return '-';
+  const prefix = b?.currency ? `${esc(b.currency)} ` : '';
+  const value = Number(b.total_amount);
+  return Number.isFinite(value) ? `${prefix}${value.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}` : `${prefix}${esc(String(b.total_amount))}`;
+}
+
 function parseAmountInput(value) {
   const cleaned = String(value ?? '').replace(/,/g, '').trim();
   if (!cleaned) return null;
@@ -488,22 +746,14 @@ function parseAmountInput(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function renderGuestFields(room, roomIndex) {
-  const guestCount = Math.max(1, parseInt(room.guest_count, 10) || 1);
-  const guests = Array.isArray(room.guests) ? room.guests : [];
-  const rows = [];
-  for (let i = 0; i < guestCount; i += 1) {
-    rows.push(`
-      <div class="guest-field-row">
-        <span>${i === 0 ? 'Primary Guest' : `Guest ${i + 1}`}</span>
-        <input type="text" value="${esc(guests[i] || '')}" placeholder="${i === 0 ? 'Primary guest name' : `Guest ${i + 1} name`}" oninput="updateRoomGuestName(${roomIndex}, ${i}, this.value)">
-      </div>`);
-  }
-  return `<div class="guest-fields">${rows.join('')}</div>`;
+function renderRoomsEditor(roomsInput) {
+  const items = Array.isArray(roomsInput) ? roomsInput : [];
+  return `
+    <div id="roomList" class="room-list">${renderRoomCards(items)}</div>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="addRoom()">Add Room</button>`;
 }
 
-function renderRoomCards(rooms) {
-  const items = Array.isArray(rooms) ? rooms : [];
+function renderRoomCards(items) {
   if (!items.length) {
     return '<span style="color:#94a3b8;font-size:.85rem">No rooms extracted yet</span>';
   }
@@ -534,136 +784,18 @@ function renderRoomCards(rooms) {
     </div>`).join('');
 }
 
-function renderRoomsEditor(roomsInput) {
-  return `
-    <p class="section-title">Rooms & Guests</p>
-    <div id="roomList" class="room-list">${renderRoomCards(roomsInput)}</div>
-    <button type="button" class="btn btn-secondary btn-sm" onclick="addRoom()">Add Room</button>`;
-}
-
-function renderAmenitiesEditor(amenities) {
-  const items = Array.isArray(amenities) ? amenities : [];
-  const chips = items.length
-    ? items.map((a, i) => `
-      <span class="amenity-chip">
-        <span class="amenity-chip-label">${esc(a)}</span>
-        <span class="amenity-chip-actions">
-          <button type="button" class="chip-icon-btn" title="Edit amenity" onclick="editAmenity(${i})">&#9998;</button>
-          <button type="button" class="chip-icon-btn" title="Delete amenity" onclick="removeAmenity(${i})">&times;</button>
-        </span>
-      </span>`).join('')
-    : '<span style="color:#94a3b8;font-size:.85rem">No amenities added yet</span>';
-  return `
-    <p class="section-title">Amenities</p>
-    <div id="amenityList" class="amenity-chips">${chips}</div>
-    <div class="amenity-add-row">
-      <input id="f_new_amenity" type="text" placeholder="Add amenity" onkeydown="if(event.key==='Enter'){event.preventDefault();addAmenity();}">
-      <button type="button" class="btn btn-secondary btn-sm" onclick="addAmenity()">Add</button>
-    </div>`;
-}
-
-function buildDetailHTML(b) {
-  return `
-    <div class="detail-img-wrap" id="detailImgWrap" title="You can also paste an image directly from clipboard">
-      <div class="img-paste-hint">Ctrl+V / Cmd+V to paste image</div>
-      ${b.image_url?`<img id="detailImg" src="${b.image_url}" alt="Hotel">`:
-        `<span id="detailImg">${HOTEL_SVG}</span>`}
-      <button class="img-overlay-btn" onclick="triggerImageUpload()">
-        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-        Upload Custom Image
-      </button>
-    </div>
-    <input type="file" id="imgUploadInput" accept="image/*" style="display:none" onchange="uploadCustomImage(this)">
-    <p class="section-title">Hotel Details</p>
-    <div class="form-row">
-      <div class="input-group"><label>Hotel Name</label><input id="f_hotel_name" value="${esc(b.hotel_name||'')}"></div>
-      <div class="input-group"><label>Phone</label><input id="f_hotel_phone" value="${esc(b.hotel_phone||'')}"></div>
-    </div>
-    <div class="form-row">
-      <div class="input-group"><label>Booking Confirmation</label><input id="f_booking_id" value="${esc(b.booking_confirmation||b.booking_id||'')}"></div>
-      <div class="input-group"><label>Primary Guest</label><input id="f_guest_name" value="${esc(b.guest_name||'')}" oninput="updatePrimaryGuest(this.value)"></div>
-    </div>
-    <div class="input-group"><label>Address</label><input id="f_hotel_address" value="${esc(b.hotel_address||'')}"></div>
-
-    <p class="section-title">Guest & Stay</p>
-    <div class="form-row">
-      <div class="input-group"><label>Total Guests</label><input id="f_num_guests" type="number" min="1" value="${b.num_guests||1}" oninput="applyTotalGuests(this.value)"></div>
-      <div class="input-group"><label>Room Count</label><input id="f_room_count" type="number" min="1" value="${b.room_count||1}" oninput="applyRoomCount(this.value)"></div>
-    </div>
-    <div class="form-row">
-      <div class="input-group"><label>Check-In</label>
-        <div style="display:flex;gap:0.5rem">
-          <input id="f_check_in_date" type="date" value="${b.check_in_date||''}" style="flex:2">
-          <input id="f_check_in_time" type="text" placeholder="e.g. 2:00 PM" value="${esc(b.check_in_time||'')}" style="flex:1">
-        </div>
-      </div>
-      <div class="input-group"><label>Check-Out</label>
-        <div style="display:flex;gap:0.5rem">
-          <input id="f_check_out_date" type="date" value="${b.check_out_date||''}" style="flex:2">
-          <input id="f_check_out_time" type="text" placeholder="e.g. 11:00 AM" value="${esc(b.check_out_time||'')}" style="flex:1">
-        </div>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="input-group"><label>Room Type</label><input id="f_room_type" value="${esc(b.room_type||'')}" oninput="updatePrimaryRoomType(this.value)"></div>
-      <div class="input-group"><label>Meal Plan</label><input id="f_meal_plan" value="${esc(b.meal_plan||'')}"></div>
-    </div>
-    <div class="currency-amount-row">
-      <div class="input-group"><label>Currency</label><input id="f_currency" value="${esc(b.currency||'')}" placeholder="INR / USD / AED"></div>
-      <div class="input-group"><label>Total Amount</label><input id="f_total_amount" type="text" inputmode="decimal" value="${b.total_amount??''}"></div>
-    </div>
-    <div class="input-group"><label>Special Instructions</label><textarea id="f_special_instructions">${esc(b.special_instructions||'')}</textarea></div>
-
-    ${renderRoomsEditor(getRoomsForDisplay(b))}
-    ${renderAmenitiesEditor(b.amenities||[])}
-
-    <div class="action-row" style="margin-top: 2rem; border-top: 1px solid #f1f5f9; padding-top: 1.5rem;">
-      <button class="btn btn-primary" onclick="saveDetail()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Changes</button>
-      <button class="btn btn-pdf" onclick="downloadPDF('${b.id}')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download PDF</button>
-      <button class="btn btn-danger" onclick="deleteBooking('${b.id}')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Delete</button>
-    </div>`;
-}
-
-function triggerImageUpload() { document.getElementById('imgUploadInput').click(); }
-
-async function uploadImageFormData(fd) {
-  showLoading(true);
-  try {
-    const r = await fetch('/api/hotels/upload-image', { method: 'POST', body: fd });
-    const j = await r.json();
-    if (!r.ok) { showToast(j.error||'Upload failed','error'); return; }
-    uploadedImageUrl = j.image_url;
-    if (currentBooking) currentBooking.image_url = j.image_url;
-    const wrap = document.getElementById('detailImgWrap');
-    if (wrap) {
-      // Find image tag or placeholder and replace it
-      const imgElem = document.getElementById('detailImg');
-      if (imgElem) {
-        imgElem.outerHTML = `<img id="detailImg" src="${j.image_url}" alt="Hotel">`;
-      } else {
-        // If somehow missing
-        wrap.insertAdjacentHTML('afterbegin', `<img id="detailImg" src="${j.image_url}" alt="Hotel">`);
-      }
-    }
-    showToast('Image updated ✓');
-    renderGrid();
-  } finally { showLoading(false); }
-}
-
-async function uploadCustomImage(input) {
-  const file = input.files?.[0];
-  if (!file) return;
-  const fd = new FormData();
-  fd.append('image', file);
-  await uploadImageFormData(fd);
-}
-
-function getAmenities() {
-  return Array.isArray(currentBooking?.amenities) ? [...currentBooking.amenities] : [];
-}
-
-function getRooms() {
-  return Array.isArray(currentBooking?.rooms) ? [...currentBooking.rooms] : [];
+function renderGuestFields(room, roomIndex) {
+  const guestCount = Math.max(1, parseInt(room.guest_count, 10) || 1);
+  const guests = Array.isArray(room.guests) ? room.guests : [];
+  const rows = [];
+  for (let i = 0; i < guestCount; i += 1) {
+    rows.push(`
+      <div class="guest-field-row">
+        <span>${i === 0 ? 'Primary Guest' : `Guest ${i + 1}`}</span>
+        <input type="text" value="${esc(guests[i] || '')}" placeholder="${i === 0 ? 'Primary guest name' : `Guest ${i + 1} name`}" oninput="updateRoomGuestName(${roomIndex}, ${i}, this.value)">
+      </div>`);
+  }
+  return `<div class="guest-fields">${rows.join('')}</div>`;
 }
 
 function normalizeRoom(room = {}) {
@@ -678,38 +810,14 @@ function normalizeRoom(room = {}) {
   };
 }
 
-function syncPrimaryGuestField() {
-  const primaryInput = document.getElementById('f_guest_name');
-  if (!primaryInput) return;
-  const rooms = getRooms();
-  const firstNamedGuest = rooms.flatMap(room => room.guests || []).find(Boolean);
-  if (!primaryInput.value.trim() || primaryInput.dataset.autoPrimary === 'true') {
-    primaryInput.value = firstNamedGuest || primaryInput.value.trim();
-    primaryInput.dataset.autoPrimary = firstNamedGuest ? 'true' : 'false';
-  }
-}
-
-function syncGuestSummaryFields() {
-  const summary = buildRoomSummary(getRooms());
-  const roomCountInput = document.getElementById('f_room_count');
-  const guestCountInput = document.getElementById('f_num_guests');
-  const roomTypeInput = document.getElementById('f_room_type');
-  if (roomCountInput) roomCountInput.value = summary.room_count || 1;
-  if (guestCountInput) guestCountInput.value = summary.num_guests || 1;
-  if (roomTypeInput && (!roomTypeInput.value.trim() || roomTypeInput.dataset.autoRoomType === 'true')) {
-    roomTypeInput.value = summary.room_type || '';
-    roomTypeInput.dataset.autoRoomType = summary.room_type ? 'true' : 'false';
-  }
-  syncPrimaryGuestField();
+function getRooms() {
+  return Array.isArray(currentBooking?.rooms) ? currentBooking.rooms.map(normalizeRoom) : [];
 }
 
 function setRooms(nextRooms) {
   if (!currentBooking) return;
-  currentBooking.rooms = nextRooms.map(room => normalizeRoom(room));
-  const list = document.getElementById('roomList');
-  if (!list) return;
-  list.innerHTML = renderRoomCards(currentBooking.rooms);
-  syncGuestSummaryFields();
+  currentBooking.rooms = nextRooms.map(normalizeRoom);
+  document.getElementById('roomList').innerHTML = renderRoomCards(currentBooking.rooms);
 }
 
 function addRoom() {
@@ -746,55 +854,6 @@ function updateRoomGuestName(index, guestIndex, value) {
   setRooms(rooms);
 }
 
-function applyRoomCount(value) {
-  const nextCount = Math.max(1, parseInt(value, 10) || 1);
-  const rooms = getRooms().map(room => normalizeRoom(room));
-  while (rooms.length < nextCount) {
-    rooms.push({ room_type: '', guest_count: 1, guests: [''], guest_summary: '' });
-  }
-  setRooms(rooms.slice(0, nextCount));
-}
-
-function applyTotalGuests(value) {
-  const target = Math.max(1, parseInt(value, 10) || 1);
-  const rooms = getRooms().map(room => normalizeRoom(room));
-  if (!rooms.length) {
-    setRooms([{ room_type: '', guest_count: target, guests: Array.from({ length: target }, () => ''), guest_summary: '' }]);
-    return;
-  }
-  let remaining = target;
-  const updated = rooms.map((room, index) => {
-    const minForRest = rooms.length - index - 1;
-    const assigned = index === rooms.length - 1
-      ? Math.max(1, remaining)
-      : Math.max(1, Math.min(room.guest_count || 1, remaining - minForRest));
-    remaining -= assigned;
-    return normalizeRoom({ ...room, guest_count: assigned });
-  });
-  setRooms(updated);
-}
-
-function buildRoomSummary(roomsInput) {
-  const rooms = Array.isArray(roomsInput) ? roomsInput.filter(Boolean) : [];
-  const roomCount = rooms.length || null;
-  const firstRoomType = rooms.find(room => room.room_type)?.room_type || '';
-  let primaryGuestName = '';
-  let countedGuests = 0;
-  let fallbackSummary = '';
-  rooms.forEach(room => {
-    const guests = Array.isArray(room.guests) ? room.guests.filter(Boolean) : [];
-    countedGuests += Math.max(guests.length, parseInt(room.guest_count, 10) || 0);
-    if (!primaryGuestName && guests.length) primaryGuestName = guests[0];
-    if (!fallbackSummary && room.guest_summary) fallbackSummary = room.guest_summary;
-  });
-  return {
-    room_count: roomCount,
-    room_type: firstRoomType,
-    num_guests: countedGuests || null,
-    guest_name: primaryGuestName || fallbackSummary || '',
-  };
-}
-
 function updatePrimaryGuest(value) {
   const input = document.getElementById('f_guest_name');
   if (input) input.dataset.autoPrimary = 'false';
@@ -821,21 +880,43 @@ function updatePrimaryRoomType(value) {
   setRooms(rooms);
 }
 
+function getAmenities() {
+  return Array.isArray(currentBooking?.amenities) ? [...currentBooking.amenities] : [];
+}
+
 function setAmenities(nextAmenities) {
   if (!currentBooking) return;
   currentBooking.amenities = nextAmenities.filter(Boolean).map(a => String(a).trim()).filter(Boolean);
-  const list = document.getElementById('amenityList');
-  if (!list) return;
-  list.innerHTML = currentBooking.amenities.length
+  document.getElementById('amenityList').innerHTML = currentBooking.amenities.length
     ? currentBooking.amenities.map((a, i) => `
       <span class="amenity-chip">
-        <span class="amenity-chip-label">${esc(a)}</span>
+        <span>${esc(a)}</span>
         <span class="amenity-chip-actions">
-          <button type="button" class="chip-icon-btn" title="Edit amenity" onclick="editAmenity(${i})">&#9998;</button>
+          <button type="button" class="chip-icon-btn" title="Edit amenity" onclick="editAmenity(${i})"><span style="display:inline-block;transform:scaleX(-1);">&#9998;</span></button>
           <button type="button" class="chip-icon-btn" title="Delete amenity" onclick="removeAmenity(${i})">&times;</button>
         </span>
       </span>`).join('')
     : '<span style="color:#94a3b8;font-size:.85rem">No amenities added yet</span>';
+}
+
+function renderAmenitiesEditor(amenities) {
+  const items = Array.isArray(amenities) ? amenities : [];
+  const chips = items.length
+    ? items.map((a, i) => `
+      <span class="amenity-chip">
+        <span>${esc(a)}</span>
+        <span class="amenity-chip-actions">
+          <button type="button" class="chip-icon-btn" title="Edit amenity" onclick="editAmenity(${i})"><span style="display:inline-block;transform:scaleX(-1);">&#9998;</span></button>
+          <button type="button" class="chip-icon-btn" title="Delete amenity" onclick="removeAmenity(${i})">&times;</button>
+        </span>
+      </span>`).join('')
+    : '<span style="color:#94a3b8;font-size:.85rem">No amenities added yet</span>';
+  return `
+    <div id="amenityList" class="amenity-chips">${chips}</div>
+    <div class="amenity-add-row">
+      <input id="f_new_amenity" type="text" placeholder="Add amenity" onkeydown="if(event.key==='Enter'){event.preventDefault();addAmenity();}">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="addAmenity()">Add</button>
+    </div>`;
 }
 
 function addAmenity() {
@@ -862,6 +943,46 @@ function removeAmenity(index) {
   setAmenities(amenities);
 }
 
+function togglePaidLogo() {
+  if (!currentBooking) return;
+  currentBooking.show_paid_logo = !currentBooking.show_paid_logo;
+  const btn = document.getElementById('paidLogoToggle');
+  if (btn) {
+    btn.classList.toggle('active', Boolean(currentBooking.show_paid_logo));
+    btn.textContent = currentBooking.show_paid_logo ? 'Paid in Full: On' : 'Paid in Full: Off';
+  }
+}
+
+function triggerImageUpload() {
+  document.getElementById('imgUploadInput').click();
+}
+
+async function uploadImageFormData(fd) {
+  showLoading(true);
+  try {
+    const r = await fetch('/api/hotels/upload-image', { method: 'POST', body: fd });
+    const j = await r.json();
+    if (!r.ok) { showToast(j.error || 'Upload failed', 'error'); return; }
+    uploadedImageUrl = j.image_url;
+    if (currentBooking) currentBooking.image_url = j.image_url;
+    const imgElem = document.getElementById('detailImg');
+    if (imgElem) {
+      imgElem.outerHTML = `<img id="detailImg" src="${j.image_url}" alt="Hotel">`;
+    }
+    showToast('Image updated');
+  } finally {
+    showLoading(false);
+  }
+}
+
+async function uploadCustomImage(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('image', file);
+  await uploadImageFormData(fd);
+}
+
 async function saveDetail() {
   if (!currentBooking) return;
   const rooms = getRooms();
@@ -872,13 +993,13 @@ async function saveDetail() {
     hotel_phone: document.getElementById('f_hotel_phone').value,
     hotel_address: document.getElementById('f_hotel_address').value,
     guest_name: document.getElementById('f_guest_name').value || roomSummary.guest_name,
-    num_guests: parseInt(document.getElementById('f_num_guests').value)||roomSummary.num_guests,
-    check_in_date: document.getElementById('f_check_in_date').value||null,
-    check_in_time: document.getElementById('f_check_in_time').value||null,
-    check_out_date: document.getElementById('f_check_out_date').value||null,
-    check_out_time: document.getElementById('f_check_out_time').value||null,
+    num_guests: parseInt(document.getElementById('f_num_guests')?.value) || roomSummary.num_guests || 1,
+    check_in_date: document.getElementById('f_check_in_date').value || null,
+    check_in_time: document.getElementById('f_check_in_time').value || null,
+    check_out_date: document.getElementById('f_check_out_date').value || null,
+    check_out_time: document.getElementById('f_check_out_time').value || null,
     room_type: document.getElementById('f_room_type').value || roomSummary.room_type,
-    room_count: parseInt(document.getElementById('f_room_count').value)||roomSummary.room_count||1,
+    room_count: parseInt(document.getElementById('f_room_count')?.value) || roomSummary.room_count || 1,
     rooms,
     meal_plan: document.getElementById('f_meal_plan').value,
     currency: document.getElementById('f_currency').value,
@@ -886,18 +1007,22 @@ async function saveDetail() {
     amenities: getAmenities(),
     special_instructions: document.getElementById('f_special_instructions').value,
     image_url: uploadedImageUrl || currentBooking.image_url,
+    show_paid_logo: Boolean(currentBooking.show_paid_logo),
   };
   showLoading(true);
   try {
     const r = await fetch(`/api/hotels/${currentBooking.id}`, {
-      method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
     });
     const j = await r.json();
-    if (!r.ok) { showToast(j.error||'Save failed','error'); return; }
+    if (!r.ok) { showToast(j.error || 'Save failed', 'error'); return; }
     Object.assign(currentBooking, j.data);
-    await loadBookings();
-    showToast('Saved ✓');
-  } finally { showLoading(false); }
+    showToast('Saved');
+  } finally {
+    showLoading(false);
+  }
 }
 
 async function deleteBooking(id) {
@@ -905,18 +1030,18 @@ async function deleteBooking(id) {
   showLoading(true);
   try {
     await fetch(`/api/hotels/${id}`, { method: 'DELETE' });
-    closeDetail();
-    await loadBookings();
-    showToast('Deleted');
-  } finally { showLoading(false); }
+    window.location.href = '/hotels';
+  } finally {
+    showLoading(false);
+  }
 }
 
 function downloadPDF(id) {
-  if (!currentBooking && id !== currentBooking?.id) {
-    window.open(`/api/hotels/${id}/pdf`, '_blank'); return;
+  if (!currentBooking || currentBooking.id !== id) {
+    window.open(`/api/hotels/${id}/pdf`, '_blank');
+    return;
   }
-  // Send edited snapshot
-  const rooms = getRooms();
+  const rooms = currentBooking ? getRooms() : [];
   const roomSummary = buildRoomSummary(rooms);
   const payload = {
     booking_id: document.getElementById('f_booking_id')?.value,
@@ -924,41 +1049,614 @@ function downloadPDF(id) {
     hotel_phone: document.getElementById('f_hotel_phone')?.value,
     hotel_address: document.getElementById('f_hotel_address')?.value,
     guest_name: document.getElementById('f_guest_name')?.value || roomSummary.guest_name,
-    num_guests: parseInt(document.getElementById('f_num_guests')?.value)||roomSummary.num_guests,
-    check_in_date: document.getElementById('f_check_in_date')?.value||null,
-    check_in_time: document.getElementById('f_check_in_time')?.value||null,
-    check_out_date: document.getElementById('f_check_out_date')?.value||null,
-    check_out_time: document.getElementById('f_check_out_time')?.value||null,
+    num_guests: parseInt(document.getElementById('f_num_guests')?.value) || roomSummary.num_guests || 1,
+    check_in_date: document.getElementById('f_check_in_date')?.value || null,
+    check_in_time: document.getElementById('f_check_in_time')?.value || null,
+    check_out_date: document.getElementById('f_check_out_date')?.value || null,
+    check_out_time: document.getElementById('f_check_out_time')?.value || null,
     room_type: document.getElementById('f_room_type')?.value || roomSummary.room_type,
-    room_count: parseInt(document.getElementById('f_room_count')?.value)||roomSummary.room_count||1,
+    room_count: parseInt(document.getElementById('f_room_count')?.value) || roomSummary.room_count || 1,
     rooms,
     meal_plan: document.getElementById('f_meal_plan')?.value,
     currency: document.getElementById('f_currency')?.value,
     total_amount: parseAmountInput(document.getElementById('f_total_amount')?.value),
     amenities: getAmenities(),
     special_instructions: document.getElementById('f_special_instructions')?.value,
-    uploaded_image_url: uploadedImageUrl||null,
+    uploaded_image_url: uploadedImageUrl || null,
     image_url: uploadedImageUrl || currentBooking?.image_url,
+    show_paid_logo: Boolean(currentBooking?.show_paid_logo),
   };
   fetch(`/api/hotels/${id}/pdf`, {
-    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
   }).then(r => r.blob()).then(blob => {
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'Hotel_Voucher.pdf';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Hotel_Voucher.pdf';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   });
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+function buildRoomSummary(roomsInput) {
+  const rooms = Array.isArray(roomsInput) ? roomsInput.filter(Boolean) : [];
+  const roomCount = rooms.length || null;
+  const firstRoomType = rooms.find(room => room.room_type)?.room_type || '';
+  let primaryGuestName = '';
+  let countedGuests = 0;
+  let fallbackSummary = '';
+  rooms.forEach(room => {
+    const guests = Array.isArray(room.guests) ? room.guests.filter(Boolean) : [];
+    countedGuests += Math.max(guests.length, parseInt(room.guest_count, 10) || 0);
+    if (!primaryGuestName && guests.length) primaryGuestName = guests[0];
+    if (!fallbackSummary && room.guest_summary) fallbackSummary = room.guest_summary;
+  });
+  return {
+    room_count: roomCount,
+    room_type: firstRoomType,
+    num_guests: countedGuests || null,
+    guest_name: primaryGuestName || fallbackSummary || '',
+  };
+}
+
+function setRooms(nextRooms) {
+  if (!currentBooking) return;
+  currentBooking.rooms = nextRooms.map(normalizeRoom);
+  const list = document.getElementById('roomList');
+  if (list) list.innerHTML = renderRoomCards(currentBooking.rooms);
+  updateDetailHeaderPreview();
+}
+
+function setAmenities(nextAmenities) {
+  if (!currentBooking) return;
+  currentBooking.amenities = nextAmenities.filter(Boolean).map(a => String(a).trim()).filter(Boolean);
+  const list = document.getElementById('amenityList');
+  if (list) {
+    list.innerHTML = currentBooking.amenities.length
+      ? currentBooking.amenities.map((a, i) => `
+        <span class="amenity-chip">
+          <span>${esc(a)}</span>
+          <span class="amenity-chip-actions">
+            <button type="button" class="chip-icon-btn" title="Edit amenity" onclick="editAmenity(${i})"><span style="display:inline-block;transform:scaleX(-1);">&#9998;</span></button>
+            <button type="button" class="chip-icon-btn" title="Delete amenity" onclick="removeAmenity(${i})">&times;</button>
+          </span>
+        </span>`).join('')
+      : '<span style="color:#94a3b8;font-size:.85rem">No amenities added yet</span>';
+  }
+  updateDetailHeaderPreview();
+}
+
+async function saveDetail() {
+  if (!currentBooking) return;
+  const btn = document.getElementById('saveChangesBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<svg class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:4px;"><circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="16" stroke-linecap="round"></circle></svg> Saving...`;
+  }
+  
+  const rooms = getRooms();
+  const roomSummary = buildRoomSummary(rooms);
+  const currencyValue = getCurrencyValue();
+  const payload = {
+    booking_id: document.getElementById('f_booking_id').value,
+    hotel_name: document.getElementById('f_hotel_name').value,
+    hotel_phone: document.getElementById('f_hotel_phone').value,
+    hotel_address: document.getElementById('f_hotel_address').value,
+    guest_name: document.getElementById('f_guest_name').value || roomSummary.guest_name,
+    num_guests: parseInt(document.getElementById('f_num_guests')?.value) || roomSummary.num_guests || 1,
+    check_in_date: document.getElementById('f_check_in_date').value || null,
+    check_in_time: document.getElementById('f_check_in_time').value || null,
+    check_out_date: document.getElementById('f_check_out_date').value || null,
+    check_out_time: document.getElementById('f_check_out_time').value || null,
+    room_type: document.getElementById('f_room_type').value || roomSummary.room_type,
+    room_count: parseInt(document.getElementById('f_room_count')?.value) || roomSummary.room_count || 1,
+    rooms,
+    meal_plan: document.getElementById('f_meal_plan').value,
+    currency: currencyValue,
+    total_amount: parseAmountInput(document.getElementById('f_total_amount').value),
+    amenities: getAmenities(),
+    special_instructions: document.getElementById('f_special_instructions').value,
+    image_url: uploadedImageUrl || currentBooking.image_url || RESORT_FALLBACK_IMAGE,
+    show_paid_logo: Boolean(currentBooking.show_paid_logo),
+  };
+  try {
+    const r = await fetch(`/api/hotels/${currentBooking.id}`, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json();
+    if (!r.ok) { showToast(j.error || 'Save failed', 'error'); return; }
+    Object.assign(currentBooking, j.data);
+    bookings = bookings.map(item => item.id === j.data.id ? { ...item, ...j.data } : item);
+    showToast('Saved');
+    updateDetailHeaderPreview();
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `Save Changes`;
+    }
+  }
+}
+
+function downloadPDF(id, btnElement = null) {
+  const isCurrent = Boolean(currentBooking && currentBooking.id === id);
+  const btn = btnElement || (isCurrent ? document.getElementById('downloadPdfBtn') : null);
+  let originalText = btn ? btn.innerHTML : '';
+  
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<svg class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:4px;"><circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="16" stroke-linecap="round"></circle></svg> Generating...`;
+  }
+
+  if (!isCurrent) {
+    fetch(`/api/hotels/${id}/pdf`, { method: 'GET' })
+      .then(r => r.blob())
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'Hotel_Voucher.pdf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      })
+      .finally(() => {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+        }
+      });
+    return;
+  }
+  const rooms = getRooms();
+  const roomSummary = buildRoomSummary(rooms);
+  const currencyValue = getCurrencyValue();
+  const payload = {
+    booking_id: document.getElementById('f_booking_id')?.value,
+    hotel_name: document.getElementById('f_hotel_name')?.value,
+    hotel_phone: document.getElementById('f_hotel_phone')?.value,
+    hotel_address: document.getElementById('f_hotel_address')?.value,
+    guest_name: document.getElementById('f_guest_name')?.value || roomSummary.guest_name,
+    num_guests: parseInt(document.getElementById('f_num_guests')?.value) || roomSummary.num_guests || 1,
+    check_in_date: document.getElementById('f_check_in_date')?.value || null,
+    check_in_time: document.getElementById('f_check_in_time')?.value || null,
+    check_out_date: document.getElementById('f_check_out_date')?.value || null,
+    check_out_time: document.getElementById('f_check_out_time')?.value || null,
+    room_type: document.getElementById('f_room_type')?.value || roomSummary.room_type,
+    room_count: parseInt(document.getElementById('f_room_count')?.value) || roomSummary.room_count || 1,
+    rooms,
+    meal_plan: document.getElementById('f_meal_plan')?.value,
+    currency: currencyValue,
+    total_amount: parseAmountInput(document.getElementById('f_total_amount')?.value),
+    amenities: getAmenities(),
+    special_instructions: document.getElementById('f_special_instructions')?.value,
+    uploaded_image_url: uploadedImageUrl || null,
+    image_url: uploadedImageUrl || currentBooking?.image_url || RESORT_FALLBACK_IMAGE,
+    show_paid_logo: Boolean(currentBooking?.show_paid_logo),
+  };
+  fetch(`/api/hotels/${id}/pdf`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  }).then(r => r.blob()).then(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Hotel_Voucher.pdf';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }).finally(() => {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalText || `Download PDF`;
+    }
+  });
+}
+
+function formatHotelDate(value) {
+  if (!value) return '';
+  const raw = String(value).trim();
+  let dt = null;
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) {
+    dt = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+  } else {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) dt = parsed;
+  }
+  if (!dt || Number.isNaN(dt.getTime())) return raw;
+  const day = String(dt.getDate()).padStart(2, '0');
+  const month = dt.toLocaleString('en-US', { month: 'long' });
+  const year = String(dt.getFullYear()).slice(-2);
+  return `${day} ${month} ${year}`;
+}
+
+function getCurrencyValue() {
+  const select = document.getElementById('f_currency_select');
+  const custom = document.getElementById('f_currency_custom');
+  if (!select) {
+    return (currentBooking?.currency || 'INR').toUpperCase();
+  }
+  if (select.value === 'custom') {
+    return (custom?.value || '').trim().toUpperCase() || 'INR';
+  }
+  return select.value || 'INR';
+}
+
+function applyCurrencySelection(currency) {
+  const select = document.getElementById('f_currency_select');
+  const custom = document.getElementById('f_currency_custom');
+  if (!select || !custom) return;
+  const normalized = String(currency || '').trim().toUpperCase();
+  if (CURRENCY_OPTIONS.includes(normalized)) {
+    select.value = normalized;
+    custom.style.display = 'none';
+    custom.value = '';
+  } else {
+    select.value = 'custom';
+    custom.style.display = 'block';
+    custom.value = normalized || '';
+  }
+}
+
+function updateDetailHeaderPreview() {
+  const title = (document.getElementById('f_hotel_name')?.value || currentBooking?.hotel_name || 'Hotel Booking').trim();
+  const ref = (document.getElementById('f_booking_id')?.value || currentBooking?.booking_id || currentBooking?.booking_confirmation || '').trim();
+  const roomSummary = buildRoomSummary(getRooms());
+  const guest = (document.getElementById('f_guest_name')?.value || roomSummary.guest_name || currentBooking?.guest_name || '').trim();
+  const checkIn = formatHotelDate(document.getElementById('f_check_in_date')?.value || currentBooking?.check_in_date || '');
+  const checkOut = formatHotelDate(document.getElementById('f_check_out_date')?.value || currentBooking?.check_out_date || '');
+  const parts = [];
+  if (ref) parts.push(`Ref ${ref}`);
+  if (guest) parts.push(guest);
+  if (checkIn || checkOut) parts.push([checkIn, checkOut].filter(Boolean).join(' - '));
+  const subtitle = parts.join(' · ');
+  const headerTitleNode = document.getElementById('detailTitle');
+  const headerSubtitleNode = document.getElementById('detailPageSubtitle');
+  const titleNode = document.getElementById('detailHeroName');
+  const subtitleNode = document.getElementById('detailSubtitle');
+  if (headerTitleNode) headerTitleNode.textContent = title;
+  if (headerSubtitleNode) headerSubtitleNode.textContent = subtitle;
+  if (titleNode) titleNode.textContent = title;
+  if (subtitleNode) subtitleNode.textContent = subtitle;
+}
+
+function handleDetailChange() {
+  if (!currentBooking) return;
+  updateDetailHeaderPreview();
+}
+
+function renderCard(b) {
+  const imageSrc = b.image_url || RESORT_FALLBACK_IMAGE;
+  const imageClass = imageSrc === RESORT_FALLBACK_IMAGE ? 'fallback-fit' : '';
+  const amount = formatHotelAmount(b);
+  const dateRange = [formatHotelDate(b.check_in_date), formatHotelDate(b.check_out_date)].filter(Boolean).join(' - ');
+  return `
+    <div class="hotel-card" onclick="openDetailRoute('${b.id}')">
+      <div class="hotel-card-img">
+        <img class="${imageClass}" src="${imageSrc}" alt="${esc(b.hotel_name || 'Hotel')}" onerror="this.classList.add('fallback-fit');this.onerror=null;this.src='${RESORT_FALLBACK_IMAGE}'">
+      </div>
+      <div class="hotel-card-body">
+        <div class="hotel-card-name">${esc(b.hotel_name || 'Unknown Hotel')}</div>
+        <div class="hotel-card-meta">${formatCardMeta(b)}</div>
+        <div class="hotel-card-dates">
+          ${dateRange ? `<span class="date-range">${esc(dateRange)}</span>` : ''}
+        </div>
+        <div class="hotel-card-footer">
+          ${amount ? `<span class="hotel-amount">${amount}</span>` : '<span></span>'}
+          <div class="hotel-card-actions" onclick="event.stopPropagation()">
+            <button class="btn btn-pdf btn-sm" onclick="downloadPDF('${b.id}', this)">PDF</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function formatCardMeta(b) {
+  const rooms = getRoomsForDisplay(b);
+  const roomCount = rooms.length || b?.room_count || 0;
+  const guestCount = b?.num_guests || rooms.reduce((sum, room) => sum + ((room.guests || []).length || 0), 0);
+  const leadGuest = b?.guest_name || rooms.flatMap(room => room.guests || [])[0] || '';
+  const parts = [];
+  if (leadGuest) parts.push(leadGuest);
+  if (roomCount) parts.push(`${roomCount} room${roomCount > 1 ? 's' : ''}`);
+  if (guestCount) parts.push(`${guestCount} guest${guestCount > 1 ? 's' : ''}`);
+  return parts.join(' · ');
+}
+
+function buildDetailHTML(b) {
+  const rooms = getRoomsForDisplay(b);
+  const amenities = Array.isArray(b.amenities) ? b.amenities : [];
+  const imageSrc = b.image_url || RESORT_FALLBACK_IMAGE;
+  const imageClass = imageSrc === RESORT_FALLBACK_IMAGE ? 'fallback-fit' : '';
+  const bookingRef = esc(b.booking_id || b.booking_confirmation || '');
+  const guestName = esc(b.guest_name || '');
+  const stayLabel = [formatHotelDate(b.check_in_date), formatHotelDate(b.check_out_date)].filter(Boolean).join(' - ');
+  return `
+    <div class="detail-sections">
+      <section class="section-card hero-card">
+        <div class="detail-img-wrap hero-image" id="detailImgWrap" title="Paste an image into this booking">
+          <div class="img-paste-hint">Ctrl+V / Cmd+V to paste image</div>
+          <img id="detailImg" class="${imageClass}" src="${imageSrc}" alt="Hotel" onerror="this.classList.add('fallback-fit');this.onerror=null;this.src='${RESORT_FALLBACK_IMAGE}'">
+          <button class="img-overlay-btn" type="button" onclick="triggerImageUpload()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+            Upload Image
+          </button>
+        </div>
+        <input type="file" id="imgUploadInput" accept="image/*" style="display:none" onchange="uploadCustomImage(this)">
+        <div class="hero-copy">
+          <div class="hero-top-row">
+            <div>
+              <div class="hero-kicker">Hotel Booking</div>
+              <h3 class="hero-title" id="detailHeroName">${esc(b.hotel_name || 'Hotel Booking')}</h3>
+              <div class="hero-subtitle" id="detailSubtitle">${[bookingRef ? `Ref ${bookingRef}` : '', guestName, stayLabel].filter(Boolean).join(' · ')}</div>
+            </div>
+            <div class="hero-meta">
+              ${bookingRef ? `<span class="info-pill">Ref ${bookingRef}</span>` : ''}
+              ${formatHotelDate(b.check_in_date) ? `<span class="info-pill">In ${formatHotelDate(b.check_in_date)}</span>` : ''}
+              ${formatHotelDate(b.check_out_date) ? `<span class="info-pill">Out ${formatHotelDate(b.check_out_date)}</span>` : ''}
+            </div>
+          </div>
+          <div class="hero-description">${esc(b.hotel_address || 'Hotel details and stay information are organized below.')}</div>
+        </div>
+      </section>
+
+      <section class="section-card">
+        <div class="section-card-header">
+          <div>
+            <div class="section-card-title">Hotel Details</div>
+            <div class="section-card-subtitle">Basic property and contact information</div>
+          </div>
+        </div>
+        <div class="compact-grid">
+          <div class="input-group"><label>Hotel Name</label><input id="f_hotel_name" value="${esc(b.hotel_name || '')}" oninput="handleDetailChange()"></div>
+          <div class="input-group"><label>Phone</label><input id="f_hotel_phone" value="${esc(b.hotel_phone || '')}" oninput="handleDetailChange()"></div>
+          <div class="input-group full-span"><label>Address</label><input id="f_hotel_address" value="${esc(b.hotel_address || '')}" oninput="handleDetailChange()"></div>
+          <div class="input-group"><label>Booking Reference</label><input id="f_booking_id" value="${bookingRef}" oninput="handleDetailChange()"></div>
+          <div class="input-group"><label>Primary Guest</label><input id="f_guest_name" value="${guestName}" oninput="updatePrimaryGuest(this.value); handleDetailChange()"></div>
+        </div>
+      </section>
+
+      <section class="section-card">
+        <div class="section-card-header">
+          <div>
+            <div class="section-card-title">Stay Details</div>
+            <div class="section-card-subtitle">Dates, times, room count, and meal plan</div>
+          </div>
+        </div>
+        <div class="compact-grid">
+          <div class="input-group"><label>Check-in Date</label><input id="f_check_in_date" type="date" value="${b.check_in_date || ''}" oninput="handleDetailChange()"></div>
+          <div class="input-group"><label>Check-out Date</label><input id="f_check_out_date" type="date" value="${b.check_out_date || ''}" oninput="handleDetailChange()"></div>
+          <div class="input-group"><label>Check-in Time</label><input id="f_check_in_time" value="${esc(b.check_in_time || '')}" placeholder="2:00 PM" oninput="handleDetailChange()"></div>
+          <div class="input-group"><label>Check-out Time</label><input id="f_check_out_time" value="${esc(b.check_out_time || '')}" placeholder="11:00 AM" oninput="handleDetailChange()"></div>
+          <div class="input-group"><label>Total Guests</label><input id="f_num_guests" type="number" min="1" value="${b.num_guests || 1}" oninput="handleDetailChange()"></div>
+          <div class="input-group"><label>Room Count</label><input id="f_room_count" type="number" min="1" value="${b.room_count || Math.max(1, rooms.length || 1)}" oninput="handleDetailChange()"></div>
+          <div class="input-group"><label>Room Type</label><input id="f_room_type" value="${esc(b.room_type || '')}" oninput="updatePrimaryRoomType(this.value); handleDetailChange()"></div>
+          <div class="input-group"><label>Meal Plan</label><input id="f_meal_plan" value="${esc(b.meal_plan || '')}" oninput="handleDetailChange()"></div>
+          <div class="input-group currency-field">
+            <label>Currency</label>
+            <div class="currency-stack">
+              <select id="f_currency_select" onchange="applyCurrencySelection(this.value); handleDetailChange()">
+                ${CURRENCY_OPTIONS.map(cur => `<option value="${cur}">${cur}</option>`).join('')}
+                <option value="custom">Custom</option>
+              </select>
+              <input id="f_currency_custom" type="text" placeholder="Custom currency code" style="display:none" oninput="handleDetailChange()">
+            </div>
+          </div>
+          <div class="input-group"><label>Total Amount</label><input id="f_total_amount" type="text" inputmode="decimal" value="${b.total_amount ?? ''}" oninput="handleDetailChange()"></div>
+        </div>
+      </section>
+
+      <section class="section-card">
+        <div class="section-card-header">
+          <div>
+            <div class="section-card-title">Rooms & Guests</div>
+            <div class="section-card-subtitle">Edit room level guest names and summaries</div>
+          </div>
+        </div>
+        ${renderRoomsEditor(rooms)}
+      </section>
+
+      <section class="section-card">
+        <div class="section-card-header">
+          <div>
+            <div class="section-card-title">Amenities</div>
+            <div class="section-card-subtitle">Add chips without crowding the layout</div>
+          </div>
+        </div>
+        ${renderAmenitiesEditor(amenities)}
+      </section>
+
+      <section class="section-card">
+        <div class="section-card-header">
+          <div>
+            <div class="section-card-title">Special Instructions</div>
+            <div class="section-card-subtitle">Optional notes for the voucher and internal use</div>
+          </div>
+        </div>
+        <div class="input-group compact-textarea"><textarea id="f_special_instructions" oninput="handleDetailChange()">${esc(b.special_instructions || '')}</textarea></div>
+      </section>
+
+      <section class="section-card">
+        <div class="section-card-header">
+          <div>
+            <div class="section-card-title">Actions</div>
+            <div class="section-card-subtitle">Save, print, or remove this booking</div>
+          </div>
+        </div>
+        <div class="detail-actions" style="align-items:center;">
+          <button class="btn btn-primary" id="saveChangesBtn" type="button" onclick="saveDetail()">Save Changes</button>
+          <div style="display:flex; align-items:center; gap:0.5rem; margin-right:auto; margin-left:0.5rem;">
+            <span style="font-size:0.9rem; color:#475569; font-weight:600;">Paid in Full</span>
+            <label class="switch">
+              <input type="checkbox" id="paidLogoToggle" onchange="togglePaidLogo()">
+              <span class="slider round"></span>
+            </label>
+          </div>
+          <button class="btn btn-secondary" type="button" onclick="openSpecialRequestModal()">Special Requests</button>
+          <button class="btn btn-pdf" id="downloadPdfBtn" type="button" onclick="downloadPDF('${b.id}', this)">Download PDF</button>
+          <button class="btn btn-danger" type="button" onclick="deleteBooking('${b.id}')">Delete</button>
+        </div>
+      </section>
+    </div>`;
+}
+
+function renderDetail(b) {
+  currentBookingSnapshot = { ...b };
+  document.getElementById('detailBody').innerHTML = buildDetailHTML(b);
+  applyCurrencySelection(b.currency || 'INR');
+  updateDetailHeaderPreview();
+  const paidToggle = document.getElementById('paidLogoToggle');
+  if (paidToggle) {
+    paidToggle.checked = Boolean(b.show_paid_logo);
+  }
+  document.getElementById('hotelDetailPage').style.display = 'block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function esc(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
-function showLoading(v){ document.getElementById('loadingOverlay').classList.toggle('active',v); }
+function showLoading(v){ document.getElementById('loadingOverlay').classList.toggle('active', v); }
 function showToast(msg, type='success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
-  t.style.background = type==='error'?'#ef4444':'#0f172a';
+  t.style.background = type === 'error' ? '#ef4444' : '#0f172a';
   t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), 3000);
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+const SPECIAL_REQUEST_OPTIONS = [
+  "Early check-in or late check-out",
+  "High-floor room",
+  "Room with a view",
+  "King-size bed instead of twin beds",
+  "Extra pillows or blankets",
+  "Non-smoking room",
+  "Quiet room away from elevators",
+  "Connecting/adjoining rooms",
+  "Crib/baby cot for infants",
+  "Extra bed/rollaway bed",
+  "Airport pickup/drop-off",
+  "Birthday or anniversary room decoration",
+  "Honeymoon arrangements",
+  "Special dietary requirements (vegetarian, vegan, gluten-free, etc.)",
+  "Wheelchair-accessible room",
+  "Pet-friendly room",
+  "Wake-up call service",
+  "Mini-fridge or microwave in room",
+  "Extra toiletries",
+  "Luggage storage before check-in or after check-out"
+];
+
+let selectedSpecialRequests = new Set();
+
+function openSpecialRequestModal() {
+  selectedSpecialRequests.clear();
+  renderSpecialRequestChips();
+  updateSpecialRequestEmailText();
+  document.getElementById('specialRequestModalOverlay').classList.add('open');
+}
+
+function closeSpecialRequestModal() {
+  document.getElementById('specialRequestModalOverlay').classList.remove('open');
+}
+
+function renderSpecialRequestChips() {
+  const container = document.getElementById('specialRequestChips');
+  if (!container) return;
+  container.innerHTML = SPECIAL_REQUEST_OPTIONS.map((req, i) => {
+    const isSelected = selectedSpecialRequests.has(req);
+    const bg = isSelected ? '#10b981' : '#f8fafc';
+    const color = isSelected ? '#fff' : '#475569';
+    const border = isSelected ? '#059669' : '#e2e8f0';
+    return `<button class="amenity-chip" style="cursor:pointer; background: ${bg}; color: ${color}; border-color: ${border}; transition: all 0.2s;" onclick="toggleSpecialRequest(${i})">${esc(req)}</button>`;
+  }).join('');
+}
+
+function toggleSpecialRequest(index) {
+  const req = SPECIAL_REQUEST_OPTIONS[index];
+  if (selectedSpecialRequests.has(req)) {
+    selectedSpecialRequests.delete(req);
+  } else {
+    selectedSpecialRequests.add(req);
+  }
+  renderSpecialRequestChips();
+  updateSpecialRequestEmailText();
+}
+
+function copySpecialRequestEmail() {
+  const text = document.getElementById('specialRequestEmailText').value;
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => showToast('Email copied to clipboard!'));
+  } else {
+    const ta = document.getElementById('specialRequestEmailText');
+    ta.select();
+    document.execCommand('copy');
+    showToast('Email copied to clipboard!');
+  }
+}
+
+let generatedEmailSubject = "";
+
+function openSpecialRequestInGmail() {
+  const emailBody = document.getElementById('specialRequestEmailText').value;
+  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(generatedEmailSubject)}&body=${encodeURIComponent(emailBody)}`;
+  window.open(gmailUrl, '_blank');
+}
+
+function updateSpecialRequestEmailText() {
+  if (!currentBooking) return;
+  const requests = Array.from(selectedSpecialRequests);
+  
+  let requestsList = "* No special requests selected";
+  if (requests.length > 0) {
+    requestsList = requests.map(r => '* ' + r).join('\n');
+  }
+  
+  const hotelName = currentBooking.hotel_name || 'Hotel';
+  const checkIn = formatHotelDate(currentBooking.check_in_date) || 'Unknown';
+  const checkOut = formatHotelDate(currentBooking.check_out_date) || 'Unknown';
+  
+  let primaryGuest = currentBooking.guest_name || '';
+  if (!primaryGuest && currentBooking.rooms && currentBooking.rooms[0] && currentBooking.rooms[0].guests && currentBooking.rooms[0].guests[0]) {
+    primaryGuest = currentBooking.rooms[0].guests[0];
+  }
+  if (!primaryGuest) primaryGuest = 'Guest';
+  
+  const bookingId = currentBooking.booking_id || currentBooking.booking_confirmation || 'N/A';
+  
+  generatedEmailSubject = `Special Requests for Booking: ${primaryGuest} - ${hotelName}`;
+  const generatedEmailBody = `Dear Reservations Team,
+
+I hope you are doing well.
+
+I have an upcoming reservation at your hotel and would like to request a few preferences for my stay.
+
+Booking Details
+
+* Guest Name: ${primaryGuest}
+* Booking Reference: ${bookingId}
+* Stay Dates: ${checkIn} – ${checkOut}
+
+I would greatly appreciate it if you could accommodate the following requests, subject to availability:
+
+${requestsList}
+
+I understand that these requests cannot be guaranteed and are subject to hotel availability. However, I would be grateful if you could let me know whether they can be arranged.
+
+Thank you for your assistance. I look forward to staying with you.
+
+Kind regards,
+
+${primaryGuest}`;
+
+  document.getElementById('specialRequestEmailText').value = generatedEmailBody;
 }
 </script>
 </body>

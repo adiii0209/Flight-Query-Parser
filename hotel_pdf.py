@@ -130,6 +130,63 @@ def wrap_text_lines(c, value, max_width, font_name="Helvetica", font_size=9):
     lines.append(current)
     return lines
 
+def draw_wrapped_text(c, x, y, value, max_width, size=9, color=C_TEXT_PRI, bold=False, line_gap=11, max_lines=None):
+    font_name = "Helvetica-Bold" if bold else "Helvetica"
+    lines = wrap_text_lines(c, value, max_width, font_name, size)
+    if not lines:
+        return y, 0
+    if max_lines is not None:
+        lines = lines[:max_lines]
+    for idx, line in enumerate(lines):
+        txt(c, x, y - (idx * line_gap), line, size=size, color=color, bold=bold)
+    return y - ((len(lines) - 1) * line_gap), len(lines)
+
+def draw_cover_image(c, img_bytes, x, y, w, h, radius=6, mode="cover"):
+    """Draw an image covering the box with rounded corners."""
+    try:
+        img = ImageReader(io.BytesIO(img_bytes))
+        iw, ih = img.getSize()
+    except Exception:
+        return
+
+    ar_img = iw / float(ih)
+    ar_box = w / float(h)
+
+    if mode == "contain":
+        if ar_img > ar_box:
+            draw_w = w
+            draw_h = w / ar_img
+            draw_x = x
+            draw_y = y - (draw_h - h) / 2
+        else:
+            draw_h = h
+            draw_w = h * ar_img
+            draw_x = x - (draw_w - w) / 2
+            draw_y = y
+    else:
+        if ar_img > ar_box:
+            draw_h = h
+            draw_w = h * ar_img
+            draw_x = x - (draw_w - w) / 2
+            draw_y = y
+        else:
+            draw_w = w
+            draw_h = w / ar_img
+            draw_x = x
+            draw_y = y - (draw_h - h) / 2
+
+    c.saveState()
+    path = c.beginPath()
+    path.roundRect(x, y, w, h, radius)
+    c.clipPath(path, stroke=0, fill=0)
+    
+    if mode == "contain":
+        # Do not draw grey background for contain so it blends with white paper
+        pass
+        
+    c.drawImage(img, draw_x, draw_y, width=draw_w, height=draw_h, mask="auto")
+    c.restoreState()
+
 def normalize_rooms(data):
     rooms = data.get("rooms") or []
     if isinstance(rooms, list) and rooms:
@@ -181,7 +238,7 @@ def draw_hotel_voucher(c, data):
 
     # Pure white page — no outer card rect
     T   = H - 44   # start Y (top margin)
-    BOT = 44       # bottom margin
+    BOT = 24       # bottom margin
 
     GAP    = 16    # standard gap between sections
     GAP_SM = 10    # small gap
@@ -199,7 +256,7 @@ def draw_hotel_voucher(c, data):
 
     logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png")
     if os.path.isfile(logo_path):
-        try: c.drawImage(ImageReader(logo_path), R - 88, T - 20, width=90, height=22, mask="auto")
+        try: c.drawImage(ImageReader(logo_path), R - 88, T - 20, width=90, height=18, mask="auto")
         except: pass
     else:
         txt(c, R, T - 4,  "TIME TOURS",   size=12, color=C_TEXT_PRI, bold=True, align="right")
@@ -230,38 +287,55 @@ def draw_hotel_voucher(c, data):
     # ── 3. HOTEL IMAGE + DATES ────────────────────────────────────────────────
     IMG_W = IW * 0.46
     IMG_H = 115
+    SECTION_H = GAP + IMG_H
+    top_line_y = T + GAP
+    bot_line_y = top_line_y - SECTION_H
+    mid_line_y = top_line_y - (SECTION_H / 2)
 
     # Image (left)
     img_x = M
     img_frame_v_inset = 6
     img_box_h = IMG_H - (img_frame_v_inset * 2)
-    img_y = T - IMG_H + img_frame_v_inset
+    # Center image between top_line_y and bot_line_y
+    img_y = (top_line_y + bot_line_y) / 2 - (img_box_h / 2)
+    
     image_url = data.get("image_url", "")
-    img_drawn = False
-    if image_url:
+    img_bytes = data.get("img_bytes")
+
+    if not img_bytes and image_url:
         try:
-            if image_url.startswith("/uploads/"):
+            if image_url == "/resort.png" or str(image_url).rstrip("/").endswith("/resort.png"):
+                local = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resort.png")
+                with open(local, "rb") as f: img_bytes = f.read()
+            elif image_url.startswith("/uploads/"):
                 local = os.path.join(os.path.dirname(os.path.abspath(__file__)), image_url.lstrip("/"))
                 with open(local, "rb") as f: img_bytes = f.read()
-            else:
-                req = urllib.request.Request(image_url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=8) as resp: img_bytes = resp.read()
-            c.drawImage(ImageReader(io.BytesIO(img_bytes)),
-                        img_x, img_y, width=IMG_W, height=img_box_h,
-                        preserveAspectRatio=True, mask="auto")
-            img_drawn = True
         except: pass
 
-    if not img_drawn:
+    if not img_bytes:
+        try:
+            local = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resort.png")
+            with open(local, "rb") as f: img_bytes = f.read()
+            # Force image_url to resort.png since we are falling back to it
+            image_url = "/resort.png"
+        except: pass
+
+    if img_bytes:
+        mode = "contain" if not image_url or "resort.png" in str(image_url) else "cover"
+        draw_cover_image(c, img_bytes, img_x, img_y, IMG_W, img_box_h, radius=6, mode=mode)
+    else:
         rect(c, img_x, img_y, IMG_W, img_box_h, fill=C_SURFACE, stroke=C_BORDER, lw=0.5, radius=4)
         txt(c, img_x + IMG_W / 2, img_y + img_box_h / 2 - 4,
             "No Hotel Image", size=9, color=C_TEXT_TER, align="center")
 
     # Dates (right of image)
-    DX     = M + IMG_W + 22   # date column x
-    CELL_H = IMG_H / 2
-    upper_block_top = T - 4
-    lower_block_top = T - CELL_H - 16
+    DX = M + IMG_W + 22   # date column x
+    
+    # 36 height block if time is present, 23 height if not
+    ci_pad = 21 if has_value(data.get("check_in_time")) else 28
+    co_pad = 21 if has_value(data.get("check_out_time")) else 28
+    upper_block_top = top_line_y - ci_pad
+    lower_block_top = mid_line_y - co_pad
 
     # Check-in
     txt(c, DX, upper_block_top,  "CHECK-IN", size=7, color=C_TEXT_TER, bold=True)
@@ -276,7 +350,7 @@ def draw_hotel_voucher(c, data):
         txt(c, R, upper_block_top - 16, label, size=9, color=C_TEXT_TER, align="right")
 
     # Divider between check-in / check-out
-    hline(c, M + IMG_W, T - CELL_H, IW - IMG_W)
+    hline(c, M + IMG_W, mid_line_y, IW - IMG_W)
 
     # Check-out
     txt(c, DX, lower_block_top,  "CHECK-OUT", size=7, color=C_TEXT_TER, bold=True)
@@ -309,27 +383,49 @@ def draw_hotel_voucher(c, data):
 
     r_count = data.get("room_count") or len(rooms) or 1
     meal    = data.get("meal_plan") or (rooms[0].get("meal_plan") if rooms else "")
+    summary_max_width = max(120, R - RX)
 
     if len(unique_types) <= 1:
         # All same type — single bold line
         primary_room = unique_types[0] if unique_types else (data.get("room_type") or "")
+        room_line_y = T - 14
         if has_value(primary_room):
-            txt(c, RX, T - 14, primary_room, size=13, color=C_TEXT_PRI, bold=True)
+            room_line_y, room_lines = draw_wrapped_text(
+                c, RX, room_line_y, primary_room, summary_max_width,
+                size=12 if len(str(primary_room)) > 24 else 13,
+                color=C_TEXT_PRI, bold=True, line_gap=13, max_lines=2
+            )
+        else:
+            room_lines = 0
         parts = []
         if has_value(r_count): parts.append(f"{r_count} Room(s)")
         if has_value(meal):    parts.append(str(meal))
-        if parts: txt(c, RX, T - 28, " · ".join(parts), size=9, color=C_TEXT_SEC)
-        room_summary_bottom = T - 28
+        part_y = room_line_y - (13 if room_lines else 14)
+        if parts:
+            part_text = " · ".join(parts)
+            part_y, part_lines = draw_wrapped_text(
+                c, RX, part_y, part_text, summary_max_width,
+                size=9, color=C_TEXT_SEC, line_gap=11, max_lines=2
+            )
+        room_summary_bottom = part_y
     else:
         # Different types — clean stacked room-type rows, no numbering
         ly = T - 14
         for rt in room_types:
-            txt(c, RX, ly, rt or "Accommodation", size=10, color=C_TEXT_PRI, bold=True)
-            ly -= 13
+            ly, type_lines = draw_wrapped_text(
+                c, RX, ly, rt or "Accommodation", summary_max_width,
+                size=9.5 if len(str(rt or "")) > 28 else 10,
+                color=C_TEXT_PRI, bold=True, line_gap=11, max_lines=2
+            )
+            ly -= 16
         parts = []
         if has_value(r_count): parts.append(f"{r_count} Rooms")
         if has_value(meal):    parts.append(str(meal))
-        if parts: txt(c, RX, ly - 2, " · ".join(parts), size=9, color=C_TEXT_SEC)
+        if parts:
+            ly, part_lines = draw_wrapped_text(
+                c, RX, ly - 2, " · ".join(parts), summary_max_width,
+                size=9, color=C_TEXT_SEC, line_gap=11, max_lines=2
+            )
         room_summary_bottom = ly - 2
 
     section_bottom = min(T - 28, room_summary_bottom)
@@ -382,12 +478,21 @@ def draw_hotel_voucher(c, data):
                 guest_names = [str(fallback_guest).strip()]
 
             heading = rtype or "Accommodation"
-            txt(c, M, ry, heading, size=10, color=C_TEXT_PRI, bold=True)
+            heading_y, heading_lines = draw_wrapped_text(
+                c, M, ry, heading, IW - 6, size=9.5 if len(heading) > 28 else 10,
+                color=C_TEXT_PRI, bold=True, line_gap=11, max_lines=2
+            )
             if has_value(meal_room):
-                txt(c, M + 2, ry - 11, meal_room, size=8, color=C_TEXT_TER)
+                meal_y = heading_y - 12
+                meal_y, meal_lines = draw_wrapped_text(
+                    c, M + 2, meal_y, meal_room, IW - 10,
+                    size=8, color=C_TEXT_TER, line_gap=10, max_lines=2
+                )
+            else:
+                meal_y = heading_y - 11
 
             # Guest names — stacked so long names stay aligned and never overflow
-            guest_y = ry - (25 if has_value(meal_room) else 14)
+            guest_y = meal_y - 13
             guest_line_count = 0
             for gname in guest_names:
                 wrapped_guest_lines = wrap_text_lines(c, gname, IW - 20, "Helvetica", 8.5) or [gname]
@@ -397,8 +502,7 @@ def draw_hotel_voucher(c, data):
                     guest_line_count += 1
 
             # Separator between rooms (not after last)
-            top_offset = 25 if has_value(meal_room) else 14
-            room_block_height = max(34, top_offset + (guest_line_count * 11) + 4)
+            room_block_height = max(34, ry - guest_y + 4)
             if idx < len(rooms) - 1:
                 hline(c, M, ry - room_block_height, IW, lw=0.4)
                 ry -= room_block_height + 12
@@ -406,6 +510,19 @@ def draw_hotel_voucher(c, data):
                 ry -= room_block_height
 
         T = ry
+        hline(c, M, T, IW)
+        T -= GAP
+
+    # ── 6.5 SPECIAL INSTRUCTIONS ──────────────────────────────────────────────
+    special = data.get("special_instructions")
+    if has_value(special):
+        txt(c, M, T, "SPECIAL INSTRUCTIONS", size=7, color=C_TEXT_TER, bold=True)
+        sy = T - 14
+        sy, num_lines = draw_wrapped_text(
+            c, M, sy, str(special).strip(), IW,
+            size=9, color=C_TEXT_PRI, line_gap=12
+        )
+        T = sy - 4
         hline(c, M, T, IW)
         T -= GAP
 
@@ -441,12 +558,29 @@ def draw_hotel_voucher(c, data):
         hline(c, M, T, IW)
         T -= GAP
 
-    if os.path.isfile(paid_logo_path):
+    if data.get("show_paid_logo") and os.path.isfile(paid_logo_path):
         try:
+            logo_w, logo_h = 78, 58
+            top_bound = T + GAP - 10
+            bottom_bound = BOT + 36 + 10 # 10 padding above footer
+            avail_h = top_bound - bottom_bound
+            
+            scale = 1.0
+            if avail_h < logo_h:
+                scale = max(0.3, avail_h / float(logo_h))
+            
+            draw_w = logo_w * scale
+            draw_h = logo_h * scale
+            
+            if avail_h < logo_h:
+                cy = bottom_bound + avail_h / 2
+            else:
+                cy = top_bound - draw_h / 2
+                
             c.saveState()
-            c.translate(R - 90, BOT + 50)
+            c.translate(R - 50 - draw_w/2, cy)
             c.rotate(8)
-            c.drawImage(ImageReader(paid_logo_path), 0, 0, width=78, height=58,
+            c.drawImage(ImageReader(paid_logo_path), -draw_w/2, -draw_h/2, width=draw_w, height=draw_h,
                         preserveAspectRatio=True, mask="auto")
             c.restoreState()
         except Exception: pass
