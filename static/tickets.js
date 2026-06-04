@@ -158,6 +158,21 @@ function getPassengerLastName(ticket) {
     return parts.length ? parts[parts.length - 1].toUpperCase() : 'N/A';
 }
 
+const AIRLINE_WEB_CHECKIN_LINKS = {
+  "6E": "https://www.goindigo.in/web-check-in.html",
+  "AI": "https://www.airindia.com/in/en/manage/web-checkin.html",
+  "IX": "https://www.airindiaexpress.com/checkin-home",
+  "SG": "https://book.spicejet.com/CheckIn.aspx",
+  "QP": "https://www.akasaair.com/check-in/web-check-in",
+  "EK": "https://www.emirates.com/manage-booking/online-check-in/",
+  "QR": "https://www.qatarairways.com/en/check-in.html",
+  "SQ": "https://www.singaporeair.com/en_UK/us/travel-info/check-in/",
+  "EY": "https://www.etihad.com/en/manage/check-in",
+  "BA": "https://www.britishairways.com/travel/olcilandingpageauthreq/public/en_gb",
+  "LH": "https://www.lufthansa.com/in/en/online-check-in",
+  "TG": "https://www.thaiairways.com/en-th/content/check-in/"
+};
+
 function isValidWebCheckinTicket(ticket) {
     if (!ticket || !ticket.id) return false;
     if ((ticket.ticket_status || 'live') === 'cancelled') return false;
@@ -564,6 +579,12 @@ function renderWebCheckinCard(ticket, { showOpenButton = false } = {}) {
             </div>
             <div class="web-checkin-actions">
                 <button class="mini-btn ${done ? 'done' : 'primary'}" onclick="event.stopPropagation(); handleWebCheckinDone('${ticketId}')">${done ? 'Undo Done' : 'Web Check-in Done'}</button>
+                <button class="mini-btn primary" style="padding: 0 0.5rem;" onclick="event.stopPropagation(); openAirlineWebCheckin('${ticketId}')" title="Go to Airline Web Check-in">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
                 ${openButton}
             </div>
             <div class="web-checkin-expandable ${expanded ? 'open' : ''}">
@@ -771,6 +792,44 @@ async function openFocusedWebCheckinTicket(ticketId) {
     renderWebCheckinPanel();
     if (currentTicket && currentTicket.id === ticketId) {
         renderDetailView();
+    }
+}
+
+async function openAirlineWebCheckin(ticketId) {
+    const ticket = findTicketById(ticketId);
+    if (!ticket) return;
+    
+    const pnr = safe(ticket?.pnr, '').trim();
+    if (pnr) {
+        // Copy PNR to clipboard automatically first
+        try {
+            await copyWebCheckinValue(pnr, `PNR ${pnr} copied for check-in!`);
+        } catch(e) {
+            console.warn('Auto-copy failed', e);
+        }
+    }
+
+    const firstSeg = (ticket.segments || [])[0] || {};
+    
+    let airlineCode = '';
+    if (firstSeg.flight_number) {
+        airlineCode = getFlightNumberAirlineCode(firstSeg.flight_number);
+    }
+    
+    if (!airlineCode && firstSeg.airline) {
+        airlineCode = getAirlineCodeForName(firstSeg.airline);
+    }
+    
+    if (!airlineCode) {
+        airlineCode = String(firstSeg.airline || '').trim().toUpperCase();
+    }
+    
+    if (airlineCode && AIRLINE_WEB_CHECKIN_LINKS[airlineCode]) {
+        window.open(AIRLINE_WEB_CHECKIN_LINKS[airlineCode], '_blank');
+    } else {
+        const queryName = firstSeg.airline ? String(firstSeg.airline).trim() : (airlineCode || 'airline');
+        const query = encodeURIComponent(`${queryName} flight web check in`);
+        window.open(`https://www.google.com/search?q=${query}`, '_blank');
     }
 }
 
