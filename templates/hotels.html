@@ -641,7 +641,7 @@ function renderDetail(b) {
     paidToggle.classList.toggle('active', active);
     paidToggle.textContent = active ? 'Paid in Full: On' : 'Paid in Full: Off';
   }
-  document.getElementById('hotelDetailPage').style.display = 'block';
+  document.getElementById('hotelDetailPage').style.display = '';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -650,6 +650,7 @@ function closeDetail(skipPushState = false) {
     history.pushState(null, '', '/hotels');
   }
   document.body.classList.remove('detail-mode');
+  document.getElementById('hotelDetailPage').style.display = '';
   currentBooking = null;
   renderGrid();
 }
