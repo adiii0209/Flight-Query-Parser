@@ -2776,6 +2776,9 @@ async function init() {
       el.style.transition = 'opacity .4s';
     });
   }, 300);
+
+  // Initialize correct view based on URL
+  toggleSpaView();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -2871,3 +2874,41 @@ renderSavedTemplates = function() {
     `;
   }).join('');
 };
+
+// ============================================================================
+// SPA ROUTER LOGIC
+// ============================================================================
+function toggleSpaView() {
+  const isEmployee = window.location.pathname.startsWith('/ownership/employees');
+  
+  requestAnimationFrame(() => {
+    const crmPage = document.getElementById('crmPage');
+    const picker = document.getElementById('employeePickerScreen');
+    const workspace = document.getElementById('employeeWorkspace');
+
+    if (isEmployee) {
+      if (crmPage) crmPage.style.display = 'none';
+      if (typeof initEmployeeWorkspace === 'function') {
+        initEmployeeWorkspace();
+      }
+    } else {
+      if (picker) picker.style.display = 'none';
+      if (workspace) workspace.style.display = 'none';
+      if (crmPage) crmPage.style.display = 'block';
+      setTimeout(() => refreshOwnershipViews(), 0);
+    }
+  });
+}
+
+window.addEventListener('popstate', toggleSpaView);
+
+document.addEventListener('click', e => {
+  const a = e.target.closest('a');
+  if (!a || !a.href) return;
+  const url = new URL(a.href);
+  if (url.origin === window.location.origin && url.pathname.startsWith('/ownership')) {
+    e.preventDefault();
+    history.pushState(null, '', url.pathname);
+    toggleSpaView();
+  }
+});

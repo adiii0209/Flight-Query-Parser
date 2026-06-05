@@ -1041,17 +1041,12 @@ def _build_cards_render_groups(flights, trip_type, unit_flights):
     return groups
 
 @app.route("/ownership")
-@login_required
-def ownership_page():
-    """Serve the Ownership CRM dashboard"""
-    return render_template('ownership.html')
-
 @app.route("/ownership/employees")
 @app.route("/ownership/employees/<employee_id>")
 @login_required
-def employees_page(employee_id=None):
-    """Serve the Employee Workspace dashboard"""
-    return render_template('employees.html', initial_employee_id=employee_id or "")
+def ownership_page(employee_id=None):
+    """Serve the Ownership CRM dashboard"""
+    return render_template('ownership.html', initial_employee_id=employee_id or "")
 
 @app.route("/itineraries")
 def itineraries_page():

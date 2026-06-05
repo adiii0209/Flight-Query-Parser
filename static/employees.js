@@ -3,12 +3,10 @@
 // ============================================================================
 
 // State
-let trips = [];
-let employees = [];
 let currentView = 'picker'; // 'picker' | 'workspace'
 let activeEmployee = null;
 let currentTab = 'subtasks';
-let searchQuery = '';
+let empSearchQuery = '';
 let selectedTripId = null;
 let doneSubtasksExpanded = false;
 const EMPLOYEE_TRIPS_CACHE_KEY = 'ownership_trips_cache_v1';
@@ -60,48 +58,6 @@ window.selectTripViewTab = function(tripId) {
   selectedTripId = tripId;
   renderWorkspace();
 };
-
-// Helpers
-async function apiJson(url, options = {}) {
-  const res = await fetch(url, options);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'API Error');
-  return data;
-}
-
-function toast(msg, icon = '✓') {
-  const container = document.getElementById('crmToastContainer');
-  if (!container) return;
-  const t = document.createElement('div');
-  t.className = 'crm-toast';
-  t.innerHTML = `<span>${icon}</span> <span>${msg}</span>`;
-  container.appendChild(t);
-  setTimeout(() => t.classList.add('show'), 10);
-  setTimeout(() => {
-    t.classList.remove('show');
-    setTimeout(() => t.remove(), 300);
-  }, 3000);
-}
-
-function escHtml(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function formatDate(dateStr) {
-  if (!dateStr || !dateStr.includes('-')) return dateStr;
-  const parts = dateStr.split('-');
-  if (parts.length !== 3) return dateStr;
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const year = parts[0].slice(-2);
-  const month = months[parseInt(parts[1], 10) - 1];
-  const day = parts[2];
-  return `${day} ${month} ${year}`;
-}
 
 function formatCompactDateTime(value) {
   if (!value) return '';
@@ -483,7 +439,7 @@ function restoreEmployeeWorkspaceState() {
     if (Array.isArray(tripsCached?.trips)) trips = tripsCached.trips;
     if (Array.isArray(employeesCached?.employees)) employees = employeesCached.employees;
     if (employees.length) employees.sort((a, b) => a.name.localeCompare(b.name));
-    return trips.length > 0 || employees.length > 0;
+    return trips.length > 0 && employees.length > 0;
   } catch (err) {
     localStorage.removeItem(EMPLOYEE_TRIPS_CACHE_KEY);
     localStorage.removeItem(EMPLOYEE_EMPLOYEES_CACHE_KEY);
@@ -518,65 +474,21 @@ function activateEmployeeById(employeeId, { replaceRoute = false, animate = fals
   return true;
 }
 
-async function loadData() {
-  const hadCache = restoreEmployeeWorkspaceState();
+function initEmployeeWorkspace() {
   const initialRequestedId = getRequestedEmployeeId();
   
-  if (hadCache) {
-    if (initialRequestedId) {
-      const matched = employees.find(emp => isSameEmployeeId(emp.id, initialRequestedId));
-      if (matched) {
-        activateEmployeeById(matched.id, { replaceRoute: true, animate: false });
-      } else {
-        renderPicker();
-      }
-    } else {
-      if (currentView === 'picker') renderPicker();
-      else if (activeEmployee) renderWorkspace();
-    }
-  }
-
-  const [tRes, eRes] = await Promise.allSettled([
-    apiJson('/api/ownership/trips'),
-    apiJson('/api/ownership/employees')
-  ]);
-
-  let tripsOk = false;
-  let employeesOk = false;
-
-  if (tRes.status === 'fulfilled' && Array.isArray(tRes.value?.trips)) {
-    trips = tRes.value.trips;
-    tripsOk = true;
-  }
-  if (eRes.status === 'fulfilled' && Array.isArray(eRes.value?.employees)) {
-    employees = eRes.value.employees;
-    employees.sort((a, b) => a.name.localeCompare(b.name));
-    employeesOk = true;
-  }
-
-  if (tripsOk || employeesOk) cacheEmployeeWorkspaceState();
-  if (!tripsOk) console.error('Employees dashboard trips failed to load', tRes.status === 'rejected' ? tRes.reason : 'unknown');
-  if (!employeesOk) console.error('Employees dashboard employees failed to load', eRes.status === 'rejected' ? eRes.reason : 'unknown');
-
-  const requestedEmployeeId = getRequestedEmployeeId();
-  if (requestedEmployeeId) {
-    const matched = employees.find(emp => isSameEmployeeId(emp.id, requestedEmployeeId));
+  if (initialRequestedId) {
+    const matched = employees.find(emp => isSameEmployeeId(emp.id, initialRequestedId));
     if (matched) {
       activateEmployeeById(matched.id, { replaceRoute: true, animate: false });
-      return;
+    } else {
+      cacheActiveEmployeeId('');
+      syncEmployeeRoute('', { replace: true });
+      showView('picker');
     }
-    cacheActiveEmployeeId('');
-    syncEmployeeRoute('', { replace: true });
-  }
-
-  if (currentView === 'picker') {
-    showView('picker');
-  } else if (activeEmployee) {
-    showView('workspace');
-  }
-
-  if (!tripsOk || !employeesOk) {
-    toast('Loaded with partial data. Refresh if something looks off.', '⚠️');
+  } else {
+    if (currentView === 'picker') showView('picker');
+    else if (activeEmployee) showView('workspace');
   }
 }
 
@@ -585,14 +497,17 @@ async function loadData() {
 // ============================================================================
 
 function showView(view) {
+  const crmPage = document.getElementById('crmPage');
+  if (crmPage) crmPage.style.display = 'none';
+
   document.getElementById('employeePickerScreen').style.display = view === 'picker' ? 'flex' : 'none';
   document.getElementById('employeeWorkspace').style.display = view === 'workspace' ? 'flex' : 'none';
   currentView = view;
   
   if (view === 'picker') {
-    renderPicker();
+    setTimeout(renderPicker, 0);
   } else if (view === 'workspace') {
-    renderWorkspace();
+    setTimeout(renderWorkspace, 0);
   }
   syncWorkspaceTopStrip();
 }
@@ -853,8 +768,8 @@ function getEmployeeData() {
   });
 
   // Filter tasks and subtasks by search query
-  if (searchQuery) {
-    const q = searchQuery.toLowerCase();
+  if (empSearchQuery) {
+    const q = empSearchQuery.toLowerCase();
     allTasks = allTasks.filter(t => 
       t.tripName.toLowerCase().includes(q) || 
       t.taskLabel.toLowerCase().includes(q) ||
@@ -906,7 +821,7 @@ function renderWorkspace() {
   else if (currentTab === 'trip') container.innerHTML = renderTripView(data.tasks, data.subtasks);
   else if (currentTab === 'subtasks') container.innerHTML = renderSubtasks(data.subtasks);
   else if (currentTab === 'timeline') container.innerHTML = renderTimeline(data.tasks);
-  else if (currentTab === 'calendar') container.innerHTML = renderCalendar(data.tasks);
+  else if (currentTab === 'calendar') container.innerHTML = renderEmployeeCalendar(data.tasks);
 
   if (currentTab === 'subtasks' && openSubtaskCards.length) {
     openSubtaskCards.forEach(id => {
@@ -1376,7 +1291,7 @@ function renderTimeline(tasks) {
 }
 
 // Calendar View
-function renderCalendar(tasks) {
+function renderEmployeeCalendar(tasks) {
   // very simple pseudo-calendar for current month of earliest task or today
   return '<div style="color:var(--crm-text-3);text-align:center;margin-top:2rem;padding:2rem;">Calendar visualization not fully implemented yet in this snippet. Please use Timeline.</div>';
 }
@@ -1420,6 +1335,14 @@ function renderDetailSubtasks(trip, taskKey) {
   
   const cat = getSubtaskCategory(taskKey);
   const mySubs = (subsObj[cat] || []).filter(s => s.assignee === activeEmployee.name);
+
+  const el = document.getElementById('ewDetailSubtaskList');
+  if (mySubs.length === 0) {
+    el.innerHTML = '<div style="font-size:0.8rem;color:var(--crm-text-3)">No subtasks for you on this trip.</div>';
+  } else {
+    el.innerHTML = mySubs.map(s => buildDetailSubtaskHtml(trip, s)).join('');
+  }
+}
 
 // Timeline View
 function renderTimeline(tasks) {
@@ -1440,60 +1363,6 @@ function renderTimeline(tasks) {
       `).join('')}
     </div>
   `;
-}
-
-// Calendar View
-function renderCalendar(tasks) {
-  // very simple pseudo-calendar for current month of earliest task or today
-  return '<div style="color:var(--crm-text-3);text-align:center;margin-top:2rem;padding:2rem;">Calendar visualization not fully implemented yet in this snippet. Please use Timeline.</div>';
-}
-
-// ============================================================================
-// TASK DETAIL PANEL
-// ============================================================================
-
-let currentDetailContext = null;
-
-function openTaskDetail(tripId, taskKey) {
-  const trip = trips.find(t => t.id === tripId);
-  if (!trip) return;
-  
-  const tf = taskFields.find(f => f.key === taskKey);
-  const status = trip[taskKey] || 'notstarted';
-  
-  currentDetailContext = { tripId, taskKey };
-  
-  document.getElementById('ewDetailTripName').textContent = trip.guestName || trip.destination || 'Unnamed Trip';
-  document.getElementById('ewDetailTaskType').textContent = tf ? tf.label : taskKey;
-  document.getElementById('ewDetailStatusSelect').value = status;
-  
-  renderDetailSubtasks(trip, taskKey);
-  
-  document.getElementById('ewDetailOverlay').classList.add('active');
-  document.getElementById('ewDetailPanel').classList.add('active');
-}
-
-function closeTaskDetail() {
-  currentDetailContext = null;
-  document.getElementById('ewDetailOverlay').classList.remove('active');
-  document.getElementById('ewDetailPanel').classList.remove('active');
-}
-
-document.getElementById('ewDetailClose')?.addEventListener('click', closeTaskDetail);
-document.getElementById('ewDetailOverlay')?.addEventListener('click', closeTaskDetail);
-
-function renderDetailSubtasks(trip, taskKey) {
-  let subsObj = trip.subtasks || {};
-  
-  const cat = getSubtaskCategory(taskKey);
-  const mySubs = (subsObj[cat] || []).filter(s => s.assignee === activeEmployee.name);
-  
-  const el = document.getElementById('ewDetailSubtaskList');
-  if (mySubs.length === 0) {
-    el.innerHTML = '<div style="font-size:0.8rem;color:var(--crm-text-3)">No subtasks for you on this trip.</div>';
-  } else {
-    el.innerHTML = mySubs.map(s => buildDetailSubtaskHtml(trip, s)).join('');
-  }
 }
 
 // API Updates
@@ -1818,7 +1687,7 @@ document.querySelectorAll('.ew-tab').forEach(btn => {
 });
 
 document.getElementById('ewSearchInput')?.addEventListener('input', (e) => {
-  searchQuery = e.target.value;
+  empSearchQuery = e.target.value;
   renderWorkspace();
 });
 
@@ -1849,7 +1718,7 @@ window.addEventListener('popstate', () => {
 
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
-  loadData();
+  initEmployeeWorkspace();
 });
 
 renderSubtasks = function(subtasks) {
