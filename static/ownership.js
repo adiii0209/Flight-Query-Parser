@@ -97,6 +97,7 @@ async function saveTripPatch(trip, patch) {
   }
   
   Object.assign(patchQueue[tripId].patch, patch);
+  cacheTripsForFastPaint(trips);
   
   return new Promise((resolve, reject) => {
     patchQueue[tripId].resolvers.push({ resolve, reject });

@@ -11,7 +11,7 @@ let currentTab = 'subtasks';
 let searchQuery = '';
 let selectedTripId = null;
 let doneSubtasksExpanded = false;
-const EMPLOYEE_TRIPS_CACHE_KEY = 'employee_workspace_trips_cache_v1';
+const EMPLOYEE_TRIPS_CACHE_KEY = 'ownership_trips_cache_v1';
 const EMPLOYEE_EMPLOYEES_CACHE_KEY = 'employee_workspace_employees_cache_v1';
 const EMPLOYEE_ACTIVE_ID_CACHE_KEY = 'employee_workspace_active_employee_id_v1';
 const EMPLOYEE_BASE_PATH = window.__EMPLOYEE_BASE_PATH__ || '/ownership/employees';
@@ -1511,6 +1511,7 @@ async function updateTripField(tripId, field, value) {
   if (field === 'subtasks') trip.subtasks = value;
   else trip[field] = value;
   
+  cacheEmployeeWorkspaceState();
   refreshWorkspaceStats();
   if (field === currentDetailContext?.taskKey && currentDetailContext.tripId === tripId) {
     const detailStatus = document.getElementById('ewDetailStatusSelect');
