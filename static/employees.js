@@ -1420,6 +1420,73 @@ function renderDetailSubtasks(trip, taskKey) {
   
   const cat = getSubtaskCategory(taskKey);
   const mySubs = (subsObj[cat] || []).filter(s => s.assignee === activeEmployee.name);
+
+// Timeline View
+function renderTimeline(tasks) {
+  // Only tasks with dates
+  let datedTasks = tasks.filter(t => t.tripDate).sort((a,b) => a.tripDate.localeCompare(b.tripDate));
+  if (datedTasks.length === 0) return '<div style="color:var(--crm-text-3);text-align:center;margin-top:2rem;">No dated tasks available for timeline.</div>';
+  
+  return `
+    <div class="ew-timeline">
+      ${datedTasks.map(t => `
+        <div class="ew-timeline-item">
+          <div class="ew-timeline-date">${t.tripDate}</div>
+          <div class="ew-timeline-marker"></div>
+          <div class="ew-timeline-content">
+            ${renderTaskCard(t)}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// Calendar View
+function renderCalendar(tasks) {
+  // very simple pseudo-calendar for current month of earliest task or today
+  return '<div style="color:var(--crm-text-3);text-align:center;margin-top:2rem;padding:2rem;">Calendar visualization not fully implemented yet in this snippet. Please use Timeline.</div>';
+}
+
+// ============================================================================
+// TASK DETAIL PANEL
+// ============================================================================
+
+let currentDetailContext = null;
+
+function openTaskDetail(tripId, taskKey) {
+  const trip = trips.find(t => t.id === tripId);
+  if (!trip) return;
+  
+  const tf = taskFields.find(f => f.key === taskKey);
+  const status = trip[taskKey] || 'notstarted';
+  
+  currentDetailContext = { tripId, taskKey };
+  
+  document.getElementById('ewDetailTripName').textContent = trip.guestName || trip.destination || 'Unnamed Trip';
+  document.getElementById('ewDetailTaskType').textContent = tf ? tf.label : taskKey;
+  document.getElementById('ewDetailStatusSelect').value = status;
+  
+  renderDetailSubtasks(trip, taskKey);
+  
+  document.getElementById('ewDetailOverlay').classList.add('active');
+  document.getElementById('ewDetailPanel').classList.add('active');
+}
+
+function closeTaskDetail() {
+  currentDetailContext = null;
+  document.getElementById('ewDetailOverlay').classList.remove('active');
+  document.getElementById('ewDetailPanel').classList.remove('active');
+}
+
+document.getElementById('ewDetailClose')?.addEventListener('click', closeTaskDetail);
+document.getElementById('ewDetailOverlay')?.addEventListener('click', closeTaskDetail);
+
+function renderDetailSubtasks(trip, taskKey) {
+  let subsObj = trip.subtasks || {};
+  
+  const cat = getSubtaskCategory(taskKey);
+  const mySubs = (subsObj[cat] || []).filter(s => s.assignee === activeEmployee.name);
   
   const el = document.getElementById('ewDetailSubtaskList');
   if (mySubs.length === 0) {
@@ -1430,37 +1497,58 @@ function renderDetailSubtasks(trip, taskKey) {
 }
 
 // API Updates
+const updateQueue = {};
+
 async function updateTripField(tripId, field, value) {
   const trip = trips.find(x => x.id === tripId);
   if (!trip) return;
-  const snapshot = JSON.parse(JSON.stringify(trip));
+
+  const key = `${tripId}_${field}`;
+  if (!updateQueue[key]) {
+    updateQueue[key] = { snapshot: JSON.parse(JSON.stringify(trip)), resolvers: [] };
+  }
+
   if (field === 'subtasks') trip.subtasks = value;
   else trip[field] = value;
+  
   refreshWorkspaceStats();
   if (field === currentDetailContext?.taskKey && currentDetailContext.tripId === tripId) {
     const detailStatus = document.getElementById('ewDetailStatusSelect');
     if (detailStatus) detailStatus.value = value;
   }
-  try {
-    await apiJson(`/api/ownership/trips/${tripId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ [field]: value })
-    });
-    toast('Saved');
-  } catch (e) {
-    const idx = trips.findIndex(x => x.id === tripId);
-    if (idx !== -1) trips[idx] = snapshot;
-    refreshWorkspaceStats();
-    if (currentDetailContext && currentDetailContext.tripId === tripId) {
-      const matched = trips.find(x => x.id === tripId);
-      if (matched) {
-        document.getElementById('ewDetailStatusSelect').value = matched[currentDetailContext.taskKey] || 'notstarted';
-        refreshDetailSubtaskList(matched, currentDetailContext.taskKey);
+
+  return new Promise((resolve, reject) => {
+    updateQueue[key].resolvers.push({ resolve, reject });
+    updateQueue[key].value = value;
+
+    clearTimeout(updateQueue[key].timer);
+    updateQueue[key].timer = setTimeout(async () => {
+      const q = updateQueue[key];
+      delete updateQueue[key];
+      try {
+        await apiJson(`/api/ownership/trips/${tripId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ [field]: q.value })
+        });
+        toast('Saved');
+        q.resolvers.forEach(r => r.resolve());
+      } catch (e) {
+        const idx = trips.findIndex(x => x.id === tripId);
+        if (idx !== -1) trips[idx] = q.snapshot;
+        refreshWorkspaceStats();
+        if (currentDetailContext && currentDetailContext.tripId === tripId) {
+          const matched = trips.find(x => x.id === tripId);
+          if (matched) {
+            document.getElementById('ewDetailStatusSelect').value = matched[currentDetailContext.taskKey] || 'notstarted';
+            refreshDetailSubtaskList(matched, currentDetailContext.taskKey);
+          }
+        }
+        renderWorkspace();
+        toast('Failed to save', '⚠️');
+        q.resolvers.forEach(r => r.reject(e));
       }
-    }
-    renderWorkspace();
-    toast('Failed to save', '⚠️');
-  }
+    }, 600);
+  });
 }
 
 async function toggleSubtaskPriority(tripId, subtaskId) {

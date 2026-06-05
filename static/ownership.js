@@ -86,19 +86,47 @@ function save(trip = null) {
   }
 }
 
+const patchQueue = {};
+
 async function saveTripPatch(trip, patch) {
   if (!trip || !trip.id) return null;
-  const { trip: saved } = await apiJson(`/api/ownership/trips/${trip.id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(patch),
-  });
-  if (saved) {
-    const idx = trips.findIndex(t => t.id === saved.id);
-    if (idx !== -1) trips[idx] = saved;
-    cacheTripsForFastPaint(trips);
-    syncTripRowDom(saved, { refreshExpanded: true });
+  const tripId = trip.id;
+  
+  if (!patchQueue[tripId]) {
+    patchQueue[tripId] = { patch: {}, resolvers: [], snapshot: JSON.parse(JSON.stringify(trip)) };
   }
-  return saved;
+  
+  Object.assign(patchQueue[tripId].patch, patch);
+  
+  return new Promise((resolve, reject) => {
+    patchQueue[tripId].resolvers.push({ resolve, reject });
+    
+    clearTimeout(patchQueue[tripId].timer);
+    patchQueue[tripId].timer = setTimeout(async () => {
+      const q = patchQueue[tripId];
+      delete patchQueue[tripId];
+      
+      try {
+        const { trip: saved } = await apiJson(`/api/ownership/trips/${tripId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(q.patch),
+        });
+        if (saved) {
+          const idx = trips.findIndex(t => t.id === saved.id);
+          if (idx !== -1) trips[idx] = saved;
+          cacheTripsForFastPaint(trips);
+          syncTripRowDom(saved, { refreshExpanded: true });
+        }
+        q.resolvers.forEach(r => r.resolve(saved));
+      } catch (err) {
+        const idx = trips.findIndex(t => t.id === tripId);
+        if (idx !== -1) trips[idx] = q.snapshot;
+        cacheTripsForFastPaint(trips);
+        syncTripRowDom(q.snapshot, { refreshExpanded: true });
+        q.resolvers.forEach(r => r.reject(err));
+      }
+    }, 600);
+  });
 }
 
 function refreshOwnershipViews() {
