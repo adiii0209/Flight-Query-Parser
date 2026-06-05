@@ -46,7 +46,6 @@ class HotelImageService:
 
         Priority:
           1. Google Places API (if GOOGLE_PLACES_API_KEY is set)
-          2. Unsplash Source URL (fallback, no key required)
 
         Returns:
             Public image URL string, or None on failure.
@@ -59,7 +58,7 @@ class HotelImageService:
             if url:
                 return url
 
-        return self._fetch_from_unsplash(hotel_name)
+        return None
 
     def _fetch_from_google_places(self, hotel_name: str) -> str | None:
         """Fetch a photo via Google Places API. Returns CDN photo URL or None."""
@@ -112,11 +111,7 @@ class HotelImageService:
             print(f"[HotelImageService] Google Places fetch failed: {exc}")
             return None
 
-    @staticmethod
-    def _fetch_from_unsplash(hotel_name: str) -> str:
-        query = f"{hotel_name} hotel exterior luxury"
-        encoded = requests.utils.quote(query)
-        return f"https://source.unsplash.com/800x500/?{encoded}"
+
 
     def save_uploaded_image(self, file_storage) -> str | None:
         """

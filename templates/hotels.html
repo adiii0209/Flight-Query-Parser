@@ -519,12 +519,8 @@ async function saveParsedBooking(payload) {
   }
   showToast('Booking parsed and saved');
   closeImportModal();
-  if (window.HOTEL_BOOKING_ID) {
-    window.location.href = `/hotels/${saved.id}`;
-    return;
-  }
   await loadBookings();
-  window.location.href = `/hotels/${saved.id}`;
+  openDetailRoute(saved.id);
 }
 
 function clearParser() {
@@ -580,16 +576,39 @@ function renderCard(b) {
     </div>`;
 }
 
-function openDetailRoute(id) {
-  window.location.href = `/hotels/${id}`;
+function openDetailRoute(id, skipPushState = false) {
+  if (!skipPushState) {
+    history.pushState({ id }, '', `/hotels/${id}`);
+  }
+  const b = bookings.find(x => x.id == id);
+  if (b) {
+    currentBooking = b;
+    uploadedImageUrl = null;
+    renderDetail(b);
+  } else {
+    loadDetail(id);
+  }
+  document.body.classList.add('detail-mode');
+  const empty = document.getElementById('emptyState');
+  if (empty) empty.style.display = 'none';
 }
+
+window.addEventListener('popstate', (e) => {
+  const path = window.location.pathname;
+  if (path.startsWith('/hotels/')) {
+    const id = path.split('/')[2];
+    openDetailRoute(id, true);
+  } else {
+    closeDetail(true);
+  }
+});
 
 async function loadDetail(id) {
   try {
     const r = await fetch(`/api/hotels/${id}`);
     if (!r.ok) {
       showToast('Hotel booking not found', 'error');
-      window.location.href = '/hotels';
+      closeDetail();
       return;
     }
     const booking = await r.json();
@@ -598,7 +617,7 @@ async function loadDetail(id) {
     renderDetail(booking);
   } catch (err) {
     showToast('Unable to load booking', 'error');
-    window.location.href = '/hotels';
+    closeDetail();
   }
 }
 
@@ -626,8 +645,13 @@ function renderDetail(b) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function closeDetail() {
-  window.location.href = '/hotels';
+function closeDetail(skipPushState = false) {
+  if (!skipPushState) {
+    history.pushState(null, '', '/hotels');
+  }
+  document.body.classList.remove('detail-mode');
+  currentBooking = null;
+  renderGrid();
 }
 
 function buildDetailHTML(b) {
@@ -638,7 +662,7 @@ function buildDetailHTML(b) {
       <div class="detail-panel">
         <div class="detail-img-wrap" id="detailImgWrap" title="Paste an image into this booking">
           <div class="img-paste-hint">Ctrl+V / Cmd+V to paste image</div>
-          ${b.image_url ? `<img id="detailImg" src="${b.image_url}" alt="Hotel">` : `<span id="detailImg">${HOTEL_SVG}</span>`}
+          ${b.image_url ? `<img id="detailImg" src="${b.image_url}" alt="Hotel" onerror="this.outerHTML='<span id=\\'detailImg\\'>'+HOTEL_SVG+'</span>'">` : `<span id="detailImg">${HOTEL_SVG}</span>`}
           <button class="img-overlay-btn" type="button" onclick="triggerImageUpload()">
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
             Upload Custom Image
@@ -1030,9 +1054,16 @@ async function deleteBooking(id) {
   showLoading(true);
   try {
     await fetch(`/api/hotels/${id}`, { method: 'DELETE' });
-    window.location.href = '/hotels';
+    bookings = bookings.filter(b => b.id != id);
+    closeDetail();
   } finally {
     showLoading(false);
+  }
+}
+
+function deleteCurrentBooking() {
+  if (currentBooking && currentBooking.id) {
+    deleteBooking(currentBooking.id);
   }
 }
 
