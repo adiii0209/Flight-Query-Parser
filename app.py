@@ -21,6 +21,7 @@ except Exception:
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import defer, load_only, selectinload
+from sqlalchemy.orm.exc import StaleDataError
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import date, datetime, time, timedelta
 from functools import wraps
@@ -2729,6 +2730,10 @@ def ensure_schema_compatibility():
     _add_column_if_missing("ownership_trip", "reminders_json", "TEXT")
     _add_column_if_missing("ownership_trip", "raw_sheet_data", "TEXT")
     _add_column_if_missing("ownership_trip", "master_sheet_url", "TEXT")
+    _add_column_if_missing("ownership_trip", "version", "INTEGER NOT NULL DEFAULT 1")
+    db.session.execute(text("UPDATE ownership_trip SET version = 1 WHERE version IS NULL"))
+    db.session.commit()
+    _backfill_ownership_master_sheet_urls()
     _add_column_if_missing("ownership_task_template_item", "reminder_days", "INTEGER")
     _drop_index_if_exists("ix_ownership_trip_statuses")
     _drop_ownership_column_if_exists("current_task")
@@ -6609,6 +6614,14 @@ def _ownership_json_safe(value):
     return value
 
 
+def _ownership_request_version(payload):
+    try:
+        version = int(payload.get("version"))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return version if version > 0 else None
+
+
 def _ownership_query():
     user_id = _ownership_user_id()
     query = OwnershipTrip.query
@@ -6628,6 +6641,40 @@ def _ownership_cache_get(kind):
 
 def _ownership_cache_set(key, payload):
     _dashboard_cache.set_json(key, payload, _OWNERSHIP_CACHE_TTL_SECONDS)
+
+
+def _invalidate_ownership_cache():
+    return _dashboard_cache.incr("ownership:version")
+
+
+def _backfill_ownership_master_sheet_urls():
+    try:
+        rows = OwnershipTrip.query.filter(
+            db.or_(
+                OwnershipTrip.master_sheet_url.is_(None),
+                OwnershipTrip.master_sheet_url == "",
+            ),
+            OwnershipTrip.raw_sheet_data.isnot(None),
+        ).all()
+    except Exception:
+        return
+
+    changed = False
+    for trip in rows:
+        raw_data = trip.raw_sheet_data if isinstance(trip.raw_sheet_data, dict) else None
+        if raw_data is None and isinstance(trip.raw_sheet_data, str):
+            try:
+                raw_data = json.loads(trip.raw_sheet_data)
+            except Exception:
+                raw_data = None
+        if not isinstance(raw_data, dict):
+            continue
+        master_url = str(raw_data.get("masterSheetUrl") or "").strip()
+        if master_url:
+            trip.master_sheet_url = master_url
+            changed = True
+    if changed:
+        db.session.commit()
 
 
 def _ownership_cache_key(kind, version=None):
@@ -6711,6 +6758,7 @@ def _ownership_trips_query():
         load_only(
             OwnershipTrip.id,
             OwnershipTrip.created_at,
+            OwnershipTrip.version,
             OwnershipTrip.user_id,
             OwnershipTrip.source_row,
             OwnershipTrip.guest_name,
@@ -6752,8 +6800,9 @@ def _ownership_trip_response(payload, cache_status, started_at, **timings):
     return response
 
 
-def _publish_ownership_event(action="refresh", bump_version=True, **payload):
-    version = _dashboard_cache.incr("ownership:version") if bump_version else _ownership_cache_version()
+def _publish_ownership_event(action="refresh", bump_version=True, version=None, **payload):
+    if version is None:
+        version = _dashboard_cache.incr("ownership:version") if bump_version else _ownership_cache_version()
     event_payload = {
         "event": action,
         "version": version,
@@ -6783,17 +6832,30 @@ def _employee_color(name):
 
 
 def _ensure_ownership_employees():
-    if OwnershipEmployee.query.filter_by(is_active=True).first():
-        return
+    existing = {
+        (employee.name or "").strip().lower(): employee
+        for employee in OwnershipEmployee.query.filter_by(is_active=True).all()
+        if employee.name and employee.name.strip()
+    }
     names = [
         name for (name,) in db.session.query(OwnershipTrip.owner)
         .filter(OwnershipTrip.owner.isnot(None), OwnershipTrip.owner != "")
         .distinct()
         .all()
     ]
+    changed = False
     for name in sorted(set(n.strip() for n in names if n and n.strip())):
-        db.session.add(OwnershipEmployee(name=name, color=_employee_color(name), is_active=True))
-    db.session.commit()
+        key = name.lower()
+        employee = existing.get(key)
+        if employee is None:
+            db.session.add(OwnershipEmployee(name=name, color=_employee_color(name), is_active=True))
+            changed = True
+            continue
+        if not employee.color:
+            employee.color = _employee_color(name)
+            changed = True
+    if changed:
+        db.session.commit()
 
 
 def _apply_trip_payload(trip, payload):
@@ -6825,6 +6887,52 @@ def _apply_trip_payload(trip, payload):
     if "reminders" in payload:
         _replace_ownership_reminders(trip, payload.get("reminders") or [])
     return trip
+
+
+def _commit_ownership_trip_with_retry(trip_id, payload, action="updated", delete=False):
+    """
+    Apply a trip patch against the latest row and retry once if another
+    request committed first. This keeps overlapping field edits smooth.
+    """
+    trip = _ownership_query().filter(OwnershipTrip.id == trip_id).first()
+    if not trip:
+        return None, "not_found"
+
+    _apply_trip_payload(trip, payload)
+    if not delete:
+        trip.version = (trip.version or 0) + 1
+    try:
+        if delete:
+            deleted_trip = trip.to_dict()
+            db.session.delete(trip)
+            db.session.commit()
+            return deleted_trip, None
+        db.session.commit()
+        return trip.to_dict(), None
+    except StaleDataError:
+        db.session.rollback()
+        latest_trip = _ownership_query().filter(OwnershipTrip.id == trip_id).first()
+        if not latest_trip:
+            return None, "not_found"
+
+        if delete:
+            deleted_trip = latest_trip.to_dict()
+            db.session.delete(latest_trip)
+            try:
+                db.session.commit()
+                return deleted_trip, None
+            except StaleDataError:
+                db.session.rollback()
+                return None, "conflict"
+
+        _apply_trip_payload(latest_trip, payload)
+        latest_trip.version = (latest_trip.version or 0) + 1
+        try:
+            db.session.commit()
+            return latest_trip.to_dict(), None
+        except StaleDataError:
+            db.session.rollback()
+            return None, "conflict"
 
 
 def _replace_ownership_subtasks(trip, groups):
@@ -6939,7 +7047,8 @@ def seed_ownership_from_workbook(force=False):
         trip.raw_sheet_data = raw_data
         db.session.add(trip)
     db.session.commit()
-    _publish_ownership_event("sheet_imported")
+    version = _invalidate_ownership_cache()
+    _publish_ownership_event("sheet_imported", version=version)
     return {"created": created, "updated": updated, "skipped": skipped}
 
 
@@ -6947,7 +7056,9 @@ def seed_ownership_from_workbook(force=False):
 def get_ownership_trips():
     started_at = perf_counter()
     cached, cache_key = _ownership_cache_get("trips")
-    if cached is not None:
+    cached_trips = cached.get("trips") if isinstance(cached, dict) else None
+    cache_has_versions = isinstance(cached_trips, list) and all(isinstance(trip, dict) and "version" in trip for trip in cached_trips)
+    if cached is not None and cache_has_versions:
         return _ownership_trip_response(cached, "HIT", started_at)
     query_started_at = perf_counter()
     trips = _ownership_trips_query().order_by(
@@ -6987,34 +7098,46 @@ def create_ownership_trip():
     _apply_trip_payload(trip, payload)
     db.session.add(trip)
     db.session.commit()
-    _ownership_cache_upsert_trip(trip)
-    _publish_ownership_event("trip_created", bump_version=False, tripId=trip.id)
-    return jsonify({"trip": trip.to_dict()}), 201
+    version = _invalidate_ownership_cache()
+    trip_payload = trip.to_dict()
+    _publish_ownership_event("trip_created", version=version, tripId=trip.id, trip=trip_payload)
+    return jsonify({"trip": trip.to_dict(), "cacheVersion": version}), 201
 
 
 @app.route("/api/ownership/trips/<trip_id>", methods=["PATCH", "PUT"])
 def update_ownership_trip(trip_id):
-    trip = _ownership_query().filter(OwnershipTrip.id == trip_id).first()
-    if not trip:
-        return jsonify({"error": "Trip not found"}), 404
     payload = request.get_json(force=True) or {}
-    _apply_trip_payload(trip, payload)
-    db.session.commit()
-    _ownership_cache_upsert_trip(trip)
-    _publish_ownership_event("trip_updated", bump_version=False, tripId=trip.id)
-    return jsonify({"trip": trip.to_dict()})
+    trip_payload, status = _commit_ownership_trip_with_retry(trip_id, payload)
+    if status == "not_found":
+        return jsonify({"error": "Trip not found"}), 404
+    if status == "conflict":
+        latest_trip = _ownership_query().filter(OwnershipTrip.id == trip_id).first()
+        return jsonify({
+            "error": "This trip was updated in another window. Refresh and try again.",
+            "trip": latest_trip.to_dict() if latest_trip else None,
+            "cacheVersion": _ownership_cache_version(),
+        }), 409
+    version = _invalidate_ownership_cache()
+    _publish_ownership_event("trip_updated", version=version, tripId=trip_id, trip=trip_payload)
+    return jsonify({"trip": trip_payload, "cacheVersion": version})
 
 
 @app.route("/api/ownership/trips/<trip_id>", methods=["DELETE"])
 def delete_ownership_trip(trip_id):
-    trip = _ownership_query().filter(OwnershipTrip.id == trip_id).first()
-    if not trip:
+    payload = request.get_json(silent=True) or {}
+    deleted_trip, status = _commit_ownership_trip_with_retry(trip_id, payload, delete=True)
+    if status == "not_found":
         return jsonify({"error": "Trip not found"}), 404
-    db.session.delete(trip)
-    db.session.commit()
-    _ownership_cache_delete_trip(trip_id)
-    _publish_ownership_event("trip_deleted", bump_version=False, tripId=trip_id)
-    return jsonify({"success": True})
+    if status == "conflict":
+        latest_trip = _ownership_query().filter(OwnershipTrip.id == trip_id).first()
+        return jsonify({
+            "error": "This trip was updated in another window. Refresh and try again.",
+            "trip": latest_trip.to_dict() if latest_trip else None,
+            "cacheVersion": _ownership_cache_version(),
+        }), 409
+    version = _invalidate_ownership_cache()
+    _publish_ownership_event("trip_deleted", version=version, tripId=trip_id, trip=deleted_trip)
+    return jsonify({"success": True, "cacheVersion": version})
 
 
 @app.route("/api/ownership/templates", methods=["GET"])
@@ -7068,8 +7191,10 @@ def create_ownership_template():
             )
     db.session.add(template)
     db.session.commit()
-    _publish_ownership_event("template_created", templateId=template.id)
-    return jsonify({"template": template.to_dict()}), 201
+    version = _invalidate_ownership_cache()
+    template_payload = template.to_dict()
+    _publish_ownership_event("template_created", version=version, templateId=template.id, template=template_payload)
+    return jsonify({"template": template_payload, "cacheVersion": version}), 201
 
 
 @app.route("/api/ownership/templates/<template_id>", methods=["DELETE"])
@@ -7081,10 +7206,12 @@ def delete_ownership_template(template_id):
     template = query.first()
     if not template:
         return jsonify({"error": "Template not found"}), 404
+    deleted_template = template.to_dict()
     db.session.delete(template)
     db.session.commit()
-    _publish_ownership_event("template_deleted", templateId=template_id)
-    return jsonify({"success": True})
+    version = _invalidate_ownership_cache()
+    _publish_ownership_event("template_deleted", version=version, templateId=template_id, template=deleted_template)
+    return jsonify({"success": True, "cacheVersion": version})
 
 
 @app.route("/api/ownership/employees", methods=["GET"])
@@ -7152,9 +7279,10 @@ def create_ownership_employee():
         )
         db.session.add(employee)
     db.session.commit()
-    _ownership_cache_upsert_employee(employee)
-    _publish_ownership_event("employee_saved", employeeId=employee.id)
-    return jsonify({"employee": employee.to_dict()}), 201
+    version = _invalidate_ownership_cache()
+    employee_payload = employee.to_dict()
+    _publish_ownership_event("employee_saved", version=version, employeeId=employee.id, employee=employee_payload)
+    return jsonify({"employee": employee_payload, "cacheVersion": version}), 201
 
 
 @app.route("/api/ownership/employees/<employee_id>", methods=["DELETE"])
@@ -7162,11 +7290,12 @@ def delete_ownership_employee(employee_id):
     employee = OwnershipEmployee.query.get(employee_id)
     if not employee:
         return jsonify({"error": "Employee not found"}), 404
+    deleted_employee = employee.to_dict()
     employee.is_active = False
     db.session.commit()
-    _ownership_cache_delete_employee(employee_id)
-    _publish_ownership_event("employee_deleted", employeeId=employee_id)
-    return jsonify({"success": True})
+    version = _invalidate_ownership_cache()
+    _publish_ownership_event("employee_deleted", version=version, employeeId=employee_id, employee=deleted_employee)
+    return jsonify({"success": True, "cacheVersion": version})
 
 
 @app.route("/api/ownership/stream", methods=["GET"])
@@ -7218,7 +7347,11 @@ def ownership_stream():
                 except Exception:
                     pass
 
-    return Response(stream_with_context(stream()), mimetype="text/event-stream")
+    response = Response(stream_with_context(stream()), mimetype="text/event-stream")
+    response.headers["Cache-Control"] = "no-cache, no-transform"
+    response.headers["Connection"] = "keep-alive"
+    response.headers["X-Accel-Buffering"] = "no"
+    return response
 
 
 # ==================== DATABASE INITIALIZATION ====================

@@ -33,6 +33,12 @@
     </div>
 
     <div class="crm-header-actions">
+      <button class="crm-btn crm-btn-ghost" id="btnToggleStats" style="gap:.35rem;">
+        <svg class="stats-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 15 12 9 18 15"></polyline>
+        </svg>
+        Stats
+      </button>
       <button class="crm-btn crm-btn-ghost" id="btnTaskTemplates" style="gap:.4rem;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         Category Tasks
@@ -165,7 +171,7 @@
     </main>
 
     <!-- ─── RIGHT PANEL ─── -->
-    <aside class="crm-right-panel" id="crmRightPanel">
+    <aside class="crm-right-panel collapsed" id="crmRightPanel">
 
       <!-- Activity Feed -->
       <div class="crm-panel-section">
@@ -364,6 +370,10 @@
      EMPLOYEE PICKER SCREEN (NETFLIX STYLE)
 ════════════════════════════════════════════════ -->
 <div id="employeePickerScreen" class="emp-picker-screen" style="display:none;">
+  <div class="emp-picker-boot" id="empPickerBoot">
+    <div class="emp-picker-boot-spinner"></div>
+    <div class="emp-picker-boot-text">Loading employee workspace...</div>
+  </div>
   <div class="emp-picker-logo">TIMETOURS</div>
   <div class="emp-picker-content">
     <h1 class="emp-picker-title">Who's working?</h1>

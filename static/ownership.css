@@ -79,7 +79,7 @@
   font-family: 'Inter', system-ui, sans-serif;
   background: var(--crm-bg);
   color: var(--crm-text);
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
 }
@@ -162,6 +162,9 @@
   display: grid;
   grid-template-columns: repeat(6, 1fr);
   gap: 0.75rem;
+}
+.crm-kpi-grid.collapsed {
+  display: none;
 }
 @media (max-width: 1400px) { .crm-kpi-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 900px) { .crm-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
@@ -514,6 +517,7 @@
   min-height: 1.3rem;
   white-space: nowrap;
   line-height: 1;
+  gap: 0.28rem;
 }
 
 .crm-status-cell .crm-badge {
@@ -521,16 +525,13 @@
 }
 
 .crm-status-cell .crm-task-count-inline {
-  position: absolute;
-  left: 100%;
-  margin-left: 0.4rem;
-  margin-top: 0;
-  margin-bottom: 0;
-  margin-right: 0;
+  position: static;
+  margin: 0 0 0 0.28rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
+  flex-shrink: 0;
 }
 
 /* ─── Priority Badge ─── */
@@ -1364,25 +1365,25 @@ input[type=number].no-spin {
 
 /* ─── Table Footer ─── */
 .crm-table-footer {
-  padding: 0.65rem 1rem;
+  padding: 0.2rem 0.4rem;
   border-top: 1px solid var(--crm-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   color: var(--crm-text-3);
   background: var(--crm-surface-2);
 }
-.crm-pagination { display: flex; gap: 0.35rem; }
+.crm-pagination { display: flex; gap: 0.25rem; }
 .crm-page-btn {
-  width: 28px; height: 28px;
+  width: 26px; height: 26px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 6px;
   border: 1px solid var(--crm-border);
   background: var(--crm-surface);
   color: var(--crm-text-2);
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-family: inherit;
   transition: all 0.1s;
 }
@@ -1916,6 +1917,10 @@ thead th.col-sticky-6 {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 1rem;
+  overflow: hidden;
+}
+.ew-stats-row.collapsed {
+  display: none;
 }
 .ew-stat-card {
   background: var(--crm-surface);
@@ -1938,6 +1943,14 @@ thead th.col-sticky-6 {
   font-size: 2rem;
   font-weight: 700;
   color: var(--crm-text);
+}
+
+#btnToggleStats .stats-arrow {
+  transition: transform 0.18s ease;
+  transform: rotate(180deg);
+}
+#btnToggleStats.expanded .stats-arrow {
+  transform: rotate(0deg);
 }
 
 /* Toolbar */

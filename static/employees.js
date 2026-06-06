@@ -9,6 +9,8 @@ let currentTab = 'subtasks';
 let empSearchQuery = '';
 let selectedTripId = null;
 let doneSubtasksExpanded = false;
+let employeeWorkspaceBooting = false;
+let employeeWorkspaceReady = false;
 const EMPLOYEE_TRIPS_CACHE_KEY = 'ownership_trips_cache_v1';
 const EMPLOYEE_EMPLOYEES_CACHE_KEY = 'employee_workspace_employees_cache_v1';
 const EMPLOYEE_ACTIVE_ID_CACHE_KEY = 'employee_workspace_active_employee_id_v1';
@@ -447,15 +449,61 @@ function restoreEmployeeWorkspaceState() {
   }
 }
 
+function setEmployeeWorkspaceLoading(isLoading) {
+  const screen = document.getElementById('employeePickerScreen');
+  if (!screen) return;
+  const onEmployeeRoute = window.location.pathname.startsWith('/ownership/employees');
+  screen.classList.toggle('is-loading', !!isLoading && onEmployeeRoute);
+  screen.style.display = isLoading && onEmployeeRoute ? 'flex' : 'none';
+  const boot = document.getElementById('empPickerBoot');
+  if (boot) boot.style.display = isLoading && onEmployeeRoute ? 'flex' : 'none';
+  const content = screen.querySelector('.emp-picker-content');
+  if (content) {
+    content.setAttribute('aria-hidden', isLoading && onEmployeeRoute ? 'true' : 'false');
+  }
+}
+
+function resolveEmployeeWorkspaceRoute({ replace = true } = {}) {
+  const initialRequestedId = getRequestedEmployeeId();
+  if (initialRequestedId) {
+    const matched = employees.find(emp => isSameEmployeeId(emp.id, initialRequestedId));
+    if (matched) {
+      employeeWorkspaceBooting = false;
+      employeeWorkspaceReady = true;
+      setEmployeeWorkspaceLoading(false);
+      activateEmployeeById(matched.id, { replaceRoute: replace, animate: false });
+      return true;
+    }
+    cacheActiveEmployeeId('');
+    syncEmployeeRoute('', { replace });
+    employeeWorkspaceBooting = false;
+    employeeWorkspaceReady = true;
+    setEmployeeWorkspaceLoading(false);
+    showView('picker');
+    return true;
+  }
+
+  employeeWorkspaceBooting = false;
+  employeeWorkspaceReady = true;
+  setEmployeeWorkspaceLoading(false);
+  if (currentView === 'picker') showView('picker');
+  else if (activeEmployee) showView('workspace');
+  else showView('picker');
+  return true;
+}
+
 function activateEmployeeById(employeeId, { replaceRoute = false, animate = false } = {}) {
   const emp = employees.find(x => isSameEmployeeId(x.id, employeeId));
   if (!emp) return false;
 
   activeEmployee = emp;
+  employeeWorkspaceBooting = false;
+  employeeWorkspaceReady = true;
   currentTab = 'subtasks';
   selectedTripId = null;
   cacheActiveEmployeeId(emp.id);
   syncEmployeeRoute(emp.id, { replace: replaceRoute });
+  setEmployeeWorkspaceLoading(false);
 
   const targetAvatar = document.getElementById('ewUserAvatar');
   const targetName = document.getElementById('ewUserName');
@@ -475,22 +523,38 @@ function activateEmployeeById(employeeId, { replaceRoute = false, animate = fals
 }
 
 function initEmployeeWorkspace() {
-  const initialRequestedId = getRequestedEmployeeId();
-  
-  if (initialRequestedId) {
-    const matched = employees.find(emp => isSameEmployeeId(emp.id, initialRequestedId));
-    if (matched) {
-      activateEmployeeById(matched.id, { replaceRoute: true, animate: false });
-    } else {
-      cacheActiveEmployeeId('');
-      syncEmployeeRoute('', { replace: true });
-      showView('picker');
-    }
-  } else {
-    if (currentView === 'picker') showView('picker');
-    else if (activeEmployee) showView('workspace');
+  const hasEmployeeData = Array.isArray(employees) && employees.length > 0;
+  if (!hasEmployeeData) {
+    employeeWorkspaceBooting = true;
+    employeeWorkspaceReady = false;
+    setEmployeeWorkspaceLoading(true);
+    return false;
   }
+  return resolveEmployeeWorkspaceRoute({ replace: true });
 }
+
+function refreshEmployeeWorkspaceFromOwnership() {
+  if (!window.location.pathname.startsWith('/ownership/employees')) return false;
+  if (!Array.isArray(employees) || employees.length === 0) {
+    employeeWorkspaceBooting = true;
+    employeeWorkspaceReady = false;
+    setEmployeeWorkspaceLoading(true);
+    return false;
+  }
+  if (employeeWorkspaceBooting || !employeeWorkspaceReady) {
+    return resolveEmployeeWorkspaceRoute({ replace: true });
+  }
+  const initialRequestedId = getRequestedEmployeeId();
+  if (initialRequestedId) return resolveEmployeeWorkspaceRoute({ replace: true });
+  if (currentView === 'workspace' && activeEmployee) {
+    showView('workspace');
+    return true;
+  }
+  showView('picker');
+  return true;
+}
+
+window.syncEmployeeWorkspaceData = refreshEmployeeWorkspaceFromOwnership;
 
 // ============================================================================
 // PICKER VIEW
@@ -922,17 +986,12 @@ document.getElementById('ewAddSubtaskSave')?.addEventListener('click', async () 
   trip.subtasks = subsObj;
   closeAddSubtaskModal();
   renderWorkspace();
-
-  try {
-    await apiJson(`/api/ownership/trips/${trip.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ subtasks: subsObj }),
+  updateTripField(trip.id, 'subtasks', subsObj)
+    .then(() => toast('Subtask added'))
+    .catch(err => {
+      console.error('Add subtask failed', err);
+      toast('Failed to add subtask', '⚠️');
     });
-    toast('Subtask added');
-  } catch (err) {
-    console.error('Add subtask failed', err);
-    toast('Failed to add subtask', '⚠️');
-  }
 });
 
 function renderStatsRow(stats) {
@@ -1368,17 +1427,139 @@ function renderTimeline(tasks) {
 // API Updates
 const updateQueue = {};
 
+function getEmployeeTripQueue(trip) {
+  if (!trip || !trip.id) return null;
+  const tripId = trip.id;
+  if (!updateQueue[tripId]) {
+    updateQueue[tripId] = {
+      patch: {},
+      resolvers: [],
+      snapshot: JSON.parse(JSON.stringify(trip)),
+      version: trip.version || 0,
+      inFlight: false,
+      timer: null,
+    };
+  }
+  const queue = updateQueue[tripId];
+  if ((trip.version || 0) > (queue.version || 0)) {
+    queue.version = trip.version || 0;
+  }
+  return queue;
+}
+
+function scheduleEmployeeTripFlush(tripId, delay = 600) {
+  const queue = updateQueue[tripId];
+  if (!queue || queue.inFlight) return;
+  if (queue.timer) clearTimeout(queue.timer);
+  queue.timer = setTimeout(() => {
+    queue.timer = null;
+    flushEmployeeTripQueue(tripId);
+  }, delay);
+}
+
+async function flushEmployeeTripQueue(tripId) {
+  const queue = updateQueue[tripId];
+  if (!queue || queue.inFlight) return null;
+  const patch = queue.patch;
+  if (!patch || Object.keys(patch).length === 0) {
+    if (!queue.resolvers.length && !queue.timer) delete updateQueue[tripId];
+    return null;
+  }
+
+  queue.inFlight = true;
+  queue.patch = {};
+  const batchResolvers = queue.resolvers.splice(0);
+  const requestVersion = queue.version || 0;
+
+  try {
+    const { trip: saved, cacheVersion } = await apiJson(`/api/ownership/trips/${tripId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ version: requestVersion, ...patch })
+    });
+    if (saved) {
+      const idx = trips.findIndex(x => x.id === tripId);
+      const hasPendingLocalChanges = !!(queue && (queue.inFlight || Object.keys(queue.patch || {}).length > 0));
+      const mergedTrip = idx !== -1 && hasPendingLocalChanges ? { ...saved, ...trips[idx] } : saved;
+      if (idx !== -1) trips[idx] = mergedTrip;
+      queue.snapshot = JSON.parse(JSON.stringify(mergedTrip));
+      queue.version = mergedTrip.version || queue.version;
+      if (typeof rememberOwnershipVersion === 'function') {
+        rememberOwnershipVersion(cacheVersion || mergedTrip.version);
+      }
+      if (tripId === currentDetailContext?.tripId) {
+        const detailStatus = document.getElementById('ewDetailStatusSelect');
+        if (detailStatus && currentDetailContext?.taskKey) {
+          detailStatus.value = mergedTrip[currentDetailContext.taskKey] || detailStatus.value;
+          refreshDetailSubtaskList(mergedTrip, currentDetailContext.taskKey);
+        }
+      }
+      cacheEmployeeWorkspaceState();
+      refreshWorkspaceStats();
+    }
+    toast('Saved');
+    batchResolvers.forEach(r => r.resolve(saved));
+  } catch (e) {
+    const serverTrip = e.status === 409 && e.payload?.trip ? e.payload.trip : null;
+    const currentTrip = trips.find(x => x.id === tripId);
+    const hasPendingLocalChanges = !!(queue && (queue.inFlight || Object.keys(queue.patch || {}).length > 0));
+    const fallbackTrip = serverTrip ? (hasPendingLocalChanges ? { ...serverTrip, ...(currentTrip || {}) } : serverTrip) : queue.snapshot;
+    const idx = trips.findIndex(x => x.id === tripId);
+    if (idx !== -1 && fallbackTrip) trips[idx] = fallbackTrip;
+    if (serverTrip) {
+      queue.snapshot = JSON.parse(JSON.stringify(fallbackTrip));
+      queue.version = fallbackTrip.version || queue.version;
+      if (typeof rememberOwnershipVersion === 'function') {
+        rememberOwnershipVersion(e.payload?.cacheVersion || fallbackTrip.version);
+      }
+      cacheEmployeeWorkspaceState();
+      refreshWorkspaceStats();
+      if (tripId === currentDetailContext?.tripId) {
+        const detailStatus = document.getElementById('ewDetailStatusSelect');
+        if (detailStatus && currentDetailContext?.taskKey) {
+          detailStatus.value = fallbackTrip[currentDetailContext.taskKey] || detailStatus.value;
+          refreshDetailSubtaskList(fallbackTrip, currentDetailContext.taskKey);
+        }
+      }
+      toast('Latest data loaded. Keep editing.', '⚠️');
+      batchResolvers.forEach(r => r.resolve(fallbackTrip));
+    } else {
+      if (typeof queueOwnershipServerRefresh === 'function' && e.status === 409) {
+        queueOwnershipServerRefresh(e.payload?.cacheVersion || 0, 'employee workspace conflict');
+      }
+      cacheEmployeeWorkspaceState();
+      refreshWorkspaceStats();
+      if (tripId === currentDetailContext?.tripId) {
+        const matched = trips.find(x => x.id === tripId);
+        if (matched && currentDetailContext?.taskKey) {
+          document.getElementById('ewDetailStatusSelect').value = matched[currentDetailContext.taskKey] || 'notstarted';
+          refreshDetailSubtaskList(matched, currentDetailContext.taskKey);
+        }
+      }
+      renderWorkspace();
+      toast('Failed to save', '⚠️');
+      batchResolvers.forEach(r => r.reject(e));
+    }
+  } finally {
+    queue.inFlight = false;
+    if (Object.keys(queue.patch).length === 0 && queue.resolvers.length === 0 && !queue.timer) {
+      delete updateQueue[tripId];
+    } else if (Object.keys(queue.patch).length > 0 && !queue.timer) {
+      scheduleEmployeeTripFlush(tripId, 0);
+    }
+  }
+}
+
 async function updateTripField(tripId, field, value) {
   const trip = trips.find(x => x.id === tripId);
   if (!trip) return;
 
-  const key = `${tripId}_${field}`;
-  if (!updateQueue[key]) {
-    updateQueue[key] = { snapshot: JSON.parse(JSON.stringify(trip)), resolvers: [] };
-  }
+  const queue = getEmployeeTripQueue(trip);
+  if (!queue) return;
 
   if (field === 'subtasks') trip.subtasks = value;
   else trip[field] = value;
+
+  queue.patch[field] = value;
   
   cacheEmployeeWorkspaceState();
   refreshWorkspaceStats();
@@ -1388,36 +1569,8 @@ async function updateTripField(tripId, field, value) {
   }
 
   return new Promise((resolve, reject) => {
-    updateQueue[key].resolvers.push({ resolve, reject });
-    updateQueue[key].value = value;
-
-    clearTimeout(updateQueue[key].timer);
-    updateQueue[key].timer = setTimeout(async () => {
-      const q = updateQueue[key];
-      delete updateQueue[key];
-      try {
-        await apiJson(`/api/ownership/trips/${tripId}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ [field]: q.value })
-        });
-        toast('Saved');
-        q.resolvers.forEach(r => r.resolve());
-      } catch (e) {
-        const idx = trips.findIndex(x => x.id === tripId);
-        if (idx !== -1) trips[idx] = q.snapshot;
-        refreshWorkspaceStats();
-        if (currentDetailContext && currentDetailContext.tripId === tripId) {
-          const matched = trips.find(x => x.id === tripId);
-          if (matched) {
-            document.getElementById('ewDetailStatusSelect').value = matched[currentDetailContext.taskKey] || 'notstarted';
-            refreshDetailSubtaskList(matched, currentDetailContext.taskKey);
-          }
-        }
-        renderWorkspace();
-        toast('Failed to save', '⚠️');
-        q.resolvers.forEach(r => r.reject(e));
-      }
-    }, 600);
+    queue.resolvers.push({ resolve, reject });
+    scheduleEmployeeTripFlush(tripId);
   });
 }
 
@@ -1718,7 +1871,14 @@ window.addEventListener('popstate', () => {
 
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
-  initEmployeeWorkspace();
+  if (window.location.pathname.startsWith('/ownership/employees')) {
+    initEmployeeWorkspace();
+  } else {
+    employeeWorkspaceBooting = false;
+    employeeWorkspaceReady = false;
+    setEmployeeWorkspaceLoading(false);
+    restoreEmployeeWorkspaceState();
+  }
 });
 
 renderSubtasks = function(subtasks) {

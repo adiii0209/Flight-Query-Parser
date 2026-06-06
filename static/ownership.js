@@ -51,8 +51,17 @@ let newTplTasks = [];
 let isDark = false;
 let ownershipRefreshQueued = false;
 let ownershipRefreshTimer = null;
+let tableRenderTimer = null;
+let searchRenderTimer = null;
 let ownershipCacheTimer = null;
 let ownershipCachePendingTrips = null;
+let ownershipKnownVersion = 0;
+let ownershipRealtimeSource = null;
+let ownershipRealtimeReconnectTimer = null;
+let ownershipRealtimeNeedsResync = false;
+let ownershipServerRefreshPending = false;
+let ownershipServerRefreshTimer = null;
+const ownershipPendingTripEvents = {};
 let subtaskModalRefreshTimer = null;
 let subtaskModalRefreshState = null;
 
@@ -67,9 +76,263 @@ async function apiJson(url, options = {}) {
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `Request failed: ${response.status}`);
+    const err = new Error(error.error || `Request failed: ${response.status}`);
+    err.status = response.status;
+    err.payload = error;
+    throw err;
   }
   return response.json();
+}
+
+function parseOwnershipVersion(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function rememberOwnershipVersion(version) {
+  const parsed = parseOwnershipVersion(version);
+  if (parsed > ownershipKnownVersion) {
+    ownershipKnownVersion = parsed;
+  }
+  return ownershipKnownVersion;
+}
+
+function parseOwnershipEventData(event) {
+  if (!event || typeof event.data !== 'string' || !event.data) return null;
+  try {
+    return JSON.parse(event.data);
+  } catch (err) {
+    return null;
+  }
+}
+
+function queueOwnershipServerRefresh(version = 0, reason = 'ownership update') {
+  const parsedVersion = rememberOwnershipVersion(version);
+  ownershipServerRefreshPending = true;
+  const runRefresh = async () => {
+    ownershipServerRefreshTimer = null;
+    if (!ownershipServerRefreshPending) return;
+    if (Object.keys(patchQueue).length > 0) {
+      ownershipServerRefreshTimer = setTimeout(runRefresh, 180);
+      return;
+    }
+    ownershipServerRefreshPending = false;
+    try {
+      await reloadOwnershipData({ silent: true });
+    } catch (err) {
+      console.error('Ownership live refresh failed', reason, err);
+    }
+  };
+
+  if (ownershipServerRefreshTimer) {
+    clearTimeout(ownershipServerRefreshTimer);
+  }
+  ownershipServerRefreshTimer = setTimeout(runRefresh, parsedVersion ? 120 : 220);
+}
+
+function stashOwnershipTripEvent(payload) {
+  if (!payload) return false;
+  const tripId = payload.tripId || payload.trip?.id;
+  if (!tripId) return false;
+  const nextVersion = parseOwnershipVersion(payload.version);
+  const current = ownershipPendingTripEvents[tripId];
+  if (current && parseOwnershipVersion(current.version) > nextVersion) {
+    return false;
+  }
+  ownershipPendingTripEvents[tripId] = payload;
+  return true;
+}
+
+function flushOwnershipTripEvent(tripId) {
+  if (!tripId || patchQueue[tripId]) return false;
+  const payload = ownershipPendingTripEvents[tripId];
+  if (!payload) return false;
+  delete ownershipPendingTripEvents[tripId];
+  return applyOwnershipRealtimeEvent(payload, { fromFlush: true });
+}
+
+function upsertOwnershipTripFromEvent(trip) {
+  if (!trip || !trip.id) return false;
+  const nextTrip = hydrateTripSearchIndex({ version: 1, ...trip });
+  const idx = trips.findIndex(item => item.id === nextTrip.id);
+  const queue = patchQueue[nextTrip.id];
+  const hasPendingLocalPatch = !!(queue && (queue.inFlight || Object.keys(queue.patch || {}).length > 0));
+  if (idx !== -1) {
+    const currentVersion = parseOwnershipVersion(trips[idx].version);
+    const nextVersion = parseOwnershipVersion(nextTrip.version);
+    if (hasPendingLocalPatch) {
+      trips[idx] = { ...nextTrip, ...trips[idx] };
+      cacheTripsForFastPaint(trips);
+      refreshOwnershipViews();
+      return true;
+    }
+    if (currentVersion > nextVersion) return true;
+    trips[idx] = nextTrip;
+    cacheTripsForFastPaint(trips);
+    refreshOwnershipViews();
+    return true;
+  }
+  if (idx !== -1) trips[idx] = nextTrip;
+  else trips.unshift(nextTrip);
+  cacheTripsForFastPaint(trips);
+  refreshOwnershipViews();
+  return true;
+}
+
+function removeOwnershipTripFromEvent(tripId, version = 0) {
+  if (!tripId) return false;
+  const idx = trips.findIndex(item => item.id === tripId);
+  const queue = patchQueue[tripId];
+  const hasPendingLocalPatch = !!(queue && (queue.inFlight || Object.keys(queue.patch || {}).length > 0));
+  if (hasPendingLocalPatch) return true;
+  if (idx !== -1) {
+    const currentVersion = parseOwnershipVersion(trips[idx].version);
+    const nextVersion = parseOwnershipVersion(version);
+    if (currentVersion > nextVersion) return true;
+  }
+  const before = trips.length;
+  trips = trips.filter(item => item.id !== tripId);
+  if (trips.length === before) return true;
+  cacheTripsForFastPaint(trips);
+  refreshOwnershipViews();
+  return true;
+}
+
+function upsertOwnershipTemplateFromEvent(template) {
+  if (!template || !template.id) return false;
+  const idx = taskTemplates.findIndex(item => item.id === template.id);
+  if (idx !== -1) taskTemplates[idx] = template;
+  else taskTemplates.push(template);
+  renderSavedTemplates();
+  return true;
+}
+
+function removeOwnershipTemplateFromEvent(templateId) {
+  if (!templateId) return false;
+  const before = taskTemplates.length;
+  taskTemplates = taskTemplates.filter(item => item.id !== templateId);
+  if (taskTemplates.length === before) return true;
+  expandedTemplateIds.delete(templateId);
+  renderSavedTemplates();
+  return true;
+}
+
+function upsertOwnershipEmployeeFromEvent(employee) {
+  if (!employee || !employee.id) return false;
+  const idx = employees.findIndex(item => item.id === employee.id);
+  if (idx !== -1) employees[idx] = employee;
+  else employees.push(employee);
+  employees.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  refreshOwnershipViews();
+  return true;
+}
+
+function removeOwnershipEmployeeFromEvent(employeeId) {
+  if (!employeeId) return false;
+  const before = employees.length;
+  employees = employees.filter(item => item.id !== employeeId);
+  if (employees.length === before) return true;
+  refreshOwnershipViews();
+  return true;
+}
+
+function applyOwnershipRealtimeEvent(payload, options = {}) {
+  if (!payload || !payload.event) return false;
+  rememberOwnershipVersion(payload.version);
+
+  switch (payload.event) {
+    case 'trip_created':
+    case 'trip_updated':
+      if (!options.fromFlush && payload.trip?.id && patchQueue[payload.trip.id]) {
+        stashOwnershipTripEvent(payload);
+        return true;
+      }
+      if (payload.trip) {
+        return upsertOwnershipTripFromEvent(payload.trip);
+      }
+      return false;
+    case 'trip_deleted':
+      if (!options.fromFlush && payload.tripId && patchQueue[payload.tripId]) {
+        stashOwnershipTripEvent(payload);
+        return true;
+      }
+      return removeOwnershipTripFromEvent(payload.tripId, payload.version);
+    case 'template_created':
+      if (payload.template) {
+        return upsertOwnershipTemplateFromEvent(payload.template);
+      }
+      return false;
+    case 'template_deleted':
+      return removeOwnershipTemplateFromEvent(payload.templateId);
+    case 'employee_saved':
+      if (payload.employee) {
+        return upsertOwnershipEmployeeFromEvent(payload.employee);
+      }
+      return false;
+    case 'employee_deleted':
+      return removeOwnershipEmployeeFromEvent(payload.employeeId);
+    case 'sheet_imported':
+      queueOwnershipServerRefresh(payload.version, 'sheet import');
+      return true;
+    case 'refresh':
+      queueOwnershipServerRefresh(payload.version, 'realtime refresh');
+      return true;
+    default:
+      return false;
+  }
+}
+
+function stopOwnershipRealtime() {
+  if (ownershipRealtimeSource) {
+    ownershipRealtimeSource.close();
+    ownershipRealtimeSource = null;
+  }
+  if (ownershipRealtimeReconnectTimer) {
+    clearTimeout(ownershipRealtimeReconnectTimer);
+    ownershipRealtimeReconnectTimer = null;
+  }
+}
+
+function startOwnershipRealtime() {
+  if (!('EventSource' in window) || ownershipRealtimeSource) return false;
+
+  const stream = new EventSource('/api/ownership/stream');
+  ownershipRealtimeSource = stream;
+
+  stream.addEventListener('ready', event => {
+    const payload = parseOwnershipEventData(event);
+    const version = parseOwnershipVersion(payload?.version);
+    rememberOwnershipVersion(version);
+    if (ownershipRealtimeNeedsResync) {
+      ownershipRealtimeNeedsResync = false;
+      queueOwnershipServerRefresh(version, 'stream reconnect');
+    }
+  });
+
+  stream.addEventListener('ownership', event => {
+    const payload = parseOwnershipEventData(event);
+    if (!payload) return;
+    const handled = applyOwnershipRealtimeEvent(payload);
+    if (!handled && payload.version) {
+      queueOwnershipServerRefresh(payload.version, payload.event || 'ownership update');
+    }
+  });
+
+  stream.addEventListener('ping', () => {});
+
+  stream.onerror = () => {
+    if (!ownershipRealtimeSource || ownershipRealtimeSource !== stream) return;
+    ownershipRealtimeNeedsResync = true;
+    if (stream.readyState === EventSource.CLOSED) {
+      stopOwnershipRealtime();
+      ownershipRealtimeReconnectTimer = setTimeout(() => {
+        ownershipRealtimeReconnectTimer = null;
+        startOwnershipRealtime();
+      }, 2500);
+    }
+  };
+
+  return true;
 }
 
 function save(trip = null) {
@@ -88,45 +351,121 @@ function save(trip = null) {
 
 const patchQueue = {};
 
+function getOwnershipPatchQueue(trip) {
+  if (!trip || !trip.id) return null;
+  const tripId = trip.id;
+  if (!patchQueue[tripId]) {
+    patchQueue[tripId] = {
+      patch: {},
+      resolvers: [],
+      snapshot: JSON.parse(JSON.stringify(trip)),
+      version: parseOwnershipVersion(trip.version),
+      inFlight: false,
+      timer: null,
+    };
+  }
+  const queue = patchQueue[tripId];
+  const tripVersion = parseOwnershipVersion(trip.version);
+  if (tripVersion > queue.version) {
+    queue.version = tripVersion;
+  }
+  return queue;
+}
+
+function scheduleOwnershipPatchFlush(tripId, delay = 600) {
+  const queue = patchQueue[tripId];
+  if (!queue || queue.inFlight) return;
+  if (queue.timer) clearTimeout(queue.timer);
+  queue.timer = setTimeout(() => {
+    queue.timer = null;
+    flushOwnershipTripPatch(tripId);
+  }, delay);
+}
+
+async function flushOwnershipTripPatch(tripId) {
+  const queue = patchQueue[tripId];
+  if (!queue || queue.inFlight) return null;
+  const patch = queue.patch;
+  if (!patch || Object.keys(patch).length === 0) {
+    if (!queue.resolvers.length && !queue.timer) {
+      delete patchQueue[tripId];
+    }
+    return null;
+  }
+
+  queue.inFlight = true;
+  queue.patch = {};
+  const batchResolvers = queue.resolvers.splice(0);
+  const requestVersion = queue.version || 0;
+  try {
+    const { trip: saved, cacheVersion } = await apiJson(`/api/ownership/trips/${tripId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ version: requestVersion, ...patch }),
+    });
+    if (saved) {
+      const idx = trips.findIndex(t => t.id === saved.id);
+      const hasPendingLocalChanges = !!(queue && (queue.inFlight || Object.keys(queue.patch || {}).length > 0));
+      const mergedTrip = idx !== -1 && hasPendingLocalChanges ? { ...saved, ...trips[idx] } : saved;
+      if (idx !== -1) trips[idx] = mergedTrip;
+      queue.snapshot = JSON.parse(JSON.stringify(mergedTrip));
+      queue.version = parseOwnershipVersion(cacheVersion || mergedTrip.version || queue.version);
+      rememberOwnershipVersion(cacheVersion || saved.version);
+      cacheTripsForFastPaint(trips);
+      syncTripRowDom(mergedTrip, { refreshExpanded: true });
+    }
+    flushOwnershipTripEvent(tripId);
+    batchResolvers.forEach(r => r.resolve(saved));
+  } catch (err) {
+    const serverTrip = err.status === 409 && err.payload?.trip ? err.payload.trip : null;
+    const currentTrip = trips.find(t => t.id === tripId);
+    const hasPendingLocalChanges = !!(queue && (queue.inFlight || Object.keys(queue.patch || {}).length > 0));
+    const nextTrip = serverTrip ? (hasPendingLocalChanges ? { ...serverTrip, ...(currentTrip || {}) } : serverTrip) : queue.snapshot;
+    const idx = trips.findIndex(t => t.id === tripId);
+    if (idx !== -1 && nextTrip) trips[idx] = nextTrip;
+    if (serverTrip) {
+      queue.snapshot = JSON.parse(JSON.stringify(nextTrip));
+      queue.version = parseOwnershipVersion(err.payload?.cacheVersion || nextTrip.version || queue.version);
+      rememberOwnershipVersion(err.payload?.cacheVersion || serverTrip.version);
+      cacheTripsForFastPaint(trips);
+      syncTripRowDom(nextTrip, { refreshExpanded: true });
+      toast('Latest trip version loaded. Keep editing.', '⚠️');
+    } else {
+      cacheTripsForFastPaint(trips);
+      syncTripRowDom(nextTrip, { refreshExpanded: true });
+    }
+
+    if (Object.keys(queue.patch).length > 0) {
+      scheduleOwnershipPatchFlush(tripId, 0);
+    }
+
+    batchResolvers.forEach(r => {
+      if (serverTrip) r.resolve(serverTrip);
+      else r.reject(err);
+    });
+    if (!serverTrip) {
+      queueOwnershipServerRefresh(err.payload?.cacheVersion || 0, 'trip patch failed');
+    }
+  } finally {
+    queue.inFlight = false;
+    if (Object.keys(queue.patch).length === 0 && queue.resolvers.length === 0 && !queue.timer) {
+      delete patchQueue[tripId];
+    } else if (Object.keys(queue.patch).length > 0 && !queue.timer) {
+      scheduleOwnershipPatchFlush(tripId, 0);
+    }
+  }
+}
+
 async function saveTripPatch(trip, patch) {
   if (!trip || !trip.id) return null;
   const tripId = trip.id;
-  
-  if (!patchQueue[tripId]) {
-    patchQueue[tripId] = { patch: {}, resolvers: [], snapshot: JSON.parse(JSON.stringify(trip)) };
-  }
-  
-  Object.assign(patchQueue[tripId].patch, patch);
+  const queue = getOwnershipPatchQueue(trip);
+  if (!queue) return null;
+  Object.assign(queue.patch, patch);
   cacheTripsForFastPaint(trips);
   
   return new Promise((resolve, reject) => {
-    patchQueue[tripId].resolvers.push({ resolve, reject });
-    
-    clearTimeout(patchQueue[tripId].timer);
-    patchQueue[tripId].timer = setTimeout(async () => {
-      const q = patchQueue[tripId];
-      delete patchQueue[tripId];
-      
-      try {
-        const { trip: saved } = await apiJson(`/api/ownership/trips/${tripId}`, {
-          method: 'PATCH',
-          body: JSON.stringify(q.patch),
-        });
-        if (saved) {
-          const idx = trips.findIndex(t => t.id === saved.id);
-          if (idx !== -1) trips[idx] = saved;
-          cacheTripsForFastPaint(trips);
-          syncTripRowDom(saved, { refreshExpanded: true });
-        }
-        q.resolvers.forEach(r => r.resolve(saved));
-      } catch (err) {
-        const idx = trips.findIndex(t => t.id === tripId);
-        if (idx !== -1) trips[idx] = q.snapshot;
-        cacheTripsForFastPaint(trips);
-        syncTripRowDom(q.snapshot, { refreshExpanded: true });
-        q.resolvers.forEach(r => r.reject(err));
-      }
-    }, 600);
+    queue.resolvers.push({ resolve, reject });
+    scheduleOwnershipPatchFlush(tripId);
   });
 }
 
@@ -147,6 +486,13 @@ function scheduleOwnershipRefresh() {
     renderActivityFeed();
     renderCalendar();
     renderUpcomingTrips();
+    if (window.location.pathname.startsWith('/ownership/employees')) {
+      if (typeof refreshEmployeeWorkspaceFromOwnership === 'function') {
+        refreshEmployeeWorkspaceFromOwnership();
+      } else if (typeof syncEmployeeWorkspaceData === 'function') {
+        syncEmployeeWorkspaceData();
+      }
+    }
   });
 }
 
@@ -183,8 +529,9 @@ function saveTemplates(template = null) {
   apiJson('/api/ownership/templates', {
     method: 'POST',
     body: JSON.stringify(template),
-  }).then(({ template: saved }) => {
+  }).then(({ template: saved, cacheVersion }) => {
     if (saved) {
+      rememberOwnershipVersion(cacheVersion);
       const idx = taskTemplates.findIndex(t => t.id === template.id);
       if (idx !== -1) taskTemplates[idx] = saved;
       else taskTemplates.push(saved);
@@ -232,6 +579,7 @@ function applyOwnershipStatusOptimistically(trip, field, value) {
   if (!trip) return;
   const previous = trip[field];
   trip[field] = value;
+  hydrateTripSearchIndex(trip);
   cacheTripsForFastPaint(trips);
   return previous;
 }
@@ -275,6 +623,7 @@ const STATUS_CELL_MAP = {
 
 function syncTripRowDom(trip, { refreshExpanded = false } = {}) {
   if (!trip || !trip.id) return false;
+  hydrateTripSearchIndex(trip);
   const row = findTripRow(trip.id);
   if (!row) return false;
 
@@ -467,11 +816,72 @@ function renderSkeleton() {
   document.getElementById('tableFooterInfo').textContent = 'Loading ownership data...';
 }
 
+function buildTripSearchText(trip) {
+  return [
+    trip?.guestName || '',
+    trip?.destination || '',
+    trip?.owner || '',
+  ].join(' ').toLowerCase();
+}
+
+function hydrateTripSearchIndex(trip) {
+  if (!trip) return trip;
+  trip._searchText = buildTripSearchText(trip);
+  return trip;
+}
+
+function cancelScheduledTableRender() {
+  if (tableRenderTimer) {
+    clearTimeout(tableRenderTimer);
+    tableRenderTimer = null;
+  }
+}
+
+function scheduleTableRender(delayMs = 90) {
+  cancelScheduledTableRender();
+  tableRenderTimer = setTimeout(() => {
+    tableRenderTimer = null;
+    renderTable();
+  }, delayMs);
+}
+
+function cancelScheduledSearchRender() {
+  if (searchRenderTimer) {
+    cancelAnimationFrame(searchRenderTimer);
+    searchRenderTimer = null;
+  }
+}
+
+function scheduleSearchRender() {
+  cancelScheduledSearchRender();
+  searchRenderTimer = window.requestAnimationFrame(() => {
+    searchRenderTimer = null;
+    renderTable();
+  });
+}
+
 function refreshOwnerControls() {
   populateOwnerFilter();
   populateAssigneeSelect();
   const ownerSelect = document.getElementById('tf-owner');
   if (ownerSelect) ownerSelect.innerHTML = ownerOptions(ownerSelect.value);
+}
+
+function syncStatsPanelButton() {
+  const button = document.getElementById('btnToggleStats');
+  const grid = document.getElementById('kpiGrid');
+  if (!button || !grid) return;
+  const expanded = !grid.classList.contains('collapsed');
+  button.classList.toggle('expanded', expanded);
+  button.classList.toggle('collapsed', !expanded);
+}
+
+function toggleStatsPanel(forceExpanded = null) {
+  const grid = document.getElementById('kpiGrid');
+  if (!grid) return;
+  const shouldExpand = forceExpanded === null ? grid.classList.contains('collapsed') : !!forceExpanded;
+  grid.classList.toggle('collapsed', !shouldExpand);
+  syncStatsPanelButton();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -483,9 +893,7 @@ function getFiltered() {
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     data = data.filter(t =>
-      t.guestName.toLowerCase().includes(q) ||
-      t.destination.toLowerCase().includes(q) ||
-      (t.owner || '').toLowerCase().includes(q)
+      (t._searchText || buildTripSearchText(t)).includes(q)
     );
   }
   if (filterStatus) {
@@ -568,6 +976,7 @@ function updateKPIs() {
 // ═══════════════════════════════════════════════════════════
 
 function renderTable() {
+  cancelScheduledTableRender();
   const filtered = getFiltered();
   const { page, total, pages } = paginate(filtered);
 
@@ -1980,14 +2389,22 @@ window.toggleTemplateDetails = function(id) {
 };
 
 window.deleteTemplate = function(id) {
+  const previousTemplate = taskTemplates.find(t => t.id === id);
   taskTemplates = taskTemplates.filter(t => t.id !== id);
   expandedTemplateIds.delete(id);
-  apiJson(`/api/ownership/templates/${id}`, { method: 'DELETE' }).catch(err => {
+  apiJson(`/api/ownership/templates/${id}`, { method: 'DELETE' }).then(({ cacheVersion }) => {
+    rememberOwnershipVersion(cacheVersion);
+    renderSavedTemplates();
+    toast('Template deleted', '🗑️');
+  }).catch(err => {
     console.error('Template delete failed', err);
+    if (previousTemplate) {
+      taskTemplates.push(previousTemplate);
+      taskTemplates.sort((a, b) => String(a.taskGroup || '').localeCompare(String(b.taskGroup || '')) || String(a.name || '').localeCompare(String(b.name || '')));
+    }
+    renderSavedTemplates();
     toast('Could not delete template', '⚠️');
   });
-  renderSavedTemplates();
-  toast('Template deleted', '🗑️');
 };
 
 window.applyTemplateToAll = function(tplId) {
@@ -2090,6 +2507,10 @@ document.getElementById('tripModalSave').addEventListener('click', async () => {
         trips[idx] = previousTrip;
         cacheTripsForFastPaint(trips);
         syncTripRowDom(previousTrip, { refreshExpanded: true });
+        if (err.status === 409) {
+          toast('Someone else updated this trip. We refreshed the latest data.', '⚠️');
+          return;
+        }
         toast('Could not update trip', '⚠️');
       });
       return;
@@ -2110,10 +2531,11 @@ document.getElementById('tripModalSave').addEventListener('click', async () => {
     apiJson('/api/ownership/trips', {
       method: 'POST',
       body: JSON.stringify({ ...data, subtasks: optimisticTrip.subtasks, reminders: [] }),
-    }).then(({ trip: newTrip }) => {
+    }).then(({ trip: newTrip, cacheVersion }) => {
       const idx = trips.findIndex(t => t.id === tempId);
       if (idx !== -1 && newTrip) {
         trips[idx] = newTrip;
+        rememberOwnershipVersion(cacheVersion || newTrip.version);
         scheduleOwnershipRefreshDeferred(0);
       }
     }).catch(err => {
@@ -2131,11 +2553,17 @@ window.deleteTrip = function(id) {
   const trip = trips.find(t => t.id === id);
   trips = trips.filter(t => t.id !== id);
   expandedRows.delete(id);
-  apiJson(`/api/ownership/trips/${id}`, { method: 'DELETE' }).catch(err => {
+  apiJson(`/api/ownership/trips/${id}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ version: trip?.version || 0 }),
+  }).catch(err => {
     console.error('Trip delete failed', err);
     if (trip) {
       trips.unshift(trip);
       refreshOwnershipViews();
+    }
+    if (err.status === 409) {
+      queueOwnershipServerRefresh(err.payload?.cacheVersion || 0, 'trip delete conflict');
     }
     toast('Could not delete from database', '⚠️');
   });
@@ -2155,7 +2583,7 @@ function closeExpandedRows() {
 document.getElementById('crmSearch').addEventListener('input', e => {
   searchQuery = e.target.value;
   currentPage = 1;
-  renderTable();
+  scheduleTableRender(45);
 });
 
 document.getElementById('filterStatus').addEventListener('change', e => {
@@ -2183,6 +2611,7 @@ document.getElementById('btnClearFilters').addEventListener('click', () => {
   document.getElementById('filterOwner').value = '';
   document.getElementById('filterMonth').value = '';
   currentPage = 1;
+  cancelScheduledTableRender();
   renderTable();
 });
 
@@ -2247,6 +2676,10 @@ function populateMonthFilter() {
 document.getElementById('btnTogglePanel').addEventListener('click', () => {
   const panel = document.getElementById('crmRightPanel');
   panel.classList.toggle('collapsed');
+});
+
+document.getElementById('btnToggleStats')?.addEventListener('click', () => {
+  toggleStatsPanel();
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -2664,7 +3097,14 @@ async function loadOwnershipData() {
     apiJson('/api/ownership/templates'),
     apiJson('/api/ownership/employees'),
   ]);
-  trips = tripData.trips || [];
+  trips = (tripData.trips || []).map(trip => hydrateTripSearchIndex({ version: 1, ...trip }));
+  rememberOwnershipVersion(
+    Math.max(
+      parseOwnershipVersion(tripData.cacheVersion),
+      parseOwnershipVersion(templateData.cacheVersion),
+      parseOwnershipVersion(employeeData.cacheVersion),
+    )
+  );
   cacheTripsForFastPaint(trips);
   taskTemplates = templateData.templates || [];
   employees = employeeData.employees || [];
@@ -2699,13 +3139,21 @@ function cancelPendingOwnershipWork() {
     clearTimeout(subtaskModalRefreshTimer);
     subtaskModalRefreshTimer = null;
   }
+  if (ownershipServerRefreshTimer) {
+    clearTimeout(ownershipServerRefreshTimer);
+    ownershipServerRefreshTimer = null;
+  }
+  if (ownershipRealtimeReconnectTimer) {
+    clearTimeout(ownershipRealtimeReconnectTimer);
+    ownershipRealtimeReconnectTimer = null;
+  }
 }
 
 function restoreTripsForFastPaint() {
   try {
     const cached = JSON.parse(localStorage.getItem(OWNERSHIP_TRIPS_STORAGE_KEY) || 'null');
     if (!cached || !Array.isArray(cached.trips)) return false;
-    trips = cached.trips;
+    trips = cached.trips.map(trip => hydrateTripSearchIndex({ version: 1, ...trip }));
     refreshOwnerControls();
     populateMonthFilter();
     renderTable();
@@ -2727,6 +3175,13 @@ async function reloadOwnershipData({ silent = true } = {}) {
     renderActivityFeed();
     renderCalendar();
     renderUpcomingTrips();
+    if (window.location.pathname.startsWith('/ownership/employees')) {
+      if (typeof refreshEmployeeWorkspaceFromOwnership === 'function') {
+        refreshEmployeeWorkspaceFromOwnership();
+      } else if (typeof syncEmployeeWorkspaceData === 'function') {
+        syncEmployeeWorkspaceData();
+      }
+    }
     if (!silent) toast('Ownership data refreshed');
   } catch (err) {
     console.error('Ownership reload failed', err);
@@ -2756,6 +3211,13 @@ async function init() {
 
   refreshOwnerControls();
   populateMonthFilter();
+  if (window.location.pathname.startsWith('/ownership/employees')) {
+    if (typeof syncEmployeeWorkspaceData === 'function') {
+      syncEmployeeWorkspaceData();
+    } else if (typeof refreshEmployeeWorkspaceFromOwnership === 'function') {
+      refreshEmployeeWorkspaceFromOwnership();
+    }
+  }
 
   if (loadError && !renderedCachedTrips) {
     const tbody = document.getElementById('crmTbody');
@@ -2778,11 +3240,16 @@ async function init() {
   }, 300);
 
   // Initialize correct view based on URL
+  document.getElementById('crmRightPanel')?.classList.add('collapsed');
+  document.getElementById('kpiGrid')?.classList.remove('collapsed');
+  syncStatsPanelButton();
   toggleSpaView();
+  startOwnershipRealtime();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   init();
+  window.addEventListener('beforeunload', stopOwnershipRealtime);
 
   const btnCancelSelection = document.getElementById('btnCancelSelection');
   if (btnCancelSelection) {
@@ -2815,9 +3282,12 @@ document.addEventListener('DOMContentLoaded', () => {
       toast(`Deleted ${deletedTrips.length} trips`);
 
       const results = await Promise.allSettled(
-        idsToDelete.map(id => fetch(`/api/ownership/trips/${id}`, { method: 'DELETE' }))
+        deletedTrips.map(tripItem => apiJson(`/api/ownership/trips/${tripItem.id}`, {
+          method: 'DELETE',
+          body: JSON.stringify({ version: tripItem.version || 0 }),
+        }))
       );
-      const failedIds = idsToDelete.filter((id, idx) => results[idx].status !== 'fulfilled' || !results[idx].value.ok);
+      const failedIds = deletedTrips.filter((tripItem, idx) => results[idx].status !== 'fulfilled').map(tripItem => tripItem.id);
       if (failedIds.length) {
         trips = [...deletedTrips.filter(t => failedIds.includes(t.id)), ...trips];
         refreshOwnershipViews();

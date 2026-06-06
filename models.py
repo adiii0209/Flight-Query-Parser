@@ -239,6 +239,7 @@ class OwnershipTrip(db.Model):
         db.Index("ix_ownership_trip_owner", "owner"),
         db.Index("ix_ownership_trip_source_row", "source_row"),
     )
+    version = db.Column(db.Integer, nullable=False, default=1)
 
     id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -289,7 +290,7 @@ class OwnershipTrip(db.Model):
         order_by="OwnershipReminder.days_before",
     )
 
-    def to_dict(self, include_legacy_relationships=False):
+    def to_dict(self, include_legacy_relationships=False, include_raw_sheet_data=False):
         subtask_groups = self.subtasks_json if isinstance(self.subtasks_json, dict) else {
             "proposal": [],
             "visa": [],
@@ -308,10 +309,11 @@ class OwnershipTrip(db.Model):
         reminders = self.reminders_json if isinstance(self.reminders_json, list) else []
         if include_legacy_relationships and not reminders:
             reminders = [reminder.to_dict() for reminder in self.reminders or []]
-        raw_sheet_data = self.raw_sheet_data if isinstance(self.raw_sheet_data, dict) else {}
+        raw_sheet_data = self.raw_sheet_data if include_raw_sheet_data and isinstance(self.raw_sheet_data, dict) else {}
 
         return {
             "id": self.id,
+            "version": self.version or 1,
             "guestName": self.guest_name or "",
             "pax": self.pax or 1,
             "destination": self.destination or "",
