@@ -3200,7 +3200,7 @@ function ticketsRealtimeEnsureHub() {
     if (ticketsRealtimeHub) return true;
     if (!('SharedWorker' in window)) return false;
     try {
-        ticketsRealtimeHub = new SharedWorker(TICKETS_REALTIME_HUB_URL, { name: 'tickets-realtime-hub' });
+        ticketsRealtimeHub = new SharedWorker(TICKETS_REALTIME_HUB_URL, { name: 'realtime-hub-v2' });
         ticketsRealtimeHub.port.onmessage = (event) => ticketsRealtimeHandleBroadcast(event?.data);
         ticketsRealtimeHub.port.start();
         ticketsRealtimeHub.port.postMessage({ type: 'subscribe', channel: 'tickets' });

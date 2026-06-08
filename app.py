@@ -40,6 +40,11 @@ from models import (
 )
 from extensions import db
 from cache_backend import DashboardCache
+try:
+    from simple_websocket import Server as WebSocketServer, ConnectionClosed as WebSocketConnectionClosed
+except Exception:
+    WebSocketServer = None
+    WebSocketConnectionClosed = Exception
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -864,11 +869,17 @@ def _ticket_notifications_payload(user_id):
     }
 
 
+def _ticket_dashboard_realtime_channel(user_id):
+    return _dashboard_cache.namespaced(f"ticket-dashboard:realtime:{user_id}")
+
+
 def _publish_ticket_dashboard_event(user_id, event_type="dashboard_refresh", cache_kinds=None, **payload):
     if not user_id:
         return
     _invalidate_ticket_dashboard_cache(user_id, kinds=cache_kinds)
     event_payload = {
+        "eventId": uuid.uuid4().hex,
+        "channel": "tickets",
         "event": event_type,
         "timestamp": datetime.utcnow().isoformat() + "Z",
         **payload,
@@ -880,6 +891,12 @@ def _publish_ticket_dashboard_event(user_id, event_type="dashboard_refresh", cac
             listener.put_nowait(event_payload)
         except queue.Full:
             continue
+    redis_client = getattr(_dashboard_cache, "_redis", None)
+    if redis_client is not None:
+        try:
+            redis_client.publish(_ticket_dashboard_realtime_channel(user_id), json.dumps(event_payload))
+        except Exception:
+            pass
 
 
 def _build_render_request(payload):
@@ -7196,6 +7213,7 @@ def _publish_ownership_event(action="refresh", bump_version=True, version=None, 
         version = _dashboard_cache.incr("ownership:version") if bump_version else _ownership_cache_version()
     event_payload = {
         "eventId": uuid.uuid4().hex,
+        "channel": "ownership",
         "event": action,
         "version": version,
         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -7820,6 +7838,178 @@ def ownership_stream():
     response.headers["X-Accel-Buffering"] = "no"
     response.call_on_close(cleanup_stream)
     return response
+
+
+def _send_realtime_ws_json(ws, payload):
+    try:
+        ws.send(json.dumps(payload))
+        return True
+    except Exception:
+        return False
+
+
+@app.route("/api/realtime/ws", websocket=True)
+def realtime_ws():
+    if WebSocketServer is None:
+        return "", 501
+
+    ws = WebSocketServer.accept(request.environ, ping_interval=25)
+    if "user_id" not in session:
+        try:
+            ws.close(1008, "unauthorized")
+        except Exception:
+            pass
+        return ""
+
+    user_id = session["user_id"]
+    listener = queue.Queue(maxsize=64)
+    with _ownership_streams_lock:
+        _ownership_streams.add(listener)
+    with _ticket_dashboard_streams_lock:
+        _ticket_dashboard_streams.setdefault(user_id, []).append(listener)
+
+    redis_client = getattr(_dashboard_cache, "_redis", None)
+    ownership_pubsub = None
+    ticket_pubsub = None
+    if redis_client is not None:
+        try:
+            ownership_pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
+            ownership_pubsub.subscribe(_dashboard_cache.namespaced(_OWNERSHIP_REDIS_CHANNEL))
+        except Exception:
+            ownership_pubsub = None
+        try:
+            ticket_pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
+            ticket_pubsub.subscribe(_ticket_dashboard_realtime_channel(user_id))
+        except Exception:
+            ticket_pubsub = None
+
+    cleanup_state = {"done": False}
+
+    def cleanup_ws():
+        if cleanup_state["done"]:
+            return
+        cleanup_state["done"] = True
+        with _ownership_streams_lock:
+            _ownership_streams.discard(listener)
+        with _ticket_dashboard_streams_lock:
+            listeners = _ticket_dashboard_streams.get(user_id) or []
+            if listener in listeners:
+                listeners.remove(listener)
+            if not listeners and user_id in _ticket_dashboard_streams:
+                _ticket_dashboard_streams.pop(user_id, None)
+        for pubsub in (ownership_pubsub, ticket_pubsub):
+            if pubsub is None:
+                continue
+            try:
+                pubsub.close()
+            except Exception:
+                pass
+        try:
+            ws.close()
+        except Exception:
+            pass
+
+    recent_versions = OrderedDict()
+    recent_ticket_events = OrderedDict()
+
+    def should_deliver(event_payload):
+        if not isinstance(event_payload, dict):
+            return True
+        channel = event_payload.get("channel")
+        if channel == "tickets":
+            event_id = event_payload.get("eventId")
+            if event_id is None:
+                return True
+            if event_id in recent_ticket_events:
+                return False
+            recent_ticket_events[event_id] = True
+            while len(recent_ticket_events) > 64:
+                recent_ticket_events.popitem(last=False)
+            return True
+        if channel != "ownership":
+            return True
+        version = event_payload.get("version")
+        if version is None:
+            return True
+        if version in recent_versions:
+            return False
+        recent_versions[version] = True
+        while len(recent_versions) > 64:
+            recent_versions.popitem(last=False)
+        return True
+
+    try:
+        _send_realtime_ws_json(ws, {
+            "channel": "ownership",
+            "type": "ownership-event",
+            "payload": {
+                "event": "ready",
+                "version": _ownership_cache_version(),
+            },
+        })
+        _send_realtime_ws_json(ws, {
+            "channel": "tickets",
+            "type": "tickets-event",
+            "payload": {
+                "event": "connected",
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "notifications": _ticket_notifications_payload(user_id),
+            },
+        })
+
+        last_ping = datetime.utcnow()
+        while True:
+            delivered = False
+            try:
+                event_payload = listener.get(timeout=1)
+                if should_deliver(event_payload):
+                    delivered = _send_realtime_ws_json(ws, event_payload)
+            except queue.Empty:
+                pass
+
+            if ownership_pubsub is not None:
+                try:
+                    message = ownership_pubsub.get_message(timeout=0.01)
+                    if message and message.get("data"):
+                        event_payload = message["data"]
+                        if isinstance(event_payload, str):
+                            try:
+                                event_payload = json.loads(event_payload)
+                            except Exception:
+                                event_payload = None
+                        if should_deliver(event_payload):
+                            delivered = _send_realtime_ws_json(ws, event_payload) or delivered
+                except Exception:
+                    pass
+
+            if ticket_pubsub is not None:
+                try:
+                    message = ticket_pubsub.get_message(timeout=0.01)
+                    if message and message.get("data"):
+                        event_payload = message["data"]
+                        if isinstance(event_payload, str):
+                            try:
+                                event_payload = json.loads(event_payload)
+                            except Exception:
+                                event_payload = None
+                        if should_deliver(event_payload):
+                            delivered = _send_realtime_ws_json(ws, event_payload) or delivered
+                except Exception:
+                    pass
+
+            if not delivered and (datetime.utcnow() - last_ping).total_seconds() >= 25:
+                last_ping = datetime.utcnow()
+                _send_realtime_ws_json(ws, {
+                    "channel": "system",
+                    "type": "ping",
+                    "timestamp": last_ping.isoformat() + "Z",
+                })
+    except WebSocketConnectionClosed:
+        pass
+    finally:
+        cleanup_ws()
+
+    return ""
 
 
 # ==================== DATABASE INITIALIZATION ====================

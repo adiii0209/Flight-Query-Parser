@@ -1,19 +1,12 @@
 'use strict';
 
-const channels = new Set();
-const portSubscriptions = new WeakMap();
-const feeds = {
-  ownership: {
-    url: '/api/ownership/stream',
-    source: null,
-    subscribers: 0,
-  },
-  tickets: {
-    url: '/api/tickets/stream',
-    source: null,
-    subscribers: 0,
-  },
-};
+const HUB_URL = '/api/realtime/ws';
+const HUB_NAME = 'realtime-hub-v2';
+
+const ports = new Set();
+let socket = null;
+let reconnectTimer = null;
+let reconnectBackoffMs = 1000;
 
 function safeParse(raw) {
   if (typeof raw !== 'string' || !raw) return null;
@@ -24,23 +17,22 @@ function safeParse(raw) {
   }
 }
 
-function safePost(port, message) {
+function safeSend(port, message) {
   try {
     port.postMessage(message);
   } catch (err) {
-    // Ignore disconnected ports.
+    // Ignore dead ports.
   }
 }
 
-function broadcast(channel, message) {
+function broadcast(message) {
   const payload = {
     ...message,
-    channel,
     senderId: 'realtime-hub',
     timestamp: Date.now(),
   };
   const deadPorts = [];
-  for (const port of channels) {
+  for (const port of ports) {
     try {
       port.postMessage(payload);
     } catch (err) {
@@ -48,136 +40,117 @@ function broadcast(channel, message) {
     }
   }
   for (const port of deadPorts) {
-    removePort(port);
+    ports.delete(port);
   }
 }
 
-function closeFeed(channel) {
-  const feed = feeds[channel];
-  if (!feed || !feed.source) return;
+function closeSocket() {
+  if (!socket) return;
   try {
-    feed.source.close();
+    socket.onopen = null;
+    socket.onmessage = null;
+    socket.onerror = null;
+    socket.onclose = null;
+    socket.close();
   } catch (err) {
     // Ignore close failures.
   }
-  feed.source = null;
+  socket = null;
 }
 
-function ensureFeed(channel) {
-  const feed = feeds[channel];
-  if (!feed || feed.source || feed.subscribers <= 0) return;
+function scheduleReconnect() {
+  if (reconnectTimer || ports.size === 0) return;
+  const delay = reconnectBackoffMs;
+  reconnectBackoffMs = Math.min(Math.max(delay * 2, 1000), 30000);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectSocket();
+  }, delay);
+}
 
-  const stream = new EventSource(feed.url);
-  feed.source = stream;
+function connectSocket() {
+  if (socket || ports.size === 0 || typeof WebSocket === 'undefined') return;
 
-  if (channel === 'ownership') {
-    stream.onopen = () => {
-      broadcast(channel, { type: 'stream-status', state: 'open' });
-    };
+  const protocol = self.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const socketUrl = `${protocol}//${self.location.host}${HUB_URL}`;
 
-    stream.addEventListener('ready', (event) => {
-      const payload = safeParse(event?.data);
-      broadcast(channel, { type: 'ownership-event', payload: { event: 'ready', version: payload?.version || 0 } });
-    });
-
-    stream.addEventListener('ownership', (event) => {
-      const payload = safeParse(event?.data);
-      if (!payload) return;
-      broadcast(channel, { type: 'ownership-event', payload });
-    });
-
-    stream.addEventListener('ping', () => {
-      // Keepalive only. The shared worker owns reconnection for the tabs.
-    });
-
-    stream.onmessage = (event) => {
-      const payload = safeParse(event?.data);
-      if (payload && payload.event === 'connected') {
-        broadcast(channel, { type: 'ownership-event', payload: { event: 'ready', version: payload.version || 0 } });
-      }
-    };
-  } else if (channel === 'tickets') {
-    stream.onopen = () => {
-      broadcast(channel, { type: 'stream-status', state: 'open' });
-    };
-
-    stream.onmessage = (event) => {
-      const payload = safeParse(event?.data);
-      if (!payload) return;
-      broadcast(channel, { type: 'tickets-event', payload });
-    };
-
-    stream.addEventListener('ping', () => {
-      // Keepalive only.
-    });
+  try {
+    socket = new WebSocket(socketUrl);
+  } catch (err) {
+    socket = null;
+    scheduleReconnect();
+    return;
   }
 
-  stream.onerror = () => {
-    broadcast(channel, { type: 'stream-status', state: 'error' });
-    if (stream.readyState === EventSource.CLOSED) {
-      closeFeed(channel);
-      if (feed.subscribers > 0) {
-        setTimeout(() => ensureFeed(channel), 2000);
-      }
+  socket.onopen = () => {
+    reconnectBackoffMs = 1000;
+    broadcast({ type: 'stream-status', state: 'open' });
+  };
+
+  socket.onmessage = (event) => {
+    const message = safeParse(event?.data);
+    if (!message) return;
+    if (message.type === 'ping' || message.channel === 'system') {
+      return;
     }
+    broadcast(message);
+  };
+
+  socket.onerror = () => {
+    broadcast({ type: 'stream-status', state: 'error' });
+  };
+
+  socket.onclose = () => {
+    socket = null;
+    broadcast({ type: 'stream-status', state: 'close' });
+    scheduleReconnect();
   };
 }
 
-function updateSubscription(channel, delta) {
-  const feed = feeds[channel];
-  if (!feed) return;
-  feed.subscribers = Math.max(0, feed.subscribers + delta);
-  if (feed.subscribers > 0) {
-    ensureFeed(channel);
-  } else {
-    closeFeed(channel);
-  }
+function ensureSocket() {
+  if (socket || ports.size === 0) return;
+  connectSocket();
 }
 
 function removePort(port) {
-  if (!channels.has(port)) return;
-  const subscriptions = portSubscriptions.get(port) || new Set();
-  channels.delete(port);
-  for (const channel of subscriptions) {
-    updateSubscription(channel, -1);
+  if (!ports.has(port)) return;
+  ports.delete(port);
+  if (ports.size === 0) {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectBackoffMs = 1000;
+    closeSocket();
   }
-  portSubscriptions.delete(port);
 }
 
 self.onconnect = (event) => {
   const port = event.ports[0];
-  channels.add(port);
-  portSubscriptions.set(port, new Set());
+  ports.add(port);
+
+  try {
+    port.start();
+  } catch (err) {
+    // Older browsers may not need explicit start().
+  }
+
+  safeSend(port, { type: 'stream-status', state: 'ready', senderId: 'realtime-hub', timestamp: Date.now() });
+  ensureSocket();
 
   port.onmessage = (messageEvent) => {
     const data = messageEvent?.data || {};
-    if (data.type === 'subscribe' && data.channel) {
-      if (data.channel in feeds) {
-        const subscriptions = portSubscriptions.get(port) || new Set();
-        if (!subscriptions.has(data.channel)) {
-          subscriptions.add(data.channel);
-          portSubscriptions.set(port, subscriptions);
-          updateSubscription(data.channel, 1);
-        }
-        safePost(port, { channel: data.channel, type: 'subscribed', senderId: 'realtime-hub', timestamp: Date.now() });
-      }
+    if (data.type === 'unsubscribe') {
+      removePort(port);
       return;
     }
-
-    if (data.type === 'unsubscribe' && data.channel) {
-      if (data.channel in feeds) {
-        const subscriptions = portSubscriptions.get(port) || new Set();
-        if (subscriptions.has(data.channel)) {
-          subscriptions.delete(data.channel);
-          portSubscriptions.set(port, subscriptions);
-          updateSubscription(data.channel, -1);
-        }
-        if (subscriptions.size === 0) {
-          removePort(port);
-        }
-      }
+    if (data.type === 'subscribe') {
+      ensureSocket();
       return;
     }
   };
-  port.start();
+
+  port.onmessageerror = () => {
+    removePort(port);
+  };
 };

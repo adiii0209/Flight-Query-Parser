@@ -147,7 +147,7 @@ function ownershipRealtimeEnsureHub() {
   if (ownershipRealtimeHub) return true;
   if (!('SharedWorker' in window)) return false;
   try {
-    ownershipRealtimeHub = new SharedWorker(OWNERSHIP_REALTIME_HUB_URL, { name: 'ownership-realtime-hub' });
+    ownershipRealtimeHub = new SharedWorker(OWNERSHIP_REALTIME_HUB_URL, { name: 'realtime-hub-v2' });
     ownershipRealtimeHub.port.onmessage = event => ownershipRealtimeHandleBroadcast(event?.data);
     ownershipRealtimeHub.port.start();
     ownershipRealtimeHub.port.postMessage({ type: 'subscribe', channel: 'ownership' });

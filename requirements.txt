@@ -17,4 +17,5 @@ reportlab
 gspread
 gunicorn
 gevent
+simple-websocket
 openpyxl
