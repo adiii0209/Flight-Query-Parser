@@ -90,6 +90,8 @@ let ticketsBroadcastChannel = null;
 let ticketsRealtimeIsLeader = false;
 let ticketsRealtimeLeaderTimer = null;
 let ticketsRealtimeCoordinatorTimer = null;
+let ticketsRealtimeClaimTimer = null;
+let ticketsRealtimeConfirmTimer = null;
 let ticketsRealtimeReconnectTimer = null;
 let ticketsRealtimeReconnectBackoffMs = TICKETS_REALTIME_RETRY_MS;
 const INDIA_AIRPORT_CODES = new Set([
@@ -3271,6 +3273,14 @@ function ticketsRealtimeHandleBroadcast(raw) {
     const message = parseTicketsRealtimeMessage(raw);
     if (!message || message.senderId === TICKETS_REALTIME_TAB_ID) return;
 
+    if (message.type === 'leader-claim') {
+        const state = message.state || {};
+        if (state.tabId && state.tabId !== TICKETS_REALTIME_TAB_ID) {
+            ticketsRealtimeIsLeader = false;
+        }
+        return;
+    }
+
     if (message.type === 'leader-state') {
         const state = message.state || {};
         if (state.tabId && state.tabId !== TICKETS_REALTIME_TAB_ID) {
@@ -3297,21 +3307,22 @@ function ticketsRealtimeHandleBroadcast(raw) {
 }
 
 function ticketsRealtimeAcquireLeadership() {
-    const now = Date.now();
-    const current = ticketsRealtimeReadLeaderState();
-    if (current && current.tabId !== TICKETS_REALTIME_TAB_ID && ticketsRealtimeIsLeaderStateFresh(current)) {
-        return false;
-    }
-    const state = {
-        tabId: TICKETS_REALTIME_TAB_ID,
-        updatedAt: now,
-    };
-    if (!ticketsRealtimeWriteLeaderState(state)) return false;
-    const verify = ticketsRealtimeReadLeaderState();
-    if (!verify || verify.tabId !== TICKETS_REALTIME_TAB_ID) return false;
-    ticketsRealtimeIsLeader = true;
-    ticketsRealtimeBroadcast({ type: 'leader-state', state });
-    return true;
+  const now = Date.now();
+  const current = ticketsRealtimeReadLeaderState();
+  if (current && current.tabId !== TICKETS_REALTIME_TAB_ID && ticketsRealtimeIsLeaderStateFresh(current)) {
+    return false;
+  }
+  const state = {
+    tabId: TICKETS_REALTIME_TAB_ID,
+    updatedAt: now,
+    phase: 'claim',
+  };
+  if (!ticketsRealtimeWriteLeaderState(state)) return false;
+  const verify = ticketsRealtimeReadLeaderState();
+  if (!verify || verify.tabId !== TICKETS_REALTIME_TAB_ID) return false;
+    ticketsRealtimeIsLeader = false;
+    ticketsRealtimeBroadcast({ type: 'leader-claim', state });
+  return true;
 }
 
 function ticketsRealtimeHeartbeat() {
@@ -3326,13 +3337,44 @@ function ticketsRealtimeHeartbeat() {
 }
 
 function ticketsRealtimeReleaseLeadership() {
-    if (!ticketsRealtimeIsLeader) return;
-    const current = ticketsRealtimeReadLeaderState();
-    if (current && current.tabId === TICKETS_REALTIME_TAB_ID) {
-        ticketsRealtimeClearLeaderState();
+  if (!ticketsRealtimeIsLeader) return;
+  const current = ticketsRealtimeReadLeaderState();
+  if (current && current.tabId === TICKETS_REALTIME_TAB_ID) {
+    ticketsRealtimeClearLeaderState();
         ticketsRealtimeBroadcast({ type: 'leader-resigned' });
-    }
-    ticketsRealtimeIsLeader = false;
+  }
+  ticketsRealtimeIsLeader = false;
+}
+
+function ticketsRealtimeScheduleClaim() {
+    if (ticketsEventSource || ticketsRealtimeClaimTimer || ticketsRealtimeConfirmTimer) return false;
+    const delay = Math.floor(Math.random() * 500) + 150;
+    ticketsRealtimeClaimTimer = setTimeout(() => {
+        ticketsRealtimeClaimTimer = null;
+        if (ticketsEventSource || ticketsRealtimeConfirmTimer) return;
+        if (!ticketsRealtimeAcquireLeadership()) return;
+        ticketsRealtimeConfirmTimer = setTimeout(() => {
+            ticketsRealtimeConfirmTimer = null;
+            const state = ticketsRealtimeReadLeaderState();
+            if (!state || state.tabId !== TICKETS_REALTIME_TAB_ID || state.phase !== 'claim') {
+                return;
+            }
+            const leaderState = {
+                tabId: TICKETS_REALTIME_TAB_ID,
+                updatedAt: Date.now(),
+                phase: 'leader',
+            };
+            if (!ticketsRealtimeWriteLeaderState(leaderState)) return;
+            const verify = ticketsRealtimeReadLeaderState();
+            if (!verify || verify.tabId !== TICKETS_REALTIME_TAB_ID) return;
+            ticketsRealtimeIsLeader = true;
+            ticketsRealtimeBroadcast({ type: 'leader-state', state: leaderState });
+            if (!ticketsEventSource) {
+                startTicketsRealtime();
+            }
+        }, 220);
+    }, delay);
+    return true;
 }
 
 function ticketsRealtimeStopCoordinator() {
@@ -3343,6 +3385,14 @@ function ticketsRealtimeStopCoordinator() {
     if (ticketsRealtimeLeaderTimer) {
         clearTimeout(ticketsRealtimeLeaderTimer);
         ticketsRealtimeLeaderTimer = null;
+    }
+    if (ticketsRealtimeClaimTimer) {
+        clearTimeout(ticketsRealtimeClaimTimer);
+        ticketsRealtimeClaimTimer = null;
+    }
+    if (ticketsRealtimeConfirmTimer) {
+        clearTimeout(ticketsRealtimeConfirmTimer);
+        ticketsRealtimeConfirmTimer = null;
     }
     if (ticketsRealtimeRetryHandle) {
         clearTimeout(ticketsRealtimeRetryHandle);
@@ -3357,6 +3407,28 @@ function ticketsRealtimeCoordinatorTick() {
     const isSelfLeader = leader && leader.tabId === TICKETS_REALTIME_TAB_ID;
 
     if (isSelfLeader) {
+        if (leader.phase === 'claim') {
+            ticketsRealtimeIsLeader = false;
+            if (!ticketsRealtimeConfirmTimer && !ticketsEventSource) {
+                ticketsRealtimeConfirmTimer = setTimeout(() => {
+                    ticketsRealtimeConfirmTimer = null;
+                    const latest = ticketsRealtimeReadLeaderState();
+                    if (!latest || latest.tabId !== TICKETS_REALTIME_TAB_ID || latest.phase !== 'claim') return;
+                    const leaderState = {
+                        tabId: TICKETS_REALTIME_TAB_ID,
+                        updatedAt: Date.now(),
+                        phase: 'leader',
+                    };
+                    if (!ticketsRealtimeWriteLeaderState(leaderState)) return;
+                    const verify = ticketsRealtimeReadLeaderState();
+                    if (!verify || verify.tabId !== TICKETS_REALTIME_TAB_ID) return;
+                    ticketsRealtimeIsLeader = true;
+                    ticketsRealtimeBroadcast({ type: 'leader-state', state: leaderState });
+                    startTicketsRealtime();
+                }, 220);
+            }
+            return;
+        }
         ticketsRealtimeIsLeader = true;
         if (!ticketsEventSource) {
             startTicketsRealtime();
@@ -3368,12 +3440,10 @@ function ticketsRealtimeCoordinatorTick() {
 
     ticketsRealtimeIsLeader = false;
     if (ticketsEventSource) {
-        stopTicketsRealtime();
+      stopTicketsRealtime();
     }
     if (!leader || !ticketsRealtimeIsLeaderStateFresh(leader)) {
-        if (ticketsRealtimeAcquireLeadership()) {
-            startTicketsRealtime();
-        }
+        ticketsRealtimeScheduleClaim();
     }
 }
 
@@ -3471,7 +3541,10 @@ function startTicketsRealtime() {
         if (ticketsEventSource.readyState !== EventSource.CLOSED) return false;
         stopTicketsRealtime();
     }
-    if (!ticketsRealtimeAcquireLeadership()) return false;
+    const leader = ticketsRealtimeReadLeaderState();
+    if (!leader || leader.tabId !== TICKETS_REALTIME_TAB_ID || leader.phase !== 'leader') {
+        return false;
+    }
     if (ticketsRealtimeRetryHandle) {
         clearTimeout(ticketsRealtimeRetryHandle);
         ticketsRealtimeRetryHandle = null;

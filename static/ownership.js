@@ -75,6 +75,8 @@ let ownershipRealtimeTabId = `tab-${uid()}`;
 let ownershipRealtimeIsLeader = false;
 let ownershipRealtimeLeaderTimer = null;
 let ownershipRealtimeCoordinatorTimer = null;
+let ownershipRealtimeClaimTimer = null;
+let ownershipRealtimeConfirmTimer = null;
 let ownershipRealtimeSource = null;
 let ownershipRealtimeReconnectTimer = null;
 let ownershipRealtimeNeedsResync = false;
@@ -197,6 +199,14 @@ function ownershipRealtimeHandleBroadcast(raw) {
   const message = parseOwnershipRealtimeMessage(raw);
   if (!message || message.senderId === ownershipRealtimeTabId) return;
 
+  if (message.type === 'leader-claim') {
+    const state = message.state || {};
+    if (state.tabId && state.tabId !== ownershipRealtimeTabId) {
+      ownershipRealtimeIsLeader = false;
+    }
+    return;
+  }
+
   if (message.type === 'leader-state') {
     const state = message.state || {};
     if (state.tabId && state.tabId !== ownershipRealtimeTabId) {
@@ -238,12 +248,13 @@ function ownershipRealtimeAcquireLeadership() {
   const state = {
     tabId: ownershipRealtimeTabId,
     updatedAt: now,
+    phase: 'claim',
   };
   if (!ownershipRealtimeWriteLeaderState(state)) return false;
   const verify = ownershipRealtimeReadLeaderState();
   if (!verify || verify.tabId !== ownershipRealtimeTabId) return false;
-  ownershipRealtimeIsLeader = true;
-  ownershipRealtimeBroadcast({ type: 'leader-state', state });
+  ownershipRealtimeIsLeader = false;
+  ownershipRealtimeBroadcast({ type: 'leader-claim', state });
   return true;
 }
 
@@ -266,6 +277,37 @@ function ownershipRealtimeReleaseLeadership() {
     ownershipRealtimeBroadcast({ type: 'leader-resigned', version: ownershipKnownVersion || 0 });
   }
   ownershipRealtimeIsLeader = false;
+}
+
+function ownershipRealtimeScheduleClaim() {
+  if (ownershipRealtimeSource || ownershipRealtimeClaimTimer || ownershipRealtimeConfirmTimer) return false;
+  const delay = Math.floor(Math.random() * 500) + 150;
+  ownershipRealtimeClaimTimer = setTimeout(() => {
+    ownershipRealtimeClaimTimer = null;
+    if (ownershipRealtimeSource || ownershipRealtimeConfirmTimer) return;
+    if (!ownershipRealtimeAcquireLeadership()) return;
+    ownershipRealtimeConfirmTimer = setTimeout(() => {
+      ownershipRealtimeConfirmTimer = null;
+      const state = ownershipRealtimeReadLeaderState();
+      if (!state || state.tabId !== ownershipRealtimeTabId || state.phase !== 'claim') {
+        return;
+      }
+      const leaderState = {
+        tabId: ownershipRealtimeTabId,
+        updatedAt: Date.now(),
+        phase: 'leader',
+      };
+      if (!ownershipRealtimeWriteLeaderState(leaderState)) return;
+      const verify = ownershipRealtimeReadLeaderState();
+      if (!verify || verify.tabId !== ownershipRealtimeTabId) return;
+      ownershipRealtimeIsLeader = true;
+      ownershipRealtimeBroadcast({ type: 'leader-state', state: leaderState });
+      if (!ownershipRealtimeSource) {
+        startOwnershipRealtime();
+      }
+    }, 220);
+  }, delay);
+  return true;
 }
 
 function ownershipRealtimeEnsureChannel() {
@@ -299,6 +341,14 @@ function ownershipRealtimeStopCoordinator() {
     clearTimeout(ownershipRealtimeLeaderTimer);
     ownershipRealtimeLeaderTimer = null;
   }
+  if (ownershipRealtimeClaimTimer) {
+    clearTimeout(ownershipRealtimeClaimTimer);
+    ownershipRealtimeClaimTimer = null;
+  }
+  if (ownershipRealtimeConfirmTimer) {
+    clearTimeout(ownershipRealtimeConfirmTimer);
+    ownershipRealtimeConfirmTimer = null;
+  }
   ownershipRealtimeCloseChannel();
 }
 
@@ -308,6 +358,28 @@ function ownershipRealtimeCoordinatorTick() {
   const isSelfLeader = leader && leader.tabId === ownershipRealtimeTabId;
 
   if (isSelfLeader) {
+    if (leader.phase === 'claim') {
+      ownershipRealtimeIsLeader = false;
+      if (!ownershipRealtimeConfirmTimer && !ownershipRealtimeSource) {
+        ownershipRealtimeConfirmTimer = setTimeout(() => {
+          ownershipRealtimeConfirmTimer = null;
+          const latest = ownershipRealtimeReadLeaderState();
+          if (!latest || latest.tabId !== ownershipRealtimeTabId || latest.phase !== 'claim') return;
+          const leaderState = {
+            tabId: ownershipRealtimeTabId,
+            updatedAt: Date.now(),
+            phase: 'leader',
+          };
+          if (!ownershipRealtimeWriteLeaderState(leaderState)) return;
+          const verify = ownershipRealtimeReadLeaderState();
+          if (!verify || verify.tabId !== ownershipRealtimeTabId) return;
+          ownershipRealtimeIsLeader = true;
+          ownershipRealtimeBroadcast({ type: 'leader-state', state: leaderState });
+          startOwnershipRealtime();
+        }, 220);
+      }
+      return;
+    }
     ownershipRealtimeIsLeader = true;
     if (!ownershipRealtimeSource) {
       startOwnershipRealtime();
@@ -322,9 +394,7 @@ function ownershipRealtimeCoordinatorTick() {
     stopOwnershipRealtime();
   }
   if (!leader || !ownershipRealtimeIsLeaderStateFresh(leader)) {
-    if (ownershipRealtimeAcquireLeadership()) {
-      startOwnershipRealtime();
-    }
+    ownershipRealtimeScheduleClaim();
   }
 }
 
@@ -554,7 +624,10 @@ function startOwnershipRealtime() {
     if (ownershipRealtimeSource.readyState !== EventSource.CLOSED) return false;
     stopOwnershipRealtime();
   }
-  if (!ownershipRealtimeAcquireLeadership()) return false;
+  const leader = ownershipRealtimeReadLeaderState();
+  if (!leader || leader.tabId !== ownershipRealtimeTabId || leader.phase !== 'leader') {
+    return false;
+  }
 
   const stream = new EventSource('/api/ownership/stream');
   ownershipRealtimeSource = stream;
@@ -1265,10 +1338,12 @@ function renderTable() {
   const { page, total, pages } = paginate(filtered);
 
   const tbody = document.getElementById('crmTbody');
-  tbody.innerHTML = '';
+  const fragment = document.createDocumentFragment();
 
   if (page.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="18"><div class="crm-empty"><div class="crm-empty-icon">🔍</div><div class="crm-empty-title">No trips found</div><div class="crm-empty-sub">Try adjusting your filters or search query</div></div></td></tr>`;
+    const emptyRow = document.createElement('tr');
+    emptyRow.innerHTML = `<td colspan="18"><div class="crm-empty"><div class="crm-empty-icon">🔍</div><div class="crm-empty-title">No trips found</div><div class="crm-empty-sub">Try adjusting your filters or search query</div></div></td>`;
+    fragment.appendChild(emptyRow);
   } else {
     for (const trip of page) {
       const prog = calcProgress(trip);
@@ -1333,7 +1408,7 @@ function renderTable() {
           </div>
         </td>
       `;
-      tbody.appendChild(row);
+      fragment.appendChild(row);
 
       // Expanded row
       if (isExpanded) {
@@ -1341,10 +1416,12 @@ function renderTable() {
         expRow.className = 'crm-expanded-row';
         expRow.dataset.expandFor = trip.id;
         expRow.innerHTML = `<td colspan="18">${renderExpandedContent(trip)}</td>`;
-        tbody.appendChild(expRow);
+        fragment.appendChild(expRow);
       }
     }
   }
+
+  tbody.replaceChildren(fragment);
 
   // Footer
   document.getElementById('tableFooterInfo').textContent = `Showing ${page.length} of ${total} trips`;
@@ -3444,22 +3521,48 @@ function escHtml(str) {
 // ═══════════════════════════════════════════════════════════
 
 async function loadOwnershipData() {
-  const [tripData, templateData, employeeData] = await Promise.all([
+  const [tripResult, templateResult, employeeResult] = await Promise.allSettled([
     apiJson('/api/ownership/trips'),
     apiJson('/api/ownership/templates'),
     apiJson('/api/ownership/employees'),
   ]);
-  trips = (tripData.trips || []).map(trip => hydrateTripSearchIndex({ version: 1, ...trip }));
-  rememberOwnershipVersion(
-    Math.max(
-      parseOwnershipVersion(tripData.cacheVersion),
-      parseOwnershipVersion(templateData.cacheVersion),
-      parseOwnershipVersion(employeeData.cacheVersion),
-    )
-  );
-  cacheTripsForFastPaint(trips);
-  taskTemplates = templateData.templates || [];
-  employees = employeeData.employees || [];
+
+  const loadErrors = [];
+
+  if (tripResult.status === 'fulfilled') {
+    const tripData = tripResult.value || {};
+    trips = (tripData.trips || []).map(trip => hydrateTripSearchIndex({ version: 1, ...trip }));
+    cacheTripsForFastPaint(trips);
+  } else if (!trips.length) {
+    throw tripResult.reason;
+  } else {
+    loadErrors.push(tripResult.reason);
+  }
+
+  if (templateResult.status === 'fulfilled') {
+    const templateData = templateResult.value || {};
+    taskTemplates = templateData.templates || [];
+  } else {
+    loadErrors.push(templateResult.reason);
+  }
+
+  if (employeeResult.status === 'fulfilled') {
+    const employeeData = employeeResult.value || {};
+    employees = employeeData.employees || [];
+  } else {
+    loadErrors.push(employeeResult.reason);
+  }
+
+  const versions = [
+    parseOwnershipVersion(tripResult.status === 'fulfilled' ? tripResult.value?.cacheVersion : 0),
+    parseOwnershipVersion(templateResult.status === 'fulfilled' ? templateResult.value?.cacheVersion : 0),
+    parseOwnershipVersion(employeeResult.status === 'fulfilled' ? employeeResult.value?.cacheVersion : 0),
+  ];
+  rememberOwnershipVersion(Math.max(...versions));
+
+  if (loadErrors.length) {
+    console.warn('Ownership data loaded with partial failures', loadErrors);
+  }
 }
 
 function cacheTripsForFastPaint(nextTrips) {
@@ -3604,9 +3707,10 @@ document.addEventListener('DOMContentLoaded', () => {
   init();
   window.addEventListener('beforeunload', shutdownOwnershipRealtime);
   window.addEventListener('pagehide', shutdownOwnershipRealtime);
-  window.addEventListener('pageshow', () => {
-    restartOwnershipRealtime('pageshow');
-  });
+window.addEventListener('pageshow', () => {
+  restoreTripsForFastPaint();
+  restartOwnershipRealtime('pageshow');
+});
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       restartOwnershipRealtime('visibilitychange');
