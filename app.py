@@ -7422,24 +7422,57 @@ def seed_ownership_from_workbook(force=False):
     wb = openpyxl.load_workbook(OWNERSHIP_SHEET_PATH, data_only=False)
     ws = wb.active
     created = updated = skipped = 0
+    changed = False
     for row in range(3, ws.max_row + 1):
         payload = _sheet_row_to_trip_payload(ws, row)
         if not payload["guestName"]:
             skipped += 1
             continue
         trip = OwnershipTrip.query.filter_by(source="ownership_sheet", source_row=row).first()
+        raw_data = payload.pop("_raw", {})
         if trip is None:
             trip = OwnershipTrip(source="ownership_sheet", source_row=row)
             created += 1
+            changed = True
         else:
+            next_snapshot = {
+                "id": trip.id,
+                "version": trip.version or 1,
+                "guestName": payload["guestName"],
+                "pax": payload["pax"],
+                "destination": payload["destination"],
+                "startDate": payload["startDate"].isoformat() if payload["startDate"] else "",
+                "endDate": "",
+                "proposalStatus": payload["proposalStatus"],
+                "flightsStatus": payload["flightsStatus"],
+                "visaStatus": payload["visaStatus"],
+                "hotelsStatus": payload["hotelsStatus"],
+                "sectorTicketsStatus": payload["sectorTicketsStatus"],
+                "sightseeingStatus": payload["sightseeingStatus"],
+                "insuranceStatus": payload["insuranceStatus"],
+                "travelingStatus": payload["travelingStatus"],
+                "travefyTaskListStatus": payload["travefyTaskListStatus"],
+                "tripFeedbackFormStatus": payload["tripFeedbackFormStatus"],
+                "owner": payload["owner"],
+                "masterSheetUrl": trip.master_sheet_url or (trip.raw_sheet_data or {}).get("masterSheetUrl") or "",
+                "lastStatusUpdateDate": payload["lastStatusUpdateDate"].isoformat() if payload["lastStatusUpdateDate"] else "",
+                "latestUpdate": payload["latestUpdate"],
+                "presentWorkAssignedTo": payload["presentWorkAssignedTo"],
+                "subtasks": payload["subtasks"],
+                "reminders": payload["reminders"],
+            }
+            if trip.to_dict() == next_snapshot:
+                skipped += 1
+                continue
             updated += 1
-        raw_data = payload.pop("_raw", {})
+            changed = True
         _apply_trip_payload(trip, payload)
         trip.raw_sheet_data = raw_data
         db.session.add(trip)
     db.session.commit()
-    version = _invalidate_ownership_cache()
-    _publish_ownership_event("sheet_imported", version=version)
+    if changed:
+        version = _invalidate_ownership_cache()
+        _publish_ownership_event("sheet_imported", version=version)
     return {"created": created, "updated": updated, "skipped": skipped}
 
 

@@ -71,6 +71,7 @@ let ownershipRealtimeReconnectTimer = null;
 let ownershipRealtimeNeedsResync = false;
 let ownershipServerRefreshPending = false;
 let ownershipServerRefreshTimer = null;
+let ownershipServerRefreshVersion = 0;
 const ownershipPendingTripEvents = {};
 let subtaskModalRefreshTimer = null;
 let subtaskModalRefreshState = null;
@@ -118,6 +119,12 @@ function parseOwnershipEventData(event) {
 
 function queueOwnershipServerRefresh(version = 0, reason = 'ownership update') {
   const parsedVersion = rememberOwnershipVersion(version);
+  if (parsedVersion && parsedVersion <= ownershipServerRefreshVersion && !ownershipServerRefreshPending) {
+    return;
+  }
+  if (parsedVersion > ownershipServerRefreshVersion) {
+    ownershipServerRefreshVersion = parsedVersion;
+  }
   ownershipServerRefreshPending = true;
   const runRefresh = async () => {
     ownershipServerRefreshTimer = null;
@@ -129,6 +136,9 @@ function queueOwnershipServerRefresh(version = 0, reason = 'ownership update') {
     ownershipServerRefreshPending = false;
     try {
       await reloadOwnershipData({ silent: true });
+      if (parsedVersion > ownershipServerRefreshVersion) {
+        ownershipServerRefreshVersion = parsedVersion;
+      }
     } catch (err) {
       console.error('Ownership live refresh failed', reason, err);
     }
@@ -244,7 +254,11 @@ function removeOwnershipEmployeeFromEvent(employeeId) {
 
 function applyOwnershipRealtimeEvent(payload, options = {}) {
   if (!payload || !payload.event) return false;
-  rememberOwnershipVersion(payload.version);
+  const eventVersion = parseOwnershipVersion(payload.version);
+  if (eventVersion && eventVersion <= ownershipKnownVersion && payload.event !== 'sheet_imported' && payload.event !== 'refresh') {
+    return false;
+  }
+  rememberOwnershipVersion(eventVersion);
 
   switch (payload.event) {
     case 'trip_created':
