@@ -16,4 +16,5 @@ playwright
 reportlab
 gspread
 gunicorn
+gevent
 openpyxl
