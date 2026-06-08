@@ -17,8 +17,6 @@ STATUS_TO_SHEET = {
     "complete": "COMPLETE",
     "ongoing": "ONGOING",
     "pending": "PENDING",
-    "review": "In Review",
-    "notstarted": "Not Started",
     "notrequired": "Not Required",
 }
 

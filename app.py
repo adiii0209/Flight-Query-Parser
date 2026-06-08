@@ -6543,13 +6543,10 @@ OWNERSHIP_STATUS_VALUES = {
     "ongoing": "ongoing",
     "in progress": "ongoing",
     "pending": "pending",
-    "review": "review",
-    "in review": "review",
-    "not started": "notstarted",
-    "notstarted": "notstarted",
+    "notrequired": "notrequired",
     "not required": "notrequired",
-    "trip updates": "review",
 }
+OWNERSHIP_ALLOWED_STATUS_VALUES = {"pending", "ongoing", "complete", "notrequired"}
 OWNERSHIP_DEFAULT_SUBTASKS = {
     "proposal": [],
     "visa": [],
@@ -6578,7 +6575,8 @@ def _normalize_ownership_status(value, default="pending"):
     text_value = str(value).strip()
     if not text_value:
         return default
-    return OWNERSHIP_STATUS_VALUES.get(text_value.lower(), text_value.lower().replace(" ", ""))
+    status = OWNERSHIP_STATUS_VALUES.get(text_value.lower(), text_value.lower().replace(" ", ""))
+    return status if status in OWNERSHIP_ALLOWED_STATUS_VALUES else default
 
 
 def _parse_ownership_date(value):
@@ -6889,6 +6887,13 @@ def _apply_trip_payload(trip, payload):
     return trip
 
 
+def _ownership_safe_int(value, default=9999):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _commit_ownership_trip_with_retry(trip_id, payload, action="updated", delete=False):
     """
     Apply a trip patch against the latest row and retry once if another
@@ -6957,7 +6962,7 @@ def _replace_ownership_subtasks(trip, groups):
                 "done": bool(item.get("done")),
                 "assignee": _normalize_owner(item.get("assignee")),
                 "dueDate": due_date.isoformat() if due_date else "",
-                  "priority": int(item.get("priority", 9999)) if item.get("priority") is not None else 9999,
+                "priority": _ownership_safe_int(item.get("priority"), 9999),
                 "createdAt": str(item.get("createdAt") or item.get("created_at") or "").strip(),
                 "updatedAt": str(item.get("updatedAt") or item.get("updated_at") or "").strip(),
                 "metadata": item.get("metadata") if isinstance(item.get("metadata"), dict) else {},

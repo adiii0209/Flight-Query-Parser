@@ -26,32 +26,38 @@
         <span id="menuNotificationBadge" style="position:absolute;top:-4px;right:-4px;background:#ef4444;color:white;font-size:.6rem;font-weight:700;padding:1px 4px;border-radius:99px;min-width:16px;height:16px;display:none;align-items:center;justify-content:center;line-height:1;"></span>
       </button>
       <div class="crm-header-title">
-        <div class="crm-header-title-icon">🗂️</div>
-        <span>Ownership</span>
+        <div class="crm-header-title-icon">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+        </div>
+        <span style="font-weight: 700;">Ownership</span>
         <span class="crm-count-badge" id="totalTripsBadge">0</span>
       </div>
     </div>
 
     <div class="crm-header-actions">
-      <button class="crm-btn crm-btn-ghost" id="btnToggleStats" style="gap:.35rem;">
-        <svg class="stats-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="6 15 12 9 18 15"></polyline>
-        </svg>
-        Stats
+      <button class="crm-btn-icon" id="btnToggleStats" title="Toggle Stats">
+        <svg class="stats-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 15 12 9 18 15"></polyline></svg>
       </button>
-      <button class="crm-btn crm-btn-ghost" id="btnTaskTemplates" style="gap:.4rem;">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        Category Tasks
+      <button class="crm-btn-icon" id="btnTaskTemplates" title="Category Tasks">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       </button>
+      <button class="crm-btn-icon" id="btnTogglePanel" title="Toggle Panel">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+      </button>
+
+      <!-- Theme Switch -->
+      <label class="theme-switch" title="Toggle Dark Mode">
+        <input type="checkbox" id="crmThemeToggleSwitch">
+        <span class="slider round">
+          <span class="icon sun">☀️</span>
+          <span class="icon moon">🌙</span>
+        </span>
+      </label>
+
       <a href="/ownership/employees" class="crm-btn crm-btn-ghost" id="btnEmployees" style="gap:.4rem; text-decoration: none;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>
         Employees
       </a>
-      <button class="crm-btn crm-btn-ghost" id="btnTogglePanel">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
-        Panel
-      </button>
-      <button class="crm-theme-toggle" id="crmThemeToggle">🌙 Dark</button>
       <button class="crm-btn crm-btn-primary" id="btnNewTrip">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         New Trip
@@ -66,7 +72,7 @@
     <main class="crm-main">
 
       <!-- KPI Cards -->
-      <div class="crm-kpi-grid" id="kpiGrid">
+      <div class="crm-kpi-grid collapsed" id="kpiGrid">
         <div class="crm-kpi-card kpi-blue">
           <div class="crm-kpi-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21.5 4c0 0-2 .5-3.5 2L14.5 9.5 6.3 7.7 4 9l6 4-3.5 3.5L4.5 16l-2 1.5L5 20l2.5 2.5L9 20.5l-1.5-2L11 15l3.5-3.5 4 6z"/></svg></div>
           <div class="crm-kpi-value" id="kpiTotal">0</div>
@@ -100,35 +106,55 @@
       </div>
 
       <!-- Toolbar -->
-      <div class="crm-toolbar">
-        <div class="crm-search-wrap">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" class="crm-search" id="crmSearch" placeholder="Search trips, guests, destinations…">
+      <div class="crm-toolbar" style="justify-content: space-between;">
+        
+        <div class="crm-toolbar-left" style="flex: 1; display: flex; align-items: center;">
+          <!-- Empty for now, or keep total count here if wanted -->
         </div>
-        <select class="crm-filter-select" id="filterStatus">
-          <option value="">All Statuses</option>
-          <option value="complete">Complete</option>
-          <option value="ongoing">Ongoing</option>
-          <option value="pending">Pending</option>
-          <option value="review">In Review</option>
-          <option value="notstarted">Not Started</option>
-        </select>
-        <select class="crm-filter-select" id="filterOwner">
-          <option value="">All Owners</option>
-        </select>
-        <select class="crm-filter-select" id="filterMonth">
-          <option value="">All Months</option>
-        </select>
-        <button class="crm-btn crm-btn-ghost" id="btnClearFilters" style="font-size:.78rem;">✕ Clear</button>
-        <div style="margin-left:auto;display:flex;gap:.5rem;">
+        
+        <div class="crm-toolbar-center" style="flex: 2; display: flex; justify-content: center; gap: 0.5rem; align-items: center; position: relative;">
+          <div class="crm-search-wrap modern">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" class="crm-search modern" id="crmSearch" placeholder="Search trips, guests, destinations…">
+          </div>
+          
+          <!-- Filter Dropdown Container -->
+          <div style="position: relative;" id="filterMenuContainer">
+            <button class="crm-filter-btn" id="btnFilterMenu">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+              Filters
+            </button>
+            <div class="crm-filter-dropdown" id="filterDropdown">
+              <div style="font-size: 0.75rem; font-weight: 600; color: var(--crm-text-3); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">Filter Trips</div>
+              <select class="crm-filter-select dropdown-mode" id="filterStatus">
+                <option value="">All Statuses</option>
+                <option value="complete">Complete</option>
+                <option value="ongoing">Ongoing</option>
+                <option value="pending">Pending</option>
+              </select>
+              <select class="crm-filter-select dropdown-mode" id="filterOwner">
+                <option value="">All Owners</option>
+              </select>
+              <select class="crm-filter-select dropdown-mode" id="filterMonth">
+                <option value="">All Months</option>
+              </select>
+              <div style="display: flex; justify-content: flex-end; margin-top: 0.5rem;">
+                <button class="crm-btn-icon" id="btnClearFilters" title="Clear Filters" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px solid var(--crm-border); background: transparent; cursor: pointer; color: var(--crm-text-3);">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="crm-toolbar-right" style="flex: 1; display: flex; justify-content: flex-end; align-items: center;">
           <div class="crm-legend">
             <span class="crm-legend-item"><span class="crm-legend-dot" style="background:var(--s-complete)"></span>Complete</span>
             <span class="crm-legend-item"><span class="crm-legend-dot" style="background:var(--s-ongoing)"></span>Ongoing</span>
             <span class="crm-legend-item"><span class="crm-legend-dot" style="background:var(--s-pending)"></span>Pending</span>
-            <span class="crm-legend-item"><span class="crm-legend-dot" style="background:var(--s-review)"></span>In Review</span>
-            <span class="crm-legend-item"><span class="crm-legend-dot" style="background:var(--s-notstarted)"></span>Not Started</span>
           </div>
         </div>
+
       </div>
 
       <!-- Table -->
@@ -358,6 +384,13 @@
     <span id="crmSelectionCount">0</span> trips selected
   </div>
   <div class="crm-selection-actions">
+    <select id="bulkStatusSelect" class="crm-form-input" style="height: 32px; padding: 0 0.75rem; border-radius: 999px; background: var(--crm-surface); font-size: 0.83rem; font-weight: 600; cursor: pointer; border: 1px solid var(--crm-border);">
+      <option value="">Set Status...</option>
+      <option value="pending">Pending</option>
+      <option value="ongoing">Ongoing</option>
+      <option value="complete">Complete</option>
+      <option value="notrequired">Not Required</option>
+    </select>
     <button class="crm-btn crm-btn-ghost" id="btnCancelSelection">Cancel</button>
     <button class="crm-btn crm-btn-danger" id="btnBulkDelete">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -480,13 +513,10 @@
       <div class="crm-form-group">
         <label class="crm-form-label">Status</label>
         <select class="crm-form-select" id="ewDetailStatusSelect">
-          <option value="notstarted">Not Started</option>
           <option value="pending">Pending</option>
           <option value="ongoing">In Progress</option>
-          <option value="review">Under Review</option>
           <option value="complete">Completed</option>
-          <option value="cancelled">Cancelled</option>
-          <option value="na">N/A</option>
+          <option value="notrequired">Not Required</option>
         </select>
       </div>
       <div class="crm-form-group">

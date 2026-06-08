@@ -1,0 +1,6 @@
+[    1440ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://192.168.1.10:5000/login?next=/ownership:0
+[    1442ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://192.168.1.10:5000/login?next=/ownership:0
+[    1442ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://192.168.1.10:5000/login?next=/ownership:0
+[    1568ms] [ERROR] Failed to load resource: the server responded with a status of 404 (NOT FOUND) @ http://192.168.1.10:5000/favicon.ico:0
+[  652563ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://192.168.1.10:5000/api/tickets/stream:0
+[  652566ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://192.168.1.10:5000/api/ownership/stream:0

@@ -395,23 +395,17 @@ function getSubtaskCategory(taskKey) {
 }
 
 const statusColors = {
-  notstarted: '#9ca3af',
   pending: '#f59e0b',
   ongoing: '#3b82f6',
-  review: '#8b5cf6',
   complete: '#10b981',
-  cancelled: '#ef4444',
-  na: '#d1d5db'
+  notrequired: '#94a3b8'
 };
 
 const statusLabels = {
-  notstarted: 'Not Started',
   pending: 'Pending',
   ongoing: 'In Progress',
-  review: 'Under Review',
   complete: 'Completed',
-  cancelled: 'Cancelled',
-  na: 'N/A'
+  notrequired: 'Not Required'
 };
 
 function employeeColor(name) {
@@ -779,6 +773,16 @@ const taskFields = [
   { key: 'tripFeedbackFormStatus', label: 'Trip Feedback Form' }
 ];
 
+function normalizeEmployeeTaskStatus(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return 'pending';
+  const normalized = raw.replace(/\s+/g, '');
+  if (normalized === 'completed') return 'complete';
+  if (normalized === 'inprogress') return 'ongoing';
+  if (normalized === 'notrequired') return 'notrequired';
+  return ['pending', 'ongoing', 'complete', 'notrequired'].includes(normalized) ? normalized : 'pending';
+}
+
 function getEmployeeData() {
   if (!activeEmployee) return { tasks: [], subtasks: [], stats: {} };
   
@@ -793,19 +797,17 @@ function getEmployeeData() {
   
   myTrips.forEach(trip => {
     taskFields.forEach(tf => {
-      const status = trip[tf.key] || 'notstarted';
-      if (status !== 'na') {
-        allTasks.push({
-          id: `${trip.id}_${tf.key}`,
-          tripId: trip.id,
-          tripName: trip.guestName || trip.destination || 'Unnamed Trip',
-          tripDate: formatDate(trip.startDate),
-          taskKey: tf.key,
-          taskLabel: tf.label,
-          status: status,
-          trip: trip
-        });
-      }
+      const status = normalizeEmployeeTaskStatus(trip[tf.key]);
+      allTasks.push({
+        id: `${trip.id}_${tf.key}`,
+        tripId: trip.id,
+        tripName: trip.guestName || trip.destination || 'Unnamed Trip',
+        tripDate: formatDate(trip.startDate),
+        taskKey: tf.key,
+        taskLabel: tf.label,
+        status: status,
+        trip: trip
+      });
     });
   });
   
@@ -851,10 +853,10 @@ function getEmployeeData() {
   // Calculate Stats
   const stats = {
     activeTrips: tripCount,
-    pendingTasks: allTasks.filter(t => ['notstarted', 'pending', 'ongoing', 'review'].includes(t.status)).length,
+    pendingTasks: allTasks.filter(t => ['pending', 'ongoing'].includes(t.status)).length,
     completedTasks: allTasks.filter(t => t.status === 'complete').length,
     overdueTasks: allTasks.filter(t => {
-      if (!t.tripDate || t.status === 'complete' || t.status === 'cancelled') return false;
+      if (!t.tripDate || t.status === 'complete' || t.status === 'notrequired') return false;
       return new Date(t.tripDate) < new Date();
     }).length,
     completionRate: 0
@@ -1060,8 +1062,8 @@ function closeAddSubtaskModal() {
 // Kanban View
 function renderKanban(tasks) {
   const cols = {
-    pending: tasks.filter(t => ['notstarted', 'pending'].includes(t.status)),
-    progress: tasks.filter(t => ['ongoing', 'review'].includes(t.status)),
+    pending: tasks.filter(t => ['pending'].includes(t.status)),
+    progress: tasks.filter(t => ['ongoing'].includes(t.status)),
     completed: tasks.filter(t => t.status === 'complete')
   };
   
@@ -1366,7 +1368,7 @@ function openTaskDetail(tripId, taskKey) {
   if (!trip) return;
   
   const tf = taskFields.find(f => f.key === taskKey);
-  const status = trip[taskKey] || 'notstarted';
+  const status = normalizeEmployeeTaskStatus(trip[taskKey]);
   
   currentDetailContext = { tripId, taskKey };
   
@@ -1489,7 +1491,7 @@ async function flushEmployeeTripQueue(tripId) {
       if (tripId === currentDetailContext?.tripId) {
         const detailStatus = document.getElementById('ewDetailStatusSelect');
         if (detailStatus && currentDetailContext?.taskKey) {
-          detailStatus.value = mergedTrip[currentDetailContext.taskKey] || detailStatus.value;
+          detailStatus.value = normalizeEmployeeTaskStatus(mergedTrip[currentDetailContext.taskKey] || detailStatus.value);
           refreshDetailSubtaskList(mergedTrip, currentDetailContext.taskKey);
         }
       }
@@ -1516,7 +1518,7 @@ async function flushEmployeeTripQueue(tripId) {
       if (tripId === currentDetailContext?.tripId) {
         const detailStatus = document.getElementById('ewDetailStatusSelect');
         if (detailStatus && currentDetailContext?.taskKey) {
-          detailStatus.value = fallbackTrip[currentDetailContext.taskKey] || detailStatus.value;
+          detailStatus.value = normalizeEmployeeTaskStatus(fallbackTrip[currentDetailContext.taskKey] || detailStatus.value);
           refreshDetailSubtaskList(fallbackTrip, currentDetailContext.taskKey);
         }
       }
@@ -1531,7 +1533,7 @@ async function flushEmployeeTripQueue(tripId) {
       if (tripId === currentDetailContext?.tripId) {
         const matched = trips.find(x => x.id === tripId);
         if (matched && currentDetailContext?.taskKey) {
-          document.getElementById('ewDetailStatusSelect').value = matched[currentDetailContext.taskKey] || 'notstarted';
+          document.getElementById('ewDetailStatusSelect').value = normalizeEmployeeTaskStatus(matched[currentDetailContext.taskKey]);
           refreshDetailSubtaskList(matched, currentDetailContext.taskKey);
         }
       }
@@ -1702,7 +1704,7 @@ async function deleteSubtask(tripId, subtaskId) {
 
 document.getElementById('ewDetailStatusSelect')?.addEventListener('change', (e) => {
   if (!currentDetailContext) return;
-  updateTripField(currentDetailContext.tripId, currentDetailContext.taskKey, e.target.value);
+  updateTripField(currentDetailContext.tripId, currentDetailContext.taskKey, normalizeEmployeeTaskStatus(e.target.value));
 });
 
 document.getElementById('ewDetailCompleteBtn')?.addEventListener('click', () => {

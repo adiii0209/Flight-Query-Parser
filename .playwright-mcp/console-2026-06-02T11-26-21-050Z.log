@@ -1,0 +1,9 @@
+[    1314ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5000/login?next=/hotels:0
+[    1315ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5000/login?next=/hotels:0
+[    1315ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5000/login?next=/hotels:0
+[    1433ms] [ERROR] Failed to load resource: the server responded with a status of 404 (NOT FOUND) @ http://127.0.0.1:5000/favicon.ico:0
+[    7898ms] [ERROR] Failed to load resource: the server responded with a status of 404 (NOT FOUND) @ http://127.0.0.1:5000/uploads/hotel_images/2e133b04331645bca3318fac002a78ca.png:0
+[   26666ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5000/login?next=/hotels:0
+[   26667ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5000/login?next=/hotels:0
+[   26667ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5000/login?next=/hotels:0
+[   28459ms] [ERROR] Failed to load resource: the server responded with a status of 404 (NOT FOUND) @ http://127.0.0.1:5000/uploads/hotel_images/2e133b04331645bca3318fac002a78ca.png:0
