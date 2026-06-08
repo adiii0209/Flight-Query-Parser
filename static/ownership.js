@@ -432,7 +432,6 @@ async function flushOwnershipTripPatch(tripId) {
       cacheTripsForFastPaint(trips);
       syncTripRowDom(mergedTrip, { refreshExpanded: true });
     }
-    flushOwnershipTripEvent(tripId);
     batchResolvers.forEach(r => r.resolve(saved));
   } catch (err) {
     const serverTrip = err.status === 409 && err.payload?.trip ? err.payload.trip : null;
@@ -468,6 +467,7 @@ async function flushOwnershipTripPatch(tripId) {
     queue.inFlight = false;
     if (Object.keys(queue.patch).length === 0 && queue.resolvers.length === 0 && !queue.timer) {
       delete patchQueue[tripId];
+      flushOwnershipTripEvent(tripId);
     } else if (Object.keys(queue.patch).length > 0 && !queue.timer) {
       scheduleOwnershipPatchFlush(tripId, 0);
     }
