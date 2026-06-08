@@ -62,6 +62,7 @@ let aggregatorsCachePromise = null;
 const ACTIVE_FIELD_AUTOSAVE_IDLE_MS = 1200;
 const TICKETS_REALTIME_RETRY_MS = 5000;
 const TICKETS_REALTIME_RETRY_MAX_MS = 30000;
+const TICKETS_REALTIME_HUB_URL = '/static/realtime-hub.js';
 const TICKETS_REALTIME_CHANNEL_NAME = 'tickets_realtime_sync_v1';
 const TICKETS_REALTIME_LEADER_KEY = 'tickets_realtime_leader_v1';
 const TICKETS_REALTIME_HEARTBEAT_MS = 4000;
@@ -94,6 +95,7 @@ let ticketsRealtimeClaimTimer = null;
 let ticketsRealtimeConfirmTimer = null;
 let ticketsRealtimeReconnectTimer = null;
 let ticketsRealtimeReconnectBackoffMs = TICKETS_REALTIME_RETRY_MS;
+let ticketsRealtimeHub = null;
 const INDIA_AIRPORT_CODES = new Set([
     'DEL', 'BOM', 'NMI', 'BLR', 'MAA', 'CCU', 'HYD', 'AMD', 'PNQ', 'COK', 'CCJ', 'GOI', 'VTZ',
     'JAI', 'TRV', 'GAU', 'LKO', 'NAG', 'IXC', 'VNS', 'PAT', 'BBI', 'IXB', 'IXR', 'IDR', 'RPR',
@@ -3194,6 +3196,37 @@ function parseTicketsRealtimeMessage(raw) {
     return null;
 }
 
+function ticketsRealtimeEnsureHub() {
+    if (ticketsRealtimeHub) return true;
+    if (!('SharedWorker' in window)) return false;
+    try {
+        ticketsRealtimeHub = new SharedWorker(TICKETS_REALTIME_HUB_URL, { name: 'tickets-realtime-hub' });
+        ticketsRealtimeHub.port.onmessage = (event) => ticketsRealtimeHandleBroadcast(event?.data);
+        ticketsRealtimeHub.port.start();
+        ticketsRealtimeHub.port.postMessage({ type: 'subscribe', channel: 'tickets' });
+        return true;
+    } catch (err) {
+        console.warn('Failed to start tickets realtime hub', err);
+        ticketsRealtimeHub = null;
+        return false;
+    }
+}
+
+function ticketsRealtimeDisconnectHub() {
+    if (!ticketsRealtimeHub) return;
+    try {
+        ticketsRealtimeHub.port.postMessage({ type: 'unsubscribe', channel: 'tickets' });
+    } catch (err) {
+        // Ignore shutdown errors.
+    }
+    try {
+        ticketsRealtimeHub.port.close();
+    } catch (err) {
+        // Ignore shutdown errors.
+    }
+    ticketsRealtimeHub = null;
+}
+
 function ticketsRealtimeReadLeaderState() {
     try {
         return parseTicketsRealtimeMessage(localStorage.getItem(TICKETS_REALTIME_LEADER_KEY));
@@ -3402,6 +3435,18 @@ function ticketsRealtimeStopCoordinator() {
 }
 
 function ticketsRealtimeCoordinatorTick() {
+    if (ticketsRealtimeEnsureHub()) {
+        ticketsRealtimeStopCoordinator();
+        if (ticketsEventSource) {
+            try {
+                ticketsEventSource.close();
+            } catch (e) {
+                console.error('Failed to close legacy realtime stream', e);
+            }
+            ticketsEventSource = null;
+        }
+        return;
+    }
     ticketsRealtimeEnsureChannel();
     const leader = ticketsRealtimeReadLeaderState();
     const isSelfLeader = leader && leader.tabId === TICKETS_REALTIME_TAB_ID;
@@ -3448,6 +3493,18 @@ function ticketsRealtimeCoordinatorTick() {
 }
 
 function ticketsRealtimeStartCoordinator() {
+    if (ticketsRealtimeEnsureHub()) {
+        ticketsRealtimeStopCoordinator();
+        if (ticketsEventSource) {
+            try {
+                ticketsEventSource.close();
+            } catch (e) {
+                console.error('Failed to close legacy realtime stream', e);
+            }
+            ticketsEventSource = null;
+        }
+        return;
+    }
     ticketsRealtimeEnsureChannel();
     if (ticketsRealtimeCoordinatorTimer) return;
     ticketsRealtimeCoordinatorTimer = setInterval(ticketsRealtimeCoordinatorTick, TICKETS_REALTIME_HEARTBEAT_MS);
@@ -3459,6 +3516,18 @@ function ticketsRealtimeStartCoordinator() {
 
 function restartTicketsRealtime() {
     if (!('EventSource' in window)) return false;
+    if (ticketsRealtimeEnsureHub()) {
+        ticketsRealtimeStopCoordinator();
+        if (ticketsEventSource) {
+            try {
+                ticketsEventSource.close();
+            } catch (e) {
+                console.error('Failed to close legacy realtime stream', e);
+            }
+            ticketsEventSource = null;
+        }
+        return true;
+    }
     ticketsRealtimeStartCoordinator();
     ticketsRealtimeCoordinatorTick();
     return !!ticketsEventSource || ticketsRealtimeIsLeader;
@@ -3536,6 +3605,18 @@ function scheduleRealtimeRefresh(payload = {}) {
 function startTicketsRealtime() {
     if (dashboardLiveUpdatesPaused) return false;
     if (!('EventSource' in window)) return false;
+    if (ticketsRealtimeEnsureHub()) {
+        ticketsRealtimeStopCoordinator();
+        if (ticketsEventSource) {
+            try {
+                ticketsEventSource.close();
+            } catch (e) {
+                console.error('Failed to close legacy realtime stream', e);
+            }
+            ticketsEventSource = null;
+        }
+        return true;
+    }
     ticketsRealtimeEnsureChannel();
     if (ticketsEventSource) {
         if (ticketsEventSource.readyState !== EventSource.CLOSED) return false;
@@ -3597,6 +3678,7 @@ function scheduleTicketsRealtimeRetry() {
 }
 
 function stopTicketsRealtime() {
+  ticketsRealtimeDisconnectHub();
   if (!ticketsEventSource) {
     ticketsRealtimeReleaseLeadership();
     return;

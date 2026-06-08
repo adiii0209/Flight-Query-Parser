@@ -33,6 +33,7 @@ const ACTIVITY_LOG = [];
 const OWNERSHIP_TRIPS_STORAGE_KEY = 'ownership_trips_cache_v1';
 const OWNERSHIP_REALTIME_CHANNEL_NAME = 'ownership_realtime_sync_v1';
 const OWNERSHIP_REALTIME_LEADER_KEY = 'ownership_realtime_leader_v1';
+const OWNERSHIP_REALTIME_HUB_URL = '/static/realtime-hub.js';
 const OWNERSHIP_REALTIME_HEARTBEAT_MS = 4000;
 const OWNERSHIP_REALTIME_STALE_MS = 12000;
 
@@ -80,6 +81,7 @@ let ownershipRealtimeConfirmTimer = null;
 let ownershipRealtimeSource = null;
 let ownershipRealtimeReconnectTimer = null;
 let ownershipRealtimeNeedsResync = false;
+let ownershipRealtimeHub = null;
 let ownershipServerRefreshPending = false;
 let ownershipServerRefreshTimer = null;
 let ownershipServerRefreshVersion = 0;
@@ -139,6 +141,37 @@ function parseOwnershipRealtimeMessage(raw) {
   }
   if (typeof raw === 'object') return raw;
   return null;
+}
+
+function ownershipRealtimeEnsureHub() {
+  if (ownershipRealtimeHub) return true;
+  if (!('SharedWorker' in window)) return false;
+  try {
+    ownershipRealtimeHub = new SharedWorker(OWNERSHIP_REALTIME_HUB_URL, { name: 'ownership-realtime-hub' });
+    ownershipRealtimeHub.port.onmessage = event => ownershipRealtimeHandleBroadcast(event?.data);
+    ownershipRealtimeHub.port.start();
+    ownershipRealtimeHub.port.postMessage({ type: 'subscribe', channel: 'ownership' });
+    return true;
+  } catch (err) {
+    console.warn('Failed to start ownership realtime hub', err);
+    ownershipRealtimeHub = null;
+    return false;
+  }
+}
+
+function ownershipRealtimeDisconnectHub() {
+  if (!ownershipRealtimeHub) return;
+  try {
+    ownershipRealtimeHub.port.postMessage({ type: 'unsubscribe', channel: 'ownership' });
+  } catch (err) {
+    // Ignore shutdown errors.
+  }
+  try {
+    ownershipRealtimeHub.port.close();
+  } catch (err) {
+    // Ignore shutdown errors.
+  }
+  ownershipRealtimeHub = null;
 }
 
 function ownershipRealtimeReadLeaderState() {
@@ -221,6 +254,13 @@ function ownershipRealtimeHandleBroadcast(raw) {
   if (message.type === 'leader-resigned') {
     if (!ownershipRealtimeIsLeader) {
       queueOwnershipServerRefresh(message.version || 0, 'leader resigned');
+    }
+    return;
+  }
+
+  if (message.type === 'stream-status') {
+    if (message.state === 'error') {
+      ownershipRealtimeNeedsResync = true;
     }
     return;
   }
@@ -353,6 +393,18 @@ function ownershipRealtimeStopCoordinator() {
 }
 
 function ownershipRealtimeCoordinatorTick() {
+  if (ownershipRealtimeEnsureHub()) {
+    ownershipRealtimeStopCoordinator();
+    if (ownershipRealtimeSource) {
+      try {
+        ownershipRealtimeSource.close();
+      } catch (err) {
+        // Ignore legacy stream close errors.
+      }
+      ownershipRealtimeSource = null;
+    }
+    return;
+  }
   ownershipRealtimeEnsureChannel();
   const leader = ownershipRealtimeReadLeaderState();
   const isSelfLeader = leader && leader.tabId === ownershipRealtimeTabId;
@@ -399,6 +451,18 @@ function ownershipRealtimeCoordinatorTick() {
 }
 
 function ownershipRealtimeStartCoordinator() {
+  if (ownershipRealtimeEnsureHub()) {
+    ownershipRealtimeStopCoordinator();
+    if (ownershipRealtimeSource) {
+      try {
+        ownershipRealtimeSource.close();
+      } catch (err) {
+        // Ignore legacy stream close errors.
+      }
+      ownershipRealtimeSource = null;
+    }
+    return;
+  }
   ownershipRealtimeEnsureChannel();
   if (ownershipRealtimeCoordinatorTimer) return;
   ownershipRealtimeCoordinatorTimer = setInterval(ownershipRealtimeCoordinatorTick, OWNERSHIP_REALTIME_HEARTBEAT_MS);
@@ -594,6 +658,7 @@ function applyOwnershipRealtimeEvent(payload, options = {}) {
 }
 
 function stopOwnershipRealtime() {
+  ownershipRealtimeDisconnectHub();
   if (ownershipRealtimeSource) {
     ownershipRealtimeSource.close();
     ownershipRealtimeSource = null;
@@ -612,6 +677,18 @@ function shutdownOwnershipRealtime() {
 
 function restartOwnershipRealtime(reason = 'resume') {
   if (!('EventSource' in window)) return false;
+  if (ownershipRealtimeEnsureHub()) {
+    ownershipRealtimeStopCoordinator();
+    if (ownershipRealtimeSource) {
+      try {
+        ownershipRealtimeSource.close();
+      } catch (err) {
+        // Ignore legacy stream close errors.
+      }
+      ownershipRealtimeSource = null;
+    }
+    return true;
+  }
   ownershipRealtimeStartCoordinator();
   ownershipRealtimeCoordinatorTick();
   return !!ownershipRealtimeSource || ownershipRealtimeIsLeader;
@@ -619,6 +696,18 @@ function restartOwnershipRealtime(reason = 'resume') {
 
 function startOwnershipRealtime() {
   if (!('EventSource' in window)) return false;
+  if (ownershipRealtimeEnsureHub()) {
+    ownershipRealtimeStopCoordinator();
+    if (ownershipRealtimeSource) {
+      try {
+        ownershipRealtimeSource.close();
+      } catch (err) {
+        // Ignore legacy stream close errors.
+      }
+      ownershipRealtimeSource = null;
+    }
+    return true;
+  }
   ownershipRealtimeEnsureChannel();
   if (ownershipRealtimeSource) {
     if (ownershipRealtimeSource.readyState !== EventSource.CLOSED) return false;
