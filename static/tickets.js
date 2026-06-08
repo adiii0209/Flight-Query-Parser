@@ -61,6 +61,12 @@ let aggregatorsCacheFetchedAt = 0;
 let aggregatorsCachePromise = null;
 const ACTIVE_FIELD_AUTOSAVE_IDLE_MS = 1200;
 const TICKETS_REALTIME_RETRY_MS = 5000;
+const TICKETS_REALTIME_RETRY_MAX_MS = 30000;
+const TICKETS_REALTIME_CHANNEL_NAME = 'tickets_realtime_sync_v1';
+const TICKETS_REALTIME_LEADER_KEY = 'tickets_realtime_leader_v1';
+const TICKETS_REALTIME_HEARTBEAT_MS = 4000;
+const TICKETS_REALTIME_STALE_MS = 12000;
+const TICKETS_REALTIME_TAB_ID = `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 let lastDetailInputAt = 0;
 let unreadTicketIds = new Set();
 let readOverrideTicketIds = new Set();
@@ -80,6 +86,12 @@ let webCheckinExpandedIds = new Set();
 let webCheckinDoneByTicket = {};
 let webCheckinStatusFilter = 'pending';
 let webCheckinFocusedTicketId = null;
+let ticketsBroadcastChannel = null;
+let ticketsRealtimeIsLeader = false;
+let ticketsRealtimeLeaderTimer = null;
+let ticketsRealtimeCoordinatorTimer = null;
+let ticketsRealtimeReconnectTimer = null;
+let ticketsRealtimeReconnectBackoffMs = TICKETS_REALTIME_RETRY_MS;
 const INDIA_AIRPORT_CODES = new Set([
     'DEL', 'BOM', 'NMI', 'BLR', 'MAA', 'CCU', 'HYD', 'AMD', 'PNQ', 'COK', 'CCJ', 'GOI', 'VTZ',
     'JAI', 'TRV', 'GAU', 'LKO', 'NAG', 'IXC', 'VNS', 'PAT', 'BBI', 'IXB', 'IXR', 'IDR', 'RPR',
@@ -3167,6 +3179,221 @@ async function reconcileSingleTicketFromServer(ticketId, { prepend = false, open
     }
 }
 
+function parseTicketsRealtimeMessage(raw) {
+    if (!raw) return null;
+    if (typeof raw === 'string') {
+        try {
+            return JSON.parse(raw);
+        } catch (e) {
+            return null;
+        }
+    }
+    if (typeof raw === 'object') return raw;
+    return null;
+}
+
+function ticketsRealtimeReadLeaderState() {
+    try {
+        return parseTicketsRealtimeMessage(localStorage.getItem(TICKETS_REALTIME_LEADER_KEY));
+    } catch (e) {
+        return null;
+    }
+}
+
+function ticketsRealtimeWriteLeaderState(state) {
+    try {
+        localStorage.setItem(TICKETS_REALTIME_LEADER_KEY, JSON.stringify(state));
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+function ticketsRealtimeClearLeaderState() {
+    try {
+        localStorage.removeItem(TICKETS_REALTIME_LEADER_KEY);
+    } catch (e) {
+        // Ignore storage errors; stale leadership will time out.
+    }
+}
+
+function ticketsRealtimeIsLeaderStateFresh(state) {
+    if (!state || state.tabId === TICKETS_REALTIME_TAB_ID) return true;
+    const updatedAt = Number(state.updatedAt || 0);
+    return Number.isFinite(updatedAt) && (Date.now() - updatedAt) < TICKETS_REALTIME_STALE_MS;
+}
+
+function ticketsRealtimeEnsureChannel() {
+    if (!ticketsBroadcastChannel && 'BroadcastChannel' in window) {
+        try {
+            ticketsBroadcastChannel = new BroadcastChannel(TICKETS_REALTIME_CHANNEL_NAME);
+            ticketsBroadcastChannel.onmessage = (event) => ticketsRealtimeHandleBroadcast(event?.data);
+        } catch (e) {
+            ticketsBroadcastChannel = null;
+        }
+    }
+}
+
+function ticketsRealtimeCloseChannel() {
+    if (!ticketsBroadcastChannel) return;
+    try {
+        ticketsBroadcastChannel.close();
+    } catch (e) {
+        // Ignore close failures.
+    }
+    ticketsBroadcastChannel = null;
+}
+
+function ticketsRealtimeBroadcast(message) {
+    const payload = {
+        ...message,
+        senderId: TICKETS_REALTIME_TAB_ID,
+        timestamp: Date.now(),
+    };
+    if (ticketsBroadcastChannel) {
+        try {
+            ticketsBroadcastChannel.postMessage(payload);
+            return payload;
+        } catch (e) {
+            // Fall through to storage-based delivery.
+        }
+    }
+    try {
+        localStorage.setItem(TICKETS_REALTIME_CHANNEL_NAME, JSON.stringify(payload));
+        localStorage.removeItem(TICKETS_REALTIME_CHANNEL_NAME);
+    } catch (e) {
+        // If storage is unavailable, the leader tab still works locally.
+    }
+    return payload;
+}
+
+function ticketsRealtimeHandleBroadcast(raw) {
+    const message = parseTicketsRealtimeMessage(raw);
+    if (!message || message.senderId === TICKETS_REALTIME_TAB_ID) return;
+
+    if (message.type === 'leader-state') {
+        const state = message.state || {};
+        if (state.tabId && state.tabId !== TICKETS_REALTIME_TAB_ID) {
+            ticketsRealtimeIsLeader = false;
+            if (ticketsRealtimeRetryHandle) {
+                clearTimeout(ticketsRealtimeRetryHandle);
+                ticketsRealtimeRetryHandle = null;
+            }
+            if (ticketsEventSource) {
+                stopTicketsRealtime();
+            }
+        }
+        return;
+    }
+
+    if (message.type === 'leader-resigned') {
+        ticketsRealtimeCoordinatorTick();
+        return;
+    }
+
+    if (message.type === 'tickets-event' && message.payload) {
+        scheduleRealtimeRefresh(message.payload);
+    }
+}
+
+function ticketsRealtimeAcquireLeadership() {
+    const now = Date.now();
+    const current = ticketsRealtimeReadLeaderState();
+    if (current && current.tabId !== TICKETS_REALTIME_TAB_ID && ticketsRealtimeIsLeaderStateFresh(current)) {
+        return false;
+    }
+    const state = {
+        tabId: TICKETS_REALTIME_TAB_ID,
+        updatedAt: now,
+    };
+    if (!ticketsRealtimeWriteLeaderState(state)) return false;
+    const verify = ticketsRealtimeReadLeaderState();
+    if (!verify || verify.tabId !== TICKETS_REALTIME_TAB_ID) return false;
+    ticketsRealtimeIsLeader = true;
+    ticketsRealtimeBroadcast({ type: 'leader-state', state });
+    return true;
+}
+
+function ticketsRealtimeHeartbeat() {
+    if (!ticketsRealtimeIsLeader) return false;
+    const state = {
+        tabId: TICKETS_REALTIME_TAB_ID,
+        updatedAt: Date.now(),
+    };
+    if (!ticketsRealtimeWriteLeaderState(state)) return false;
+    ticketsRealtimeBroadcast({ type: 'leader-state', state });
+    return true;
+}
+
+function ticketsRealtimeReleaseLeadership() {
+    if (!ticketsRealtimeIsLeader) return;
+    const current = ticketsRealtimeReadLeaderState();
+    if (current && current.tabId === TICKETS_REALTIME_TAB_ID) {
+        ticketsRealtimeClearLeaderState();
+        ticketsRealtimeBroadcast({ type: 'leader-resigned' });
+    }
+    ticketsRealtimeIsLeader = false;
+}
+
+function ticketsRealtimeStopCoordinator() {
+    if (ticketsRealtimeCoordinatorTimer) {
+        clearInterval(ticketsRealtimeCoordinatorTimer);
+        ticketsRealtimeCoordinatorTimer = null;
+    }
+    if (ticketsRealtimeLeaderTimer) {
+        clearTimeout(ticketsRealtimeLeaderTimer);
+        ticketsRealtimeLeaderTimer = null;
+    }
+    if (ticketsRealtimeRetryHandle) {
+        clearTimeout(ticketsRealtimeRetryHandle);
+        ticketsRealtimeRetryHandle = null;
+    }
+    ticketsRealtimeCloseChannel();
+}
+
+function ticketsRealtimeCoordinatorTick() {
+    ticketsRealtimeEnsureChannel();
+    const leader = ticketsRealtimeReadLeaderState();
+    const isSelfLeader = leader && leader.tabId === TICKETS_REALTIME_TAB_ID;
+
+    if (isSelfLeader) {
+        ticketsRealtimeIsLeader = true;
+        if (!ticketsEventSource) {
+            startTicketsRealtime();
+        } else {
+            ticketsRealtimeHeartbeat();
+        }
+        return;
+    }
+
+    ticketsRealtimeIsLeader = false;
+    if (ticketsEventSource) {
+        stopTicketsRealtime();
+    }
+    if (!leader || !ticketsRealtimeIsLeaderStateFresh(leader)) {
+        if (ticketsRealtimeAcquireLeadership()) {
+            startTicketsRealtime();
+        }
+    }
+}
+
+function ticketsRealtimeStartCoordinator() {
+    ticketsRealtimeEnsureChannel();
+    if (ticketsRealtimeCoordinatorTimer) return;
+    ticketsRealtimeCoordinatorTimer = setInterval(ticketsRealtimeCoordinatorTick, TICKETS_REALTIME_HEARTBEAT_MS);
+    ticketsRealtimeLeaderTimer = setTimeout(() => {
+        ticketsRealtimeLeaderTimer = null;
+        ticketsRealtimeCoordinatorTick();
+    }, Math.floor(Math.random() * 500) + 100);
+}
+
+function restartTicketsRealtime() {
+    if (!('EventSource' in window)) return false;
+    ticketsRealtimeStartCoordinator();
+    ticketsRealtimeCoordinatorTick();
+    return !!ticketsEventSource || ticketsRealtimeIsLeader;
+}
+
 function scheduleRealtimeRefresh(payload = {}) {
     // Directly apply embedded notification data — no fetch needed
     if (payload.notifications) {
@@ -3238,7 +3465,13 @@ function scheduleRealtimeRefresh(payload = {}) {
 
 function startTicketsRealtime() {
     if (dashboardLiveUpdatesPaused) return false;
-    if (!('EventSource' in window) || ticketsEventSource) return false;
+    if (!('EventSource' in window)) return false;
+    ticketsRealtimeEnsureChannel();
+    if (ticketsEventSource) {
+        if (ticketsEventSource.readyState !== EventSource.CLOSED) return false;
+        stopTicketsRealtime();
+    }
+    if (!ticketsRealtimeAcquireLeadership()) return false;
     if (ticketsRealtimeRetryHandle) {
         clearTimeout(ticketsRealtimeRetryHandle);
         ticketsRealtimeRetryHandle = null;
@@ -3248,33 +3481,33 @@ function startTicketsRealtime() {
         stream.onmessage = (event) => {
             try {
                 const payload = JSON.parse(event.data || '{}');
+                ticketsRealtimeBroadcast({ type: 'tickets-event', payload });
                 scheduleRealtimeRefresh(payload);
             } catch (e) {
                 console.error('Invalid realtime payload', e);
             }
         };
-        stream.onerror = async () => {
+        stream.addEventListener('ping', () => {
+            ticketsRealtimeHeartbeat();
+        });
+        stream.onerror = () => {
             try {
                 stream.close();
             } catch (e) {
                 console.error('Failed to close realtime stream', e);
             }
             ticketsEventSource = null;
-
-            // Check if session is actually active before retrying
-            try {
-                const authCheck = await fetch('/api/tickets/notifications');
-                if (authCheck.status === 401) {
-                    console.warn('Realtime stream stopped: User is not authenticated.');
-                    return; // Stop retrying
-                }
-            } catch (e) {}
-            scheduleTicketsRealtimeRetry();
+            ticketsRealtimeReleaseLeadership();
+            if (!dashboardLiveUpdatesPaused) {
+                scheduleTicketsRealtimeRetry();
+            }
         };
         ticketsEventSource = stream;
+        ticketsRealtimeReconnectBackoffMs = TICKETS_REALTIME_RETRY_MS;
         return true;
     } catch (e) {
         console.error('Realtime stream unavailable', e);
+        ticketsRealtimeReleaseLeadership();
         scheduleTicketsRealtimeRetry();
         return false;
     }
@@ -3282,20 +3515,26 @@ function startTicketsRealtime() {
 
 function scheduleTicketsRealtimeRetry() {
     if (dashboardLiveUpdatesPaused || !('EventSource' in window) || ticketsEventSource || ticketsRealtimeRetryHandle) return;
+    const delay = ticketsRealtimeReconnectBackoffMs;
+    ticketsRealtimeReconnectBackoffMs = Math.min(Math.max(delay * 2, TICKETS_REALTIME_RETRY_MS), TICKETS_REALTIME_RETRY_MAX_MS);
     ticketsRealtimeRetryHandle = setTimeout(() => {
         ticketsRealtimeRetryHandle = null;
         startTicketsRealtime();
-    }, TICKETS_REALTIME_RETRY_MS);
+    }, delay);
 }
 
 function stopTicketsRealtime() {
-    if (!ticketsEventSource) return;
+  if (!ticketsEventSource) {
+    ticketsRealtimeReleaseLeadership();
+    return;
+  }
     try {
         ticketsEventSource.close();
     } catch (e) {
         console.error('Failed to close realtime stream', e);
     }
     ticketsEventSource = null;
+    ticketsRealtimeReleaseLeadership();
 }
 
 function getTicketIdFromUrl() {
@@ -3318,15 +3557,15 @@ function pauseDashboardLiveUpdates() {
         clearTimeout(ticketsRealtimeRetryHandle);
         ticketsRealtimeRetryHandle = null;
     }
+    ticketsRealtimeStopCoordinator();
+    ticketsRealtimeReconnectBackoffMs = TICKETS_REALTIME_RETRY_MS;
     clearTimeout(realtimeRefreshHandle);
     realtimeRefreshHandle = null;
 }
 
 function resumeDashboardLiveUpdates({ refresh = false } = {}) {
     dashboardLiveUpdatesPaused = false;
-    if (!startTicketsRealtime() && 'EventSource' in window) {
-        scheduleTicketsRealtimeRetry();
-    }
+    restartTicketsRealtime();
     if (refresh) {
         // Always show a quick first-page refresh
         void loadTickets({ limit: INITIAL_TICKETS_BATCH_SIZE, render: true, notifyNewTickets: false });
@@ -8576,9 +8815,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    if (!startTicketsRealtime() && 'EventSource' in window) {
-        scheduleTicketsRealtimeRetry();
-    }
+    restartTicketsRealtime();
     if (!('EventSource' in window)) {
         scheduleDeferredFullSync(1500);
     }
@@ -8619,35 +8856,40 @@ window.addEventListener('popstate', async () => {
 
 window.addEventListener('beforeunload', () => {
     persistUnreadSeenState();
-    if (ticketsEventSource) {
-        ticketsEventSource.close();
-        ticketsEventSource = null;
-    }
-    if (ticketsRealtimeRetryHandle) {
-        clearTimeout(ticketsRealtimeRetryHandle);
-        ticketsRealtimeRetryHandle = null;
-    }
+    pauseDashboardLiveUpdates();
 });
 
 window.addEventListener('pagehide', () => {
     persistUnreadSeenState();
+    pauseDashboardLiveUpdates();
 });
 
 window.addEventListener('pageshow', (event) => {
     const shouldHydrateFromCache = event?.persisted || allTickets.length === 0;
-    if (!shouldHydrateFromCache) return;
-    hydrateUserFromCache();
-    hydrateUnreadTicketsFromCache();
-    hydrateUnreadSeenStateFromCache();
-    hydrateNotificationsFromCache();
-    hydrateAggregatorsFromCache();
-    hydrateWebCheckinState();
-    hydrateTicketsFromCache();
-    updateTicketSelectionToolbar();
+    if (shouldHydrateFromCache) {
+        hydrateUserFromCache();
+        hydrateUnreadTicketsFromCache();
+        hydrateUnreadSeenStateFromCache();
+        hydrateNotificationsFromCache();
+        hydrateAggregatorsFromCache();
+        hydrateWebCheckinState();
+        hydrateTicketsFromCache();
+        updateTicketSelectionToolbar();
+    }
+    dashboardLiveUpdatesPaused = false;
+    restartTicketsRealtime();
 });
 
 window.addEventListener('storage', (event) => {
     if (!event || !event.key) return;
+    if (event.key === TICKETS_REALTIME_CHANNEL_NAME && event.newValue) {
+        ticketsRealtimeHandleBroadcast(event.newValue);
+        return;
+    }
+    if (event.key === TICKETS_REALTIME_LEADER_KEY) {
+        ticketsRealtimeCoordinatorTick();
+        return;
+    }
     if (event.key === TICKETS_CACHE_KEY) {
         if ((!currentTicket || !isDetailDirty) && readCachedJson(TICKETS_CACHE_KEY)?.tickets?.length) {
             hydrateTicketsFromCache();
@@ -8678,6 +8920,7 @@ window.addEventListener('online', () => {
     if (currentTicket && isDetailDirty) {
         scheduleDraftRetry(400);
     }
+    restartTicketsRealtime();
 });
 
 window.addEventListener('keydown', (event) => {

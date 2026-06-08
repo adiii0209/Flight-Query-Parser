@@ -290,6 +290,18 @@ function ownershipRealtimeCloseChannel() {
   }
 }
 
+function ownershipRealtimeStopCoordinator() {
+  if (ownershipRealtimeCoordinatorTimer) {
+    clearInterval(ownershipRealtimeCoordinatorTimer);
+    ownershipRealtimeCoordinatorTimer = null;
+  }
+  if (ownershipRealtimeLeaderTimer) {
+    clearTimeout(ownershipRealtimeLeaderTimer);
+    ownershipRealtimeLeaderTimer = null;
+  }
+  ownershipRealtimeCloseChannel();
+}
+
 function ownershipRealtimeCoordinatorTick() {
   ownershipRealtimeEnsureChannel();
   const leader = ownershipRealtimeReadLeaderState();
@@ -320,7 +332,10 @@ function ownershipRealtimeStartCoordinator() {
   ownershipRealtimeEnsureChannel();
   if (ownershipRealtimeCoordinatorTimer) return;
   ownershipRealtimeCoordinatorTimer = setInterval(ownershipRealtimeCoordinatorTick, OWNERSHIP_REALTIME_HEARTBEAT_MS);
-  setTimeout(ownershipRealtimeCoordinatorTick, Math.floor(Math.random() * 500) + 100);
+  ownershipRealtimeLeaderTimer = setTimeout(() => {
+    ownershipRealtimeLeaderTimer = null;
+    ownershipRealtimeCoordinatorTick();
+  }, Math.floor(Math.random() * 500) + 100);
 }
 
 function queueOwnershipServerRefresh(version = 0, reason = 'ownership update') {
@@ -518,6 +533,11 @@ function stopOwnershipRealtime() {
     clearTimeout(ownershipRealtimeReconnectTimer);
     ownershipRealtimeReconnectTimer = null;
   }
+}
+
+function shutdownOwnershipRealtime() {
+  stopOwnershipRealtime();
+  ownershipRealtimeStopCoordinator();
 }
 
 function restartOwnershipRealtime(reason = 'resume') {
@@ -3582,8 +3602,8 @@ async function init() {
 
 document.addEventListener('DOMContentLoaded', () => {
   init();
-  window.addEventListener('beforeunload', stopOwnershipRealtime);
-  window.addEventListener('pagehide', stopOwnershipRealtime);
+  window.addEventListener('beforeunload', shutdownOwnershipRealtime);
+  window.addEventListener('pagehide', shutdownOwnershipRealtime);
   window.addEventListener('pageshow', () => {
     restartOwnershipRealtime('pageshow');
   });

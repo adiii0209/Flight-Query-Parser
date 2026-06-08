@@ -4500,32 +4500,44 @@ def tickets_stream():
     with _ticket_dashboard_streams_lock:
         _ticket_dashboard_streams.setdefault(user_id, []).append(listener)
 
+    cleanup_state = {"done": False}
+
+    def cleanup_listener():
+        if cleanup_state["done"]:
+            return
+        cleanup_state["done"] = True
+        with _ticket_dashboard_streams_lock:
+            listeners = _ticket_dashboard_streams.get(user_id) or []
+            if listener in listeners:
+                listeners.remove(listener)
+            if not listeners and user_id in _ticket_dashboard_streams:
+                _ticket_dashboard_streams.pop(user_id, None)
+
     def event_generator():
-        initial_payload = {
-            "event": "connected",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "notifications": notifications_data,
-        }
-        yield f"data: {json.dumps(initial_payload)}\n\n"
         try:
+            yield "retry: 5000\n\n"
+            initial_payload = {
+                "event": "connected",
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "notifications": notifications_data,
+            }
+            yield f"data: {json.dumps(initial_payload)}\n\n"
+            last_ping = datetime.utcnow()
             while True:
                 try:
                     payload = listener.get(timeout=20)
                     yield f"data: {json.dumps(payload)}\n\n"
                 except queue.Empty:
-                    yield "event: ping\ndata: {}\n\n"
+                    last_ping = datetime.utcnow()
+                    yield f"event: ping\ndata: {json.dumps({'timestamp': last_ping.isoformat() + 'Z'})}\n\n"
         finally:
-            with _ticket_dashboard_streams_lock:
-                listeners = _ticket_dashboard_streams.get(user_id) or []
-                if listener in listeners:
-                    listeners.remove(listener)
-                if not listeners and user_id in _ticket_dashboard_streams:
-                    _ticket_dashboard_streams.pop(user_id, None)
+            cleanup_listener()
 
     response = Response(stream_with_context(event_generator()), mimetype="text/event-stream")
     response.headers["Cache-Control"] = "no-cache"
     response.headers["X-Accel-Buffering"] = "no"
     response.headers["Connection"] = "keep-alive"
+    response.call_on_close(cleanup_listener)
     return response
 
 
@@ -7738,6 +7750,19 @@ def ownership_stream():
         except Exception:
             pubsub = None
     recent_versions = OrderedDict()
+    cleanup_state = {"done": False}
+
+    def cleanup_stream():
+        if cleanup_state["done"]:
+            return
+        cleanup_state["done"] = True
+        with _ownership_streams_lock:
+            _ownership_streams.discard(listener)
+        if pubsub is not None:
+            try:
+                pubsub.close()
+            except Exception:
+                pass
 
     def should_deliver(event_payload):
         if not isinstance(event_payload, dict):
@@ -7754,6 +7779,7 @@ def ownership_stream():
 
     def stream():
         try:
+            yield "retry: 5000\n\n"
             yield f"event: ready\ndata: {json.dumps({'version': _ownership_cache_version()})}\n\n"
             last_ping = datetime.utcnow()
             while True:
@@ -7786,18 +7812,13 @@ def ownership_stream():
                     last_ping = datetime.utcnow()
                     yield f"event: ping\ndata: {json.dumps({'timestamp': last_ping.isoformat() + 'Z'})}\n\n"
         finally:
-            with _ownership_streams_lock:
-                _ownership_streams.discard(listener)
-            if pubsub is not None:
-                try:
-                    pubsub.close()
-                except Exception:
-                    pass
+            cleanup_stream()
 
     response = Response(stream_with_context(stream()), mimetype="text/event-stream")
     response.headers["Cache-Control"] = "no-cache, no-transform"
     response.headers["Connection"] = "keep-alive"
     response.headers["X-Accel-Buffering"] = "no"
+    response.call_on_close(cleanup_stream)
     return response
 
 
