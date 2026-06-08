@@ -7183,6 +7183,7 @@ def _publish_ownership_event(action="refresh", bump_version=True, version=None, 
     if version is None:
         version = _dashboard_cache.incr("ownership:version") if bump_version else _ownership_cache_version()
     event_payload = {
+        "eventId": uuid.uuid4().hex,
         "event": action,
         "version": version,
         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -7736,6 +7737,20 @@ def ownership_stream():
             pubsub.subscribe(_dashboard_cache.namespaced(_OWNERSHIP_REDIS_CHANNEL))
         except Exception:
             pubsub = None
+    recent_versions = OrderedDict()
+
+    def should_deliver(event_payload):
+        if not isinstance(event_payload, dict):
+            return True
+        version = event_payload.get("version")
+        if version is None:
+            return True
+        if version in recent_versions:
+            return False
+        recent_versions[version] = True
+        while len(recent_versions) > 64:
+            recent_versions.popitem(last=False)
+        return True
 
     def stream():
         try:
@@ -7745,8 +7760,9 @@ def ownership_stream():
                 delivered = False
                 try:
                     event_payload = listener.get(timeout=1)
-                    yield f"event: ownership\ndata: {json.dumps(event_payload)}\n\n"
-                    delivered = True
+                    if should_deliver(event_payload):
+                        yield f"event: ownership\ndata: {json.dumps(event_payload)}\n\n"
+                        delivered = True
                 except queue.Empty:
                     pass
 
@@ -7754,8 +7770,15 @@ def ownership_stream():
                     try:
                         message = pubsub.get_message(timeout=0.01)
                         if message and message.get("data"):
-                            yield f"event: ownership\ndata: {message['data']}\n\n"
-                            delivered = True
+                            event_payload = message["data"]
+                            if isinstance(event_payload, str):
+                                try:
+                                    event_payload = json.loads(event_payload)
+                                except Exception:
+                                    event_payload = None
+                            if should_deliver(event_payload):
+                                yield f"event: ownership\ndata: {json.dumps(event_payload)}\n\n"
+                                delivered = True
                     except Exception:
                         pass
 

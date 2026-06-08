@@ -31,6 +31,10 @@ const STATUS_FIELDS = [
 
 const ACTIVITY_LOG = [];
 const OWNERSHIP_TRIPS_STORAGE_KEY = 'ownership_trips_cache_v1';
+const OWNERSHIP_REALTIME_CHANNEL_NAME = 'ownership_realtime_sync_v1';
+const OWNERSHIP_REALTIME_LEADER_KEY = 'ownership_realtime_leader_v1';
+const OWNERSHIP_REALTIME_HEARTBEAT_MS = 4000;
+const OWNERSHIP_REALTIME_STALE_MS = 12000;
 
 // ═══════════════════════════════════════════════════════════
 // STATE
@@ -66,6 +70,11 @@ let searchRenderTimer = null;
 let ownershipCacheTimer = null;
 let ownershipCachePendingTrips = null;
 let ownershipKnownVersion = 0;
+let ownershipBroadcastChannel = null;
+let ownershipRealtimeTabId = `tab-${uid()}`;
+let ownershipRealtimeIsLeader = false;
+let ownershipRealtimeLeaderTimer = null;
+let ownershipRealtimeCoordinatorTimer = null;
 let ownershipRealtimeSource = null;
 let ownershipRealtimeReconnectTimer = null;
 let ownershipRealtimeNeedsResync = false;
@@ -115,6 +124,203 @@ function parseOwnershipEventData(event) {
   } catch (err) {
     return null;
   }
+}
+
+function parseOwnershipRealtimeMessage(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch (err) {
+      return null;
+    }
+  }
+  if (typeof raw === 'object') return raw;
+  return null;
+}
+
+function ownershipRealtimeReadLeaderState() {
+  try {
+    return parseOwnershipRealtimeMessage(localStorage.getItem(OWNERSHIP_REALTIME_LEADER_KEY));
+  } catch (err) {
+    return null;
+  }
+}
+
+function ownershipRealtimeWriteLeaderState(state) {
+  try {
+    localStorage.setItem(OWNERSHIP_REALTIME_LEADER_KEY, JSON.stringify(state));
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function ownershipRealtimeClearLeaderState() {
+  try {
+    localStorage.removeItem(OWNERSHIP_REALTIME_LEADER_KEY);
+  } catch (err) {
+    // Ignore storage failures; stale leadership will time out.
+  }
+}
+
+function ownershipRealtimeIsLeaderStateFresh(state) {
+  if (!state || state.tabId === ownershipRealtimeTabId) return true;
+  const updatedAt = Number(state.updatedAt || 0);
+  return Number.isFinite(updatedAt) && (Date.now() - updatedAt) < OWNERSHIP_REALTIME_STALE_MS;
+}
+
+function ownershipRealtimeBroadcast(message) {
+  const payload = {
+    ...message,
+    senderId: ownershipRealtimeTabId,
+    timestamp: Date.now(),
+  };
+  if (ownershipBroadcastChannel) {
+    try {
+      ownershipBroadcastChannel.postMessage(payload);
+      return payload;
+    } catch (err) {
+      // Fall through to storage-based delivery.
+    }
+  }
+  try {
+    localStorage.setItem(OWNERSHIP_REALTIME_CHANNEL_NAME, JSON.stringify(payload));
+    localStorage.removeItem(OWNERSHIP_REALTIME_CHANNEL_NAME);
+  } catch (err) {
+    // If storage is unavailable, the leader tab still works locally.
+  }
+  return payload;
+}
+
+function ownershipRealtimeHandleBroadcast(raw) {
+  const message = parseOwnershipRealtimeMessage(raw);
+  if (!message || message.senderId === ownershipRealtimeTabId) return;
+
+  if (message.type === 'leader-state') {
+    const state = message.state || {};
+    if (state.tabId && state.tabId !== ownershipRealtimeTabId) {
+      ownershipRealtimeIsLeader = false;
+      if (ownershipRealtimeSource) {
+        stopOwnershipRealtime();
+      }
+    }
+    return;
+  }
+
+  if (message.type === 'leader-resigned') {
+    if (!ownershipRealtimeIsLeader) {
+      queueOwnershipServerRefresh(message.version || 0, 'leader resigned');
+    }
+    return;
+  }
+
+  if (message.type === 'ownership-event' && message.payload) {
+    const payload = message.payload;
+    if (payload.event === 'ready') {
+      rememberOwnershipVersion(payload.version);
+      return;
+    }
+    const handled = applyOwnershipRealtimeEvent(payload);
+    if (!handled && payload.version) {
+      queueOwnershipServerRefresh(payload.version, payload.event || 'ownership update');
+    }
+    return;
+  }
+}
+
+function ownershipRealtimeAcquireLeadership() {
+  const now = Date.now();
+  const current = ownershipRealtimeReadLeaderState();
+  if (current && current.tabId !== ownershipRealtimeTabId && ownershipRealtimeIsLeaderStateFresh(current)) {
+    return false;
+  }
+  const state = {
+    tabId: ownershipRealtimeTabId,
+    updatedAt: now,
+  };
+  if (!ownershipRealtimeWriteLeaderState(state)) return false;
+  const verify = ownershipRealtimeReadLeaderState();
+  if (!verify || verify.tabId !== ownershipRealtimeTabId) return false;
+  ownershipRealtimeIsLeader = true;
+  ownershipRealtimeBroadcast({ type: 'leader-state', state });
+  return true;
+}
+
+function ownershipRealtimeHeartbeat() {
+  if (!ownershipRealtimeIsLeader) return false;
+  const state = {
+    tabId: ownershipRealtimeTabId,
+    updatedAt: Date.now(),
+  };
+  if (!ownershipRealtimeWriteLeaderState(state)) return false;
+  ownershipRealtimeBroadcast({ type: 'leader-state', state });
+  return true;
+}
+
+function ownershipRealtimeReleaseLeadership() {
+  if (!ownershipRealtimeIsLeader) return;
+  const current = ownershipRealtimeReadLeaderState();
+  if (current && current.tabId === ownershipRealtimeTabId) {
+    ownershipRealtimeClearLeaderState();
+    ownershipRealtimeBroadcast({ type: 'leader-resigned', version: ownershipKnownVersion || 0 });
+  }
+  ownershipRealtimeIsLeader = false;
+}
+
+function ownershipRealtimeEnsureChannel() {
+  if (!ownershipBroadcastChannel && 'BroadcastChannel' in window) {
+    try {
+      ownershipBroadcastChannel = new BroadcastChannel(OWNERSHIP_REALTIME_CHANNEL_NAME);
+      ownershipBroadcastChannel.onmessage = event => ownershipRealtimeHandleBroadcast(event?.data);
+    } catch (err) {
+      ownershipBroadcastChannel = null;
+    }
+  }
+}
+
+function ownershipRealtimeCloseChannel() {
+  if (ownershipBroadcastChannel) {
+    try {
+      ownershipBroadcastChannel.close();
+    } catch (err) {
+      // Ignore close failures.
+    }
+    ownershipBroadcastChannel = null;
+  }
+}
+
+function ownershipRealtimeCoordinatorTick() {
+  ownershipRealtimeEnsureChannel();
+  const leader = ownershipRealtimeReadLeaderState();
+  const isSelfLeader = leader && leader.tabId === ownershipRealtimeTabId;
+
+  if (isSelfLeader) {
+    ownershipRealtimeIsLeader = true;
+    if (!ownershipRealtimeSource) {
+      startOwnershipRealtime();
+    } else {
+      ownershipRealtimeHeartbeat();
+    }
+    return;
+  }
+
+  ownershipRealtimeIsLeader = false;
+  if (ownershipRealtimeSource) {
+    stopOwnershipRealtime();
+  }
+  if (!leader || !ownershipRealtimeIsLeaderStateFresh(leader)) {
+    if (ownershipRealtimeAcquireLeadership()) {
+      startOwnershipRealtime();
+    }
+  }
+}
+
+function ownershipRealtimeStartCoordinator() {
+  ownershipRealtimeEnsureChannel();
+  if (ownershipRealtimeCoordinatorTimer) return;
+  ownershipRealtimeCoordinatorTimer = setInterval(ownershipRealtimeCoordinatorTick, OWNERSHIP_REALTIME_HEARTBEAT_MS);
+  setTimeout(ownershipRealtimeCoordinatorTick, Math.floor(Math.random() * 500) + 100);
 }
 
 function queueOwnershipServerRefresh(version = 0, reason = 'ownership update') {
@@ -307,6 +513,7 @@ function stopOwnershipRealtime() {
     ownershipRealtimeSource.close();
     ownershipRealtimeSource = null;
   }
+  ownershipRealtimeReleaseLeadership();
   if (ownershipRealtimeReconnectTimer) {
     clearTimeout(ownershipRealtimeReconnectTimer);
     ownershipRealtimeReconnectTimer = null;
@@ -315,19 +522,19 @@ function stopOwnershipRealtime() {
 
 function restartOwnershipRealtime(reason = 'resume') {
   if (!('EventSource' in window)) return false;
-  if (ownershipRealtimeSource && ownershipRealtimeSource.readyState === EventSource.CLOSED) {
-    stopOwnershipRealtime();
-  }
-  if (ownershipRealtimeSource) return false;
-  return startOwnershipRealtime();
+  ownershipRealtimeStartCoordinator();
+  ownershipRealtimeCoordinatorTick();
+  return !!ownershipRealtimeSource || ownershipRealtimeIsLeader;
 }
 
 function startOwnershipRealtime() {
   if (!('EventSource' in window)) return false;
+  ownershipRealtimeEnsureChannel();
   if (ownershipRealtimeSource) {
     if (ownershipRealtimeSource.readyState !== EventSource.CLOSED) return false;
     stopOwnershipRealtime();
   }
+  if (!ownershipRealtimeAcquireLeadership()) return false;
 
   const stream = new EventSource('/api/ownership/stream');
   ownershipRealtimeSource = stream;
@@ -336,6 +543,7 @@ function startOwnershipRealtime() {
     const payload = parseOwnershipEventData(event);
     const version = parseOwnershipVersion(payload?.version);
     rememberOwnershipVersion(version);
+    ownershipRealtimeBroadcast({ type: 'ownership-event', payload: { event: 'ready', version } });
     if (ownershipRealtimeNeedsResync) {
       ownershipRealtimeNeedsResync = false;
       queueOwnershipServerRefresh(version, 'stream reconnect');
@@ -345,13 +553,19 @@ function startOwnershipRealtime() {
   stream.addEventListener('ownership', event => {
     const payload = parseOwnershipEventData(event);
     if (!payload) return;
+    ownershipRealtimeBroadcast({ type: 'ownership-event', payload });
     const handled = applyOwnershipRealtimeEvent(payload);
     if (!handled && payload.version) {
       queueOwnershipServerRefresh(payload.version, payload.event || 'ownership update');
     }
   });
 
-  stream.addEventListener('ping', () => {});
+  stream.addEventListener('ping', event => {
+    const payload = parseOwnershipEventData(event);
+    if (payload?.timestamp) {
+      ownershipRealtimeBroadcast({ type: 'leader-state', state: { tabId: ownershipRealtimeTabId, updatedAt: Date.now() } });
+    }
+  });
 
   stream.onerror = () => {
     if (!ownershipRealtimeSource || ownershipRealtimeSource !== stream) return;
@@ -3362,7 +3576,8 @@ async function init() {
   document.getElementById('kpiGrid')?.classList.add('collapsed');
   syncStatsPanelButton();
   toggleSpaView();
-  startOwnershipRealtime();
+  ownershipRealtimeStartCoordinator();
+  ownershipRealtimeCoordinatorTick();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -3379,6 +3594,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   window.addEventListener('online', () => {
     restartOwnershipRealtime('online');
+  });
+  window.addEventListener('storage', event => {
+    if (event.key === OWNERSHIP_REALTIME_CHANNEL_NAME && event.newValue) {
+      ownershipRealtimeHandleBroadcast(event.newValue);
+    } else if (event.key === OWNERSHIP_REALTIME_LEADER_KEY) {
+      ownershipRealtimeCoordinatorTick();
+    }
   });
 
   const btnFilterMenu = document.getElementById('btnFilterMenu');
