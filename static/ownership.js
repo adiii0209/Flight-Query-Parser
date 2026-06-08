@@ -196,11 +196,6 @@ function removeOwnershipTripFromEvent(tripId, version = 0) {
   const queue = patchQueue[tripId];
   const hasPendingLocalPatch = !!(queue && (queue.inFlight || Object.keys(queue.patch || {}).length > 0));
   if (hasPendingLocalPatch) return true;
-  if (idx !== -1) {
-    const currentVersion = parseOwnershipVersion(trips[idx].version);
-    const nextVersion = parseOwnershipVersion(version);
-    if (currentVersion >= nextVersion) return true;
-  }
   const before = trips.length;
   trips = trips.filter(item => item.id !== tripId);
   if (trips.length === before) return true;
@@ -304,8 +299,21 @@ function stopOwnershipRealtime() {
   }
 }
 
+function restartOwnershipRealtime(reason = 'resume') {
+  if (!('EventSource' in window)) return false;
+  if (ownershipRealtimeSource && ownershipRealtimeSource.readyState === EventSource.CLOSED) {
+    stopOwnershipRealtime();
+  }
+  if (ownershipRealtimeSource) return false;
+  return startOwnershipRealtime();
+}
+
 function startOwnershipRealtime() {
-  if (!('EventSource' in window) || ownershipRealtimeSource) return false;
+  if (!('EventSource' in window)) return false;
+  if (ownershipRealtimeSource) {
+    if (ownershipRealtimeSource.readyState !== EventSource.CLOSED) return false;
+    stopOwnershipRealtime();
+  }
 
   const stream = new EventSource('/api/ownership/stream');
   ownershipRealtimeSource = stream;
@@ -627,9 +635,14 @@ function taskGroupLabel(key) {
 
 function statusBadgeWithCount(trip, statusField, subtaskKey) {
   const status = normalizeOwnershipStatus(trip?.[statusField]);
-  const count = ((trip?.subtasks || {})[subtaskKey] || []).filter(sub => sub && !sub.done).length;
+  const count = getOwnershipSubtaskList(trip, subtaskKey).filter(sub => sub && !sub.done).length;
   const countBadge = count ? `<button type="button" class="crm-task-count crm-task-count-inline" title="${count} pending subtasks" onclick="openTripExpandedFromCount(event, '${trip.id}')">${count}</button>` : '';
-  return `<div class="crm-status-cell"><div style="position: relative; display: inline-flex; align-items: center; justify-content: center;"><span class="crm-badge ${status}" data-field="${statusField}" onclick="openBadgeMenu(this, event)" ondblclick="openSubtaskModal(event, '${trip.id}', '${subtaskKey}')">${STATUS_LABELS[status] || STATUS_LABELS.pending}</span>${countBadge}</div></div>`;
+  return `<div class="crm-status-cell"><div class="crm-status-pair"><span class="crm-status-slot"><span class="crm-badge ${status}" data-field="${statusField}" onclick="openBadgeMenu(this, event)" ondblclick="openSubtaskModal(event, '${trip.id}', '${subtaskKey}')">${STATUS_LABELS[status] || STATUS_LABELS.pending}</span></span><span class="crm-count-slot">${countBadge}</span></div></div>`;
+}
+
+function getOwnershipSubtaskList(trip, key) {
+  const group = trip?.subtasks?.[key];
+  return Array.isArray(group) ? group.filter(Boolean) : [];
 }
 
 const STATUS_CELL_MAP = {
@@ -998,6 +1011,7 @@ function updateKPIs() {
 // ═══════════════════════════════════════════════════════════
 
 function renderTable() {
+  try {
   cancelScheduledTableRender();
   const filtered = getFiltered();
   const { page, total, pages } = paginate(filtered);
@@ -1106,6 +1120,15 @@ function renderTable() {
   });
   
   updateKPIs();
+  } catch (err) {
+    console.error('Failed to render ownership table', err);
+    const tbody = document.getElementById('crmTbody');
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="18"><div class="crm-empty"><div class="crm-empty-icon">⚠️</div><div class="crm-empty-title">Could not render ownership data</div><div class="crm-empty-sub">Refresh the page to recover from this live update error.</div></div></td></tr>`;
+    }
+    const footer = document.getElementById('tableFooterInfo');
+    if (footer) footer.textContent = 'Render error — please refresh';
+  }
 }
 
 function renderExpandedContent(trip) {
@@ -3331,6 +3354,18 @@ async function init() {
 document.addEventListener('DOMContentLoaded', () => {
   init();
   window.addEventListener('beforeunload', stopOwnershipRealtime);
+  window.addEventListener('pagehide', stopOwnershipRealtime);
+  window.addEventListener('pageshow', () => {
+    restartOwnershipRealtime('pageshow');
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      restartOwnershipRealtime('visibilitychange');
+    }
+  });
+  window.addEventListener('online', () => {
+    restartOwnershipRealtime('online');
+  });
 
   const btnFilterMenu = document.getElementById('btnFilterMenu');
   const filterDropdown = document.getElementById('filterDropdown');

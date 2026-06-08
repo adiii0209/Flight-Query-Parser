@@ -9,9 +9,13 @@ import uuid
 import requests
 import base64
 import io
+import ssl
+import smtplib
 import subprocess
 import sys
 import tempfile
+import time as time_module
+from email.message import EmailMessage
 from flask import Flask, request, jsonify, render_template, render_template_string, session, redirect, url_for, send_file, send_from_directory, Response, stream_with_context
 from dotenv import load_dotenv
 try:
@@ -296,7 +300,25 @@ _TICKETS_MERGED_HISTORY_CACHE_TTL_SECONDS = max(int(os.getenv("TICKETS_MERGED_HI
 _OWNERSHIP_CACHE_TTL_SECONDS = max(int(os.getenv("OWNERSHIP_CACHE_TTL_SECONDS", "120") or 120), 5)
 _ownership_streams = set()
 _ownership_streams_lock = threading.Lock()
+_ownership_reminder_lock = threading.Lock()
+_ownership_reminder_worker_start_lock = threading.Lock()
+_ownership_reminder_thread_started = False
+_OWNERSHIP_REMINDER_SCAN_SECONDS = max(int(os.getenv("OWNERSHIP_REMINDER_SCAN_SECONDS", "60") or 60), 10)
+_OWNERSHIP_REMINDER_INITIAL_DELAY_SECONDS = max(int(os.getenv("OWNERSHIP_REMINDER_INITIAL_DELAY_SECONDS", "5") or 5), 0)
 _OWNERSHIP_REDIS_CHANNEL = os.getenv("OWNERSHIP_REDIS_CHANNEL", "ownership-events")
+_OWNERSHIP_SMTP_HOST = (os.getenv("OWNERSHIP_SMTP_HOST") or "").strip()
+_OWNERSHIP_SMTP_PORT = max(int(os.getenv("OWNERSHIP_SMTP_PORT", "587") or 587), 1)
+_OWNERSHIP_SMTP_USERNAME = (os.getenv("OWNERSHIP_SMTP_USERNAME") or "").strip()
+_OWNERSHIP_SMTP_PASSWORD = os.getenv("OWNERSHIP_SMTP_PASSWORD") or ""
+_OWNERSHIP_SMTP_FROM = (os.getenv("OWNERSHIP_SMTP_FROM") or os.getenv("OWNERSHIP_SMTP_USERNAME") or "").strip()
+_OWNERSHIP_SMTP_USE_TLS = (os.getenv("OWNERSHIP_SMTP_USE_TLS", "true") or "true").strip().lower() in {"1", "true", "yes", "on"}
+_OWNERSHIP_SMTP_USE_SSL = (os.getenv("OWNERSHIP_SMTP_USE_SSL", "false") or "false").strip().lower() in {"1", "true", "yes", "on"}
+_OWNERSHIP_SMTP_TIMEOUT = max(int(os.getenv("OWNERSHIP_SMTP_TIMEOUT", "10") or 10), 1)
+_OWNERSHIP_REMINDER_RECIPIENTS = ["mail@timetours.in"] + [
+    recipient.strip()
+    for recipient in (os.getenv("OWNERSHIP_REMINDER_RECIPIENTS") or "").split(",")
+    if recipient.strip() and recipient.strip().lower() != "mail@timetours.in"
+]
 
 # Register API v2 Blueprint
 # Register API v2 Blueprint
@@ -314,6 +336,7 @@ def shutdown_session(exception=None):
 @app.before_request
 def _keep_session_persistent():
     session.permanent = True
+    _ensure_ownership_reminder_worker()
 
 # ==================== AUTHENTICATION DECORATOR ====================
 
@@ -6612,6 +6635,364 @@ def _ownership_json_safe(value):
     return value
 
 
+def _ownership_email_sender_configured():
+    return bool(_OWNERSHIP_SMTP_HOST and _OWNERSHIP_SMTP_FROM)
+
+
+def _ownership_parse_reminder_days(reminder):
+    if not isinstance(reminder, dict):
+        return None
+    raw_days = reminder.get("days")
+    if raw_days in (None, ""):
+        raw_days = reminder.get("days_before")
+    try:
+        days = int(raw_days)
+    except (TypeError, ValueError):
+        return None
+    return days if days != 0 else None
+
+
+def _ownership_trip_reminder_records(trip):
+    reminders = trip.reminders_json if isinstance(trip.reminders_json, list) else []
+    if not reminders and getattr(trip, "reminders", None):
+        reminders = [reminder.to_dict() for reminder in trip.reminders or []]
+
+    normalized = []
+    for reminder in reminders:
+        days = _ownership_parse_reminder_days(reminder)
+        if days is None:
+            continue
+        normalized.append({
+            "id": str(reminder.get("id") or uuid.uuid4()),
+            "days": days,
+            "label": str(reminder.get("label") or f"{abs(days)} days {'before' if days > 0 else 'after'}").strip(),
+            "emailSentFor": str(reminder.get("emailSentFor") or reminder.get("email_sent_for") or "").strip(),
+            "emailSentAt": str(reminder.get("emailSentAt") or reminder.get("email_sent_at") or "").strip(),
+        })
+    return normalized
+
+
+def _ownership_reminder_due_date(trip, reminder):
+    if not isinstance(reminder, dict):
+        return None
+    days = _ownership_parse_reminder_days(reminder)
+    if days is None:
+        return None
+    if days > 0:
+        base_date = trip.start_date or trip.end_date
+        if not base_date:
+            return None
+        return base_date - timedelta(days=days)
+    base_date = trip.end_date or trip.start_date
+    if not base_date:
+        return None
+    return base_date + timedelta(days=abs(days))
+
+
+def _ownership_trip_email_recipients(trip):
+    recipients = []
+
+    def _append(address):
+        normalized = str(address or "").strip()
+        if normalized and normalized not in recipients:
+            recipients.append(normalized)
+
+    for address in _OWNERSHIP_REMINDER_RECIPIENTS:
+        _append(address)
+
+    return recipients
+
+
+def _ownership_format_trip_summary(trip):
+    parts = [f"Guest: {trip.guest_name or 'Unknown'}"]
+    if trip.destination:
+        parts.append(f"Destination: {trip.destination}")
+    if trip.start_date:
+        parts.append(f"Start: {trip.start_date.isoformat()}")
+    if trip.end_date:
+        parts.append(f"End: {trip.end_date.isoformat()}")
+    if trip.owner:
+        parts.append(f"Owner: {trip.owner}")
+    if trip.present_work_assigned_to:
+        parts.append(f"Assigned to: {trip.present_work_assigned_to}")
+    if trip.latest_update:
+        parts.append(f"Latest update: {trip.latest_update}")
+    return "\n".join(parts)
+
+
+def _ownership_trip_status_summary(trip):
+    return [
+        ("Proposal", trip.proposal_status or "pending"),
+        ("Flights", trip.flights_status or "pending"),
+        ("Visa", trip.visa_status or "pending"),
+        ("Hotels", trip.hotels_status or "pending"),
+        ("Sector tickets", trip.sector_tickets_status or "pending"),
+        ("Sightseeing", trip.sightseeing_status or "pending"),
+        ("Insurance", trip.insurance_status or "pending"),
+        ("Traveling", trip.traveling_status or "pending"),
+        ("Travefy tasks", trip.travefy_task_list_status or "pending"),
+        ("Feedback form", trip.trip_feedback_form_status or "pending"),
+    ]
+
+
+def _ownership_trip_subtask_groups(trip):
+    groups = trip.subtasks_json if isinstance(trip.subtasks_json, dict) else {}
+    if groups:
+        return groups
+    if getattr(trip, "subtasks", None):
+        fallback = deepcopy(OWNERSHIP_DEFAULT_SUBTASKS)
+        for subtask in trip.subtasks or []:
+            fallback.setdefault(subtask.task_group or "misc", []).append(subtask.to_dict())
+        return fallback
+    return {}
+
+
+def _ownership_format_subtask_line(item):
+    if not isinstance(item, dict):
+        return None
+    text = str(item.get("text") or "").strip()
+    if not text:
+        return None
+    status = "Done" if item.get("done") else "Open"
+    assignee = str(item.get("assignee") or "").strip()
+    due_date = str(item.get("dueDate") or "").strip()
+    fragments = [status]
+    if assignee:
+        fragments.append(f"Assignee: {assignee}")
+    if due_date:
+        fragments.append(f"Due: {due_date}")
+    return f"- {text} ({'; '.join(fragments)})"
+
+
+def _ownership_build_reminder_email(trip, reminders):
+    reminder_lines = []
+    for reminder in reminders:
+        due_date = reminder.get("dueDate")
+        due_text = due_date.isoformat() if hasattr(due_date, "isoformat") else str(due_date)
+        label = reminder.get("label") or f"{abs(reminder.get('days', 0))} days {'before' if reminder.get('days', 0) > 0 else 'after'}"
+        reminder_lines.append(f"- {label} (due {due_text})")
+
+    subject = f"Ownership reminder: {trip.guest_name or 'Trip'}"
+    if len(reminders) == 1:
+        subject = f"Ownership reminder: {trip.guest_name or 'Trip'} - {reminders[0].get('label') or 'Reminder'}"
+
+    status_lines = [
+        f"- {label}: {status}"
+        for label, status in _ownership_trip_status_summary(trip)
+    ]
+    subtask_lines = []
+    for group_name, items in _ownership_trip_subtask_groups(trip).items():
+        if not isinstance(items, list) or not items:
+            continue
+        subtask_lines.append(f"{group_name}:")
+        for item in items:
+            formatted = _ownership_format_subtask_line(item)
+            if formatted:
+                subtask_lines.append(f"  {formatted}")
+    if not subtask_lines:
+        subtask_lines.append("- No subtasks recorded")
+
+    text_body = (
+        f"Hello,\n\n"
+        f"You have an ownership reminder for the following trip:\n\n"
+        f"{_ownership_format_trip_summary(trip)}\n\n"
+        f"Status snapshot:\n"
+        f"{chr(10).join(status_lines)}\n\n"
+        f"Task details:\n"
+        f"{chr(10).join(subtask_lines)}\n\n"
+        f"Due reminder(s):\n"
+        f"{chr(10).join(reminder_lines)}\n\n"
+        f"Please review the trip in the Ownership dashboard.\n"
+    )
+
+    html_body = "<html><body style=\"font-family:Arial,sans-serif;line-height:1.5;color:#111827;\">"
+    html_body += "<p>Hello,</p>"
+    html_body += "<p>You have an ownership reminder for the following trip:</p>"
+    html_body += "<pre style=\"background:#f8fafc;border:1px solid #e5e7eb;padding:12px;border-radius:8px;white-space:pre-wrap;\">"
+    html_body += _ownership_format_trip_summary(trip)
+    html_body += "</pre>"
+    html_body += "<p><strong>Status snapshot:</strong></p><ul>"
+    html_body += "".join(f"<li>{line[2:] if line.startswith('- ') else line}</li>" for line in status_lines)
+    html_body += "</ul>"
+    html_body += "<p><strong>Task details:</strong></p><pre style=\"background:#f8fafc;border:1px solid #e5e7eb;padding:12px;border-radius:8px;white-space:pre-wrap;\">"
+    html_body += chr(10).join(subtask_lines)
+    html_body += "</pre>"
+    html_body += "<p><strong>Due reminder(s):</strong></p><ul>"
+    html_body += "".join(f"<li>{reminder_line[2:] if reminder_line.startswith('- ') else reminder_line}</li>" for reminder_line in reminder_lines)
+    html_body += "</ul><p>Please review the trip in the Ownership dashboard.</p></body></html>"
+
+    return subject, text_body, html_body
+
+
+def _send_ownership_email(recipients, subject, text_body, html_body=None):
+    if not recipients:
+        return False, "no_recipients"
+    if not _ownership_email_sender_configured():
+        return False, "smtp_not_configured"
+
+    message = EmailMessage()
+    message["From"] = _OWNERSHIP_SMTP_FROM
+    message["To"] = ", ".join(recipients)
+    message["Subject"] = subject
+    message.set_content(text_body)
+    if html_body:
+        message.add_alternative(html_body, subtype="html")
+
+    smtp = None
+    try:
+        if _OWNERSHIP_SMTP_USE_SSL:
+            smtp = smtplib.SMTP_SSL(_OWNERSHIP_SMTP_HOST, _OWNERSHIP_SMTP_PORT, timeout=_OWNERSHIP_SMTP_TIMEOUT)
+        else:
+            smtp = smtplib.SMTP(_OWNERSHIP_SMTP_HOST, _OWNERSHIP_SMTP_PORT, timeout=_OWNERSHIP_SMTP_TIMEOUT)
+            if _OWNERSHIP_SMTP_USE_TLS:
+                smtp.starttls(context=ssl.create_default_context())
+        if _OWNERSHIP_SMTP_USERNAME:
+            smtp.login(_OWNERSHIP_SMTP_USERNAME, _OWNERSHIP_SMTP_PASSWORD)
+        smtp.send_message(message)
+        return True, None
+    except Exception as exc:
+        return False, exc
+    finally:
+        if smtp is not None:
+            try:
+                smtp.quit()
+            except Exception:
+                try:
+                    smtp.close()
+                except Exception:
+                    pass
+
+
+def _ownership_scan_and_send_reminders():
+    if not _ownership_email_sender_configured():
+        return {"sent": 0, "skipped": 0, "reason": "smtp_not_configured"}
+
+    lock_owner = None
+    redis_client = getattr(_dashboard_cache, "_redis", None)
+    redis_lock_key = _dashboard_cache.namespaced("ownership:reminders:lock")
+    if redis_client is not None:
+        try:
+            token = uuid.uuid4().hex
+            locked = redis_client.set(redis_lock_key, token, nx=True, ex=max(_OWNERSHIP_REMINDER_SCAN_SECONDS * 2, 60))
+            if not locked:
+                return {"sent": 0, "skipped": 0, "reason": "locked"}
+            lock_owner = ("redis", token)
+        except Exception:
+            lock_owner = None
+
+    if lock_owner is None and not _ownership_reminder_lock.acquire(blocking=False):
+        return {"sent": 0, "skipped": 0, "reason": "locked"}
+    if lock_owner is None:
+        lock_owner = ("local", None)
+
+    sent_count = 0
+    skipped_count = 0
+    try:
+        with app.app_context():
+            today = datetime.utcnow().date()
+            trips = _ownership_query().options(selectinload(OwnershipTrip.reminders)).all()
+            for trip in trips:
+                reminder_records = _ownership_trip_reminder_records(trip)
+                if not reminder_records:
+                    skipped_count += 1
+                    continue
+
+                due_reminders = []
+                normalized_records = []
+                for reminder in reminder_records:
+                    due_date = _ownership_reminder_due_date(trip, reminder)
+                    reminder["dueDate"] = due_date
+                    normalized_records.append(reminder)
+                    if due_date is None:
+                        continue
+                    sent_for = str(reminder.get("emailSentFor") or "").strip()
+                    if sent_for == due_date.isoformat():
+                        continue
+                    if due_date > today:
+                        continue
+                    due_reminders.append(reminder)
+
+                if not due_reminders:
+                    continue
+
+                recipients = _ownership_trip_email_recipients(trip)
+                if not recipients:
+                    skipped_count += 1
+                    continue
+
+                subject, text_body, html_body = _ownership_build_reminder_email(trip, due_reminders)
+                sent, error = _send_ownership_email(recipients, subject, text_body, html_body)
+                if not sent:
+                    app.logger.warning(
+                        "Ownership reminder email failed for trip %s: %s",
+                        trip.id,
+                        error,
+                    )
+                    continue
+
+                sent_at = datetime.utcnow().isoformat() + "Z"
+                for reminder in normalized_records:
+                    due_date = reminder.get("dueDate")
+                    if due_date is not None and reminder in due_reminders:
+                        reminder["emailSentFor"] = due_date.isoformat()
+                        reminder["emailSentAt"] = sent_at
+                trip.reminders_json = [
+                    {
+                        "id": reminder["id"],
+                        "days": reminder["days"],
+                        "label": reminder["label"],
+                        **({"emailSentFor": reminder["emailSentFor"]} if reminder.get("emailSentFor") else {}),
+                        **({"emailSentAt": reminder["emailSentAt"]} if reminder.get("emailSentAt") else {}),
+                    }
+                    for reminder in normalized_records
+                ]
+                db.session.add(trip)
+                try:
+                    db.session.commit()
+                except Exception as exc:
+                    db.session.rollback()
+                    app.logger.warning("Failed to persist ownership reminder send state for trip %s: %s", trip.id, exc)
+                    continue
+                sent_count += 1
+        return {"sent": sent_count, "skipped": skipped_count}
+    finally:
+        if lock_owner and lock_owner[0] == "redis":
+            try:
+                current_token = redis_client.get(redis_lock_key)
+                if current_token == lock_owner[1]:
+                    redis_client.delete(redis_lock_key)
+            except Exception:
+                pass
+        elif lock_owner and lock_owner[0] == "local":
+            try:
+                _ownership_reminder_lock.release()
+            except Exception:
+                pass
+
+
+def _ownership_reminder_worker():
+    if _OWNERSHIP_REMINDER_INITIAL_DELAY_SECONDS:
+        time_module.sleep(_OWNERSHIP_REMINDER_INITIAL_DELAY_SECONDS)
+    while True:
+        try:
+            result = _ownership_scan_and_send_reminders()
+            if result.get("sent"):
+                app.logger.info("Ownership reminders sent: %s", result["sent"])
+        except Exception:
+            app.logger.exception("Ownership reminder worker failed")
+        time_module.sleep(_OWNERSHIP_REMINDER_SCAN_SECONDS)
+
+
+def _ensure_ownership_reminder_worker():
+    global _ownership_reminder_thread_started
+    with _ownership_reminder_worker_start_lock:
+        if _ownership_reminder_thread_started:
+            return
+        worker = threading.Thread(target=_ownership_reminder_worker, name="ownership-reminder-worker", daemon=True)
+        worker.start()
+        _ownership_reminder_thread_started = True
+
+
 def _ownership_request_version(payload):
     try:
         version = int(payload.get("version"))
@@ -6986,11 +7367,16 @@ def _replace_ownership_reminders(trip, reminders):
         if days <= 0 or days in seen_days:
             continue
         seen_days.add(days)
-        normalized.append({
+        normalized_reminder = {
             "id": str(item.get("id") or uuid.uuid4()),
             "days": days,
             "label": str(item.get("label") or f"{days} days before").strip(),
-        })
+        }
+        for sent_field in ("emailSentFor", "emailSentAt"):
+            sent_value = str(item.get(sent_field) or "").strip()
+            if sent_value:
+                normalized_reminder[sent_field] = sent_value
+        normalized.append(normalized_reminder)
     trip.reminders_json = normalized
 
 

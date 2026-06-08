@@ -664,21 +664,45 @@ body {
   min-height: 1.3rem;
   white-space: nowrap;
   line-height: 1;
-  gap: 0.28rem;
+}
+
+.crm-status-pair {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.18rem;
+  min-height: 1.3rem;
+  line-height: 1;
+  flex-wrap: nowrap;
+}
+
+.crm-status-slot,
+.crm-count-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  line-height: 1;
 }
 
 .crm-status-cell .crm-badge {
-  /* Reset */
+  flex-shrink: 0;
 }
 
 .crm-status-cell .crm-task-count-inline {
   position: static;
-  margin: 0 0 0 0.28rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  font: inherit;
+  font-weight: 800;
   line-height: 1;
   flex-shrink: 0;
+  height: 0.95rem;
+  min-width: 0.95rem;
+  padding: 0 0.2rem;
+  font-size: 0.48rem;
+  vertical-align: middle;
 }
 
 /* ─── Priority Badge ─── */
