@@ -31,11 +31,7 @@ const STATUS_FIELDS = [
 
 const ACTIVITY_LOG = [];
 const OWNERSHIP_TRIPS_STORAGE_KEY = 'ownership_trips_cache_v1';
-const OWNERSHIP_REALTIME_CHANNEL_NAME = 'ownership_realtime_sync_v1';
-const OWNERSHIP_REALTIME_LEADER_KEY = 'ownership_realtime_leader_v1';
-const OWNERSHIP_REALTIME_HUB_URL = '/static/realtime-hub.js';
-const OWNERSHIP_REALTIME_HEARTBEAT_MS = 4000;
-const OWNERSHIP_REALTIME_STALE_MS = 12000;
+const OWNERSHIP_REALTIME_HUB_URL = '/static/realtime-hub.js?v=4';
 
 // ═══════════════════════════════════════════════════════════
 // STATE
@@ -71,21 +67,11 @@ let searchRenderTimer = null;
 let ownershipCacheTimer = null;
 let ownershipCachePendingTrips = null;
 let ownershipKnownVersion = 0;
-let ownershipBroadcastChannel = null;
-let ownershipRealtimeTabId = `tab-${uid()}`;
-let ownershipRealtimeIsLeader = false;
-let ownershipRealtimeLeaderTimer = null;
-let ownershipRealtimeCoordinatorTimer = null;
-let ownershipRealtimeClaimTimer = null;
-let ownershipRealtimeConfirmTimer = null;
-let ownershipRealtimeSource = null;
-let ownershipRealtimeReconnectTimer = null;
-let ownershipRealtimeNeedsResync = false;
-let ownershipRealtimeHub = null;
 let ownershipServerRefreshPending = false;
 let ownershipServerRefreshTimer = null;
 let ownershipServerRefreshVersion = 0;
 const ownershipPendingTripEvents = {};
+let ownershipRealtimeManager = null;
 let subtaskModalRefreshTimer = null;
 let subtaskModalRefreshState = null;
 
@@ -121,356 +107,172 @@ function rememberOwnershipVersion(version) {
   return ownershipKnownVersion;
 }
 
-function parseOwnershipEventData(event) {
-  if (!event || typeof event.data !== 'string' || !event.data) return null;
-  try {
-    return JSON.parse(event.data);
-  } catch (err) {
-    return null;
-  }
-}
-
-function parseOwnershipRealtimeMessage(raw) {
+function parseOwnershipEventData(raw) {
   if (!raw) return null;
   if (typeof raw === 'string') {
-    try {
-      return JSON.parse(raw);
-    } catch (err) {
-      return null;
-    }
+    try { return JSON.parse(raw); } catch (_) { return null; }
   }
   if (typeof raw === 'object') return raw;
   return null;
 }
 
-function ownershipRealtimeEnsureHub() {
-  if (ownershipRealtimeHub) return true;
-  if (!('SharedWorker' in window)) return false;
-  try {
-    ownershipRealtimeHub = new SharedWorker(OWNERSHIP_REALTIME_HUB_URL, { name: 'realtime-hub-v2' });
-    ownershipRealtimeHub.port.onmessage = event => ownershipRealtimeHandleBroadcast(event?.data);
-    ownershipRealtimeHub.port.start();
-    ownershipRealtimeHub.port.postMessage({ type: 'subscribe', channel: 'ownership' });
-    return true;
-  } catch (err) {
-    console.warn('Failed to start ownership realtime hub', err);
-    ownershipRealtimeHub = null;
-    return false;
-  }
-}
+// ═══════════════════════════════════════════════════════════
+// REALTIME SYNC MANAGER
+// ═══════════════════════════════════════════════════════════
+// One SharedWorker hub per origin.  Each tab connects a port.
+// Fallback: direct WebSocket if SharedWorker unavailable.
 
-function ownershipRealtimeDisconnectHub() {
-  if (!ownershipRealtimeHub) return;
-  try {
-    ownershipRealtimeHub.port.postMessage({ type: 'unsubscribe', channel: 'ownership' });
-  } catch (err) {
-    // Ignore shutdown errors.
-  }
-  try {
-    ownershipRealtimeHub.port.close();
-  } catch (err) {
-    // Ignore shutdown errors.
-  }
-  ownershipRealtimeHub = null;
-}
-
-function ownershipRealtimeReadLeaderState() {
-  try {
-    return parseOwnershipRealtimeMessage(localStorage.getItem(OWNERSHIP_REALTIME_LEADER_KEY));
-  } catch (err) {
-    return null;
-  }
-}
-
-function ownershipRealtimeWriteLeaderState(state) {
-  try {
-    localStorage.setItem(OWNERSHIP_REALTIME_LEADER_KEY, JSON.stringify(state));
-    return true;
-  } catch (err) {
-    return false;
-  }
-}
-
-function ownershipRealtimeClearLeaderState() {
-  try {
-    localStorage.removeItem(OWNERSHIP_REALTIME_LEADER_KEY);
-  } catch (err) {
-    // Ignore storage failures; stale leadership will time out.
-  }
-}
-
-function ownershipRealtimeIsLeaderStateFresh(state) {
-  if (!state || state.tabId === ownershipRealtimeTabId) return true;
-  const updatedAt = Number(state.updatedAt || 0);
-  return Number.isFinite(updatedAt) && (Date.now() - updatedAt) < OWNERSHIP_REALTIME_STALE_MS;
-}
-
-function ownershipRealtimeBroadcast(message) {
-  const payload = {
-    ...message,
-    senderId: ownershipRealtimeTabId,
-    timestamp: Date.now(),
-  };
-  if (ownershipBroadcastChannel) {
-    try {
-      ownershipBroadcastChannel.postMessage(payload);
-      return payload;
-    } catch (err) {
-      // Fall through to storage-based delivery.
-    }
-  }
-  try {
-    localStorage.setItem(OWNERSHIP_REALTIME_CHANNEL_NAME, JSON.stringify(payload));
-    localStorage.removeItem(OWNERSHIP_REALTIME_CHANNEL_NAME);
-  } catch (err) {
-    // If storage is unavailable, the leader tab still works locally.
-  }
-  return payload;
-}
-
-function ownershipRealtimeHandleBroadcast(raw) {
-  const message = parseOwnershipRealtimeMessage(raw);
-  if (!message || message.senderId === ownershipRealtimeTabId) return;
-
-  if (message.type === 'leader-claim') {
-    const state = message.state || {};
-    if (state.tabId && state.tabId !== ownershipRealtimeTabId) {
-      ownershipRealtimeIsLeader = false;
-    }
-    return;
+class OwnershipRealtimeManager {
+  constructor() {
+    this._hub = null;
+    this._directWs = null;
+    this._seenIds = new Map();
+    this._seenMax = 128;
+    this._wsReconnectTimer = null;
+    this._wsReconnectDelay = 1000;
+    this._disposed = false;
+    this._mode = 'none';
   }
 
-  if (message.type === 'leader-state') {
-    const state = message.state || {};
-    if (state.tabId && state.tabId !== ownershipRealtimeTabId) {
-      ownershipRealtimeIsLeader = false;
-      if (ownershipRealtimeSource) {
-        stopOwnershipRealtime();
-      }
-    }
-    return;
+  connect() {
+    if (this._disposed) return;
+    if (this._tryHub()) return;
+    this._connectDirectWs();
   }
 
-  if (message.type === 'leader-resigned') {
-    if (!ownershipRealtimeIsLeader) {
-      queueOwnershipServerRefresh(message.version || 0, 'leader resigned');
-    }
-    return;
+  disconnect() {
+    this._disposed = true;
+    this._closeHub();
+    this._closeDirectWs();
   }
 
-  if (message.type === 'stream-status') {
-    if (message.state === 'error') {
-      ownershipRealtimeNeedsResync = true;
-    }
-    return;
-  }
-
-  if (message.type === 'ownership-event' && message.payload) {
-    const payload = message.payload;
-    if (payload.event === 'ready') {
-      rememberOwnershipVersion(payload.version);
+  reconnect(reason = 'resume') {
+    if (this._disposed) { this._disposed = false; }
+    if (this._hub) {
+      try { this._hub.port.postMessage({ type: 'ping' }); } catch (_) { this._closeHub(); this.connect(); }
       return;
     }
-    const handled = applyOwnershipRealtimeEvent(payload);
-    if (!handled && payload.version) {
-      queueOwnershipServerRefresh(payload.version, payload.event || 'ownership update');
-    }
-    return;
+    if (this._directWs && this._directWs.readyState === WebSocket.OPEN) return;
+    this.connect();
   }
-}
 
-function ownershipRealtimeAcquireLeadership() {
-  const now = Date.now();
-  const current = ownershipRealtimeReadLeaderState();
-  if (current && current.tabId !== ownershipRealtimeTabId && ownershipRealtimeIsLeaderStateFresh(current)) {
-    return false;
-  }
-  const state = {
-    tabId: ownershipRealtimeTabId,
-    updatedAt: now,
-    phase: 'claim',
-  };
-  if (!ownershipRealtimeWriteLeaderState(state)) return false;
-  const verify = ownershipRealtimeReadLeaderState();
-  if (!verify || verify.tabId !== ownershipRealtimeTabId) return false;
-  ownershipRealtimeIsLeader = false;
-  ownershipRealtimeBroadcast({ type: 'leader-claim', state });
-  return true;
-}
-
-function ownershipRealtimeHeartbeat() {
-  if (!ownershipRealtimeIsLeader) return false;
-  const state = {
-    tabId: ownershipRealtimeTabId,
-    updatedAt: Date.now(),
-  };
-  if (!ownershipRealtimeWriteLeaderState(state)) return false;
-  ownershipRealtimeBroadcast({ type: 'leader-state', state });
-  return true;
-}
-
-function ownershipRealtimeReleaseLeadership() {
-  if (!ownershipRealtimeIsLeader) return;
-  const current = ownershipRealtimeReadLeaderState();
-  if (current && current.tabId === ownershipRealtimeTabId) {
-    ownershipRealtimeClearLeaderState();
-    ownershipRealtimeBroadcast({ type: 'leader-resigned', version: ownershipKnownVersion || 0 });
-  }
-  ownershipRealtimeIsLeader = false;
-}
-
-function ownershipRealtimeScheduleClaim() {
-  if (ownershipRealtimeSource || ownershipRealtimeClaimTimer || ownershipRealtimeConfirmTimer) return false;
-  const delay = Math.floor(Math.random() * 500) + 150;
-  ownershipRealtimeClaimTimer = setTimeout(() => {
-    ownershipRealtimeClaimTimer = null;
-    if (ownershipRealtimeSource || ownershipRealtimeConfirmTimer) return;
-    if (!ownershipRealtimeAcquireLeadership()) return;
-    ownershipRealtimeConfirmTimer = setTimeout(() => {
-      ownershipRealtimeConfirmTimer = null;
-      const state = ownershipRealtimeReadLeaderState();
-      if (!state || state.tabId !== ownershipRealtimeTabId || state.phase !== 'claim') {
-        return;
-      }
-      const leaderState = {
-        tabId: ownershipRealtimeTabId,
-        updatedAt: Date.now(),
-        phase: 'leader',
+  _tryHub() {
+    if (!('SharedWorker' in window)) return false;
+    try {
+      this._hub = new SharedWorker(OWNERSHIP_REALTIME_HUB_URL, { name: 'realtime-hub-v2' });
+      this._hub.onerror = () => {
+        console.warn('[realtime] SharedWorker error, falling back to direct WS');
+        this._closeHub();
+        this._connectDirectWs();
       };
-      if (!ownershipRealtimeWriteLeaderState(leaderState)) return;
-      const verify = ownershipRealtimeReadLeaderState();
-      if (!verify || verify.tabId !== ownershipRealtimeTabId) return;
-      ownershipRealtimeIsLeader = true;
-      ownershipRealtimeBroadcast({ type: 'leader-state', state: leaderState });
-      if (!ownershipRealtimeSource) {
-        startOwnershipRealtime();
-      }
-    }, 220);
-  }, delay);
-  return true;
-}
-
-function ownershipRealtimeEnsureChannel() {
-  if (!ownershipBroadcastChannel && 'BroadcastChannel' in window) {
-    try {
-      ownershipBroadcastChannel = new BroadcastChannel(OWNERSHIP_REALTIME_CHANNEL_NAME);
-      ownershipBroadcastChannel.onmessage = event => ownershipRealtimeHandleBroadcast(event?.data);
+      this._hub.port.onmessage = (evt) => this._onHubMessage(evt.data);
+      this._hub.port.start();
+      this._hub.port.postMessage({ type: 'subscribe' });
+      this._mode = 'hub';
+      return true;
     } catch (err) {
-      ownershipBroadcastChannel = null;
+      console.warn('[realtime] SharedWorker init failed', err);
+      this._hub = null;
+      return false;
     }
   }
-}
 
-function ownershipRealtimeCloseChannel() {
-  if (ownershipBroadcastChannel) {
-    try {
-      ownershipBroadcastChannel.close();
-    } catch (err) {
-      // Ignore close failures.
+  _closeHub() {
+    if (!this._hub) return;
+    try { this._hub.port.postMessage({ type: 'unsubscribe' }); } catch (_) {}
+    try { this._hub.port.close(); } catch (_) {}
+    this._hub = null;
+    if (this._mode === 'hub') this._mode = 'none';
+  }
+
+  _onHubMessage(data) {
+    if (!data) return;
+    if (data.type === 'stream-status') {
+      if (data.state === 'open') console.debug('[realtime] hub connected');
+      return;
     }
-    ownershipBroadcastChannel = null;
+    this._dispatch(data);
   }
-}
 
-function ownershipRealtimeStopCoordinator() {
-  if (ownershipRealtimeCoordinatorTimer) {
-    clearInterval(ownershipRealtimeCoordinatorTimer);
-    ownershipRealtimeCoordinatorTimer = null;
+  _connectDirectWs() {
+    if (this._disposed || this._directWs) return;
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${proto}//${location.host}/api/realtime/ws`;
+    let socket;
+    try { socket = new WebSocket(url); } catch (_) { this._scheduleWsReconnect(); return; }
+    this._directWs = socket;
+    this._mode = 'direct';
+    socket.onopen = () => { this._wsReconnectDelay = 1000; console.debug('[realtime] direct WS connected'); };
+    socket.onmessage = (evt) => {
+      if (typeof evt.data !== 'string') return;
+      let msg;
+      try { msg = JSON.parse(evt.data); } catch (_) { return; }
+      if (msg.type === 'ping' && msg.channel === 'system') return;
+      this._dispatch(msg);
+    };
+    socket.onerror = () => {};
+    socket.onclose = () => {
+      this._directWs = null;
+      if (this._mode === 'direct') this._mode = 'none';
+      if (!this._disposed) this._scheduleWsReconnect();
+    };
   }
-  if (ownershipRealtimeLeaderTimer) {
-    clearTimeout(ownershipRealtimeLeaderTimer);
-    ownershipRealtimeLeaderTimer = null;
-  }
-  if (ownershipRealtimeClaimTimer) {
-    clearTimeout(ownershipRealtimeClaimTimer);
-    ownershipRealtimeClaimTimer = null;
-  }
-  if (ownershipRealtimeConfirmTimer) {
-    clearTimeout(ownershipRealtimeConfirmTimer);
-    ownershipRealtimeConfirmTimer = null;
-  }
-  ownershipRealtimeCloseChannel();
-}
 
-function ownershipRealtimeCoordinatorTick() {
-  if (ownershipRealtimeEnsureHub()) {
-    ownershipRealtimeStopCoordinator();
-    if (ownershipRealtimeSource) {
-      try {
-        ownershipRealtimeSource.close();
-      } catch (err) {
-        // Ignore legacy stream close errors.
-      }
-      ownershipRealtimeSource = null;
+  _closeDirectWs() {
+    if (this._wsReconnectTimer) { clearTimeout(this._wsReconnectTimer); this._wsReconnectTimer = null; }
+    if (!this._directWs) return;
+    try { this._directWs.onopen = null; this._directWs.onmessage = null; this._directWs.onerror = null; this._directWs.onclose = null; this._directWs.close(); } catch (_) {}
+    this._directWs = null;
+    if (this._mode === 'direct') this._mode = 'none';
+  }
+
+  _scheduleWsReconnect() {
+    if (this._wsReconnectTimer || this._disposed) return;
+    const delay = this._wsReconnectDelay;
+    this._wsReconnectDelay = Math.min(delay * 2, 30000);
+    this._wsReconnectTimer = setTimeout(() => {
+      this._wsReconnectTimer = null;
+      if (!this._disposed && !this._hub) this._connectDirectWs();
+    }, delay);
+  }
+
+  _isDuplicate(eventId) {
+    if (!eventId) return false;
+    if (this._seenIds.has(eventId)) return true;
+    this._seenIds.set(eventId, true);
+    if (this._seenIds.size > this._seenMax) {
+      const first = this._seenIds.keys().next().value;
+      this._seenIds.delete(first);
     }
-    return;
+    return false;
   }
-  ownershipRealtimeEnsureChannel();
-  const leader = ownershipRealtimeReadLeaderState();
-  const isSelfLeader = leader && leader.tabId === ownershipRealtimeTabId;
 
-  if (isSelfLeader) {
-    if (leader.phase === 'claim') {
-      ownershipRealtimeIsLeader = false;
-      if (!ownershipRealtimeConfirmTimer && !ownershipRealtimeSource) {
-        ownershipRealtimeConfirmTimer = setTimeout(() => {
-          ownershipRealtimeConfirmTimer = null;
-          const latest = ownershipRealtimeReadLeaderState();
-          if (!latest || latest.tabId !== ownershipRealtimeTabId || latest.phase !== 'claim') return;
-          const leaderState = {
-            tabId: ownershipRealtimeTabId,
-            updatedAt: Date.now(),
-            phase: 'leader',
-          };
-          if (!ownershipRealtimeWriteLeaderState(leaderState)) return;
-          const verify = ownershipRealtimeReadLeaderState();
-          if (!verify || verify.tabId !== ownershipRealtimeTabId) return;
-          ownershipRealtimeIsLeader = true;
-          ownershipRealtimeBroadcast({ type: 'leader-state', state: leaderState });
-          startOwnershipRealtime();
-        }, 220);
+  _dispatch(msg) {
+    if (!msg) return;
+    const eventId = msg.eventId;
+    if (eventId && this._isDuplicate(eventId)) return;
+    if (msg.channel === 'ownership') {
+      const event = msg.event;
+      if (!event) return;
+      if (event === 'ready') { rememberOwnershipVersion(msg.version); return; }
+      const handled = applyOwnershipRealtimeEvent(msg);
+      if (!handled && msg.version) {
+        queueOwnershipServerRefresh(msg.version, event || 'ownership update');
       }
       return;
     }
-    ownershipRealtimeIsLeader = true;
-    if (!ownershipRealtimeSource) {
-      startOwnershipRealtime();
-    } else {
-      ownershipRealtimeHeartbeat();
-    }
-    return;
-  }
-
-  ownershipRealtimeIsLeader = false;
-  if (ownershipRealtimeSource) {
-    stopOwnershipRealtime();
-  }
-  if (!leader || !ownershipRealtimeIsLeaderStateFresh(leader)) {
-    ownershipRealtimeScheduleClaim();
-  }
-}
-
-function ownershipRealtimeStartCoordinator() {
-  if (ownershipRealtimeEnsureHub()) {
-    ownershipRealtimeStopCoordinator();
-    if (ownershipRealtimeSource) {
-      try {
-        ownershipRealtimeSource.close();
-      } catch (err) {
-        // Ignore legacy stream close errors.
+    if (msg.channel === 'tickets') {
+      if (typeof window._onTicketRealtimeEvent === 'function') {
+        window._onTicketRealtimeEvent(msg);
       }
-      ownershipRealtimeSource = null;
+      return;
     }
-    return;
   }
-  ownershipRealtimeEnsureChannel();
-  if (ownershipRealtimeCoordinatorTimer) return;
-  ownershipRealtimeCoordinatorTimer = setInterval(ownershipRealtimeCoordinatorTick, OWNERSHIP_REALTIME_HEARTBEAT_MS);
-  ownershipRealtimeLeaderTimer = setTimeout(() => {
-    ownershipRealtimeLeaderTimer = null;
-    ownershipRealtimeCoordinatorTick();
-  }, Math.floor(Math.random() * 500) + 100);
 }
+
+
+
+
 
 function queueOwnershipServerRefresh(version = 0, reason = 'ownership update') {
   const parsedVersion = rememberOwnershipVersion(version);
@@ -535,21 +337,17 @@ function upsertOwnershipTripFromEvent(trip) {
   if (idx !== -1) {
     const currentVersion = parseOwnershipVersion(trips[idx].version);
     const nextVersion = parseOwnershipVersion(nextTrip.version);
-    if (currentVersion >= nextVersion) return true;
+    if (currentVersion > nextVersion) return true;
     if (hasPendingLocalPatch) {
       trips[idx] = { ...nextTrip, ...trips[idx] };
-      cacheTripsForFastPaint(trips);
-      refreshOwnershipViews();
-      return true;
+    } else {
+      trips[idx] = nextTrip;
     }
-    if (currentVersion > nextVersion) return true;
-    trips[idx] = nextTrip;
     cacheTripsForFastPaint(trips);
     refreshOwnershipViews();
     return true;
   }
-  if (idx !== -1) trips[idx] = nextTrip;
-  else trips.unshift(nextTrip);
+  trips.unshift(nextTrip);
   cacheTripsForFastPaint(trips);
   refreshOwnershipViews();
   return true;
@@ -610,9 +408,6 @@ function removeOwnershipEmployeeFromEvent(employeeId) {
 function applyOwnershipRealtimeEvent(payload, options = {}) {
   if (!payload || !payload.event) return false;
   const eventVersion = parseOwnershipVersion(payload.version);
-  if (eventVersion && eventVersion <= ownershipKnownVersion && payload.event !== 'sheet_imported' && payload.event !== 'refresh') {
-    return false;
-  }
   rememberOwnershipVersion(eventVersion);
 
   switch (payload.event) {
@@ -657,112 +452,6 @@ function applyOwnershipRealtimeEvent(payload, options = {}) {
   }
 }
 
-function stopOwnershipRealtime() {
-  ownershipRealtimeDisconnectHub();
-  if (ownershipRealtimeSource) {
-    ownershipRealtimeSource.close();
-    ownershipRealtimeSource = null;
-  }
-  ownershipRealtimeReleaseLeadership();
-  if (ownershipRealtimeReconnectTimer) {
-    clearTimeout(ownershipRealtimeReconnectTimer);
-    ownershipRealtimeReconnectTimer = null;
-  }
-}
-
-function shutdownOwnershipRealtime() {
-  stopOwnershipRealtime();
-  ownershipRealtimeStopCoordinator();
-}
-
-function restartOwnershipRealtime(reason = 'resume') {
-  if (!('EventSource' in window)) return false;
-  if (ownershipRealtimeEnsureHub()) {
-    ownershipRealtimeStopCoordinator();
-    if (ownershipRealtimeSource) {
-      try {
-        ownershipRealtimeSource.close();
-      } catch (err) {
-        // Ignore legacy stream close errors.
-      }
-      ownershipRealtimeSource = null;
-    }
-    return true;
-  }
-  ownershipRealtimeStartCoordinator();
-  ownershipRealtimeCoordinatorTick();
-  return !!ownershipRealtimeSource || ownershipRealtimeIsLeader;
-}
-
-function startOwnershipRealtime() {
-  if (!('EventSource' in window)) return false;
-  if (ownershipRealtimeEnsureHub()) {
-    ownershipRealtimeStopCoordinator();
-    if (ownershipRealtimeSource) {
-      try {
-        ownershipRealtimeSource.close();
-      } catch (err) {
-        // Ignore legacy stream close errors.
-      }
-      ownershipRealtimeSource = null;
-    }
-    return true;
-  }
-  ownershipRealtimeEnsureChannel();
-  if (ownershipRealtimeSource) {
-    if (ownershipRealtimeSource.readyState !== EventSource.CLOSED) return false;
-    stopOwnershipRealtime();
-  }
-  const leader = ownershipRealtimeReadLeaderState();
-  if (!leader || leader.tabId !== ownershipRealtimeTabId || leader.phase !== 'leader') {
-    return false;
-  }
-
-  const stream = new EventSource('/api/ownership/stream');
-  ownershipRealtimeSource = stream;
-
-  stream.addEventListener('ready', event => {
-    const payload = parseOwnershipEventData(event);
-    const version = parseOwnershipVersion(payload?.version);
-    rememberOwnershipVersion(version);
-    ownershipRealtimeBroadcast({ type: 'ownership-event', payload: { event: 'ready', version } });
-    if (ownershipRealtimeNeedsResync) {
-      ownershipRealtimeNeedsResync = false;
-      queueOwnershipServerRefresh(version, 'stream reconnect');
-    }
-  });
-
-  stream.addEventListener('ownership', event => {
-    const payload = parseOwnershipEventData(event);
-    if (!payload) return;
-    ownershipRealtimeBroadcast({ type: 'ownership-event', payload });
-    const handled = applyOwnershipRealtimeEvent(payload);
-    if (!handled && payload.version) {
-      queueOwnershipServerRefresh(payload.version, payload.event || 'ownership update');
-    }
-  });
-
-  stream.addEventListener('ping', event => {
-    const payload = parseOwnershipEventData(event);
-    if (payload?.timestamp) {
-      ownershipRealtimeBroadcast({ type: 'leader-state', state: { tabId: ownershipRealtimeTabId, updatedAt: Date.now() } });
-    }
-  });
-
-  stream.onerror = () => {
-    if (!ownershipRealtimeSource || ownershipRealtimeSource !== stream) return;
-    ownershipRealtimeNeedsResync = true;
-    if (stream.readyState === EventSource.CLOSED) {
-      stopOwnershipRealtime();
-      ownershipRealtimeReconnectTimer = setTimeout(() => {
-        ownershipRealtimeReconnectTimer = null;
-        startOwnershipRealtime();
-      }, 2500);
-    }
-  };
-
-  return true;
-}
 
 function save(trip = null) {
   const pending = trip ? [trip] : trips;
@@ -3687,10 +3376,7 @@ function cancelPendingOwnershipWork() {
     clearTimeout(ownershipServerRefreshTimer);
     ownershipServerRefreshTimer = null;
   }
-  if (ownershipRealtimeReconnectTimer) {
-    clearTimeout(ownershipRealtimeReconnectTimer);
-    ownershipRealtimeReconnectTimer = null;
-  }
+
 }
 
 function restoreTripsForFastPaint() {
@@ -3788,32 +3474,31 @@ async function init() {
   document.getElementById('kpiGrid')?.classList.add('collapsed');
   syncStatsPanelButton();
   toggleSpaView();
-  ownershipRealtimeStartCoordinator();
-  ownershipRealtimeCoordinatorTick();
+
+  // Start realtime sync
+  ownershipRealtimeManager = new OwnershipRealtimeManager();
+  ownershipRealtimeManager.connect();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   init();
-  window.addEventListener('beforeunload', shutdownOwnershipRealtime);
-  window.addEventListener('pagehide', shutdownOwnershipRealtime);
-window.addEventListener('pageshow', () => {
-  restoreTripsForFastPaint();
-  restartOwnershipRealtime('pageshow');
-});
+  window.addEventListener('beforeunload', () => {
+    if (ownershipRealtimeManager) ownershipRealtimeManager.disconnect();
+  });
+  window.addEventListener('pagehide', () => {
+    if (ownershipRealtimeManager) ownershipRealtimeManager.disconnect();
+  });
+  window.addEventListener('pageshow', () => {
+    restoreTripsForFastPaint();
+    if (ownershipRealtimeManager) ownershipRealtimeManager.reconnect('pageshow');
+  });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      restartOwnershipRealtime('visibilitychange');
+    if (document.visibilityState === 'visible' && ownershipRealtimeManager) {
+      ownershipRealtimeManager.reconnect('visibilitychange');
     }
   });
   window.addEventListener('online', () => {
-    restartOwnershipRealtime('online');
-  });
-  window.addEventListener('storage', event => {
-    if (event.key === OWNERSHIP_REALTIME_CHANNEL_NAME && event.newValue) {
-      ownershipRealtimeHandleBroadcast(event.newValue);
-    } else if (event.key === OWNERSHIP_REALTIME_LEADER_KEY) {
-      ownershipRealtimeCoordinatorTick();
-    }
+    if (ownershipRealtimeManager) ownershipRealtimeManager.reconnect('online');
   });
 
   const btnFilterMenu = document.getElementById('btnFilterMenu');

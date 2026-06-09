@@ -63,6 +63,8 @@ const ACTIVE_FIELD_AUTOSAVE_IDLE_MS = 1200;
 const TICKETS_REALTIME_RETRY_MS = 5000;
 const TICKETS_REALTIME_RETRY_MAX_MS = 30000;
 const TICKETS_REALTIME_HUB_URL = '/static/realtime-hub.js';
+const TICKETS_REALTIME_HUB_DISABLED_KEY = 'realtime_hub_disabled_until_v1';
+const TICKETS_REALTIME_HUB_DISABLED_MS = 2 * 60 * 1000;
 const TICKETS_REALTIME_CHANNEL_NAME = 'tickets_realtime_sync_v1';
 const TICKETS_REALTIME_LEADER_KEY = 'tickets_realtime_leader_v1';
 const TICKETS_REALTIME_HEARTBEAT_MS = 4000;
@@ -96,6 +98,7 @@ let ticketsRealtimeConfirmTimer = null;
 let ticketsRealtimeReconnectTimer = null;
 let ticketsRealtimeReconnectBackoffMs = TICKETS_REALTIME_RETRY_MS;
 let ticketsRealtimeHub = null;
+let ticketsRealtimeHubDisabledUntil = 0;
 const INDIA_AIRPORT_CODES = new Set([
     'DEL', 'BOM', 'NMI', 'BLR', 'MAA', 'CCU', 'HYD', 'AMD', 'PNQ', 'COK', 'CCJ', 'GOI', 'VTZ',
     'JAI', 'TRV', 'GAU', 'LKO', 'NAG', 'IXC', 'VNS', 'PAT', 'BBI', 'IXB', 'IXR', 'IDR', 'RPR',
@@ -3196,9 +3199,54 @@ function parseTicketsRealtimeMessage(raw) {
     return null;
 }
 
+function ticketsRealtimeReadHubDisabledUntil() {
+    try {
+        const stored = Number(localStorage.getItem(TICKETS_REALTIME_HUB_DISABLED_KEY) || 0);
+        return Number.isFinite(stored) ? stored : 0;
+    } catch (e) {
+        return ticketsRealtimeHubDisabledUntil || 0;
+    }
+}
+
+function ticketsRealtimeWriteHubDisabledUntil(until) {
+    const value = Number.isFinite(until) ? Math.max(0, until) : 0;
+    ticketsRealtimeHubDisabledUntil = value;
+    try {
+        if (value > 0) {
+            localStorage.setItem(TICKETS_REALTIME_HUB_DISABLED_KEY, String(value));
+        } else {
+            localStorage.removeItem(TICKETS_REALTIME_HUB_DISABLED_KEY);
+        }
+    } catch (e) {
+        // Ignore storage failures.
+    }
+    return value;
+}
+
+function ticketsRealtimeIsHubDisabled() {
+    const until = ticketsRealtimeReadHubDisabledUntil();
+    if (!until) return false;
+    if (until <= Date.now()) {
+        ticketsRealtimeWriteHubDisabledUntil(0);
+        return false;
+    }
+    return true;
+}
+
+function ticketsRealtimeDisableHub(reason = 'unavailable') {
+    ticketsRealtimeWriteHubDisabledUntil(Date.now() + TICKETS_REALTIME_HUB_DISABLED_MS);
+    ticketsRealtimeDisconnectHub();
+    console.warn('Tickets realtime hub unavailable, falling back to EventSource', reason);
+}
+
+function ticketsRealtimeClearHubDisabled() {
+    ticketsRealtimeWriteHubDisabledUntil(0);
+}
+
 function ticketsRealtimeEnsureHub() {
     if (ticketsRealtimeHub) return true;
     if (!('SharedWorker' in window)) return false;
+    if (ticketsRealtimeIsHubDisabled()) return false;
     try {
         ticketsRealtimeHub = new SharedWorker(TICKETS_REALTIME_HUB_URL, { name: 'realtime-hub-v2' });
         ticketsRealtimeHub.port.onmessage = (event) => ticketsRealtimeHandleBroadcast(event?.data);
@@ -3305,6 +3353,20 @@ function ticketsRealtimeBroadcast(message) {
 function ticketsRealtimeHandleBroadcast(raw) {
     const message = parseTicketsRealtimeMessage(raw);
     if (!message || message.senderId === TICKETS_REALTIME_TAB_ID) return;
+
+    if (message.type === 'stream-status') {
+        if (message.state === 'open') {
+            ticketsRealtimeClearHubDisabled();
+            return;
+        }
+        if (message.state === 'error' || message.state === 'close') {
+            ticketsRealtimeDisableHub(message.state);
+            if (!ticketsEventSource) {
+                restartTicketsRealtime();
+            }
+        }
+        return;
+    }
 
     if (message.type === 'leader-claim') {
         const state = message.state || {};

@@ -45,6 +45,7 @@ try:
 except Exception:
     WebSocketServer = None
     WebSocketConnectionClosed = Exception
+    # Triggered reload
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -7214,24 +7215,30 @@ def _publish_ownership_event(action="refresh", bump_version=True, version=None, 
     event_payload = {
         "eventId": uuid.uuid4().hex,
         "channel": "ownership",
+        "type": "ownership-event",
         "event": action,
         "version": version,
         "timestamp": datetime.utcnow().isoformat() + "Z",
         **payload,
     }
-    with _ownership_streams_lock:
-        listeners = list(_ownership_streams)
-    for listener in listeners:
-        try:
-            listener.put_nowait(event_payload)
-        except queue.Full:
-            continue
+    # Deliver via Redis pubsub when available (cross-worker), else in-process queue.
+    # Never both — that causes double delivery.
     redis_client = getattr(_dashboard_cache, "_redis", None)
+    delivered_via_redis = False
     if redis_client is not None:
         try:
             redis_client.publish(_dashboard_cache.namespaced(_OWNERSHIP_REDIS_CHANNEL), json.dumps(event_payload))
+            delivered_via_redis = True
         except Exception:
             pass
+    if not delivered_via_redis:
+        with _ownership_streams_lock:
+            listeners = list(_ownership_streams)
+        for listener in listeners:
+            try:
+                listener.put_nowait(event_payload)
+            except queue.Full:
+                continue
     return event_payload
 
 
@@ -7753,91 +7760,7 @@ def delete_ownership_employee(employee_id):
     return jsonify({"success": True, "cacheVersion": version})
 
 
-@app.route("/api/ownership/stream", methods=["GET"])
-def ownership_stream():
-    listener = queue.Queue(maxsize=20)
-    with _ownership_streams_lock:
-        _ownership_streams.add(listener)
-
-    redis_client = getattr(_dashboard_cache, "_redis", None)
-    pubsub = None
-    if redis_client is not None:
-        try:
-            pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
-            pubsub.subscribe(_dashboard_cache.namespaced(_OWNERSHIP_REDIS_CHANNEL))
-        except Exception:
-            pubsub = None
-    recent_versions = OrderedDict()
-    cleanup_state = {"done": False}
-
-    def cleanup_stream():
-        if cleanup_state["done"]:
-            return
-        cleanup_state["done"] = True
-        with _ownership_streams_lock:
-            _ownership_streams.discard(listener)
-        if pubsub is not None:
-            try:
-                pubsub.close()
-            except Exception:
-                pass
-
-    def should_deliver(event_payload):
-        if not isinstance(event_payload, dict):
-            return True
-        version = event_payload.get("version")
-        if version is None:
-            return True
-        if version in recent_versions:
-            return False
-        recent_versions[version] = True
-        while len(recent_versions) > 64:
-            recent_versions.popitem(last=False)
-        return True
-
-    def stream():
-        try:
-            yield "retry: 5000\n\n"
-            yield f"event: ready\ndata: {json.dumps({'version': _ownership_cache_version()})}\n\n"
-            last_ping = datetime.utcnow()
-            while True:
-                delivered = False
-                try:
-                    event_payload = listener.get(timeout=1)
-                    if should_deliver(event_payload):
-                        yield f"event: ownership\ndata: {json.dumps(event_payload)}\n\n"
-                        delivered = True
-                except queue.Empty:
-                    pass
-
-                if pubsub is not None:
-                    try:
-                        message = pubsub.get_message(timeout=0.01)
-                        if message and message.get("data"):
-                            event_payload = message["data"]
-                            if isinstance(event_payload, str):
-                                try:
-                                    event_payload = json.loads(event_payload)
-                                except Exception:
-                                    event_payload = None
-                            if should_deliver(event_payload):
-                                yield f"event: ownership\ndata: {json.dumps(event_payload)}\n\n"
-                                delivered = True
-                    except Exception:
-                        pass
-
-                if not delivered and (datetime.utcnow() - last_ping).total_seconds() >= 25:
-                    last_ping = datetime.utcnow()
-                    yield f"event: ping\ndata: {json.dumps({'timestamp': last_ping.isoformat() + 'Z'})}\n\n"
-        finally:
-            cleanup_stream()
-
-    response = Response(stream_with_context(stream()), mimetype="text/event-stream")
-    response.headers["Cache-Control"] = "no-cache, no-transform"
-    response.headers["Connection"] = "keep-alive"
-    response.headers["X-Accel-Buffering"] = "no"
-    response.call_on_close(cleanup_stream)
-    return response
+# SSE /api/ownership/stream endpoint removed — all clients use WebSocket via SharedWorker now.
 
 
 def _send_realtime_ws_json(ws, payload):
@@ -7871,10 +7794,12 @@ def realtime_ws():
     redis_client = getattr(_dashboard_cache, "_redis", None)
     ownership_pubsub = None
     ticket_pubsub = None
+    use_redis = False
     if redis_client is not None:
         try:
             ownership_pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
             ownership_pubsub.subscribe(_dashboard_cache.namespaced(_OWNERSHIP_REDIS_CHANNEL))
+            use_redis = True
         except Exception:
             ownership_pubsub = None
         try:
@@ -7884,11 +7809,13 @@ def realtime_ws():
             ticket_pubsub = None
 
     cleanup_state = {"done": False}
+    ws_alive = {"value": True}  # mutable flag for receive thread
 
     def cleanup_ws():
         if cleanup_state["done"]:
             return
         cleanup_state["done"] = True
+        ws_alive["value"] = False
         with _ownership_streams_lock:
             _ownership_streams.discard(listener)
         with _ticket_dashboard_streams_lock:
@@ -7909,43 +7836,55 @@ def realtime_ws():
         except Exception:
             pass
 
-    recent_versions = OrderedDict()
-    recent_ticket_events = OrderedDict()
+    # Background thread to read incoming messages and detect disconnects.
+    def _ws_receive_loop():
+        while ws_alive["value"]:
+            try:
+                raw = ws.receive(timeout=5)
+                if raw is None:
+                    # Client disconnected gracefully
+                    ws_alive["value"] = False
+                    break
+                # Handle client heartbeat messages (keep-alive)
+                if isinstance(raw, str):
+                    try:
+                        msg = json.loads(raw)
+                        # Client sends {"type": "heartbeat"} — just absorb it.
+                    except Exception:
+                        pass
+            except WebSocketConnectionClosed:
+                ws_alive["value"] = False
+                break
+            except Exception:
+                # Timeout or other error — keep looping
+                pass
+
+    receive_thread = threading.Thread(target=_ws_receive_loop, daemon=True)
+    receive_thread.start()
+
+    recent_event_ids = OrderedDict()
 
     def should_deliver(event_payload):
+        """Deduplicate by eventId to prevent double delivery from queue + pubsub."""
         if not isinstance(event_payload, dict):
             return True
-        channel = event_payload.get("channel")
-        if channel == "tickets":
-            event_id = event_payload.get("eventId")
-            if event_id is None:
-                return True
-            if event_id in recent_ticket_events:
-                return False
-            recent_ticket_events[event_id] = True
-            while len(recent_ticket_events) > 64:
-                recent_ticket_events.popitem(last=False)
+        event_id = event_payload.get("eventId")
+        if event_id is None:
             return True
-        if channel != "ownership":
-            return True
-        version = event_payload.get("version")
-        if version is None:
-            return True
-        if version in recent_versions:
+        if event_id in recent_event_ids:
             return False
-        recent_versions[version] = True
-        while len(recent_versions) > 64:
-            recent_versions.popitem(last=False)
+        recent_event_ids[event_id] = True
+        while len(recent_event_ids) > 128:
+            recent_event_ids.popitem(last=False)
         return True
 
     try:
         _send_realtime_ws_json(ws, {
             "channel": "ownership",
             "type": "ownership-event",
-            "payload": {
-                "event": "ready",
-                "version": _ownership_cache_version(),
-            },
+            "event": "ready",
+            "version": _ownership_cache_version(),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
         })
         _send_realtime_ws_json(ws, {
             "channel": "tickets",
@@ -7958,18 +7897,24 @@ def realtime_ws():
         })
 
         last_ping = datetime.utcnow()
-        while True:
+        while ws_alive["value"]:
             delivered = False
-            try:
-                event_payload = listener.get(timeout=1)
-                if should_deliver(event_payload):
-                    delivered = _send_realtime_ws_json(ws, event_payload)
-            except queue.Empty:
-                pass
 
+            # 1. In-process queue (used when Redis is unavailable)
+            if not use_redis:
+                try:
+                    event_payload = listener.get(timeout=0.5)
+                    if should_deliver(event_payload):
+                        if not _send_realtime_ws_json(ws, event_payload):
+                            break
+                        delivered = True
+                except queue.Empty:
+                    pass
+
+            # 2. Redis pubsub for ownership events
             if ownership_pubsub is not None:
                 try:
-                    message = ownership_pubsub.get_message(timeout=0.01)
+                    message = ownership_pubsub.get_message(timeout=0.5 if use_redis else 0.01)
                     if message and message.get("data"):
                         event_payload = message["data"]
                         if isinstance(event_payload, str):
@@ -7977,11 +7922,14 @@ def realtime_ws():
                                 event_payload = json.loads(event_payload)
                             except Exception:
                                 event_payload = None
-                        if should_deliver(event_payload):
-                            delivered = _send_realtime_ws_json(ws, event_payload) or delivered
+                        if event_payload and should_deliver(event_payload):
+                            if not _send_realtime_ws_json(ws, event_payload):
+                                break
+                            delivered = True
                 except Exception:
                     pass
 
+            # 3. Redis pubsub for ticket events
             if ticket_pubsub is not None:
                 try:
                     message = ticket_pubsub.get_message(timeout=0.01)
@@ -7992,18 +7940,22 @@ def realtime_ws():
                                 event_payload = json.loads(event_payload)
                             except Exception:
                                 event_payload = None
-                        if should_deliver(event_payload):
-                            delivered = _send_realtime_ws_json(ws, event_payload) or delivered
+                        if event_payload and should_deliver(event_payload):
+                            if not _send_realtime_ws_json(ws, event_payload):
+                                break
+                            delivered = True
                 except Exception:
                     pass
 
+            # 4. Heartbeat ping to client
             if not delivered and (datetime.utcnow() - last_ping).total_seconds() >= 25:
                 last_ping = datetime.utcnow()
-                _send_realtime_ws_json(ws, {
+                if not _send_realtime_ws_json(ws, {
                     "channel": "system",
                     "type": "ping",
                     "timestamp": last_ping.isoformat() + "Z",
-                })
+                }):
+                    break
     except WebSocketConnectionClosed:
         pass
     finally:
