@@ -163,15 +163,12 @@ class OwnershipRealtimeManager {
     this._lastKnownState = 'connecting';
     this._pollTimer = null;
     this._pollIntervalMs = 15000;
-    this._syncPollTimer = null;
-    this._syncPollIntervalMs = 10000;
     this._disposed = false;
     this._mode = 'none';
   }
 
   connect() {
     if (this._disposed) return;
-    this._startSyncPolling();
     if (!OWNERSHIP_REALTIME_WS_ENABLED) {
       this._startPollingFallback('websocket disabled by server');
       queueOwnershipServerRefresh(0, 'realtime polling fallback');
@@ -186,13 +183,10 @@ class OwnershipRealtimeManager {
     this._closeHub();
     this._closeDirectWs();
     this._stopPollingFallback();
-    this._stopSyncPolling();
   }
 
   reconnect(reason = 'resume') {
     if (this._disposed) { this._disposed = false; }
-    this._startSyncPolling();
-    this._checkRemoteSyncVersion();
     if (!OWNERSHIP_REALTIME_WS_ENABLED) {
       this._startPollingFallback(reason);
       queueOwnershipServerRefresh(0, reason);
@@ -253,6 +247,10 @@ class OwnershipRealtimeManager {
       return;
     }
     if (data.senderId && data.senderId === OWNERSHIP_REALTIME_TAB_ID) return;
+    if (data.channel === 'system' && data.type === 'ping') {
+      this._maybeRefreshFromPing(data);
+      return;
+    }
     this._dispatch(data);
   }
 
@@ -287,7 +285,10 @@ class OwnershipRealtimeManager {
       if (typeof evt.data !== 'string') return;
       let msg;
       try { msg = JSON.parse(evt.data); } catch (_) { return; }
-      if (msg.type === 'ping' && msg.channel === 'system') return;
+      if (msg.type === 'ping' && msg.channel === 'system') {
+        this._maybeRefreshFromPing(msg);
+        return;
+      }
       if (msg.senderId && msg.senderId === OWNERSHIP_REALTIME_TAB_ID) return;
       this._dispatch(msg);
     };
@@ -328,33 +329,10 @@ class OwnershipRealtimeManager {
     this._pollTimer = null;
   }
 
-  _startSyncPolling() {
-    if (this._disposed || this._syncPollTimer) return;
-    this._syncPollTimer = setInterval(() => {
-      if (this._disposed) return;
-      if (document.visibilityState && document.visibilityState !== 'visible') return;
-      this._checkRemoteSyncVersion();
-    }, this._syncPollIntervalMs);
-    this._checkRemoteSyncVersion();
-  }
-
-  _stopSyncPolling() {
-    if (!this._syncPollTimer) return;
-    clearInterval(this._syncPollTimer);
-    this._syncPollTimer = null;
-  }
-
-  async _checkRemoteSyncVersion() {
-    try {
-      const response = await fetch('/api/ownership/sync-state', { credentials: 'same-origin' });
-      if (!response.ok) return;
-      const data = await response.json().catch(() => null);
-      const syncVersion = parseOwnershipVersion(data?.syncVersion);
-      if (syncVersion > ownershipKnownVersion) {
-        queueOwnershipServerRefresh(syncVersion, 'ownership sync poll');
-      }
-    } catch (_) {
-      /* ignore sync poll failures */
+  _maybeRefreshFromPing(msg) {
+    const pingVersion = parseOwnershipVersion(msg?.version);
+    if (pingVersion > ownershipKnownVersion) {
+      queueOwnershipServerRefresh(pingVersion, 'ownership heartbeat');
     }
   }
 

@@ -36,7 +36,7 @@ from models import (
     User, Customer, Itinerary, Ticket, TicketRead, Aggregator, LedgerEntry,
     TicketOperation, OperationLedgerLink, BookingGroup, FareRule,
     OwnershipTrip, OwnershipSubtask, OwnershipReminder, OwnershipTaskTemplate,
-    OwnershipTaskTemplateItem, OwnershipEmployee, OwnershipSyncState,
+    OwnershipTaskTemplateItem, OwnershipEmployee, OwnershipSyncState, OwnershipRealtimeEvent,
 )
 from extensions import db
 from cache_backend import DashboardCache
@@ -7274,6 +7274,15 @@ def _publish_ownership_event(action="refresh", bump_version=True, version=None, 
     }
     if sender_id:
         event_payload["senderId"] = str(sender_id)
+    try:
+        db.session.add(OwnershipRealtimeEvent(
+            event_id=event_payload["eventId"],
+            channel="ownership",
+            payload_json=json.dumps(event_payload),
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
     # Deliver via Redis pubsub when available (cross-worker), else in-process queue.
     # Never both — that causes double delivery.
     redis_client = getattr(_dashboard_cache, "_redis", None)
@@ -7838,6 +7847,30 @@ def _send_realtime_ws_json(ws, payload):
         return False
 
 
+def _deliver_pending_ownership_events(ws, last_event_db_id, should_deliver):
+    try:
+        pending_events = (
+            OwnershipRealtimeEvent.query
+            .filter(OwnershipRealtimeEvent.id > int(last_event_db_id or 0))
+            .order_by(OwnershipRealtimeEvent.id.asc())
+            .limit(100)
+            .all()
+        )
+    except Exception:
+        db.session.rollback()
+        return last_event_db_id
+
+    next_last_id = last_event_db_id
+    for row in pending_events:
+        next_last_id = row.id
+        event_payload = row.to_payload()
+        if not event_payload:
+            continue
+        if should_deliver(event_payload) and not _send_realtime_ws_json(ws, event_payload):
+            break
+    return next_last_id
+
+
 @app.route("/api/realtime/ws", websocket=True)
 def realtime_ws():
     if WebSocketServer is None:
@@ -7930,6 +7963,7 @@ def realtime_ws():
     receive_thread.start()
 
     recent_event_ids = OrderedDict()
+    last_event_db_id = 0
 
     def should_deliver(event_payload):
         """Deduplicate by eventId to prevent double delivery from queue + pubsub."""
@@ -7966,6 +8000,7 @@ def realtime_ws():
         last_ping = datetime.utcnow()
         while ws_alive["value"]:
             delivered = False
+            last_event_db_id = _deliver_pending_ownership_events(ws, last_event_db_id, should_deliver)
 
             # 1. In-process queue (used when Redis is unavailable)
             if not use_redis:
@@ -8020,6 +8055,7 @@ def realtime_ws():
                 if not _send_realtime_ws_json(ws, {
                     "channel": "system",
                     "type": "ping",
+                    "version": _ownership_cache_version(),
                     "timestamp": last_ping.isoformat() + "Z",
                 }):
                     break

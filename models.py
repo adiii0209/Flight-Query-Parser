@@ -483,6 +483,26 @@ class OwnershipSyncState(db.Model):
         }
 
 
+class OwnershipRealtimeEvent(db.Model):
+    """Append-only event log used to fan out ownership changes across workers."""
+    __tablename__ = "ownership_realtime_event"
+    __table_args__ = (
+        db.Index("ix_ownership_realtime_event_created_at", "created_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    event_id = db.Column(db.String(32), nullable=False, unique=True, index=True)
+    channel = db.Column(db.String(40), nullable=False, default="ownership")
+    payload_json = db.Column(db.Text, nullable=False)
+
+    def to_payload(self):
+        try:
+            return json.loads(self.payload_json or "{}")
+        except Exception:
+            return {}
+
+
 class FareRule(db.Model):
     """Global fare rules per airline + fare type. Stores baggage, seat, meal, cancellation & change rules."""
     __tablename__ = 'fare_rule'
