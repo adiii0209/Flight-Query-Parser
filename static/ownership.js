@@ -31,7 +31,7 @@ const STATUS_FIELDS = [
 
 const ACTIVITY_LOG = [];
 const OWNERSHIP_TRIPS_STORAGE_KEY = 'ownership_trips_cache_v1';
-const OWNERSHIP_REALTIME_HUB_URL = '/static/realtime-hub.js?v=4';
+const OWNERSHIP_REALTIME_HUB_URL = '/static/realtime-hub.js?v=5';
 
 // ═══════════════════════════════════════════════════════════
 // STATE
@@ -130,6 +130,8 @@ class OwnershipRealtimeManager {
     this._seenMax = 128;
     this._wsReconnectTimer = null;
     this._wsReconnectDelay = 1000;
+    this._lastKnownState = 'connecting';
+    this._handleVisibilityChange = this._handleVisibilityChange.bind(this);
     this._disposed = false;
     this._mode = 'none';
   }
@@ -188,7 +190,15 @@ class OwnershipRealtimeManager {
   _onHubMessage(data) {
     if (!data) return;
     if (data.type === 'stream-status') {
-      if (data.state === 'open') console.debug('[realtime] hub connected');
+      const isReconnect = (this._lastKnownState === 'close' || this._lastKnownState === 'error') && data.state === 'open';
+      this._lastKnownState = data.state;
+      if (data.state === 'open') {
+        console.debug('[realtime] hub connected');
+        if (isReconnect) {
+          console.debug('[realtime] hub reconnected, refreshing state');
+          refreshOwnershipDashboardFromNetwork('hub reconnect');
+        }
+      }
       return;
     }
     this._dispatch(data);
@@ -202,7 +212,14 @@ class OwnershipRealtimeManager {
     try { socket = new WebSocket(url); } catch (_) { this._scheduleWsReconnect(); return; }
     this._directWs = socket;
     this._mode = 'direct';
-    socket.onopen = () => { this._wsReconnectDelay = 1000; console.debug('[realtime] direct WS connected'); };
+    socket.onopen = () => { 
+      this._wsReconnectDelay = 1000; 
+      console.debug('[realtime] direct WS connected'); 
+      if (this._lastKnownState === 'close' || this._lastKnownState === 'error') {
+        refreshOwnershipDashboardFromNetwork('direct WS reconnect');
+      }
+      this._lastKnownState = 'open';
+    };
     socket.onmessage = (evt) => {
       if (typeof evt.data !== 'string') return;
       let msg;
@@ -210,9 +227,12 @@ class OwnershipRealtimeManager {
       if (msg.type === 'ping' && msg.channel === 'system') return;
       this._dispatch(msg);
     };
-    socket.onerror = () => {};
+    socket.onerror = () => {
+      this._lastKnownState = 'error';
+    };
     socket.onclose = () => {
       this._directWs = null;
+      this._lastKnownState = 'close';
       if (this._mode === 'direct') this._mode = 'none';
       if (!this._disposed) this._scheduleWsReconnect();
     };
