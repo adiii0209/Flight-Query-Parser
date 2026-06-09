@@ -31,7 +31,21 @@ const STATUS_FIELDS = [
 
 const ACTIVITY_LOG = [];
 const OWNERSHIP_TRIPS_STORAGE_KEY = 'ownership_trips_cache_v1';
-const OWNERSHIP_REALTIME_HUB_URL = '/static/realtime-hub.js?v=5';
+const OWNERSHIP_REALTIME_HUB_URL = '/static/realtime-hub.js?v=20260609_ws_fix';
+const OWNERSHIP_REALTIME_WS_ENABLED = window.__OWNERSHIP_REALTIME_WS_ENABLED__ !== false;
+const OWNERSHIP_REALTIME_TAB_ID = (() => {
+  try {
+    const key = 'ownership_realtime_tab_id_v1';
+    let value = sessionStorage.getItem(key);
+    if (!value) {
+      value = `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      sessionStorage.setItem(key, value);
+    }
+    return value;
+  } catch (_) {
+    return `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+})();
 
 // ═══════════════════════════════════════════════════════════
 // STATE
@@ -80,9 +94,25 @@ let subtaskModalRefreshState = null;
 // ═══════════════════════════════════════════════════════════
 
 async function apiJson(url, options = {}) {
+  const nextOptions = { ...options };
+  const method = String(nextOptions.method || 'GET').toUpperCase();
+  const headers = { 'Content-Type': 'application/json', ...(nextOptions.headers || {}) };
+  if (url.startsWith('/api/ownership/') && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    headers['X-Ownership-Sender-Id'] = OWNERSHIP_REALTIME_TAB_ID;
+    if (nextOptions.body != null) {
+      let payload = nextOptions.body;
+      if (typeof payload === 'string') {
+        try { payload = JSON.parse(payload); } catch (_) { payload = null; }
+      }
+      if (payload && typeof payload === 'object' && !Array.isArray(payload) && !payload.senderId) {
+        payload.senderId = OWNERSHIP_REALTIME_TAB_ID;
+        nextOptions.body = JSON.stringify(payload);
+      }
+    }
+  }
   const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    ...options,
+    ...nextOptions,
+    headers,
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -119,8 +149,8 @@ function parseOwnershipEventData(raw) {
 // ═══════════════════════════════════════════════════════════
 // REALTIME SYNC MANAGER
 // ═══════════════════════════════════════════════════════════
-// One SharedWorker hub per origin.  Each tab connects a port.
-// Fallback: direct WebSocket if SharedWorker unavailable.
+// One SharedWorker hub per origin when realtime transport is available.
+// Fallback: direct WebSocket when supported, otherwise polling refreshes.
 
 class OwnershipRealtimeManager {
   constructor() {
@@ -131,13 +161,22 @@ class OwnershipRealtimeManager {
     this._wsReconnectTimer = null;
     this._wsReconnectDelay = 1000;
     this._lastKnownState = 'connecting';
-    this._handleVisibilityChange = this._handleVisibilityChange.bind(this);
+    this._pollTimer = null;
+    this._pollIntervalMs = 15000;
+    this._syncPollTimer = null;
+    this._syncPollIntervalMs = 10000;
     this._disposed = false;
     this._mode = 'none';
   }
 
   connect() {
     if (this._disposed) return;
+    this._startSyncPolling();
+    if (!OWNERSHIP_REALTIME_WS_ENABLED) {
+      this._startPollingFallback('websocket disabled by server');
+      queueOwnershipServerRefresh(0, 'realtime polling fallback');
+      return;
+    }
     if (this._tryHub()) return;
     this._connectDirectWs();
   }
@@ -146,10 +185,19 @@ class OwnershipRealtimeManager {
     this._disposed = true;
     this._closeHub();
     this._closeDirectWs();
+    this._stopPollingFallback();
+    this._stopSyncPolling();
   }
 
   reconnect(reason = 'resume') {
     if (this._disposed) { this._disposed = false; }
+    this._startSyncPolling();
+    this._checkRemoteSyncVersion();
+    if (!OWNERSHIP_REALTIME_WS_ENABLED) {
+      this._startPollingFallback(reason);
+      queueOwnershipServerRefresh(0, reason);
+      return;
+    }
     if (this._hub) {
       try { this._hub.port.postMessage({ type: 'ping' }); } catch (_) { this._closeHub(); this.connect(); }
       return;
@@ -159,7 +207,7 @@ class OwnershipRealtimeManager {
   }
 
   _tryHub() {
-    if (!('SharedWorker' in window)) return false;
+    if (!OWNERSHIP_REALTIME_WS_ENABLED || !('SharedWorker' in window)) return false;
     try {
       this._hub = new SharedWorker(OWNERSHIP_REALTIME_HUB_URL, { name: 'realtime-hub-v2' });
       this._hub.onerror = () => {
@@ -194,29 +242,44 @@ class OwnershipRealtimeManager {
       this._lastKnownState = data.state;
       if (data.state === 'open') {
         console.debug('[realtime] hub connected');
+        this._stopPollingFallback();
         if (isReconnect) {
           console.debug('[realtime] hub reconnected, refreshing state');
-          refreshOwnershipDashboardFromNetwork('hub reconnect');
+          queueOwnershipServerRefresh(0, 'hub reconnect');
         }
+      } else if (data.state === 'close' || data.state === 'error') {
+        this._startPollingFallback('hub unavailable');
       }
       return;
     }
+    if (data.senderId && data.senderId === OWNERSHIP_REALTIME_TAB_ID) return;
     this._dispatch(data);
   }
 
   _connectDirectWs() {
     if (this._disposed || this._directWs) return;
+    if (!OWNERSHIP_REALTIME_WS_ENABLED || typeof WebSocket === 'undefined') {
+      this._startPollingFallback('websocket unavailable');
+      queueOwnershipServerRefresh(0, 'realtime polling fallback');
+      return;
+    }
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${proto}//${location.host}/api/realtime/ws`;
     let socket;
-    try { socket = new WebSocket(url); } catch (_) { this._scheduleWsReconnect(); return; }
+    try { socket = new WebSocket(url); } catch (_) {
+      this._startPollingFallback('websocket construction failed');
+      queueOwnershipServerRefresh(0, 'realtime polling fallback');
+      this._scheduleWsReconnect();
+      return;
+    }
     this._directWs = socket;
     this._mode = 'direct';
     socket.onopen = () => { 
       this._wsReconnectDelay = 1000; 
       console.debug('[realtime] direct WS connected'); 
+      this._stopPollingFallback();
       if (this._lastKnownState === 'close' || this._lastKnownState === 'error') {
-        refreshOwnershipDashboardFromNetwork('direct WS reconnect');
+        queueOwnershipServerRefresh(0, 'direct WS reconnect');
       }
       this._lastKnownState = 'open';
     };
@@ -225,15 +288,18 @@ class OwnershipRealtimeManager {
       let msg;
       try { msg = JSON.parse(evt.data); } catch (_) { return; }
       if (msg.type === 'ping' && msg.channel === 'system') return;
+      if (msg.senderId && msg.senderId === OWNERSHIP_REALTIME_TAB_ID) return;
       this._dispatch(msg);
     };
     socket.onerror = () => {
       this._lastKnownState = 'error';
+      this._startPollingFallback('direct websocket error');
     };
     socket.onclose = () => {
       this._directWs = null;
       this._lastKnownState = 'close';
       if (this._mode === 'direct') this._mode = 'none';
+      this._startPollingFallback('direct websocket closed');
       if (!this._disposed) this._scheduleWsReconnect();
     };
   }
@@ -244,6 +310,52 @@ class OwnershipRealtimeManager {
     try { this._directWs.onopen = null; this._directWs.onmessage = null; this._directWs.onerror = null; this._directWs.onclose = null; this._directWs.close(); } catch (_) {}
     this._directWs = null;
     if (this._mode === 'direct') this._mode = 'none';
+  }
+
+  _startPollingFallback(reason = 'polling fallback') {
+    if (this._disposed || this._pollTimer) return;
+    console.debug('[realtime] ownership polling fallback active', reason);
+    this._pollTimer = setInterval(() => {
+      if (this._disposed) return;
+      if (document.visibilityState && document.visibilityState !== 'visible') return;
+      queueOwnershipServerRefresh(0, 'ownership polling fallback');
+    }, this._pollIntervalMs);
+  }
+
+  _stopPollingFallback() {
+    if (!this._pollTimer) return;
+    clearInterval(this._pollTimer);
+    this._pollTimer = null;
+  }
+
+  _startSyncPolling() {
+    if (this._disposed || this._syncPollTimer) return;
+    this._syncPollTimer = setInterval(() => {
+      if (this._disposed) return;
+      if (document.visibilityState && document.visibilityState !== 'visible') return;
+      this._checkRemoteSyncVersion();
+    }, this._syncPollIntervalMs);
+    this._checkRemoteSyncVersion();
+  }
+
+  _stopSyncPolling() {
+    if (!this._syncPollTimer) return;
+    clearInterval(this._syncPollTimer);
+    this._syncPollTimer = null;
+  }
+
+  async _checkRemoteSyncVersion() {
+    try {
+      const response = await fetch('/api/ownership/sync-state', { credentials: 'same-origin' });
+      if (!response.ok) return;
+      const data = await response.json().catch(() => null);
+      const syncVersion = parseOwnershipVersion(data?.syncVersion);
+      if (syncVersion > ownershipKnownVersion) {
+        queueOwnershipServerRefresh(syncVersion, 'ownership sync poll');
+      }
+    } catch (_) {
+      /* ignore sync poll failures */
+    }
   }
 
   _scheduleWsReconnect() {

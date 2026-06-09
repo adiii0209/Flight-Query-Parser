@@ -467,6 +467,22 @@ class OwnershipEmployee(db.Model):
         }
 
 
+class OwnershipSyncState(db.Model):
+    """Singleton row that tracks the latest ownership sync version."""
+    __tablename__ = "ownership_sync_state"
+
+    id = db.Column(db.String(32), primary_key=True, default="global")
+    version = db.Column(db.Integer, nullable=False, default=1)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "version": self.version or 1,
+            "updatedAt": self.updated_at.isoformat() if self.updated_at else "",
+        }
+
+
 class FareRule(db.Model):
     """Global fare rules per airline + fare type. Stores baggage, seat, meal, cancellation & change rules."""
     __tablename__ = 'fare_rule'

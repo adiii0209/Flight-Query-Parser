@@ -571,6 +571,7 @@
 <script>
   window.__INITIAL_EMPLOYEE_ID__ = {{ initial_employee_id|default('', true)|tojson }};
   window.__EMPLOYEE_BASE_PATH__ = '/ownership/employees';
+  window.__OWNERSHIP_REALTIME_WS_ENABLED__ = {{ ownership_realtime_ws_enabled|default(false)|tojson }};
 </script>
 <script src="/static/ownership.js?v=20260609_ws_fix"></script>
 <script src="/static/employees.js?v=20260530priority11"></script>

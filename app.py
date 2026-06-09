@@ -36,7 +36,7 @@ from models import (
     User, Customer, Itinerary, Ticket, TicketRead, Aggregator, LedgerEntry,
     TicketOperation, OperationLedgerLink, BookingGroup, FareRule,
     OwnershipTrip, OwnershipSubtask, OwnershipReminder, OwnershipTaskTemplate,
-    OwnershipTaskTemplateItem, OwnershipEmployee,
+    OwnershipTaskTemplateItem, OwnershipEmployee, OwnershipSyncState,
 )
 from extensions import db
 from cache_backend import DashboardCache
@@ -312,6 +312,7 @@ _ownership_reminder_thread_started = False
 _OWNERSHIP_REMINDER_SCAN_SECONDS = max(int(os.getenv("OWNERSHIP_REMINDER_SCAN_SECONDS", "60") or 60), 10)
 _OWNERSHIP_REMINDER_INITIAL_DELAY_SECONDS = max(int(os.getenv("OWNERSHIP_REMINDER_INITIAL_DELAY_SECONDS", "5") or 5), 0)
 _OWNERSHIP_REDIS_CHANNEL = os.getenv("OWNERSHIP_REDIS_CHANNEL", "ownership-events")
+_OWNERSHIP_SERVER_INSTANCE_ID = (os.getenv("OWNERSHIP_SERVER_INSTANCE_ID") or uuid.uuid4().hex).strip()
 _OWNERSHIP_SMTP_HOST = (os.getenv("OWNERSHIP_SMTP_HOST") or "").strip()
 _OWNERSHIP_SMTP_PORT = max(int(os.getenv("OWNERSHIP_SMTP_PORT", "587") or 587), 1)
 _OWNERSHIP_SMTP_USERNAME = (os.getenv("OWNERSHIP_SMTP_USERNAME") or "").strip()
@@ -1088,7 +1089,11 @@ def _build_cards_render_groups(flights, trip_type, unit_flights):
 @login_required
 def ownership_page(employee_id=None):
     """Serve the Ownership CRM dashboard"""
-    return render_template('ownership.html', initial_employee_id=employee_id or "")
+    return render_template(
+        'ownership.html',
+        initial_employee_id=employee_id or "",
+        ownership_realtime_ws_enabled=WebSocketServer is not None,
+    )
 
 @app.route("/itineraries")
 def itineraries_page():
@@ -7040,7 +7045,44 @@ def _ownership_query():
 
 
 def _ownership_cache_version():
-    return _dashboard_cache.get_int("ownership:version", default=1)
+    try:
+        state = db.session.get(OwnershipSyncState, "global")
+        return int(state.version or 1) if state else 1
+    except Exception:
+        db.session.rollback()
+        return 1
+
+
+def _ownership_sync_state_row():
+    state = db.session.get(OwnershipSyncState, "global")
+    if state is None:
+        state = OwnershipSyncState(id="global", version=1)
+        db.session.add(state)
+        db.session.flush()
+    return state
+
+
+def _bump_ownership_sync_version():
+    now = datetime.utcnow()
+    try:
+        state = db.session.get(OwnershipSyncState, "global")
+        if state is None:
+            state = OwnershipSyncState(id="global", version=1, updated_at=now)
+            db.session.add(state)
+            db.session.flush()
+        db.session.execute(
+            text(
+                "UPDATE ownership_sync_state "
+                "SET version = version + 1, updated_at = :updated_at "
+                "WHERE id = :state_id"
+            ),
+            {"updated_at": now, "state_id": "global"},
+        )
+        db.session.commit()
+        return _ownership_cache_version()
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 def _ownership_cache_get(kind):
@@ -7053,7 +7095,16 @@ def _ownership_cache_set(key, payload):
 
 
 def _invalidate_ownership_cache():
-    return _dashboard_cache.incr("ownership:version")
+    return _bump_ownership_sync_version()
+
+
+def _request_ownership_sender_id(payload=None):
+    sender_id = ""
+    if isinstance(payload, dict):
+        sender_id = str(payload.pop("senderId", "") or "").strip()
+    if not sender_id:
+        sender_id = str(request.headers.get("X-Ownership-Sender-Id") or "").strip()
+    return sender_id
 
 
 def _backfill_ownership_master_sheet_urls():
@@ -7209,9 +7260,9 @@ def _ownership_trip_response(payload, cache_status, started_at, **timings):
     return response
 
 
-def _publish_ownership_event(action="refresh", bump_version=True, version=None, **payload):
+def _publish_ownership_event(action="refresh", bump_version=True, version=None, sender_id=None, **payload):
     if version is None:
-        version = _dashboard_cache.incr("ownership:version") if bump_version else _ownership_cache_version()
+        version = _invalidate_ownership_cache() if bump_version else _ownership_cache_version()
     event_payload = {
         "eventId": uuid.uuid4().hex,
         "channel": "ownership",
@@ -7221,6 +7272,8 @@ def _publish_ownership_event(action="refresh", bump_version=True, version=None, 
         "timestamp": datetime.utcnow().isoformat() + "Z",
         **payload,
     }
+    if sender_id:
+        event_payload["senderId"] = str(sender_id)
     # Deliver via Redis pubsub when available (cross-worker), else in-process queue.
     # Never both — that causes double delivery.
     redis_client = getattr(_dashboard_cache, "_redis", None)
@@ -7554,6 +7607,7 @@ def import_ownership_sheet():
 @app.route("/api/ownership/trips", methods=["POST"])
 def create_ownership_trip():
     payload = request.get_json(force=True) or {}
+    sender_id = _request_ownership_sender_id(payload)
     if not str(payload.get("guestName") or "").strip():
         return jsonify({"error": "Guest / trip name is required"}), 400
     trip = OwnershipTrip(user_id=_ownership_user_id())
@@ -7562,13 +7616,14 @@ def create_ownership_trip():
     db.session.commit()
     version = _invalidate_ownership_cache()
     trip_payload = trip.to_dict()
-    _publish_ownership_event("trip_created", version=version, tripId=trip.id, trip=trip_payload)
+    _publish_ownership_event("trip_created", version=version, sender_id=sender_id, tripId=trip.id, trip=trip_payload)
     return jsonify({"trip": trip.to_dict(), "cacheVersion": version}), 201
 
 
 @app.route("/api/ownership/trips/<trip_id>", methods=["PATCH", "PUT"])
 def update_ownership_trip(trip_id):
     payload = request.get_json(force=True) or {}
+    sender_id = _request_ownership_sender_id(payload)
     trip_payload, status = _commit_ownership_trip_with_retry(trip_id, payload)
     if status == "not_found":
         return jsonify({"error": "Trip not found"}), 404
@@ -7580,13 +7635,14 @@ def update_ownership_trip(trip_id):
             "cacheVersion": _ownership_cache_version(),
         }), 409
     version = _invalidate_ownership_cache()
-    _publish_ownership_event("trip_updated", version=version, tripId=trip_id, trip=trip_payload)
+    _publish_ownership_event("trip_updated", version=version, sender_id=sender_id, tripId=trip_id, trip=trip_payload)
     return jsonify({"trip": trip_payload, "cacheVersion": version})
 
 
 @app.route("/api/ownership/trips/<trip_id>", methods=["DELETE"])
 def delete_ownership_trip(trip_id):
     payload = request.get_json(silent=True) or {}
+    sender_id = _request_ownership_sender_id(payload)
     deleted_trip, status = _commit_ownership_trip_with_retry(trip_id, payload, delete=True)
     if status == "not_found":
         return jsonify({"error": "Trip not found"}), 404
@@ -7598,7 +7654,7 @@ def delete_ownership_trip(trip_id):
             "cacheVersion": _ownership_cache_version(),
         }), 409
     version = _invalidate_ownership_cache()
-    _publish_ownership_event("trip_deleted", version=version, tripId=trip_id, trip=deleted_trip)
+    _publish_ownership_event("trip_deleted", version=version, sender_id=sender_id, tripId=trip_id, trip=deleted_trip)
     return jsonify({"success": True, "cacheVersion": version})
 
 
@@ -7626,6 +7682,7 @@ def get_ownership_templates():
 @app.route("/api/ownership/templates", methods=["POST"])
 def create_ownership_template():
     payload = request.get_json(force=True) or {}
+    sender_id = _request_ownership_sender_id(payload)
     task_group = str(payload.get("taskGroup") or "").strip()
     tasks = payload.get("tasks") or []
     generated_name = f"{task_group or 'category'}-{uuid.uuid4().hex[:8]}"
@@ -7655,7 +7712,7 @@ def create_ownership_template():
     db.session.commit()
     version = _invalidate_ownership_cache()
     template_payload = template.to_dict()
-    _publish_ownership_event("template_created", version=version, templateId=template.id, template=template_payload)
+    _publish_ownership_event("template_created", version=version, sender_id=sender_id, templateId=template.id, template=template_payload)
     return jsonify({"template": template_payload, "cacheVersion": version}), 201
 
 
@@ -7672,7 +7729,7 @@ def delete_ownership_template(template_id):
     db.session.delete(template)
     db.session.commit()
     version = _invalidate_ownership_cache()
-    _publish_ownership_event("template_deleted", version=version, templateId=template_id, template=deleted_template)
+    _publish_ownership_event("template_deleted", version=version, sender_id=_request_ownership_sender_id(), templateId=template_id, template=deleted_template)
     return jsonify({"success": True, "cacheVersion": version})
 
 
@@ -7726,6 +7783,7 @@ def _ownership_cache_delete_employee(employee_id):
 @app.route("/api/ownership/employees", methods=["POST"])
 def create_ownership_employee():
     payload = request.get_json(force=True) or {}
+    sender_id = _request_ownership_sender_id(payload)
     name = str(payload.get("name") or "").strip()
     if not name:
         return jsonify({"error": "Employee name is required"}), 400
@@ -7743,7 +7801,7 @@ def create_ownership_employee():
     db.session.commit()
     version = _invalidate_ownership_cache()
     employee_payload = employee.to_dict()
-    _publish_ownership_event("employee_saved", version=version, employeeId=employee.id, employee=employee_payload)
+    _publish_ownership_event("employee_saved", version=version, sender_id=sender_id, employeeId=employee.id, employee=employee_payload)
     return jsonify({"employee": employee_payload, "cacheVersion": version}), 201
 
 
@@ -7756,11 +7814,20 @@ def delete_ownership_employee(employee_id):
     employee.is_active = False
     db.session.commit()
     version = _invalidate_ownership_cache()
-    _publish_ownership_event("employee_deleted", version=version, employeeId=employee_id, employee=deleted_employee)
+    _publish_ownership_event("employee_deleted", version=version, sender_id=_request_ownership_sender_id(), employeeId=employee_id, employee=deleted_employee)
     return jsonify({"success": True, "cacheVersion": version})
 
 
 # SSE /api/ownership/stream endpoint removed — all clients use WebSocket via SharedWorker now.
+
+
+@app.route("/api/ownership/sync-state", methods=["GET"])
+def get_ownership_sync_state():
+    state = _ownership_sync_state_row()
+    return jsonify({
+        "syncVersion": state.version or 1,
+        "updatedAt": state.updated_at.isoformat() if state.updated_at else "",
+    })
 
 
 def _send_realtime_ws_json(ws, payload):
@@ -7774,7 +7841,7 @@ def _send_realtime_ws_json(ws, payload):
 @app.route("/api/realtime/ws", websocket=True)
 def realtime_ws():
     if WebSocketServer is None:
-        return "", 501
+        return "", 503
 
     ws = WebSocketServer.accept(request.environ, ping_interval=25)
     if "user_id" not in session:
@@ -7978,6 +8045,11 @@ def init_db():
 
 with app.app_context():
     ensure_schema_compatibility()
+    try:
+        _ownership_sync_state_row()
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
     upgrade_v2_itinerary_json_columns()
 
 def apply_global_db_retry(app_instance):
