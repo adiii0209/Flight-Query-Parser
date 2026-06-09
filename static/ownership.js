@@ -359,7 +359,7 @@ function upsertOwnershipTripFromEvent(trip) {
     const nextVersion = parseOwnershipVersion(nextTrip.version);
     if (currentVersion > nextVersion) return true;
     if (hasPendingLocalPatch) {
-      trips[idx] = { ...nextTrip, ...trips[idx] };
+      trips[idx] = { ...nextTrip, ...(queue?.patch || {}) };
     } else {
       trips[idx] = nextTrip;
     }
@@ -543,7 +543,7 @@ async function flushOwnershipTripPatch(tripId) {
     if (saved) {
       const idx = trips.findIndex(t => t.id === saved.id);
       const hasPendingLocalChanges = !!(queue && (queue.inFlight || Object.keys(queue.patch || {}).length > 0));
-      const mergedTrip = idx !== -1 && hasPendingLocalChanges ? { ...saved, ...trips[idx] } : saved;
+      const mergedTrip = idx !== -1 && hasPendingLocalChanges ? { ...saved, ...(queue?.patch || {}) } : saved;
       if (idx !== -1) trips[idx] = mergedTrip;
       queue.snapshot = JSON.parse(JSON.stringify(mergedTrip));
       queue.version = parseOwnershipVersion(cacheVersion || mergedTrip.version || queue.version);
@@ -556,7 +556,7 @@ async function flushOwnershipTripPatch(tripId) {
     const serverTrip = err.status === 409 && err.payload?.trip ? err.payload.trip : null;
     const currentTrip = trips.find(t => t.id === tripId);
     const hasPendingLocalChanges = !!(queue && (queue.inFlight || Object.keys(queue.patch || {}).length > 0));
-    const nextTrip = serverTrip ? (hasPendingLocalChanges ? { ...serverTrip, ...(currentTrip || {}) } : serverTrip) : queue.snapshot;
+    const nextTrip = serverTrip ? (hasPendingLocalChanges ? { ...serverTrip, ...(queue?.patch || {}) } : serverTrip) : queue.snapshot;
     const idx = trips.findIndex(t => t.id === tripId);
     if (idx !== -1 && nextTrip) trips[idx] = nextTrip;
     if (serverTrip) {

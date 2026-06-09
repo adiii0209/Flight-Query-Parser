@@ -7927,7 +7927,7 @@ def realtime_ws():
                                 break
                             delivered = True
                 except Exception:
-                    pass
+                    break
 
             # 3. Redis pubsub for ticket events
             if ticket_pubsub is not None:
@@ -7945,7 +7945,7 @@ def realtime_ws():
                                 break
                             delivered = True
                 except Exception:
-                    pass
+                    break
 
             # 4. Heartbeat ping to client
             if not delivered and (datetime.utcnow() - last_ping).total_seconds() >= 25:
