@@ -4825,12 +4825,18 @@ def _ticket_signature(ticket):
 
 def _build_pnr_merge_groups(user_id):
     from sqlalchemy import or_
+    from sqlalchemy.orm import defer
     tickets = Ticket.query.filter(
         Ticket.user_id == user_id,
         Ticket.pnr.isnot(None),
         Ticket.pnr != "",
         Ticket.booking_group_id.is_(None),
         or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status == "approved"),
+    ).options(
+        defer(Ticket.raw_data),
+        defer(Ticket.passengers_data),
+        defer(Ticket.segments_data),
+        defer(Ticket.journey_data)
     ).order_by(Ticket.created_at.desc()).all()
 
     groups = {}
@@ -8186,7 +8192,15 @@ def realtime_ws():
     receive_thread.start()
 
     recent_event_ids = OrderedDict()
-    last_event_db_id = 0
+
+    # Initialize last_event_db_id to the max event ID to prevent massive historic egress
+    try:
+        if last_event_db_id == 0:
+            max_id = db.session.query(db.func.max(OwnershipRealtimeEvent.id)).scalar()
+            last_event_db_id = int(max_id or 0)
+    except Exception:
+        db.session.rollback()
+        last_event_db_id = 0
 
     def should_deliver(event_payload):
         """Deduplicate by eventId to prevent double delivery from queue + pubsub."""
@@ -8231,21 +8245,29 @@ def realtime_ws():
         while ws_alive["value"]:
             delivered = False
 
-            # 1. In-process queue (used when Redis is unavailable)
-            if not use_redis:
+            try:
+                # 1. Block on the local in-memory listener queue.
+                # If Redis is disabled, events arrive here.
+                # We use a short timeout so we can still poll Redis pubsub.
+                event_payload = listener.get(timeout=0.5)
+                if should_deliver(event_payload):
+                    if not _send_realtime_ws_json(ws, event_payload):
+                        break
+                    delivered = True
+            except queue.Empty:
+                pass
+
+            # 2. Fallback DB polling (only if Redis is disabled)
+            if not use_redis and not delivered:
                 try:
-                    event_payload = listener.get(timeout=25)
-                    if should_deliver(event_payload):
-                        if not _send_realtime_ws_json(ws, event_payload):
-                            break
-                        delivered = True
-                except queue.Empty:
+                    last_event_db_id = _deliver_pending_ownership_events(ws, last_event_db_id, should_deliver)
+                except Exception:
                     pass
 
-            # 2. Redis pubsub for ownership events
+            # 3. Redis pubsub for ownership events
             if ownership_pubsub is not None:
                 try:
-                    message = ownership_pubsub.get_message(timeout=0.1)
+                    message = ownership_pubsub.get_message(ignore_subscribe_messages=True, timeout=0.01)
                     if message and message.get("data"):
                         event_payload = message["data"]
                         if isinstance(event_payload, str):
@@ -8260,10 +8282,10 @@ def realtime_ws():
                 except Exception:
                     break
 
-            # 3. Redis pubsub for ticket events
+            # 4. Redis pubsub for ticket events
             if ticket_pubsub is not None:
                 try:
-                    message = ticket_pubsub.get_message(timeout=0.1)
+                    message = ticket_pubsub.get_message(ignore_subscribe_messages=True, timeout=0.01)
                     if message and message.get("data"):
                         event_payload = message["data"]
                         if isinstance(event_payload, str):
@@ -8278,7 +8300,7 @@ def realtime_ws():
                 except Exception:
                     break
 
-            # 4. Heartbeat ping to client
+            # 5. Heartbeat ping to client
             if not delivered and (datetime.utcnow() - last_ping).total_seconds() >= 25:
                 last_ping = datetime.utcnow()
                 if not _send_realtime_ws_json(ws, {

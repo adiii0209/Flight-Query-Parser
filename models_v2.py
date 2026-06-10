@@ -77,19 +77,22 @@ def generate_uuid() -> str:
 # ==================== USER MODEL ====================
 
 class User(Base):
-    """Travel agent user who manages corporates, passengers, and itineraries."""
+    """Travel agent user — shared table with models.py User. extend_existing prevents duplicate DDL."""
     __tablename__ = "user"
-    
+    # IMPORTANT: extend_existing=True prevents SQLAlchemy from generating a duplicate
+    # CREATE TABLE statement. models.py already defines this table via Flask-SQLAlchemy.
+    # Both ORM registries must agree on the same physical table.
+    __table_args__ = {"extend_existing": True}
+
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     username: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    
-    # Relationships
+
+    # Relationships (v2 side — these enable ORM navigation from User to v2 entities)
     corporates: Mapped[List["Corporate"]] = relationship(back_populates="user", cascade="all, delete-orphan", lazy="selectin")
     passengers: Mapped[List["Passenger"]] = relationship(back_populates="user", cascade="all, delete-orphan", lazy="selectin")
     itineraries: Mapped[List["Itinerary"]] = relationship(back_populates="user", cascade="all, delete-orphan", lazy="selectin")
