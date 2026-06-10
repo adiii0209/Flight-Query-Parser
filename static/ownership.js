@@ -33,6 +33,7 @@ const ACTIVITY_LOG = [];
 const OWNERSHIP_TRIPS_STORAGE_KEY = 'ownership_trips_cache_v1';
 const OWNERSHIP_REALTIME_HUB_URL = '/static/realtime-hub.js?v=20260609_ws_fix';
 const OWNERSHIP_REALTIME_WS_ENABLED = window.__OWNERSHIP_REALTIME_WS_ENABLED__ !== false;
+const OWNERSHIP_LAST_EVENT_ID_KEY = 'ownership_last_event_id_v1';
 const OWNERSHIP_REALTIME_TAB_ID = (() => {
   try {
     const key = 'ownership_realtime_tab_id_v1';
@@ -137,6 +138,22 @@ function rememberOwnershipVersion(version) {
   return ownershipKnownVersion;
 }
 
+function getStoredOwnershipEventId() {
+  try {
+    return localStorage.getItem(OWNERSHIP_LAST_EVENT_ID_KEY) || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function rememberOwnershipEventId(eventId) {
+  if (!eventId) return '';
+  try {
+    localStorage.setItem(OWNERSHIP_LAST_EVENT_ID_KEY, String(eventId));
+  } catch (_) {}
+  return String(eventId);
+}
+
 function parseOwnershipEventData(raw) {
   if (!raw) return null;
   if (typeof raw === 'string') {
@@ -211,7 +228,7 @@ class OwnershipRealtimeManager {
       };
       this._hub.port.onmessage = (evt) => this._onHubMessage(evt.data);
       this._hub.port.start();
-      this._hub.port.postMessage({ type: 'subscribe' });
+      this._hub.port.postMessage({ type: 'subscribe', lastEventId: getStoredOwnershipEventId() });
       this._mode = 'hub';
       return true;
     } catch (err) {
@@ -262,7 +279,8 @@ class OwnershipRealtimeManager {
       return;
     }
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${location.host}/api/realtime/ws`;
+    const lastEventId = getStoredOwnershipEventId();
+    const url = `${proto}//${location.host}/api/realtime/ws${lastEventId ? `?last_event_id=${encodeURIComponent(lastEventId)}` : ''}`;
     let socket;
     try { socket = new WebSocket(url); } catch (_) {
       this._startPollingFallback('websocket construction failed');
@@ -362,6 +380,7 @@ class OwnershipRealtimeManager {
     const eventId = msg.eventId;
     if (eventId && this._isDuplicate(eventId)) return;
     if (msg.channel === 'ownership') {
+      if (eventId) rememberOwnershipEventId(eventId);
       const event = msg.event;
       if (!event) return;
       if (event === 'ready') { rememberOwnershipVersion(msg.version); return; }

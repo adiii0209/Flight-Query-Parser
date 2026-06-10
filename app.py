@@ -23,8 +23,8 @@ try:
 except Exception:
     Session = None
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import inspect, text
-from sqlalchemy.orm import defer, load_only, selectinload
+from sqlalchemy import inspect, text, cast, String as SAString, func
+from sqlalchemy.orm import defer, joinedload, load_only, selectinload
 from sqlalchemy.orm.exc import StaleDataError
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import date, datetime, time, timedelta
@@ -326,6 +326,11 @@ _OWNERSHIP_REMINDER_RECIPIENTS = ["mail@timetours.in"] + [
     for recipient in (os.getenv("OWNERSHIP_REMINDER_RECIPIENTS") or "").split(",")
     if recipient.strip() and recipient.strip().lower() != "mail@timetours.in"
 ]
+_OWNERSHIP_EVENT_RETENTION_SECONDS = max(int(os.getenv("OWNERSHIP_EVENT_RETENTION_SECONDS", str(7 * 24 * 3600)) or (7 * 24 * 3600)), 3600)
+_OWNERSHIP_EVENT_PRUNE_INTERVAL_SECONDS = max(int(os.getenv("OWNERSHIP_EVENT_PRUNE_INTERVAL_SECONDS", "300") or 300), 60)
+_OWNERSHIP_EVENT_PRUNE_BATCH_SIZE = max(int(os.getenv("OWNERSHIP_EVENT_PRUNE_BATCH_SIZE", "2000") or 2000), 100)
+_ownership_cache_version_state = {"value": None, "lock": threading.Lock(), "last_sync_at": 0.0}
+_ownership_event_prune_state = {"last_prune_at": 0.0}
 
 # Register API v2 Blueprint
 # Register API v2 Blueprint
@@ -2623,7 +2628,15 @@ def _create_indexes_if_missing():
         "CREATE INDEX IF NOT EXISTS ix_ownership_trip_user_list_order ON ownership_trip (user_id, start_date DESC, source_row ASC, created_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_ownership_trip_owner ON ownership_trip (owner)",
         "CREATE INDEX IF NOT EXISTS ix_ownership_trip_source_row ON ownership_trip (source_row)",
+        "CREATE INDEX IF NOT EXISTS ix_ownership_trip_version ON ownership_trip (version)",
+        "CREATE INDEX IF NOT EXISTS ix_ownership_trip_last_status_update_date ON ownership_trip (last_status_update_date)",
+        "CREATE INDEX IF NOT EXISTS ix_ownership_trip_master_sheet_url ON ownership_trip (master_sheet_url)",
+        "CREATE INDEX IF NOT EXISTS ix_ownership_trip_next_reminder_due_date ON ownership_trip (next_reminder_due_date)",
         "CREATE INDEX IF NOT EXISTS ix_ownership_employee_active ON ownership_employee (is_active)",
+        "CREATE INDEX IF NOT EXISTS ix_ownership_realtime_event_event_id ON ownership_realtime_event (event_id)",
+        "CREATE INDEX IF NOT EXISTS ix_ownership_realtime_event_created_at ON ownership_realtime_event (created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_ownership_realtime_event_channel ON ownership_realtime_event (channel)",
+        "CREATE INDEX IF NOT EXISTS ix_ownership_realtime_event_channel_created_at ON ownership_realtime_event (channel, created_at)",
     ]
     for statement in statements:
         db.session.execute(text(statement))
@@ -2776,10 +2789,12 @@ def ensure_schema_compatibility():
     _add_column_if_missing("ownership_trip", "reminders_json", "TEXT")
     _add_column_if_missing("ownership_trip", "raw_sheet_data", "TEXT")
     _add_column_if_missing("ownership_trip", "master_sheet_url", "TEXT")
+    _add_column_if_missing("ownership_trip", "next_reminder_due_date", "DATE")
     _add_column_if_missing("ownership_trip", "version", "INTEGER NOT NULL DEFAULT 1")
     db.session.execute(text("UPDATE ownership_trip SET version = 1 WHERE version IS NULL"))
     db.session.commit()
     _backfill_ownership_master_sheet_urls()
+    _backfill_ownership_next_reminder_due_dates()
     _add_column_if_missing("ownership_task_template_item", "reminder_days", "INTEGER")
     _drop_index_if_exists("ix_ownership_trip_statuses")
     _drop_ownership_column_if_exists("current_task")
@@ -3664,9 +3679,40 @@ def save_itinerary():
 @login_required
 def get_itineraries():
     """Get all itineraries for the logged-in user"""
-    itineraries = Itinerary.query.filter_by(user_id=session['user_id']).order_by(Itinerary.created_at.desc()).all()
+    try:
+        limit = max(int(request.args.get("limit", 0) or 0), 0)
+    except (TypeError, ValueError):
+        limit = 0
+    try:
+        offset = max(int(request.args.get("offset", 0) or 0), 0)
+    except (TypeError, ValueError):
+        offset = 0
+
+    base_query = Itinerary.query.options(
+        load_only(
+            Itinerary.id,
+            Itinerary.created_at,
+            Itinerary.updated_at,
+            Itinerary.total_amount,
+            Itinerary.markup,
+            Itinerary.status,
+            Itinerary.billing_type,
+            Itinerary.bill_to_name,
+            Itinerary.hold_deadline,
+            Itinerary.flights_data,
+            Itinerary.customer_id,
+            Itinerary.user_id,
+        ),
+        joinedload(Itinerary.customer).load_only(Customer.id, Customer.name),
+        defer(Itinerary.raw_input_data),
+    ).filter_by(user_id=session['user_id']).order_by(Itinerary.created_at.desc())
+    total_count = base_query.count()
+    itineraries_query = base_query.offset(offset)
+    if limit:
+        itineraries_query = itineraries_query.limit(limit)
+    itineraries = itineraries_query.all()
     
-    return jsonify({
+    payload = {
         "itineraries": [{
             "id": i.id,
             "created_at": i.created_at.isoformat(),
@@ -3682,7 +3728,14 @@ def get_itineraries():
                 "name": i.customer.name if i.customer else None
             } if i.customer else None
         } for i in itineraries]
-    })
+    }
+    if limit:
+        payload["limit"] = limit
+    payload["total_count"] = total_count
+    payload["offset"] = offset
+    payload["returned_count"] = len(itineraries)
+    payload["has_more"] = bool(limit and (offset + len(itineraries)) < total_count)
+    return jsonify(payload)
 
 @app.route("/api/itineraries/<itinerary_id>", methods=["GET"])
 @login_required
@@ -6689,9 +6742,6 @@ def _ownership_parse_reminder_days(reminder):
 
 def _ownership_trip_reminder_records(trip):
     reminders = trip.reminders_json if isinstance(trip.reminders_json, list) else []
-    if not reminders and getattr(trip, "reminders", None):
-        reminders = [reminder.to_dict() for reminder in trip.reminders or []]
-
     normalized = []
     for reminder in reminders:
         days = _ownership_parse_reminder_days(reminder)
@@ -6722,6 +6772,22 @@ def _ownership_reminder_due_date(trip, reminder):
     if not base_date:
         return None
     return base_date + timedelta(days=abs(days))
+
+
+def _update_ownership_trip_next_reminder_due_date(trip):
+    reminders = _ownership_trip_reminder_records(trip)
+    next_due_date = None
+    for reminder in reminders:
+        due_date = _ownership_reminder_due_date(trip, reminder)
+        if due_date is None:
+            continue
+        sent_for = str(reminder.get("emailSentFor") or "").strip()
+        if sent_for and sent_for == due_date.isoformat():
+            continue
+        if next_due_date is None or due_date < next_due_date:
+            next_due_date = due_date
+    trip.next_reminder_due_date = next_due_date
+    return next_due_date
 
 
 def _ownership_trip_email_recipients(trip):
@@ -6772,14 +6838,7 @@ def _ownership_trip_status_summary(trip):
 
 def _ownership_trip_subtask_groups(trip):
     groups = trip.subtasks_json if isinstance(trip.subtasks_json, dict) else {}
-    if groups:
-        return groups
-    if getattr(trip, "subtasks", None):
-        fallback = deepcopy(OWNERSHIP_DEFAULT_SUBTASKS)
-        for subtask in trip.subtasks or []:
-            fallback.setdefault(subtask.task_group or "misc", []).append(subtask.to_dict())
-        return fallback
-    return {}
+    return groups if groups else {}
 
 
 def _ownership_format_subtask_line(item):
@@ -6925,7 +6984,29 @@ def _ownership_scan_and_send_reminders():
     try:
         with app.app_context():
             today = datetime.utcnow().date()
-            trips = _ownership_query().options(selectinload(OwnershipTrip.reminders)).all()
+            reminder_query = _ownership_query().filter(
+                OwnershipTrip.next_reminder_due_date.isnot(None),
+                OwnershipTrip.next_reminder_due_date <= today,
+            )
+            trips = reminder_query.options(
+                load_only(
+                    OwnershipTrip.id,
+                    OwnershipTrip.user_id,
+                    OwnershipTrip.guest_name,
+                    OwnershipTrip.owner,
+                    OwnershipTrip.destination,
+                    OwnershipTrip.start_date,
+                    OwnershipTrip.end_date,
+                    OwnershipTrip.last_status_update_date,
+                    OwnershipTrip.master_sheet_url,
+                    OwnershipTrip.latest_update,
+                    OwnershipTrip.present_work_assigned_to,
+                    OwnershipTrip.next_reminder_due_date,
+                    OwnershipTrip.reminders_json,
+                    OwnershipTrip.subtasks_json,
+                ),
+                defer(OwnershipTrip.raw_sheet_data),
+            ).all()
             for trip in trips:
                 reminder_records = _ownership_trip_reminder_records(trip)
                 if not reminder_records:
@@ -6981,6 +7062,7 @@ def _ownership_scan_and_send_reminders():
                     }
                     for reminder in normalized_records
                 ]
+                _update_ownership_trip_next_reminder_due_date(trip)
                 db.session.add(trip)
                 try:
                     db.session.commit()
@@ -7044,45 +7126,42 @@ def _ownership_query():
     return query
 
 
+def _ownership_cache_version_store_key():
+    return _dashboard_cache.namespaced("ownership:cache:version")
+
+
 def _ownership_cache_version():
     try:
-        state = db.session.get(OwnershipSyncState, "global")
-        return int(state.version or 1) if state else 1
+        value = _dashboard_cache.get_int(_ownership_cache_version_store_key(), default=1)
     except Exception:
-        db.session.rollback()
-        return 1
+        value = 1
+    with _ownership_cache_version_state["lock"]:
+        _ownership_cache_version_state["value"] = value
+        _ownership_cache_version_state["last_sync_at"] = time_module.time()
+        return value
 
 
 def _ownership_sync_state_row():
     state = db.session.get(OwnershipSyncState, "global")
     if state is None:
-        state = OwnershipSyncState(id="global", version=1)
+        state = OwnershipSyncState(id="global", version=_ownership_cache_version())
         db.session.add(state)
         db.session.flush()
+    with _ownership_cache_version_state["lock"]:
+        _ownership_cache_version_state["value"] = int(state.version or 1)
+        _ownership_cache_version_state["last_sync_at"] = time_module.time()
     return state
 
 
 def _bump_ownership_sync_version():
-    now = datetime.utcnow()
     try:
-        state = db.session.get(OwnershipSyncState, "global")
-        if state is None:
-            state = OwnershipSyncState(id="global", version=1, updated_at=now)
-            db.session.add(state)
-            db.session.flush()
-        db.session.execute(
-            text(
-                "UPDATE ownership_sync_state "
-                "SET version = version + 1, updated_at = :updated_at "
-                "WHERE id = :state_id"
-            ),
-            {"updated_at": now, "state_id": "global"},
-        )
-        db.session.commit()
-        return _ownership_cache_version()
+        version = _dashboard_cache.incr(_ownership_cache_version_store_key())
     except Exception:
-        db.session.rollback()
-        raise
+        version = 1
+    with _ownership_cache_version_state["lock"]:
+        _ownership_cache_version_state["value"] = version
+        _ownership_cache_version_state["last_sync_at"] = time_module.time()
+    return version
 
 
 def _ownership_cache_get(kind):
@@ -7132,6 +7211,32 @@ def _backfill_ownership_master_sheet_urls():
         master_url = str(raw_data.get("masterSheetUrl") or "").strip()
         if master_url:
             trip.master_sheet_url = master_url
+            changed = True
+    if changed:
+        db.session.commit()
+
+
+def _backfill_ownership_next_reminder_due_dates():
+    try:
+        rows = OwnershipTrip.query.options(
+            load_only(
+                OwnershipTrip.id,
+                OwnershipTrip.start_date,
+                OwnershipTrip.end_date,
+                OwnershipTrip.reminders_json,
+                OwnershipTrip.next_reminder_due_date,
+            )
+        ).filter(
+            OwnershipTrip.reminders_json.isnot(None),
+        ).all()
+    except Exception:
+        return
+
+    changed = False
+    for trip in rows:
+        next_due_date = _update_ownership_trip_next_reminder_due_date(trip)
+        if trip.next_reminder_due_date != next_due_date:
+            trip.next_reminder_due_date = next_due_date
             changed = True
     if changed:
         db.session.commit()
@@ -7260,6 +7365,31 @@ def _ownership_trip_response(payload, cache_status, started_at, **timings):
     return response
 
 
+def _prune_ownership_realtime_events(force=False):
+    now_ts = time_module.time()
+    last_prune = _ownership_event_prune_state.get("last_prune_at", 0.0)
+    if not force and (now_ts - last_prune) < _OWNERSHIP_EVENT_PRUNE_INTERVAL_SECONDS:
+        return 0
+
+    cutoff = datetime.utcnow() - timedelta(seconds=_OWNERSHIP_EVENT_RETENTION_SECONDS)
+    try:
+        result = db.session.execute(
+            text(
+                "DELETE FROM ownership_realtime_event "
+                "WHERE created_at < :cutoff"
+            ),
+            {"cutoff": cutoff},
+        )
+        deleted = int(getattr(result, "rowcount", 0) or 0)
+        if deleted:
+            db.session.commit()
+        _ownership_event_prune_state["last_prune_at"] = now_ts
+        return deleted
+    except Exception:
+        db.session.rollback()
+        return 0
+
+
 def _publish_ownership_event(action="refresh", bump_version=True, version=None, sender_id=None, **payload):
     if version is None:
         version = _invalidate_ownership_cache() if bump_version else _ownership_cache_version()
@@ -7281,6 +7411,7 @@ def _publish_ownership_event(action="refresh", bump_version=True, version=None, 
             payload_json=json.dumps(event_payload),
         ))
         db.session.commit()
+        _prune_ownership_realtime_events()
     except Exception:
         db.session.rollback()
     # Deliver via Redis pubsub when available (cross-worker), else in-process queue.
@@ -7365,6 +7496,8 @@ def _apply_trip_payload(trip, payload):
         _replace_ownership_subtasks(trip, payload.get("subtasks") or {})
     if "reminders" in payload:
         _replace_ownership_reminders(trip, payload.get("reminders") or [])
+    elif "startDate" in payload or "endDate" in payload or "lastStatusUpdateDate" in payload:
+        _update_ownership_trip_next_reminder_due_date(trip)
     return trip
 
 
@@ -7455,6 +7588,7 @@ def _replace_ownership_reminders(trip, reminders):
     normalized = []
     if not isinstance(reminders, list):
         trip.reminders_json = normalized
+        trip.next_reminder_due_date = None
         return
     seen_days = set()
     for item in reminders:
@@ -7478,6 +7612,7 @@ def _replace_ownership_reminders(trip, reminders):
                 normalized_reminder[sent_field] = sent_value
         normalized.append(normalized_reminder)
     trip.reminders_json = normalized
+    _update_ownership_trip_next_reminder_due_date(trip)
 
 
 def _sheet_row_to_trip_payload(ws, row):
@@ -7523,15 +7658,21 @@ def seed_ownership_from_workbook(force=False):
     ws = wb.active
     created = updated = skipped = 0
     changed = False
+    existing_trips = {
+        trip.source_row: trip
+        for trip in OwnershipTrip.query.filter_by(source="ownership_sheet").all()
+        if trip.source_row is not None
+    }
     for row in range(3, ws.max_row + 1):
         payload = _sheet_row_to_trip_payload(ws, row)
         if not payload["guestName"]:
             skipped += 1
             continue
-        trip = OwnershipTrip.query.filter_by(source="ownership_sheet", source_row=row).first()
+        trip = existing_trips.get(row)
         raw_data = payload.pop("_raw", {})
         if trip is None:
             trip = OwnershipTrip(source="ownership_sheet", source_row=row)
+            existing_trips[row] = trip
             created += 1
             changed = True
         else:
@@ -7579,20 +7720,44 @@ def seed_ownership_from_workbook(force=False):
 @app.route("/api/ownership/trips", methods=["GET"])
 def get_ownership_trips():
     started_at = perf_counter()
-    cached, cache_key = _ownership_cache_get("trips")
+    try:
+        limit = max(int(request.args.get("limit", 0) or 0), 0)
+    except (TypeError, ValueError):
+        limit = 0
+    try:
+        offset = max(int(request.args.get("offset", 0) or 0), 0)
+    except (TypeError, ValueError):
+        offset = 0
+
+    cache_kind = "trips" if not limit and not offset else f"trips:{limit}:{offset}"
+    cached, cache_key = _ownership_cache_get(cache_kind)
     cached_trips = cached.get("trips") if isinstance(cached, dict) else None
     cache_has_versions = isinstance(cached_trips, list) and all(isinstance(trip, dict) and "version" in trip for trip in cached_trips)
     if cached is not None and cache_has_versions:
         return _ownership_trip_response(cached, "HIT", started_at)
     query_started_at = perf_counter()
-    trips = _ownership_trips_query().order_by(
+    base_query = _ownership_trips_query().order_by(
         OwnershipTrip.start_date.desc().nullslast(),
         OwnershipTrip.source_row.asc().nullslast(),
         OwnershipTrip.created_at.desc(),
-    ).all()
+    )
+    total_count = base_query.count()
+    trips_query = base_query.offset(offset)
+    if limit:
+        trips_query = trips_query.limit(limit)
+    trips = trips_query.all()
     query_ms = (perf_counter() - query_started_at) * 1000
     serialize_started_at = perf_counter()
-    payload = {"trips": [trip.to_dict() for trip in trips], "cacheVersion": _ownership_cache_version()}
+    payload = {
+        "trips": [trip.to_dict() for trip in trips],
+        "cacheVersion": _ownership_cache_version(),
+        "totalCount": total_count,
+        "offset": offset,
+        "returnedCount": len(trips),
+        "hasMore": bool(limit and (offset + len(trips)) < total_count),
+    }
+    if limit:
+        payload["limit"] = limit
     serialize_ms = (perf_counter() - serialize_started_at) * 1000
     cache_started_at = perf_counter()
     _ownership_cache_set(cache_key, payload)
@@ -7670,7 +7835,15 @@ def delete_ownership_trip(trip_id):
 @app.route("/api/ownership/templates", methods=["GET"])
 def get_ownership_templates():
     user_id = _ownership_user_id()
-    cached, cache_key = _ownership_cache_get(f"templates:{user_id or 'global'}")
+    try:
+        limit = max(int(request.args.get("limit", 0) or 0), 0)
+    except (TypeError, ValueError):
+        limit = 0
+    try:
+        offset = max(int(request.args.get("offset", 0) or 0), 0)
+    except (TypeError, ValueError):
+        offset = 0
+    cached, cache_key = _ownership_cache_get(f"templates:{user_id or 'global'}:{limit}:{offset}")
     if cached is not None:
         response = jsonify(cached)
         response.headers["X-Cache"] = "HIT"
@@ -7679,8 +7852,22 @@ def get_ownership_templates():
     query = OwnershipTaskTemplate.query
     if user_id:
         query = query.filter(db.or_(OwnershipTaskTemplate.user_id == user_id, OwnershipTaskTemplate.user_id.is_(None)))
-    templates = query.order_by(OwnershipTaskTemplate.name.asc()).all()
-    payload = {"templates": [template.to_dict() for template in templates], "cacheVersion": _ownership_cache_version()}
+    base_query = query.order_by(OwnershipTaskTemplate.name.asc())
+    total_count = base_query.count()
+    templates_query = base_query.offset(offset)
+    if limit:
+        templates_query = templates_query.limit(limit)
+    templates = templates_query.all()
+    payload = {
+        "templates": [template.to_dict() for template in templates],
+        "cacheVersion": _ownership_cache_version(),
+        "totalCount": total_count,
+        "offset": offset,
+        "returnedCount": len(templates),
+        "hasMore": bool(limit and (offset + len(templates)) < total_count),
+    }
+    if limit:
+        payload["limit"] = limit
     _ownership_cache_set(cache_key, payload)
     response = jsonify(payload)
     response.headers["X-Cache"] = "MISS"
@@ -7745,14 +7932,36 @@ def delete_ownership_template(template_id):
 @app.route("/api/ownership/employees", methods=["GET"])
 def get_ownership_employees():
     _ensure_ownership_employees()
-    cached, cache_key = _ownership_cache_get("employees")
+    try:
+        limit = max(int(request.args.get("limit", 0) or 0), 0)
+    except (TypeError, ValueError):
+        limit = 0
+    try:
+        offset = max(int(request.args.get("offset", 0) or 0), 0)
+    except (TypeError, ValueError):
+        offset = 0
+    cached, cache_key = _ownership_cache_get(f"employees:{limit}:{offset}")
     if cached is not None:
         response = jsonify(cached)
         response.headers["X-Cache"] = "HIT"
         response.headers["X-Cache-Backend"] = _dashboard_cache.backend_name
         return response
-    employees = OwnershipEmployee.query.filter_by(is_active=True).order_by(OwnershipEmployee.name.asc()).all()
-    payload = {"employees": [employee.to_dict() for employee in employees], "cacheVersion": _ownership_cache_version()}
+    base_query = OwnershipEmployee.query.filter_by(is_active=True).order_by(OwnershipEmployee.name.asc())
+    total_count = base_query.count()
+    employees_query = base_query.offset(offset)
+    if limit:
+        employees_query = employees_query.limit(limit)
+    employees = employees_query.all()
+    payload = {
+        "employees": [employee.to_dict() for employee in employees],
+        "cacheVersion": _ownership_cache_version(),
+        "totalCount": total_count,
+        "offset": offset,
+        "returnedCount": len(employees),
+        "hasMore": bool(limit and (offset + len(employees)) < total_count),
+    }
+    if limit:
+        payload["limit"] = limit
     _ownership_cache_set(cache_key, payload)
     response = jsonify(payload)
     response.headers["X-Cache"] = "MISS"
@@ -7871,6 +8080,18 @@ def _deliver_pending_ownership_events(ws, last_event_db_id, should_deliver):
     return next_last_id
 
 
+def _resolve_ownership_event_cursor(last_event_id):
+    event_id = str(last_event_id or "").strip()
+    if not event_id:
+        return 0
+    try:
+        event_row = OwnershipRealtimeEvent.query.filter_by(event_id=event_id).with_entities(OwnershipRealtimeEvent.id).first()
+        return int(event_row[0]) if event_row and event_row[0] else 0
+    except Exception:
+        db.session.rollback()
+        return 0
+
+
 @app.route("/api/realtime/ws", websocket=True)
 def realtime_ws():
     if WebSocketServer is None:
@@ -7885,6 +8106,8 @@ def realtime_ws():
         return ""
 
     user_id = session["user_id"]
+    last_event_id = (request.args.get("last_event_id") or "").strip()
+    last_event_db_id = _resolve_ownership_event_cursor(last_event_id)
     listener = queue.Queue(maxsize=64)
     with _ownership_streams_lock:
         _ownership_streams.add(listener)
@@ -7980,11 +8203,18 @@ def realtime_ws():
         return True
 
     try:
+        if last_event_db_id:
+            last_event_db_id = _deliver_pending_ownership_events(
+                ws,
+                last_event_db_id,
+                lambda event_payload: event_payload.get("channel") == "ownership",
+            )
         _send_realtime_ws_json(ws, {
             "channel": "ownership",
             "type": "ownership-event",
             "event": "ready",
             "version": _ownership_cache_version(),
+            "lastEventId": last_event_id or None,
             "timestamp": datetime.utcnow().isoformat() + "Z",
         })
         _send_realtime_ws_json(ws, {
@@ -8000,12 +8230,11 @@ def realtime_ws():
         last_ping = datetime.utcnow()
         while ws_alive["value"]:
             delivered = False
-            last_event_db_id = _deliver_pending_ownership_events(ws, last_event_db_id, should_deliver)
 
             # 1. In-process queue (used when Redis is unavailable)
             if not use_redis:
                 try:
-                    event_payload = listener.get(timeout=0.5)
+                    event_payload = listener.get(timeout=25)
                     if should_deliver(event_payload):
                         if not _send_realtime_ws_json(ws, event_payload):
                             break
@@ -8016,7 +8245,7 @@ def realtime_ws():
             # 2. Redis pubsub for ownership events
             if ownership_pubsub is not None:
                 try:
-                    message = ownership_pubsub.get_message(timeout=0.5 if use_redis else 0.01)
+                    message = ownership_pubsub.get_message(timeout=0.1)
                     if message and message.get("data"):
                         event_payload = message["data"]
                         if isinstance(event_payload, str):
@@ -8034,7 +8263,7 @@ def realtime_ws():
             # 3. Redis pubsub for ticket events
             if ticket_pubsub is not None:
                 try:
-                    message = ticket_pubsub.get_message(timeout=0.01)
+                    message = ticket_pubsub.get_message(timeout=0.1)
                     if message and message.get("data"):
                         event_payload = message["data"]
                         if isinstance(event_payload, str):

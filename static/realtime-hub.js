@@ -26,6 +26,7 @@ let reconnectDelay = 1000;
 const RECONNECT_CAP = 30000;
 const HEARTBEAT_INTERVAL = 25000;
 let heartbeatTimer = null;
+let lastOwnershipEventId = '';
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -40,6 +41,12 @@ function broadcast(msg) {
 
 function statusMsg(state) {
   return { type: 'stream-status', state, ts: Date.now() };
+}
+
+function buildWsUrl() {
+  const proto = self.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const base = `${proto}//${self.location.host}${WS_PATH}`;
+  return lastOwnershipEventId ? `${base}?last_event_id=${encodeURIComponent(lastOwnershipEventId)}` : base;
 }
 
 // ── heartbeat & watchdog ─────────────────────────────────────────
@@ -104,8 +111,7 @@ function connect() {
   wsState = 'connecting';
   broadcast(statusMsg('connecting'));
 
-  const proto = self.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${proto}//${self.location.host}${WS_PATH}`;
+  const url = buildWsUrl();
 
   try { ws = new WebSocket(url); }
   catch (_) { ws = null; wsState = 'closed'; scheduleReconnect(); return; }
@@ -122,6 +128,7 @@ function connect() {
     if (typeof evt.data !== 'string') return;
     let msg;
     try { msg = JSON.parse(evt.data); } catch (_) { return; }
+    if (msg && msg.eventId) lastOwnershipEventId = msg.eventId;
     // System pings are connection-health — don't relay to tabs
     if (msg.type === 'ping' && msg.channel === 'system') return;
     broadcast(msg);
@@ -168,7 +175,11 @@ self.onconnect = (evt) => {
   port.onmessage = (msgEvt) => {
     const data = msgEvt.data || {};
     if (data.type === 'unsubscribe') { removePort(port); return; }
-    if (data.type === 'subscribe')   { if (!ws && wsState !== 'connecting') connect(); return; }
+    if (data.type === 'subscribe')   {
+      if (data.lastEventId) lastOwnershipEventId = data.lastEventId;
+      if (!ws && wsState !== 'connecting') connect();
+      return;
+    }
     if (data.type === 'ping')        { try { port.postMessage(statusMsg(wsState === 'open' ? 'open' : 'connecting')); } catch (_) {} return; }
   };
 

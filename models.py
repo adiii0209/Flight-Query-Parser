@@ -238,6 +238,10 @@ class OwnershipTrip(db.Model):
         db.Index("ix_ownership_trip_user_start", "user_id", "start_date"),
         db.Index("ix_ownership_trip_owner", "owner"),
         db.Index("ix_ownership_trip_source_row", "source_row"),
+        db.Index("ix_ownership_trip_version", "version"),
+        db.Index("ix_ownership_trip_last_status_update_date", "last_status_update_date"),
+        db.Index("ix_ownership_trip_master_sheet_url", "master_sheet_url"),
+        db.Index("ix_ownership_trip_next_reminder_due_date", "next_reminder_due_date"),
     )
     version = db.Column(db.Integer, nullable=False, default=1)
 
@@ -269,6 +273,7 @@ class OwnershipTrip(db.Model):
     owner = db.Column(db.String(120), default="")
     master_sheet_url = db.Column(db.Text, default="")
     last_status_update_date = db.Column(db.Date, nullable=True)
+    next_reminder_due_date = db.Column(db.Date, nullable=True)
     latest_update = db.Column(db.Text, default="")
     present_work_assigned_to = db.Column(db.String(120), default="")
     subtasks_json = db.Column(CompatJSON(empty_factory=dict))
@@ -278,14 +283,14 @@ class OwnershipTrip(db.Model):
     subtasks = db.relationship(
         "OwnershipSubtask",
         backref="trip",
-        lazy=True,
+        lazy="selectin",
         cascade="all, delete-orphan",
         order_by="OwnershipSubtask.row_order",
     )
     reminders = db.relationship(
         "OwnershipReminder",
         backref="trip",
-        lazy=True,
+        lazy="selectin",
         cascade="all, delete-orphan",
         order_by="OwnershipReminder.days_before",
     )
@@ -332,6 +337,7 @@ class OwnershipTrip(db.Model):
             "owner": self.owner or "",
             "masterSheetUrl": self.master_sheet_url or raw_sheet_data.get("masterSheetUrl") or "",
             "lastStatusUpdateDate": self.last_status_update_date.isoformat() if self.last_status_update_date else "",
+            "nextReminderDueDate": self.next_reminder_due_date.isoformat() if self.next_reminder_due_date else "",
             "latestUpdate": self.latest_update or "",
             "presentWorkAssignedTo": self.present_work_assigned_to or "",
             "subtasks": subtask_groups,
@@ -412,7 +418,7 @@ class OwnershipTaskTemplate(db.Model):
     tasks = db.relationship(
         "OwnershipTaskTemplateItem",
         backref="template",
-        lazy=True,
+        lazy="selectin",
         cascade="all, delete-orphan",
         order_by="OwnershipTaskTemplateItem.row_order",
     )
@@ -488,6 +494,8 @@ class OwnershipRealtimeEvent(db.Model):
     __tablename__ = "ownership_realtime_event"
     __table_args__ = (
         db.Index("ix_ownership_realtime_event_created_at", "created_at"),
+        db.Index("ix_ownership_realtime_event_channel", "channel"),
+        db.Index("ix_ownership_realtime_event_channel_created_at", "channel", "created_at"),
     )
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)

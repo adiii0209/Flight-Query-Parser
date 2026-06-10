@@ -90,11 +90,11 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     
     # Relationships
-    corporates: Mapped[List["Corporate"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    passengers: Mapped[List["Passenger"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    itineraries: Mapped[List["Itinerary"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    billing_accounts: Mapped[List["BillingAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    supplier_accounts: Mapped[List["SupplierAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    corporates: Mapped[List["Corporate"]] = relationship(back_populates="user", cascade="all, delete-orphan", lazy="selectin")
+    passengers: Mapped[List["Passenger"]] = relationship(back_populates="user", cascade="all, delete-orphan", lazy="selectin")
+    itineraries: Mapped[List["Itinerary"]] = relationship(back_populates="user", cascade="all, delete-orphan", lazy="selectin")
+    billing_accounts: Mapped[List["BillingAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan", lazy="selectin")
+    supplier_accounts: Mapped[List["SupplierAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan", lazy="selectin")
     
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -153,9 +153,9 @@ class Corporate(Base):
     
     # Relationships
     user: Mapped["User"] = relationship(back_populates="corporates")
-    passenger_links: Mapped[List["CorporatePassenger"]] = relationship(back_populates="corporate", cascade="all, delete-orphan")
-    promo_codes: Mapped[List["CorporateAirlinePromoCode"]] = relationship(back_populates="corporate", cascade="all, delete-orphan")
-    itineraries: Mapped[List["Itinerary"]] = relationship(back_populates="corporate")
+    passenger_links: Mapped[List["CorporatePassenger"]] = relationship(back_populates="corporate", cascade="all, delete-orphan", lazy="selectin")
+    promo_codes: Mapped[List["CorporateAirlinePromoCode"]] = relationship(back_populates="corporate", cascade="all, delete-orphan", lazy="selectin")
+    itineraries: Mapped[List["Itinerary"]] = relationship(back_populates="corporate", lazy="selectin")
     
     # Indexes
     __table_args__ = (
@@ -236,11 +236,11 @@ class Passenger(Base):
     
     # Relationships
     user: Mapped["User"] = relationship(back_populates="passengers")
-    corporate_links: Mapped[List["CorporatePassenger"]] = relationship(back_populates="passenger", cascade="all, delete-orphan")
-    frequent_flyer_accounts: Mapped[List["PassengerFrequentFlyer"]] = relationship(back_populates="passenger", cascade="all, delete-orphan")
-    preferences: Mapped[Optional["PassengerPreferences"]] = relationship(back_populates="passenger", cascade="all, delete-orphan", uselist=False)
-    travel_documents: Mapped[List["PassengerTravelDocument"]] = relationship(back_populates="passenger", cascade="all, delete-orphan")
-    itineraries: Mapped[List["Itinerary"]] = relationship(back_populates="passenger")
+    corporate_links: Mapped[List["CorporatePassenger"]] = relationship(back_populates="passenger", cascade="all, delete-orphan", lazy="selectin")
+    frequent_flyer_accounts: Mapped[List["PassengerFrequentFlyer"]] = relationship(back_populates="passenger", cascade="all, delete-orphan", lazy="selectin")
+    preferences: Mapped[Optional["PassengerPreferences"]] = relationship(back_populates="passenger", cascade="all, delete-orphan", uselist=False, lazy="selectin")
+    travel_documents: Mapped[List["PassengerTravelDocument"]] = relationship(back_populates="passenger", cascade="all, delete-orphan", lazy="selectin")
+    itineraries: Mapped[List["Itinerary"]] = relationship(back_populates="passenger", lazy="selectin")
     
     # Indexes
     __table_args__ = (
@@ -309,8 +309,8 @@ class Airline(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     # Relationships
-    promo_codes: Mapped[List["CorporateAirlinePromoCode"]] = relationship(back_populates="airline")
-    frequent_flyer_accounts: Mapped[List["PassengerFrequentFlyer"]] = relationship(back_populates="airline")
+    promo_codes: Mapped[List["CorporateAirlinePromoCode"]] = relationship(back_populates="airline", lazy="selectin")
+    frequent_flyer_accounts: Mapped[List["PassengerFrequentFlyer"]] = relationship(back_populates="airline", lazy="selectin")
     
     # Indexes
     __table_args__ = (
@@ -356,8 +356,8 @@ class CorporatePassenger(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     
     # Relationships
-    corporate: Mapped["Corporate"] = relationship(back_populates="passenger_links")
-    passenger: Mapped["Passenger"] = relationship(back_populates="corporate_links")
+    corporate: Mapped["Corporate"] = relationship(back_populates="passenger_links", lazy="selectin")
+    passenger: Mapped["Passenger"] = relationship(back_populates="corporate_links", lazy="selectin")
     
     # Indexes
     __table_args__ = (
@@ -412,8 +412,8 @@ class CorporateAirlinePromoCode(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     
     # Relationships
-    corporate: Mapped["Corporate"] = relationship(back_populates="promo_codes")
-    airline: Mapped["Airline"] = relationship(back_populates="promo_codes")
+    corporate: Mapped["Corporate"] = relationship(back_populates="promo_codes", lazy="selectin")
+    airline: Mapped["Airline"] = relationship(back_populates="promo_codes", lazy="selectin")
     
     def to_dict(self) -> dict:
         return {
@@ -456,8 +456,8 @@ class PassengerFrequentFlyer(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     
     # Relationships
-    passenger: Mapped["Passenger"] = relationship(back_populates="frequent_flyer_accounts")
-    airline: Mapped["Airline"] = relationship(back_populates="frequent_flyer_accounts")
+    passenger: Mapped["Passenger"] = relationship(back_populates="frequent_flyer_accounts", lazy="selectin")
+    airline: Mapped["Airline"] = relationship(back_populates="frequent_flyer_accounts", lazy="selectin")
     
     # Indexes
     __table_args__ = (
@@ -514,7 +514,7 @@ class PassengerPreferences(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    passenger: Mapped["Passenger"] = relationship(back_populates="preferences")
+    passenger: Mapped["Passenger"] = relationship(back_populates="preferences", lazy="selectin")
     
     def to_dict(self) -> dict:
         return {
@@ -563,7 +563,7 @@ class PassengerTravelDocument(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     
     # Relationships
-    passenger: Mapped["Passenger"] = relationship(back_populates="travel_documents")
+    passenger: Mapped["Passenger"] = relationship(back_populates="travel_documents", lazy="selectin")
     
     # Indexes
     __table_args__ = (
@@ -667,11 +667,11 @@ class Itinerary(Base):
     supplier_account_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("supplier_accounts.id"), nullable=True)
     
     # Relationships
-    user: Mapped["User"] = relationship(back_populates="itineraries")
-    passenger: Mapped[Optional["Passenger"]] = relationship(back_populates="itineraries")
-    corporate: Mapped[Optional["Corporate"]] = relationship(back_populates="itineraries")
-    billing_account: Mapped[Optional["BillingAccount"]] = relationship(back_populates="itineraries")
-    supplier_account: Mapped[Optional["SupplierAccount"]] = relationship(back_populates="itineraries")
+    user: Mapped["User"] = relationship(back_populates="itineraries", lazy="selectin")
+    passenger: Mapped[Optional["Passenger"]] = relationship(back_populates="itineraries", lazy="selectin")
+    corporate: Mapped[Optional["Corporate"]] = relationship(back_populates="itineraries", lazy="selectin")
+    billing_account: Mapped[Optional["BillingAccount"]] = relationship(back_populates="itineraries", lazy="selectin")
+    supplier_account: Mapped[Optional["SupplierAccount"]] = relationship(back_populates="itineraries", lazy="selectin")
     
     # Indexes
     __table_args__ = (
@@ -693,9 +693,9 @@ class Itinerary(Base):
         except (TypeError, ValueError):
             return default
 
-    def _get_flight_summary(self) -> dict:
+    def _get_flight_summary(self, raw_input_data=None) -> dict:
         flights = self._parse_json_field(self.flights_data, [])
-        raw_input_data = self._parse_json_field(self.raw_input_data, None)
+        raw_input_data = self._parse_json_field(raw_input_data, None)
         if not isinstance(flights, list):
             flights = []
 
@@ -811,6 +811,7 @@ class Itinerary(Base):
 
     def to_detail_dict(self, include_flights: bool = False) -> dict:
         import json
+        raw_input_data = self._parse_json_field(self.raw_input_data, None)
         
         data = {
             "id": self.id,
@@ -865,7 +866,7 @@ class Itinerary(Base):
         if include_flights:
             data["flights"] = self._parse_json_field(self.flights_data, [])
             data["parser_output_text"] = self.parser_output_text
-            data["raw_input_data"] = self._parse_json_field(self.raw_input_data, None)
+            data["raw_input_data"] = raw_input_data
         
         return data
 

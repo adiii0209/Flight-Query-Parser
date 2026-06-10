@@ -7,8 +7,8 @@ import json
 from datetime import datetime, date
 from functools import wraps
 from flask import Blueprint, request, jsonify, session
-from sqlalchemy import String, cast
-from sqlalchemy.orm import joinedload, load_only
+from sqlalchemy import String, cast, func
+from sqlalchemy.orm import joinedload, load_only, selectinload, defer
 
 from extensions_v2 import db_session
 from models_v2 import (
@@ -91,7 +91,6 @@ def _itinerary_summary_options():
             Itinerary.passenger_id,
             Itinerary.corporate_id,
             Itinerary.flights_data,
-            Itinerary.raw_input_data,
             Itinerary.supplier_account_id,
             Itinerary.supplier_name,
             Itinerary.supplier_email,
@@ -127,17 +126,63 @@ def _itinerary_summary_options():
 
 def _itinerary_detail_options():
     return (
+        load_only(
+            Itinerary.id,
+            Itinerary.status,
+            Itinerary.title,
+            Itinerary.description,
+            Itinerary.reference_number,
+            Itinerary.trip_type,
+            Itinerary.num_passengers,
+            Itinerary.passengers_data,
+            Itinerary.selected_flight_option,
+            Itinerary.total_amount,
+            Itinerary.markup,
+            Itinerary.service_charge,
+            Itinerary.gst_amount,
+            Itinerary.discount_amount,
+            Itinerary.promo_code_used,
+            Itinerary.billing_type,
+            Itinerary.billing_account_id,
+            Itinerary.bill_to_name,
+            Itinerary.bill_to_email,
+            Itinerary.bill_to_phone,
+            Itinerary.bill_to_address,
+            Itinerary.bill_to_company,
+            Itinerary.bill_to_gst,
+            Itinerary.requires_approval,
+            Itinerary.approved_by,
+            Itinerary.approved_at,
+            Itinerary.approval_remarks,
+            Itinerary.held_at,
+            Itinerary.hold_deadline,
+            Itinerary.confirmed_at,
+            Itinerary.reverted_at,
+            Itinerary.created_at,
+            Itinerary.updated_at,
+            Itinerary.user_id,
+            Itinerary.passenger_id,
+            Itinerary.corporate_id,
+            Itinerary.parser_output_text,
+            Itinerary.supplier_account_id,
+            Itinerary.supplier_name,
+            Itinerary.supplier_email,
+            Itinerary.supplier_phone,
+            Itinerary.supplier_address,
+            Itinerary.supplier_company,
+            Itinerary.supplier_gst,
+        ),
         joinedload(Itinerary.passenger),
         joinedload(Itinerary.corporate),
         joinedload(Itinerary.billing_account),
         joinedload(Itinerary.supplier_account),
     )
 
-
-def _get_itinerary_detail_record(itinerary_id, user_id):
-    return db_session.query(Itinerary).options(
-        *_itinerary_detail_options()
-    ).filter_by(
+def _get_itinerary_detail_record(itinerary_id, user_id, include_flights=False):
+    query = db_session.query(Itinerary).options(*_itinerary_detail_options())
+    if not include_flights:
+        query = query.options(defer(Itinerary.raw_input_data))
+    return query.filter_by(
         id=itinerary_id,
         user_id=user_id
     ).first()
@@ -189,14 +234,106 @@ def get_airline_by_code(iata_code):
 @login_required
 def get_corporates():
     """Get all corporates for the logged-in user."""
-    corporates = db_session.query(Corporate).filter_by(
+    try:
+        limit = max(int(request.args.get('limit', 0) or 0), 0)
+    except (TypeError, ValueError):
+        limit = 0
+    try:
+        offset = max(int(request.args.get('offset', 0) or 0), 0)
+    except (TypeError, ValueError):
+        offset = 0
+
+    base_query = db_session.query(Corporate).options(
+        load_only(
+            Corporate.id,
+            Corporate.company_name,
+            Corporate.gst_number,
+            Corporate.pan_number,
+            Corporate.billing_address_line1,
+            Corporate.billing_address_line2,
+            Corporate.billing_city,
+            Corporate.billing_state,
+            Corporate.billing_pincode,
+            Corporate.billing_country,
+            Corporate.contact_person_name,
+            Corporate.contact_email,
+            Corporate.contact_phone,
+            Corporate.contact_alternate_phone,
+            Corporate.internal_remarks,
+            Corporate.credit_limit,
+            Corporate.payment_terms_days,
+            Corporate.created_at,
+            Corporate.updated_at,
+            Corporate.is_active,
+        )
+    ).filter_by(
         user_id=session['user_id'],
         is_active=True
-    ).order_by(Corporate.company_name).all()
-    
-    return jsonify({
-        "corporates": [c.to_dict() for c in corporates]
-    })
+    ).order_by(Corporate.company_name)
+    total_count = base_query.count()
+    corporates_query = base_query.offset(offset)
+    if limit:
+        corporates_query = corporates_query.limit(limit)
+    corporates = corporates_query.all()
+    returned_count = len(corporates)
+    corporate_ids = [corporate.id for corporate in corporates]
+    passenger_counts = {}
+    promo_counts = {}
+    if corporate_ids:
+        passenger_counts = dict(
+            db_session.query(
+                CorporatePassenger.corporate_id,
+                func.count(CorporatePassenger.id),
+            ).filter(
+                CorporatePassenger.corporate_id.in_(corporate_ids),
+                CorporatePassenger.is_active == True,
+            ).group_by(CorporatePassenger.corporate_id).all()
+        )
+        promo_counts = dict(
+            db_session.query(
+                CorporateAirlinePromoCode.corporate_id,
+                func.count(CorporateAirlinePromoCode.id),
+            ).filter(
+                CorporateAirlinePromoCode.corporate_id.in_(corporate_ids),
+                CorporateAirlinePromoCode.is_active == True,
+            ).group_by(CorporateAirlinePromoCode.corporate_id).all()
+        )
+    payload = {
+        "corporates": [
+            {
+                "id": corporate.id,
+                "company_name": corporate.company_name,
+                "gst_number": corporate.gst_number,
+                "pan_number": corporate.pan_number,
+                "billing_address_line1": corporate.billing_address_line1,
+                "billing_address_line2": corporate.billing_address_line2,
+                "billing_city": corporate.billing_city,
+                "billing_state": corporate.billing_state,
+                "billing_pincode": corporate.billing_pincode,
+                "billing_country": corporate.billing_country,
+                "contact_person_name": corporate.contact_person_name,
+                "contact_email": corporate.contact_email,
+                "contact_phone": corporate.contact_phone,
+                "contact_alternate_phone": corporate.contact_alternate_phone,
+                "internal_remarks": corporate.internal_remarks,
+                "credit_limit": corporate.credit_limit,
+                "payment_terms_days": corporate.payment_terms_days,
+                "created_at": corporate.created_at.isoformat() if corporate.created_at else None,
+                "updated_at": corporate.updated_at.isoformat() if corporate.updated_at else None,
+                "is_active": corporate.is_active,
+                "passengers_count": int(passenger_counts.get(corporate.id, 0) or 0),
+                "promo_codes_count": int(promo_counts.get(corporate.id, 0) or 0),
+            }
+            for corporate in corporates
+        ],
+        "total_count": total_count,
+        "offset": offset,
+        "returned_count": returned_count,
+        "has_more": bool(limit and (offset + returned_count) < total_count),
+    }
+    if limit:
+        payload["limit"] = limit
+    return jsonify(payload)
 
 
 @api_v2.route('/corporates', methods=['POST'])
@@ -265,7 +402,10 @@ def create_corporate():
 @login_required
 def get_corporate(corporate_id):
     """Get a specific corporate with related data."""
-    corporate = db_session.query(Corporate).filter_by(
+    corporate = db_session.query(Corporate).options(
+        selectinload(Corporate.passenger_links).selectinload(CorporatePassenger.passenger),
+        selectinload(Corporate.promo_codes).selectinload(CorporateAirlinePromoCode.airline),
+    ).filter_by(
         id=corporate_id,
         user_id=session['user_id']
     ).first()
@@ -276,7 +416,13 @@ def get_corporate(corporate_id):
     data = corporate.to_dict()
     data['passengers'] = [link.to_dict() for link in corporate.passenger_links if link.is_active]
     data['promo_codes'] = [pc.to_dict() for pc in corporate.promo_codes if pc.is_active]
-    data['itineraries'] = [it.to_dict() for it in corporate.itineraries][:10]  # Last 10
+    itineraries = db_session.query(Itinerary).options(
+        *_itinerary_summary_options()
+    ).filter_by(
+        corporate_id=corporate_id,
+        user_id=session['user_id']
+    ).order_by(Itinerary.created_at.desc()).limit(10).all()
+    data['itineraries'] = [it.to_summary_dict(include_flights=False) for it in itineraries]
     
     return jsonify(data)
 
@@ -372,16 +518,25 @@ def delete_corporate(corporate_id):
 @login_required
 def get_corporate_promo_codes(corporate_id):
     """Get promo codes for a corporate."""
-    corporate = db_session.query(Corporate).filter_by(
-        id=corporate_id,
-        user_id=session['user_id']
-    ).first()
-    
-    if not corporate:
+    if not db_session.query(Corporate.id).filter(
+        Corporate.id == corporate_id,
+        Corporate.user_id == session['user_id'],
+        Corporate.is_active == True,
+    ).first():
         return jsonify({"error": "Corporate not found"}), 404
-    
-    promo_codes = [pc.to_dict() for pc in corporate.promo_codes if pc.is_active]
-    return jsonify({"promo_codes": promo_codes})
+
+    promo_codes = db_session.query(CorporateAirlinePromoCode).options(
+        joinedload(CorporateAirlinePromoCode.airline).load_only(
+            Airline.id,
+            Airline.iata_code,
+            Airline.name,
+        )
+    ).filter(
+        CorporateAirlinePromoCode.corporate_id == corporate_id,
+        CorporateAirlinePromoCode.is_active == True,
+        CorporateAirlinePromoCode.corporate.has(user_id=session['user_id'], is_active=True),
+    ).order_by(CorporateAirlinePromoCode.created_at.desc()).all()
+    return jsonify({"promo_codes": [pc.to_dict() for pc in promo_codes]})
 
 
 @api_v2.route('/corporates/<corporate_id>/promo-codes', methods=['POST'])
@@ -464,14 +619,34 @@ def delete_corporate_promo_code(corporate_id, promo_id):
 @login_required
 def get_passengers():
     """Get all passengers for the logged-in user."""
-    passengers = db_session.query(Passenger).filter_by(
+    try:
+        limit = max(int(request.args.get('limit', 0) or 0), 0)
+    except (TypeError, ValueError):
+        limit = 0
+    try:
+        offset = max(int(request.args.get('offset', 0) or 0), 0)
+    except (TypeError, ValueError):
+        offset = 0
+
+    base_query = db_session.query(Passenger).filter_by(
         user_id=session['user_id'],
         is_active=True
-    ).order_by(Passenger.first_name, Passenger.last_name).all()
-    
-    return jsonify({
-        "passengers": [p.to_dict() for p in passengers]
-    })
+    ).order_by(Passenger.first_name, Passenger.last_name)
+    total_count = base_query.count()
+    passengers_query = base_query.offset(offset)
+    if limit:
+        passengers_query = passengers_query.limit(limit)
+    passengers = passengers_query.all()
+    payload = {
+        "passengers": [p.to_dict() for p in passengers],
+        "total_count": total_count,
+        "offset": offset,
+        "returned_count": len(passengers),
+        "has_more": bool(limit and (offset + len(passengers)) < total_count),
+    }
+    if limit:
+        payload["limit"] = limit
+    return jsonify(payload)
 
 
 @api_v2.route('/passengers', methods=['POST'])
@@ -558,7 +733,12 @@ def create_passenger():
 @login_required
 def get_passenger(passenger_id):
     """Get a specific passenger with all related data."""
-    passenger = db_session.query(Passenger).filter_by(
+    passenger = db_session.query(Passenger).options(
+        selectinload(Passenger.frequent_flyer_accounts).selectinload(PassengerFrequentFlyer.airline),
+        selectinload(Passenger.travel_documents),
+        selectinload(Passenger.preferences),
+        selectinload(Passenger.corporate_links).selectinload(CorporatePassenger.corporate),
+    ).filter_by(
         id=passenger_id,
         user_id=session['user_id']
     ).first()
@@ -708,16 +888,25 @@ def delete_passenger(passenger_id):
 @login_required
 def get_passenger_frequent_flyer(passenger_id):
     """Get frequent flyer accounts for a passenger."""
-    passenger = db_session.query(Passenger).filter_by(
-        id=passenger_id,
-        user_id=session['user_id']
-    ).first()
-    
-    if not passenger:
+    if not db_session.query(Passenger.id).filter(
+        Passenger.id == passenger_id,
+        Passenger.user_id == session['user_id'],
+        Passenger.is_active == True,
+    ).first():
         return jsonify({"error": "Passenger not found"}), 404
-    
-    accounts = [ff.to_dict() for ff in passenger.frequent_flyer_accounts if ff.is_active]
-    return jsonify({"frequent_flyer_accounts": accounts})
+
+    accounts = db_session.query(PassengerFrequentFlyer).options(
+        joinedload(PassengerFrequentFlyer.airline).load_only(
+            Airline.id,
+            Airline.iata_code,
+            Airline.name,
+        )
+    ).filter(
+        PassengerFrequentFlyer.passenger_id == passenger_id,
+        PassengerFrequentFlyer.is_active == True,
+        PassengerFrequentFlyer.passenger.has(user_id=session['user_id'], is_active=True),
+    ).order_by(PassengerFrequentFlyer.created_at.desc()).all()
+    return jsonify({"frequent_flyer_accounts": [ff.to_dict() for ff in accounts]})
 
 
 @api_v2.route('/passengers/<passenger_id>/frequent-flyer', methods=['POST'])
@@ -898,16 +1087,19 @@ def save_passenger_preferences(passenger_id):
 @login_required
 def get_passenger_documents(passenger_id):
     """Get travel documents for a passenger."""
-    passenger = db_session.query(Passenger).filter_by(
-        id=passenger_id,
-        user_id=session['user_id']
-    ).first()
-    
-    if not passenger:
+    if not db_session.query(Passenger.id).filter(
+        Passenger.id == passenger_id,
+        Passenger.user_id == session['user_id'],
+        Passenger.is_active == True,
+    ).first():
         return jsonify({"error": "Passenger not found"}), 404
-    
-    documents = [doc.to_dict() for doc in passenger.travel_documents if doc.is_active]
-    return jsonify({"documents": documents})
+
+    documents = db_session.query(PassengerTravelDocument).filter(
+        PassengerTravelDocument.passenger_id == passenger_id,
+        PassengerTravelDocument.is_active == True,
+        PassengerTravelDocument.passenger.has(user_id=session['user_id'], is_active=True),
+    ).order_by(PassengerTravelDocument.created_at.desc()).all()
+    return jsonify({"documents": [doc.to_dict() for doc in documents]})
 
 
 @api_v2.route('/passengers/<passenger_id>/documents', methods=['POST'])
@@ -1258,7 +1450,7 @@ def create_itinerary():
         db_session.add(itinerary)
         db_session.commit()
         
-        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'])
+        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'], include_flights=True)
         return jsonify({
             "message": "Itinerary created successfully",
             "itinerary": detail_itinerary.to_detail_dict(include_flights=True)
@@ -1273,7 +1465,7 @@ def create_itinerary():
 @login_required
 def get_itinerary(itinerary_id):
     """Get a specific itinerary with full details."""
-    itinerary = _get_itinerary_detail_record(itinerary_id, session['user_id'])
+    itinerary = _get_itinerary_detail_record(itinerary_id, session['user_id'], include_flights=True)
     
     if not itinerary:
         return jsonify({"error": "Itinerary not found"}), 404
@@ -1286,7 +1478,8 @@ def get_itinerary(itinerary_id):
 def update_itinerary(itinerary_id):
     """Update an itinerary."""
     try:
-        itinerary = _get_itinerary_detail_record(itinerary_id, session['user_id'])
+        response_wants_flights = request.args.get('response') == 'detail'
+        itinerary = _get_itinerary_detail_record(itinerary_id, session['user_id'], include_flights=response_wants_flights)
         
         if not itinerary:
             return jsonify({"error": "Itinerary not found"}), 404
@@ -1353,12 +1546,12 @@ def update_itinerary(itinerary_id):
         
         db_session.commit()
         
-        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'])
+        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'], include_flights=response_wants_flights)
         return jsonify({
             "message": "Itinerary updated successfully",
             "itinerary": _itinerary_response(
                 detail_itinerary,
-                include_flights=request.args.get('response') == 'detail'
+                include_flights=response_wants_flights
             )
         })
         
@@ -1415,7 +1608,7 @@ def approve_itinerary(itinerary_id):
         itinerary.approval_remarks = data.get('remarks')
         
         db_session.commit()
-        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'])
+        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'], include_flights=False)
         
         return jsonify({
             "message": "Itinerary approved successfully",
@@ -1458,7 +1651,7 @@ def hold_itinerary(itinerary_id):
             itinerary.hold_deadline = None
         
         db_session.commit()
-        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'])
+        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'], include_flights=False)
         
         return jsonify({
             "message": "Itinerary put on hold",
@@ -1487,7 +1680,7 @@ def confirm_itinerary(itinerary_id):
         itinerary.confirmed_at = datetime.utcnow()
         
         db_session.commit()
-        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'])
+        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'], include_flights=False)
         
         return jsonify({
             "message": "Itinerary confirmed",
@@ -1516,7 +1709,7 @@ def revert_itinerary(itinerary_id):
         itinerary.reverted_at = datetime.utcnow()
         
         db_session.commit()
-        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'])
+        detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'], include_flights=False)
         
         return jsonify({
             "message": "Itinerary reverted to approved",
@@ -1566,7 +1759,9 @@ def get_dashboard_stats():
     ).scalar() or 0
     
     # Recent itineraries
-    recent_itineraries = db_session.query(Itinerary).filter_by(
+    recent_itineraries = db_session.query(Itinerary).options(
+        *_itinerary_summary_options()
+    ).filter_by(
         user_id=user_id
     ).order_by(Itinerary.created_at.desc()).limit(5).all()
     
@@ -1580,7 +1775,7 @@ def get_dashboard_stats():
         "confirmed_count": confirmed_count,
         "total_revenue": total_revenue,
         "pending_revenue": pending_revenue,
-        "recent_itineraries": [it.to_dict() for it in recent_itineraries]
+        "recent_itineraries": [it.to_summary_dict(include_flights=False) for it in recent_itineraries]
     })
 
 
