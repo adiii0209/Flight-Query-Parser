@@ -66,7 +66,13 @@ const PAGE_SIZE = 99999;
 let expandedRows = new Set();
 let selectedTrips = new Set();
 let subtaskContext = null; // { tripId, statusKey }
-let pendingNewSubtaskReminder = null;
+function ewGetTodayDateStr() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const d2 = String(d.getDate()).padStart(2, '0');
+  return d.getFullYear() + '-' + m + '-' + d2;
+}
+let pendingNewSubtaskReminder = { date: ewGetTodayDateStr(), label: 'Due today' };
 let applyTemplateState = { tplId: '', tripId: '', selectedIndexes: [] };
 let expandedTemplateIds = new Set();
 let editingTripId = null;
@@ -1036,8 +1042,14 @@ function calcProgress(trip) {
 
 function formatDate(dateStr) {
   if (!dateStr) return '—';
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' });
+  const parts = String(dateStr).split('-');
+  if (parts.length === 3) {
+    const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    if (!isNaN(d.getTime())) return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' });
+  }
+  const fallback = new Date(dateStr);
+  if (!isNaN(fallback.getTime())) return fallback.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' });
+  return '—';
 }
 
 function dateSoonClass(dateStr) {
@@ -1797,7 +1809,21 @@ function subtaskReminder(sub) {
   return sub?.metadata?.reminder || null;
 }
 
+function formatReminderDateLabel(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  if (isNaN(d.getTime())) return dateStr;
+  if (d.getTime() === today.getTime()) return 'Due today';
+  if (d.getTime() === tomorrow.getTime()) return 'Due tomorrow';
+  return `Due ${new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).format(d)}`;
+}
+
 function reminderLabel(reminder) {
+  if (reminder?.date) return formatReminderDateLabel(reminder.date);
   const days = parseInt(reminder?.days, 10);
   if (!days) return '';
   const dir = days < 0 ? 'after' : 'before';
@@ -1817,8 +1843,19 @@ function openSubtaskReminderModal(subtaskId) {
     modal.innerHTML = `
       <div class="crm-mini-modal" role="dialog" aria-modal="true">
         <div class="crm-mini-modal-title">${BELL_ICON}<span>Subtask Reminder</span></div>
-        <div class="crm-reminder-row">
-          <span>Alert</span>
+        <div class="crm-reminder-row" style="gap:0.4rem;">
+          <span style="font-size:0.75rem;color:var(--crm-text-3);">Type</span>
+          <select id="subtaskReminderType" class="crm-form-input" style="padding:0.2rem 0.4rem; height:auto; width:auto; font-size:0.75rem;">
+            <option value="date">On specific date</option>
+            <option value="relative">Days before/after trip</option>
+          </select>
+        </div>
+        <div id="subtaskReminderDateRow" class="crm-reminder-row">
+          <span style="font-size:0.75rem;color:var(--crm-text-3);">Date</span>
+          <input type="date" id="subtaskReminderDate" class="crm-form-input" style="font-size:0.75rem;height:auto;padding:0.2rem 0.4rem;">
+        </div>
+        <div id="subtaskReminderRelativeRow" class="crm-reminder-row" style="display:none;">
+          <span style="font-size:0.75rem;color:var(--crm-text-3);">Alert</span>
           <input type="number" id="subtaskReminderDays" min="1" max="180" value="7">
           <select id="subtaskReminderDir" class="crm-form-input" style="padding:0.2rem 0.4rem; height:auto; width:auto; font-size:0.75rem;">
             <option value="before">days before trip</option>
@@ -1836,10 +1873,28 @@ function openSubtaskReminderModal(subtaskId) {
   }
 
   modal.dataset.subtaskId = subtaskId;
-  const currentReminder = subtaskReminder(sub);
-  const currentDays = currentReminder ? currentReminder.days : 7;
-  document.getElementById('subtaskReminderDays').value = Math.abs(currentDays);
-  document.getElementById('subtaskReminderDir').value = currentDays < 0 ? 'after' : 'before';
+  const currentReminder = sub.metadata?.reminder;
+  const typeSelect = document.getElementById('subtaskReminderType');
+  const dateRow = document.getElementById('subtaskReminderDateRow');
+  const relRow = document.getElementById('subtaskReminderRelativeRow');
+
+  const _syncReminderTypeView = () => {
+    const isDate = typeSelect.value === 'date';
+    dateRow.style.display = isDate ? '' : 'none';
+    relRow.style.display = isDate ? 'none' : '';
+  };
+  typeSelect.onchange = _syncReminderTypeView;
+
+  if (currentReminder?.date) {
+    typeSelect.value = 'date';
+    document.getElementById('subtaskReminderDate').value = currentReminder.date;
+  } else {
+    typeSelect.value = 'relative';
+    const currentDays = currentReminder?.days ?? 7;
+    document.getElementById('subtaskReminderDays').value = Math.abs(currentDays);
+    document.getElementById('subtaskReminderDir').value = currentDays < 0 ? 'after' : 'before';
+  }
+  _syncReminderTypeView();
   modal.classList.add('open');
 
   document.getElementById('cancelSubtaskReminder').onclick = () => modal.classList.remove('open');
@@ -1851,11 +1906,18 @@ function openSubtaskReminderModal(subtaskId) {
     scheduleSubtaskModalRefresh();
   };
   document.getElementById('saveSubtaskReminder').onclick = () => {
-    let days = parseInt(document.getElementById('subtaskReminderDays').value, 10);
-    if (isNaN(days) || days < 1) return;
-    const dir = document.getElementById('subtaskReminderDir').value;
-    if (dir === 'after') days = -days;
-    sub.metadata = { ...(sub.metadata || {}), reminder: { days, label: `${Math.abs(days)} days ${dir}` } };
+    const type = document.getElementById('subtaskReminderType').value;
+    if (type === 'date') {
+      const dateVal = document.getElementById('subtaskReminderDate').value;
+      if (!dateVal) return;
+      sub.metadata = { ...(sub.metadata || {}), reminder: { date: dateVal, label: formatReminderDateLabel(dateVal) } };
+    } else {
+      let days = parseInt(document.getElementById('subtaskReminderDays').value, 10);
+      if (isNaN(days) || days < 1) return;
+      const dir = document.getElementById('subtaskReminderDir').value;
+      if (dir === 'after') days = -days;
+      sub.metadata = { ...(sub.metadata || {}), reminder: { days, label: `${Math.abs(days)} days ${dir}` } };
+    }
     modal.classList.remove('open');
     scheduleSubtaskModalRefresh();
   };
@@ -1870,8 +1932,19 @@ function openNewSubtaskReminderModal() {
     modal.innerHTML = `
       <div class="crm-mini-modal" role="dialog" aria-modal="true">
         <div class="crm-mini-modal-title">${BELL_ICON}<span>New Subtask Reminder</span></div>
-        <div class="crm-reminder-row">
-          <span>Alert</span>
+        <div class="crm-reminder-row" style="gap:0.4rem;">
+          <span style="font-size:0.75rem;color:var(--crm-text-3);">Type</span>
+          <select id="newSubtaskReminderType" class="crm-form-input" style="padding:0.2rem 0.4rem; height:auto; width:auto; font-size:0.75rem;">
+            <option value="date">On specific date</option>
+            <option value="relative">Days before/after trip</option>
+          </select>
+        </div>
+        <div id="newSubtaskReminderDateRow" class="crm-reminder-row">
+          <span style="font-size:0.75rem;color:var(--crm-text-3);">Date</span>
+          <input type="date" id="newSubtaskReminderDate" class="crm-form-input" style="font-size:0.75rem;height:auto;padding:0.2rem 0.4rem;">
+        </div>
+        <div id="newSubtaskReminderRelativeRow" class="crm-reminder-row" style="display:none;">
+          <span style="font-size:0.75rem;color:var(--crm-text-3);">Alert</span>
           <input type="number" id="newSubtaskReminderDays" min="1" max="180" value="7">
           <select id="newSubtaskReminderDir" class="crm-form-input" style="padding:0.2rem 0.4rem; height:auto; width:auto; font-size:0.75rem;">
             <option value="before">days before trip</option>
@@ -1888,9 +1961,31 @@ function openNewSubtaskReminderModal() {
     document.body.appendChild(modal);
   }
 
-  const currentDays = pendingNewSubtaskReminder ? pendingNewSubtaskReminder.days : 7;
-  document.getElementById('newSubtaskReminderDays').value = Math.abs(currentDays);
-  document.getElementById('newSubtaskReminderDir').value = currentDays < 0 ? 'after' : 'before';
+  const typeSelect = document.getElementById('newSubtaskReminderType');
+  const dateRow = document.getElementById('newSubtaskReminderDateRow');
+  const relRow = document.getElementById('newSubtaskReminderRelativeRow');
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const _syncNewReminderTypeView = () => {
+    const isDate = typeSelect.value === 'date';
+    dateRow.style.display = isDate ? '' : 'none';
+    relRow.style.display = isDate ? 'none' : '';
+  };
+  typeSelect.onchange = _syncNewReminderTypeView;
+
+  if (pendingNewSubtaskReminder?.date) {
+    typeSelect.value = 'date';
+    document.getElementById('newSubtaskReminderDate').value = pendingNewSubtaskReminder.date;
+  } else if (pendingNewSubtaskReminder?.days) {
+    typeSelect.value = 'relative';
+    const currentDays = pendingNewSubtaskReminder.days;
+    document.getElementById('newSubtaskReminderDays').value = Math.abs(currentDays);
+    document.getElementById('newSubtaskReminderDir').value = currentDays < 0 ? 'after' : 'before';
+  } else {
+    typeSelect.value = 'date';
+    document.getElementById('newSubtaskReminderDate').value = todayStr;
+  }
+  _syncNewReminderTypeView();
   modal.classList.add('open');
   modal.onclick = e => { if (e.target === modal) modal.classList.remove('open'); };
   document.getElementById('cancelNewSubtaskReminder').onclick = () => modal.classList.remove('open');
@@ -1900,17 +1995,25 @@ function openNewSubtaskReminderModal() {
     document.getElementById('newSubtaskReminderBtn')?.classList.remove('active');
   };
   document.getElementById('saveNewSubtaskReminder').onclick = () => {
-    let days = parseInt(document.getElementById('newSubtaskReminderDays').value, 10);
-    if (isNaN(days) || days < 1) return;
-    const dir = document.getElementById('newSubtaskReminderDir').value;
-    if (dir === 'after') days = -days;
-    pendingNewSubtaskReminder = { days, label: `${Math.abs(days)} days ${dir}` };
+    const type = document.getElementById('newSubtaskReminderType').value;
+    if (type === 'date') {
+      const dateVal = document.getElementById('newSubtaskReminderDate').value;
+      if (!dateVal) return;
+      pendingNewSubtaskReminder = { date: dateVal, label: formatReminderDateLabel(dateVal) };
+    } else {
+      let days = parseInt(document.getElementById('newSubtaskReminderDays').value, 10);
+      if (isNaN(days) || days < 1) return;
+      const dir = document.getElementById('newSubtaskReminderDir').value;
+      if (dir === 'after') days = -days;
+      pendingNewSubtaskReminder = { days, label: `${Math.abs(days)} days ${dir}` };
+    }
     modal.classList.remove('open');
     document.getElementById('newSubtaskReminderBtn')?.classList.add('active');
   };
 }
 
 function draftReminderFromRow(row) {
+  if (row?.dataset?.reminderDate) return { date: row.dataset.reminderDate, label: row.dataset.reminderLabel };
   const days = parseInt(row?.dataset?.reminderDays || '', 10);
   if (isNaN(days)) return null;
   const dir = days < 0 ? 'after' : 'before';
@@ -1935,8 +2038,19 @@ function openDraftSubtaskReminderModal(row) {
     modal.innerHTML = `
       <div class="crm-mini-modal" role="dialog" aria-modal="true">
         <div class="crm-mini-modal-title">${BELL_ICON}<span>Draft Subtask Reminder</span></div>
-        <div class="crm-reminder-row">
-          <span>Alert</span>
+        <div class="crm-reminder-row" style="gap:0.4rem;">
+          <span style="font-size:0.75rem;color:var(--crm-text-3);">Type</span>
+          <select id="draftSubtaskReminderType" class="crm-form-input" style="padding:0.2rem 0.4rem; height:auto; width:auto; font-size:0.75rem;">
+            <option value="date">On specific date</option>
+            <option value="relative">Days before/after trip</option>
+          </select>
+        </div>
+        <div id="draftSubtaskReminderDateRow" class="crm-reminder-row">
+          <span style="font-size:0.75rem;color:var(--crm-text-3);">Date</span>
+          <input type="date" id="draftSubtaskReminderDate" class="crm-form-input" style="font-size:0.75rem;height:auto;padding:0.2rem 0.4rem;">
+        </div>
+        <div id="draftSubtaskReminderRelativeRow" class="crm-reminder-row" style="display:none;">
+          <span style="font-size:0.75rem;color:var(--crm-text-3);">Alert</span>
           <input type="number" id="draftSubtaskReminderDays" min="1" max="180" value="7">
           <select id="draftSubtaskReminderDir" class="crm-form-input" style="padding:0.2rem 0.4rem; height:auto; width:auto; font-size:0.75rem;">
             <option value="before">days before trip</option>
@@ -2073,7 +2187,9 @@ function renderSubtaskBody(subtasks) {
     const newSub = { id: uid(), text: val, done: false, assignee, createdAt: new Date().toISOString() };
     if (pendingNewSubtaskReminder) {
       newSub.metadata = { reminder: pendingNewSubtaskReminder };
-      pendingNewSubtaskReminder = null;
+      pendingNewSubtaskReminder = { date: ewGetTodayDateStr(), label: 'Due today' };
+    } else {
+      pendingNewSubtaskReminder = { date: ewGetTodayDateStr(), label: 'Due today' };
     }
     trip.subtasks[subtaskContext.key].push(newSub);
     scheduleSubtaskModalRefresh();

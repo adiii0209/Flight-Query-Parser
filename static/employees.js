@@ -151,6 +151,148 @@ function buildDeleteSubtaskButtonHtml(tripId, subtaskId) {
   `;
 }
 
+function ewFormatReminderDateLabel(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  if (isNaN(d.getTime())) return dateStr;
+  if (d.getTime() === today.getTime()) return 'Due today';
+  if (d.getTime() === tomorrow.getTime()) return 'Due tomorrow';
+  return 'Due ' + new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).format(d);
+}
+
+function ewReminderLabel(reminder) {
+  if (!reminder) return '';
+  if (reminder.date) return ewFormatReminderDateLabel(reminder.date);
+  const days = parseInt(reminder.days, 10);
+  if (!days) return '';
+  const dir = days < 0 ? 'after' : 'before';
+  return Math.abs(days) + ' days ' + dir;
+}
+
+function buildReminderBadgeHtml(subtask) {
+  const reminder = subtask && subtask.metadata && subtask.metadata.reminder;
+  if (!reminder) return '';
+  const label = ewReminderLabel(reminder);
+  if (!label) return '';
+  const isToday = label === 'Due today';
+  const isTomorrow = label === 'Due tomorrow';
+  const color = isToday ? '#ef4444' : isTomorrow ? '#f59e0b' : 'var(--crm-text-3)';
+  const bg = isToday ? 'rgba(239,68,68,0.1)' : isTomorrow ? 'rgba(245,158,11,0.1)' : 'var(--crm-surface-2)';
+  return '<span class="ew-reminder-badge" style="color:' + color + ';background:' + bg + '; font-size:0.7rem; padding:0.1rem 0.3rem; border-radius:0.2rem;">' + escHtml(label) + '</span>';
+}
+
+function openEwSubtaskReminderModal(tripId, subtaskId) {
+  const trip = trips.find(function(t) { return t.id === tripId; });
+  if (!trip) return;
+  let sub = null;
+  Object.values(trip.subtasks || {}).forEach(function(arr) {
+    if (Array.isArray(arr)) { const s = arr.find(function(x) { return x.id === subtaskId; }); if (s) sub = s; }
+  });
+  if (!sub) return;
+
+  const BELL = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path><path d="M18 8A6 6 0 0 0 6 8c0 7-3 7-3 9h18c0-2-3-2-3-9"></path></svg>';
+  let modal = document.getElementById('ewSubtaskReminderModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'crm-mini-modal-overlay';
+    modal.id = 'ewSubtaskReminderModal';
+    modal.innerHTML =
+      '<div class="crm-mini-modal" role="dialog" aria-modal="true">' +
+        '<div class="crm-mini-modal-title">' + BELL + '<span>Subtask Reminder</span></div>' +
+        '<div class="crm-reminder-row" style="gap:0.4rem;">' +
+          '<span style="font-size:0.75rem;color:var(--crm-text-3);">Type</span>' +
+          '<select id="ewSubtaskReminderType" class="crm-form-input" style="padding:0.2rem 0.4rem;height:auto;width:auto;font-size:0.75rem;">' +
+            '<option value="date">On specific date</option>' +
+            '<option value="relative">Days before/after trip</option>' +
+          '</select>' +
+        '</div>' +
+        '<div id="ewSubtaskReminderDateRow" class="crm-reminder-row">' +
+          '<span style="font-size:0.75rem;color:var(--crm-text-3);">Date</span>' +
+          '<input type="date" id="ewSubtaskReminderDate" class="crm-form-input" style="font-size:0.75rem;height:auto;padding:0.2rem 0.4rem;">' +
+        '</div>' +
+        '<div id="ewSubtaskReminderRelativeRow" class="crm-reminder-row" style="display:none;">' +
+          '<span style="font-size:0.75rem;color:var(--crm-text-3);">Alert</span>' +
+          '<input type="number" id="ewSubtaskReminderDays" min="1" max="180" value="7">' +
+          '<select id="ewSubtaskReminderDir" class="crm-form-input" style="padding:0.2rem 0.4rem;height:auto;width:auto;font-size:0.75rem;">' +
+            '<option value="before">days before trip</option>' +
+            '<option value="after">days after trip</option>' +
+          '</select>' +
+        '</div>' +
+        '<div class="crm-mini-modal-actions">' +
+          '<button class="crm-btn crm-btn-ghost" id="clearEwSubtaskReminder">Clear</button>' +
+          '<button class="crm-btn crm-btn-ghost" id="cancelEwSubtaskReminder">Cancel</button>' +
+          '<button class="crm-btn crm-btn-primary" id="saveEwSubtaskReminder">Save</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(modal);
+  }
+
+  const currentReminder = sub.metadata && sub.metadata.reminder;
+  const typeSelect = document.getElementById('ewSubtaskReminderType');
+  const dateRow = document.getElementById('ewSubtaskReminderDateRow');
+  const relRow = document.getElementById('ewSubtaskReminderRelativeRow');
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  function _syncView() {
+    const isDate = typeSelect.value === 'date';
+    dateRow.style.display = isDate ? '' : 'none';
+    relRow.style.display = isDate ? 'none' : '';
+  }
+  typeSelect.onchange = _syncView;
+
+  if (currentReminder && currentReminder.date) {
+    typeSelect.value = 'date';
+    document.getElementById('ewSubtaskReminderDate').value = currentReminder.date;
+  } else if (currentReminder && currentReminder.days) {
+    typeSelect.value = 'relative';
+    document.getElementById('ewSubtaskReminderDays').value = Math.abs(currentReminder.days);
+    document.getElementById('ewSubtaskReminderDir').value = currentReminder.days < 0 ? 'after' : 'before';
+  } else {
+    typeSelect.value = 'date';
+    document.getElementById('ewSubtaskReminderDate').value = todayStr;
+  }
+  _syncView();
+  modal.dataset.tripId = tripId;
+  modal.dataset.subtaskId = subtaskId;
+  modal.classList.add('open');
+  modal.onclick = function(e) { if (e.target === modal) modal.classList.remove('open'); };
+
+  document.getElementById('cancelEwSubtaskReminder').onclick = function() { modal.classList.remove('open'); };
+  document.getElementById('clearEwSubtaskReminder').onclick = function() {
+    if (!sub.metadata) sub.metadata = {};
+    delete sub.metadata.reminder;
+    modal.classList.remove('open');
+    updateTripField(tripId, 'subtasks', trip.subtasks).catch(function() {});
+    replaceSubtaskCardDom(tripId, subtaskId);
+    if (currentDetailContext && currentDetailContext.tripId === tripId) refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
+  };
+  document.getElementById('saveEwSubtaskReminder').onclick = function() {
+    if (!sub.metadata) sub.metadata = {};
+    const type = document.getElementById('ewSubtaskReminderType').value;
+    if (type === 'date') {
+      const dateVal = document.getElementById('ewSubtaskReminderDate').value;
+      if (!dateVal) return;
+      sub.metadata.reminder = { date: dateVal, label: ewFormatReminderDateLabel(dateVal) };
+    } else {
+      let days = parseInt(document.getElementById('ewSubtaskReminderDays').value, 10);
+      if (isNaN(days) || days < 1) return;
+      const dir = document.getElementById('ewSubtaskReminderDir').value;
+      if (dir === 'after') days = -days;
+      sub.metadata.reminder = { days: days, label: Math.abs(days) + ' days ' + dir };
+    }
+    modal.classList.remove('open');
+    updateTripField(tripId, 'subtasks', trip.subtasks).catch(function() {});
+    replaceSubtaskCardDom(tripId, subtaskId);
+    if (currentDetailContext && currentDetailContext.tripId === tripId) refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
+  };
+}
+
+window.openEwSubtaskReminderModal = openEwSubtaskReminderModal;
+
 function getSubtaskPrioritySortStamp(subtask) {
   return subtask?.metadata?.priorityUpdatedAt
     || subtask?.metadata?.updatedAt
@@ -177,6 +319,9 @@ function buildSubtaskCardHtml(s) {
   const tripDate = s.tripDate ? formatDate(s.tripDate) : '';
   const createdAt = formatCompactDateTime(getSubtaskCreatedAt(s));
   const remarkCount = normalizeRemarkEntries(s.metadata?.remarks).length;
+  const reminderBadge = buildReminderBadgeHtml(s);
+  const hasReminder = !!(s.metadata && s.metadata.reminder);
+  const reminderTitle = hasReminder ? escHtml(ewReminderLabel(s.metadata.reminder)) : 'Set reminder';
   return `
     <details class="ew-subtask-card" data-subtask-id="${escHtml(s.id)}">
       <summary class="ew-subtask-card-summary">
@@ -192,10 +337,19 @@ function buildSubtaskCardHtml(s) {
             ${catLabel ? `<span>[${escHtml(catLabel)}]</span>` : ''}
           </div>
         </div>
-        <div class="ew-subtask-card-badges">
-          ${buildPriorityToggleHtml(s)}
-          <span class="ew-subtask-card-count">${remarkCount} remark${remarkCount === 1 ? '' : 's'}</span>
-          <span class="ew-subtask-card-created">${escHtml(createdAt || '—')}</span>
+        <div class="ew-subtask-card-badges-wrap" style="display:flex; flex-direction:column; align-items:flex-end; gap:0.4rem;">
+          <div class="ew-subtask-card-badges" style="display:flex; align-items:center; gap:0.35rem;">
+            ${buildPriorityToggleHtml(s)}
+            <span class="ew-subtask-card-count">${remarkCount} remark${remarkCount === 1 ? '' : 's'}</span>
+            <span class="ew-subtask-card-created">${escHtml(createdAt || '\u2014')}</span>
+          </div>
+          <div class="ew-subtask-card-reminder-row" style="display:flex; align-items:center; gap:0.35rem; margin-top:0.1rem;">
+            ${reminderBadge}
+            <button type="button" class="ew-subtask-reminder-btn ${hasReminder ? 'active' : ''}" title="${reminderTitle}" aria-label="Set subtask reminder" onclick="event.stopPropagation(); openEwSubtaskReminderModal('${s.tripId}', '${s.id}')">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path><path d="M18 8A6 6 0 0 0 6 8c0 7-3 7-3 9h18c0-2-3-2-3-9"></path></svg>
+            </button>
+            ${buildDeleteSubtaskButtonHtml(s.tripId, s.id)}
+          </div>
         </div>
       </summary>
       <div class="ew-subtask-card-body">
@@ -208,7 +362,7 @@ function buildSubtaskCardHtml(s) {
                 <path d="M22 2L15 22 11 13 2 9 22 2Z"></path>
               </svg>
             </button>
-            ${buildDeleteSubtaskButtonHtml(s.tripId, s.id)}
+
           </div>
         </div>
       </details>
@@ -1194,141 +1348,54 @@ function renderSubtasks(subtasks) {
   const pending = ordered.filter(s => !s.done);
   const done = ordered.filter(s => s.done);
 
-  const renderSection = (title, items, emptyText, collapsible = false, isOpen = false) => {
+  const container = document.getElementById('ewSubtasksTabContainer');
+  const activeSubTab = container ? (container.dataset.activeSubTab || 'pending') : 'pending';
+
+  const buildList = (items, emptyText, listIdAttr) => {
     if (!items.length) {
-      if (collapsible) {
-        return `
-          <details class="ew-subtask-section ew-subtask-section-collapsible" ${isOpen ? 'open' : ''} ontoggle="setDoneSubtasksExpanded(this.open)">
-            <summary class="ew-subtask-section-summary">
-              <div class="ew-subtask-section-title">${title} <span class="ew-subtask-section-count">0</span></div>
-            </summary>
-            <div style="color:var(--crm-text-3);text-align:center;padding:0.9rem 0;font-size:0.82rem;">${emptyText}</div>
-          </details>
-        `;
-      }
-      return `
-        <div class="ew-subtask-section">
-          <div class="ew-subtask-section-title">${title}</div>
-          <div style="color:var(--crm-text-3);text-align:center;padding:0.9rem 0;font-size:0.82rem;">${emptyText}</div>
-        </div>
-      `;
+      return `<div style="color:var(--crm-text-3);text-align:center;padding:0.9rem 0;font-size:0.82rem;">${emptyText}</div>`;
     }
-
-    if (collapsible) {
-      return `
-        <details class="ew-subtask-section ew-subtask-section-collapsible" ${isOpen ? 'open' : ''} ontoggle="setDoneSubtasksExpanded(this.open)">
-          <summary class="ew-subtask-section-summary">
-            <div class="ew-subtask-section-title">${title} <span class="ew-subtask-section-count">${items.length}</span></div>
-          </summary>
-          <table class="ew-subtasks-table">
-            <thead>
-              <tr>
-                <th style="width:40px">Done</th>
-                <th>Subtask</th>
-                <th>Trip & Country</th>
-                <th>Created</th>
-                <th>Remarks</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${items.map(s => {
-                const catLabel = s.taskCategory ? s.taskCategory.charAt(0).toUpperCase() + s.taskCategory.slice(1) : '';
-                const dest = s.trip.destination ? s.trip.destination : '';
-                const tripDate = s.tripDate ? formatDate(s.tripDate) : '';
-                const createdAt = formatCompactDateTime(getSubtaskCreatedAt(s));
-                return `
-                  <tr class="ew-subtask-row">
-                    <td><input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${s.tripId}', '${s.id}', this.checked)"></td>
-                    <td class="${s.done ? 'ew-subtask-done' : ''}">${escHtml(s.text)} ${buildPriorityBadgeHtml(s)}</td>
-                    <td>
-                      <div style="font-weight:500;">${escHtml(s.trip.guestName || 'Unnamed Trip')}</div>
-                      ${dest ? `<div style="font-size:0.75rem;color:var(--crm-text-2);">${escHtml(dest)}</div>` : ''}
-                      ${tripDate ? `<div style="font-size:0.7rem;color:var(--crm-text-3);margin-top:0.18rem;">${escHtml(tripDate)}</div>` : ''}
-                      ${catLabel ? `<div style="font-size:0.7rem;color:var(--crm-text-3);margin-top:0.2rem">[${catLabel}]</div>` : ''}
-                    </td>
-                    <td style="color:var(--crm-text-3)">${escHtml(createdAt || 'â€”')}</td>
-                    <td>
-                      <div class="ew-remark-thread">${remarkThreadHtml(s)}</div>
-                      <div class="ew-remark-compose">
-                        <textarea class="ew-remark-input ew-remark-textarea" rows="2" placeholder="Add remark..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();appendSubtaskRemark('${s.tripId}', '${s.id}', this.value); this.value='';}"></textarea>
-                        <button type="button" class="ew-remark-send" title="Send remark" aria-label="Send remark" onclick="appendSubtaskRemark('${s.tripId}', '${s.id}', this.parentElement.querySelector('textarea').value); this.parentElement.querySelector('textarea').value='';">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M22 2L11 13"></path>
-                            <path d="M22 2L15 22 11 13 2 9 22 2Z"></path>
-                          </svg>
-                        </button>
-                        ${buildDeleteSubtaskButtonHtml(s.tripId, s.id)}
-                      </div>
-                    </td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        </details>
-      `;
-    }
-
-    let html = `
-      <div class="ew-subtask-section">
-        <div class="ew-subtask-section-title">${title} <span class="ew-subtask-section-count">${items.length}</span></div>
-        <table class="ew-subtasks-table">
-          <thead>
-            <tr>
-              <th style="width:40px">Done</th>
-              <th>Subtask</th>
-              <th>Trip & Country</th>
-              <th>Created</th>
-              <th>Remarks</th>
-            </tr>
-          </thead>
-          <tbody>
-    `;
-
-    items.forEach(s => {
-      const catLabel = s.taskCategory ? s.taskCategory.charAt(0).toUpperCase() + s.taskCategory.slice(1) : '';
-      const dest = s.trip.destination ? s.trip.destination : '';
-      const tripDate = s.tripDate ? formatDate(s.tripDate) : '';
-      const createdAt = formatCompactDateTime(getSubtaskCreatedAt(s));
-      html += `
-        <tr class="ew-subtask-row">
-          <td><input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${s.tripId}', '${s.id}', this.checked)"></td>
-          <td class="${s.done ? 'ew-subtask-done' : ''}">${escHtml(s.text)} ${buildPriorityBadgeHtml(s)}</td>
-          <td>
-            <div style="font-weight:500;">${escHtml(s.trip.guestName || 'Unnamed Trip')}</div>
-            ${dest ? `<div style="font-size:0.75rem;color:var(--crm-text-2);">${escHtml(dest)}</div>` : ''}
-            ${tripDate ? `<div style="font-size:0.7rem;color:var(--crm-text-3);margin-top:0.18rem;">${escHtml(tripDate)}</div>` : ''}
-            ${catLabel ? `<div style="font-size:0.7rem;color:var(--crm-text-3);margin-top:0.2rem">[${catLabel}]</div>` : ''}
-          </td>
-          <td style="color:var(--crm-text-3)">${escHtml(createdAt || '—')}</td>
-          <td>
-            <div class="ew-remark-thread">${remarkThreadHtml(s)}</div>
-            <div class="ew-remark-compose">
-              <textarea class="ew-remark-input ew-remark-textarea" rows="2" placeholder="Add remark..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();appendSubtaskRemark('${s.tripId}', '${s.id}', this.value); this.value='';}"></textarea>
-              <button type="button" class="ew-remark-send" title="Send remark" aria-label="Send remark" onclick="appendSubtaskRemark('${s.tripId}', '${s.id}', this.parentElement.querySelector('textarea').value); this.parentElement.querySelector('textarea').value='';">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M22 2L11 13"></path>
-                  <path d="M22 2L15 22 11 13 2 9 22 2Z"></path>
-                </svg>
-              </button>
-              ${buildDeleteSubtaskButtonHtml(s.tripId, s.id)}
-            </div>
-          </td>
-        </tr>
-      `;
-    });
-
-    html += `</tbody></table></div>`;
-    return html;
+    return `<div class="ew-subtask-card-list"${listIdAttr}>${items.map(buildSubtaskCardHtml).join('')}</div>`;
   };
 
   return `
-    <div style="display:flex;flex-direction:column;gap:1rem;">
-      ${renderSection('Pending', pending, 'No pending subtasks.')}
-      ${renderSection('Done', done, 'No completed subtasks yet.', true, doneSubtasksExpanded)}
+    <div id="ewSubtasksTabContainer" data-active-sub-tab="${activeSubTab}" style="display:flex;flex-direction:column;gap:1rem;">
+      <div class="ew-subtask-tab-bar" style="display:flex;gap:0.5rem;align-items:center;">
+        <button
+          type="button"
+          class="ew-subtask-tab-btn ${activeSubTab === 'pending' ? 'active' : ''}"
+          onclick="ewSwitchSubtaskTab('pending')"
+        >Pending <span class="ew-subtask-tab-count">${pending.length}</span></button>
+        <button
+          type="button"
+          class="ew-subtask-tab-btn ${activeSubTab === 'done' ? 'active' : ''}"
+          onclick="ewSwitchSubtaskTab('done')"
+        >Done <span class="ew-subtask-tab-count">${done.length}</span></button>
+      </div>
+      <div class="ew-subtask-tab-panel" id="ewSubtaskPanelPending" style="display:${activeSubTab === 'pending' ? '' : 'none'};">
+        ${buildList(pending, 'No pending subtasks.', ' id="ewPendingSubtasksList"')}
+      </div>
+      <div class="ew-subtask-tab-panel" id="ewSubtaskPanelDone" style="display:${activeSubTab === 'done' ? '' : 'none'};">
+        ${buildList(done, 'No completed subtasks yet.', '')}
+      </div>
     </div>
   `;
 }
+
+window.ewSwitchSubtaskTab = function(tab) {
+  const container = document.getElementById('ewSubtasksTabContainer');
+  if (!container) return;
+  container.dataset.activeSubTab = tab;
+  const pendingPanel = document.getElementById('ewSubtaskPanelPending');
+  const donePanel = document.getElementById('ewSubtaskPanelDone');
+  if (pendingPanel) pendingPanel.style.display = tab === 'pending' ? '' : 'none';
+  if (donePanel) donePanel.style.display = tab === 'done' ? '' : 'none';
+  container.querySelectorAll('.ew-subtask-tab-btn').forEach(btn => {
+    const btnTab = btn.textContent.trim().toLowerCase().startsWith('p') ? 'pending' : 'done';
+    btn.classList.toggle('active', btnTab === tab);
+  });
+};
+
 
 // Timeline View
 function renderTimeline(tasks) {
@@ -1742,92 +1809,6 @@ document.getElementById('ewDetailAddSubtaskBtn')?.addEventListener('click', () =
   updateTripField(trip.id, 'subtasks', subsObj).catch(() => {});
 });
 
-renderSubtasks = function(subtasks) {
-  if (subtasks.length === 0) return '<div style="color:var(--crm-text-3);text-align:center;margin-top:2rem;">No subtasks assigned.</div>';
-
-  let html = `<table class="ew-subtasks-table">
-    <thead>
-      <tr>
-        <th style="width:40px">Done</th>
-        <th>Subtask</th>
-        <th>Trip & Country</th>
-        <th>Created</th>
-        <th>Remarks</th>
-      </tr>
-    </thead>
-    <tbody>`;
-
-  [...subtasks].sort(compareSubtasksForDisplay).forEach(s => {
-    const catLabel = s.taskCategory ? s.taskCategory.charAt(0).toUpperCase() + s.taskCategory.slice(1) : '';
-    const dest = s.trip.destination ? s.trip.destination : '';
-    const tripDate = s.tripDate ? formatDate(s.tripDate) : '';
-    const createdAt = formatCompactDateTime(getSubtaskCreatedAt(s));
-    html += `
-      <tr class="ew-subtask-row">
-        <td><input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${s.tripId}', '${s.id}', this.checked)"></td>
-        <td class="${s.done ? 'ew-subtask-done' : ''}">${escHtml(s.text)} ${buildPriorityBadgeHtml(s)}</td>
-        <td>
-          <div style="font-weight:500;">${escHtml(s.trip.guestName || 'Unnamed Trip')}</div>
-          ${dest ? `<div style="font-size:0.75rem;color:var(--crm-text-2);">${escHtml(dest)}</div>` : ''}
-          ${tripDate ? `<div style="font-size:0.7rem;color:var(--crm-text-3);margin-top:0.18rem;">${escHtml(tripDate)}</div>` : ''}
-          ${catLabel ? `<div style="font-size:0.7rem;color:var(--crm-text-3);margin-top:0.15rem">[${catLabel}]</div>` : ''}
-        </td>
-        <td style="color:var(--crm-text-3)">${escHtml(createdAt || '—')}</td>
-        <td>
-          <div class="ew-remark-thread">${remarkThreadHtml(s)}</div>
-          <div class="ew-remark-compose">
-            <textarea class="ew-remark-input ew-remark-textarea" rows="2" placeholder="Add remark..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();appendSubtaskRemark('${s.tripId}', '${s.id}', this.value); this.value='';}"></textarea>
-            <button type="button" class="ew-remark-send" title="Send remark" aria-label="Send remark" onclick="appendSubtaskRemark('${s.tripId}', '${s.id}', this.parentElement.querySelector('textarea').value); this.parentElement.querySelector('textarea').value='';">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M22 2L11 13"></path>
-                <path d="M22 2L15 22 11 13 2 9 22 2Z"></path>
-              </svg>
-            </button>
-          </div>
-        </td>
-      </tr>
-    `;
-  });
-
-  html += `</tbody></table>`;
-  return html;
-};
-
-renderDetailSubtasks = function(trip, taskKey) {
-  const subsObj = trip.subtasks || {};
-  const cat = getSubtaskCategory(taskKey);
-  const mySubs = (subsObj[cat] || [])
-    .filter(s => s.assignee === activeEmployee.name)
-    .sort(compareSubtasksForDisplay);
-  const el = document.getElementById('ewDetailSubtaskList');
-  if (!el) return;
-
-  if (!mySubs.length) {
-    el.innerHTML = '<div style="font-size:0.8rem;color:var(--crm-text-3)">No subtasks for you on this trip.</div>';
-    return;
-  }
-
-  el.innerHTML = mySubs.map(s => `
-    <div class="ew-detail-subtask" style="display:flex;flex-direction:column;gap:0.5rem;align-items:stretch;">
-      <div style="display:flex;gap:0.5rem;align-items:center;">
-        <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${trip.id}', '${s.id}', this.checked)">
-        <input type="text" class="ew-detail-subtask-text ${s.done ? 'done' : ''}" value="${escHtml(s.text)}" readonly style="flex:1;">
-        ${buildDeleteSubtaskButtonHtml(trip.id, s.id)}
-      </div>
-      <div class="ew-remark-thread">${remarkThreadHtml(s)}</div>
-      <div class="ew-remark-compose">
-        <textarea class="ew-remark-input ew-remark-textarea" rows="2" placeholder="Add remark..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();appendSubtaskRemark('${trip.id}', '${s.id}', this.value); this.value='';}"></textarea>
-        <button type="button" class="ew-remark-send" title="Send remark" aria-label="Send remark" onclick="appendSubtaskRemark('${trip.id}', '${s.id}', this.parentElement.querySelector('textarea').value); this.parentElement.querySelector('textarea').value='';">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M22 2L11 13"></path>
-            <path d="M22 2L15 22 11 13 2 9 22 2Z"></path>
-          </svg>
-        </button>
-      </div>
-    </div>
-  `).join('');
-};
-
 // ============================================================================
 // EVENT LISTENERS
 // ============================================================================
@@ -1882,113 +1863,3 @@ document.addEventListener('DOMContentLoaded', () => {
     restoreEmployeeWorkspaceState();
   }
 });
-
-renderSubtasks = function(subtasks) {
-  if (subtasks.length === 0) return '<div style="color:var(--crm-text-3);text-align:center;margin-top:2rem;">No subtasks assigned.</div>';
-  const ordered = [...subtasks].sort(compareSubtasksForDisplay);
-  const pending = ordered.filter(s => !s.done);
-  const done = ordered.filter(s => s.done);
-
-  const renderCard = (s) => {
-    const catLabel = s.taskCategory ? s.taskCategory.charAt(0).toUpperCase() + s.taskCategory.slice(1) : '';
-    const dest = s.trip.destination ? s.trip.destination : '';
-    const tripDate = s.tripDate ? formatDate(s.tripDate) : '';
-    const createdAt = formatCompactDateTime(getSubtaskCreatedAt(s));
-    const remarkCount = normalizeRemarkEntries(s.metadata?.remarks).length;
-    return `
-      <details class="ew-subtask-card" data-subtask-id="${s.id}">
-        <summary class="ew-subtask-card-summary">
-          <label class="ew-subtask-card-checkwrap" onclick="event.stopPropagation();">
-            <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${s.tripId}', '${s.id}', this.checked)">
-          </label>
-          <div class="ew-subtask-card-copy">
-            <div class="ew-subtask-card-title ${s.done ? 'ew-subtask-done' : ''}">${escHtml(s.text)}</div>
-            <div class="ew-subtask-card-meta">
-              <span>${escHtml(s.trip.guestName || 'Unnamed Trip')}</span>
-              ${dest ? `<span>${escHtml(dest)}</span>` : ''}
-              ${tripDate ? `<span>${escHtml(tripDate)}</span>` : ''}
-              ${catLabel ? `<span>[${escHtml(catLabel)}]</span>` : ''}
-            </div>
-          </div>
-          <div class="ew-subtask-card-badges">
-            <span class="ew-subtask-card-count">${remarkCount} remark${remarkCount === 1 ? '' : 's'}</span>
-            ${buildPriorityToggleHtml(s)}
-            <span class="ew-subtask-card-created">${escHtml(createdAt || '—')}</span>
-          </div>
-        </summary>
-        <div class="ew-subtask-card-body">
-          <div class="ew-remark-thread">${remarkThreadHtml(s)}</div>
-          <div class="ew-remark-compose">
-            <textarea class="ew-remark-input ew-remark-textarea" rows="2" placeholder="Add remark..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();appendSubtaskRemark('${s.tripId}', '${s.id}', this.value); this.value='';}"></textarea>
-            <button type="button" class="ew-remark-send" title="Send remark" aria-label="Send remark" onclick="appendSubtaskRemark('${s.tripId}', '${s.id}', this.parentElement.querySelector('textarea').value); this.parentElement.querySelector('textarea').value='';">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M22 2L11 13"></path>
-                <path d="M22 2L15 22 11 13 2 9 22 2Z"></path>
-              </svg>
-            </button>
-            ${buildDeleteSubtaskButtonHtml(s.tripId, s.id)}
-          </div>
-        </div>
-      </details>
-    `;
-  };
-
-  const renderSection = (title, items, emptyText) => {
-    const isDoneSection = title === 'Done';
-    const isOpen = isDoneSection ? doneSubtasksExpanded : true;
-    const listIdAttr = title === 'Pending' ? ' id="ewPendingSubtasksList"' : '';
-    const sectionInner = `
-      <div class="ew-subtask-card-list"${listIdAttr}>
-        ${items.map(renderCard).join('')}
-      </div>
-    `;
-
-    if (!items.length) {
-      if (isDoneSection) {
-        return `
-          <details class="ew-subtask-section ew-subtask-section-collapsible" ${isOpen ? 'open' : ''} ontoggle="setDoneSubtasksExpanded(this.open)">
-            <summary class="ew-subtask-section-summary">
-              <div class="ew-subtask-section-title">${title} <span class="ew-subtask-section-count">0</span></div>
-            </summary>
-            <div style="color:var(--crm-text-3);text-align:center;padding:0.9rem 0;font-size:0.82rem;">${emptyText}</div>
-          </details>
-        `;
-      }
-      return `
-        <div class="ew-subtask-section">
-          <div class="ew-subtask-section-title">${title}</div>
-          <div style="color:var(--crm-text-3);text-align:center;padding:0.9rem 0;font-size:0.82rem;">${emptyText}</div>
-        </div>
-      `;
-    }
-
-    if (!isDoneSection) {
-      return `
-        <div class="ew-subtask-section">
-          <div class="ew-subtask-section-title">${title} <span class="ew-subtask-section-count">${items.length}</span></div>
-          ${sectionInner}
-        </div>
-      `;
-    }
-
-    return `
-      <details class="ew-subtask-section ew-subtask-section-collapsible" ${isOpen ? 'open' : ''} ontoggle="setDoneSubtasksExpanded(this.open)">
-        <summary class="ew-subtask-section-summary">
-          <div class="ew-subtask-section-title">${title} <span class="ew-subtask-section-count">${items.length}</span></div>
-        </summary>
-        ${sectionInner}
-      </details>
-    `;
-  };
-
-  return `
-    <div style="display:flex;flex-direction:column;gap:1rem;">
-      ${renderSection('Pending', pending, 'No pending subtasks.')}
-      ${renderSection('Done', done, 'No completed subtasks yet.')}
-    </div>
-  `;
-};
-
-
-
-

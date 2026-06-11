@@ -398,8 +398,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.55rem;
-  height: 1.55rem;
+  width: 1.3rem;
+  height: 1.3rem;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, #ef4444 28%, var(--crm-border));
   background: color-mix(in srgb, #ef4444 8%, var(--crm-surface));
@@ -737,6 +737,46 @@
 .ew-subtask-section-summary::-webkit-details-marker {
   display: none;
 }
+
+/* Subtask Tabs */
+.ew-subtask-tab-bar {
+  border-bottom: 1px solid var(--crm-border);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.ew-subtask-tab-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--crm-text-2);
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.2s ease;
+}
+.ew-subtask-tab-btn:hover {
+  background: var(--crm-surface-2);
+  color: var(--crm-text);
+}
+.ew-subtask-tab-btn.active {
+  background: var(--crm-primary);
+  color: #fff;
+  border-color: var(--crm-primary);
+}
+.ew-subtask-tab-count {
+  background: rgba(128, 128, 128, 0.2);
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+}
+.ew-subtask-tab-btn.active .ew-subtask-tab-count {
+  background: rgba(255, 255, 255, 0.2);
+}
+
 .ew-subtask-section-title {
   display: flex;
   align-items: center;
@@ -1385,4 +1425,29 @@
     width: 100%;
     min-width: 0;
   }
+}
+
+.ew-subtask-reminder-btn {
+  background: transparent;
+  border: 1px solid var(--crm-border);
+  color: var(--crm-text-3);
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 0;
+}
+.ew-subtask-reminder-btn:hover {
+  background: var(--crm-surface-2);
+  color: var(--crm-text);
+  border-color: var(--crm-text-3);
+}
+.ew-subtask-reminder-btn.active {
+  color: #f59e0b;
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
 }
