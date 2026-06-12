@@ -228,7 +228,7 @@
   border: 1px solid var(--crm-border);
   color: var(--crm-text);
   padding: 0.4rem 0.8rem;
-  border-radius: 6px;
+  border-radius: 50px;
   cursor: pointer;
   font-size: 0.85rem;
   display: flex;
@@ -568,7 +568,7 @@
   background: var(--crm-surface);
   border: 1px solid var(--crm-border);
   padding: 0.6rem 1rem 0.6rem 2.2rem;
-  border-radius: 8px;
+  border-radius: 50px;
   color: var(--crm-text);
   font-size: 0.9rem;
 }
@@ -1429,25 +1429,21 @@
 
 .ew-subtask-reminder-btn {
   background: transparent;
-  border: 1px solid var(--crm-border);
-  color: var(--crm-text-3);
-  width: 1.4rem;
-  height: 1.4rem;
-  border-radius: 4px;
-  display: flex;
+  border: none;
+  padding: 0;
+  width: auto;
+  height: auto;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s;
-  padding: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 .ew-subtask-reminder-btn:hover {
-  background: var(--crm-surface-2);
-  color: var(--crm-text);
-  border-color: var(--crm-text-3);
+  opacity: 0.85;
+  transform: translateY(-1px);
 }
 .ew-subtask-reminder-btn.active {
-  color: #f59e0b;
-  border-color: #f59e0b;
-  background: rgba(245, 158, 11, 0.1);
+  border: none;
+  background: transparent;
 }

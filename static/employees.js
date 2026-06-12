@@ -73,6 +73,63 @@ function formatCompactDateTime(value) {
   }).format(date);
 }
 
+function formatDate(d) {
+  if (!d) return '-';
+  const date = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function getAbsoluteReminderDate(subtask, trip) {
+  const reminder = subtask?.metadata?.reminder;
+  if (!reminder) return null;
+  if (reminder.date) {
+    const parts = reminder.date.split('-');
+    if (parts.length === 3) {
+      return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    }
+    return new Date(reminder.date);
+  }
+  if (reminder.days !== undefined && reminder.days !== null) {
+    const baseDateStr = trip?.startDate || subtask?.tripDate;
+    if (!baseDateStr) return null;
+    const parts = baseDateStr.split('-');
+    let d;
+    if (parts.length === 3) {
+      d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    } else {
+      d = new Date(baseDateStr);
+    }
+    if (isNaN(d.getTime())) return null;
+    const days = parseInt(reminder.days, 10);
+    d.setDate(d.getDate() - days);
+    return d;
+  }
+  return null;
+}
+
+function getCalculatedRelativeDate(baseDateStr, days, dir) {
+  if (!baseDateStr) return null;
+  const parts = baseDateStr.split('-');
+  let d;
+  if (parts.length === 3) {
+    d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  } else {
+    d = new Date(baseDateStr);
+  }
+  if (isNaN(d.getTime())) return null;
+  
+  const daysNum = parseInt(days, 10);
+  if (isNaN(daysNum)) return null;
+  
+  if (dir === 'before') {
+    d.setDate(d.getDate() - daysNum);
+  } else {
+    d.setDate(d.getDate() + daysNum);
+  }
+  return d;
+}
+
 function getSubtaskCreatedAt(subtask) {
   return subtask?.createdAt || subtask?.metadata?.createdAt || subtask?.metadata?.addedAt || '';
 }
@@ -176,13 +233,27 @@ function ewReminderLabel(reminder) {
 function buildReminderBadgeHtml(subtask) {
   const reminder = subtask && subtask.metadata && subtask.metadata.reminder;
   if (!reminder) return '';
-  const label = ewReminderLabel(reminder);
-  if (!label) return '';
-  const isToday = label === 'Due today';
-  const isTomorrow = label === 'Due tomorrow';
-  const color = isToday ? '#ef4444' : isTomorrow ? '#f59e0b' : 'var(--crm-text-3)';
-  const bg = isToday ? 'rgba(239,68,68,0.1)' : isTomorrow ? 'rgba(245,158,11,0.1)' : 'var(--crm-surface-2)';
-  return '<span class="ew-reminder-badge" style="color:' + color + ';background:' + bg + '; font-size:0.7rem; padding:0.1rem 0.3rem; border-radius:0.2rem;">' + escHtml(label) + '</span>';
+  const trip = trips.find(t => t.id === subtask.tripId);
+  const d = getAbsoluteReminderDate(subtask, trip);
+  if (!d) return '';
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const compDate = new Date(d); compDate.setHours(0, 0, 0, 0);
+  
+  // Icon color: red for today or gone, blue for upcoming
+  const isRed = compDate.getTime() <= today.getTime();
+  const iconColor = isRed ? '#ef4444' : '#3b82f6';
+  
+  // Calendar icon SVG
+  const calendarIconHtml = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="' + iconColor + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 0.35rem; vertical-align: middle; flex-shrink: 0;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>';
+  
+  // Simple, neutral badge styling
+  const color = 'var(--crm-text-3)';
+  const bg = 'transparent';
+  
+  const label = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).format(d);
+  
+  return '<span class="ew-reminder-badge" style="color:' + color + ';background:' + bg + '; font-size:0.66rem; font-weight:700; padding:0.14rem 0; border-radius:999px; white-space:nowrap; display:inline-flex; align-items:center;">' + escHtml(label) + calendarIconHtml + '</span>';
 }
 
 function openEwSubtaskReminderModal(tripId, subtaskId) {
@@ -216,11 +287,14 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
         '</div>' +
         '<div id="ewSubtaskReminderRelativeRow" class="crm-reminder-row" style="display:none;">' +
           '<span style="font-size:0.75rem;color:var(--crm-text-3);">Alert</span>' +
-          '<input type="number" id="ewSubtaskReminderDays" min="1" max="180" value="7">' +
+          '<input type="number" id="ewSubtaskReminderDays" min="1" max="180" value="7" style="font-size:0.75rem;height:auto;padding:0.2rem 0.4rem;width:4rem;">' +
           '<select id="ewSubtaskReminderDir" class="crm-form-input" style="padding:0.2rem 0.4rem;height:auto;width:auto;font-size:0.75rem;">' +
             '<option value="before">days before trip</option>' +
             '<option value="after">days after trip</option>' +
           '</select>' +
+        '</div>' +
+        '<div id="ewSubtaskReminderCalcDateRow" style="font-size:0.7rem;color:var(--crm-primary);margin-top:0.35rem;text-align:right;display:none;">' +
+          'Target Date: <span id="ewSubtaskReminderCalcDateVal" style="font-weight:700;">—</span>' +
         '</div>' +
         '<div class="crm-mini-modal-actions">' +
           '<button class="crm-btn crm-btn-ghost" id="clearEwSubtaskReminder">Clear</button>' +
@@ -237,12 +311,37 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
   const relRow = document.getElementById('ewSubtaskReminderRelativeRow');
   const todayStr = new Date().toISOString().slice(0, 10);
 
+  function _updateCalcDate() {
+    let days = parseInt(document.getElementById('ewSubtaskReminderDays').value, 10);
+    if (isNaN(days) || days < 1) {
+      document.getElementById('ewSubtaskReminderCalcDateVal').textContent = '—';
+      return;
+    }
+    const dir = document.getElementById('ewSubtaskReminderDir').value;
+    const calculatedDate = getCalculatedRelativeDate(trip.startDate, days, dir);
+    if (calculatedDate) {
+      document.getElementById('ewSubtaskReminderCalcDateVal').textContent = formatDate(calculatedDate);
+    } else {
+      document.getElementById('ewSubtaskReminderCalcDateVal').textContent = '—';
+    }
+  }
+
   function _syncView() {
     const isDate = typeSelect.value === 'date';
     dateRow.style.display = isDate ? '' : 'none';
     relRow.style.display = isDate ? 'none' : '';
+    const calcRow = document.getElementById('ewSubtaskReminderCalcDateRow');
+    if (!isDate) {
+      calcRow.style.display = '';
+      _updateCalcDate();
+    } else {
+      calcRow.style.display = 'none';
+    }
   }
+  
   typeSelect.onchange = _syncView;
+  document.getElementById('ewSubtaskReminderDays').oninput = _updateCalcDate;
+  document.getElementById('ewSubtaskReminderDir').onchange = _updateCalcDate;
 
   if (currentReminder && currentReminder.date) {
     typeSelect.value = 'date';
@@ -267,7 +366,11 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
     delete sub.metadata.reminder;
     modal.classList.remove('open');
     updateTripField(tripId, 'subtasks', trip.subtasks).catch(function() {});
-    replaceSubtaskCardDom(tripId, subtaskId);
+    if (currentView === "workspace") {
+      renderWorkspace();
+    } else {
+      replaceSubtaskCardDom(tripId, subtaskId);
+    }
     if (currentDetailContext && currentDetailContext.tripId === tripId) refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
   };
   document.getElementById('saveEwSubtaskReminder').onclick = function() {
@@ -276,17 +379,31 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
     if (type === 'date') {
       const dateVal = document.getElementById('ewSubtaskReminderDate').value;
       if (!dateVal) return;
-      sub.metadata.reminder = { date: dateVal, label: ewFormatReminderDateLabel(dateVal) };
+      sub.metadata.reminder = { date: dateVal, label: dateVal };
     } else {
       let days = parseInt(document.getElementById('ewSubtaskReminderDays').value, 10);
       if (isNaN(days) || days < 1) return;
       const dir = document.getElementById('ewSubtaskReminderDir').value;
+      
+      const targetDate = getCalculatedRelativeDate(trip.startDate, days, dir);
+      let dateVal = '';
+      if (targetDate) {
+        const year = targetDate.getFullYear();
+        const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+        const dateDay = String(targetDate.getDate()).padStart(2, '0');
+        dateVal = `${year}-${month}-${dateDay}`;
+      }
+      
       if (dir === 'after') days = -days;
-      sub.metadata.reminder = { days: days, label: Math.abs(days) + ' days ' + dir };
+      sub.metadata.reminder = { days: days, date: dateVal, label: dateVal };
     }
     modal.classList.remove('open');
     updateTripField(tripId, 'subtasks', trip.subtasks).catch(function() {});
-    replaceSubtaskCardDom(tripId, subtaskId);
+    if (currentView === "workspace") {
+      renderWorkspace();
+    } else {
+      replaceSubtaskCardDom(tripId, subtaskId);
+    }
     if (currentDetailContext && currentDetailContext.tripId === tripId) refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
   };
 }
@@ -307,6 +424,17 @@ function compareSubtasksForDisplay(a, b) {
   const aPriority = isSubtaskHighPriority(a) ? 0 : 1;
   const bPriority = isSubtaskHighPriority(b) ? 0 : 1;
   if (aPriority !== bPriority) return aPriority - bPriority;
+
+  const getReminderDate = (s) => {
+    const trip = trips.find(t => t.id === s.tripId);
+    const d = getAbsoluteReminderDate(s, trip);
+    return d ? d.getTime() : 9999999999999;
+  };
+
+  const aDue = getReminderDate(a);
+  const bDue = getReminderDate(b);
+  if (aDue !== bDue) return aDue - bDue;
+
   const aTime = Date.parse(getSubtaskPrioritySortStamp(a)) || 0;
   const bTime = Date.parse(getSubtaskPrioritySortStamp(b)) || 0;
   if (aTime !== bTime) return bTime - aTime;
@@ -337,23 +465,26 @@ function buildSubtaskCardHtml(s) {
             ${catLabel ? `<span>[${escHtml(catLabel)}]</span>` : ''}
           </div>
         </div>
-        <div class="ew-subtask-card-badges-wrap" style="display:flex; flex-direction:column; align-items:flex-end; gap:0.4rem;">
-          <div class="ew-subtask-card-badges" style="display:flex; align-items:center; gap:0.35rem;">
-            ${buildPriorityToggleHtml(s)}
-            <span class="ew-subtask-card-count">${remarkCount} remark${remarkCount === 1 ? '' : 's'}</span>
-            <span class="ew-subtask-card-created">${escHtml(createdAt || '\u2014')}</span>
+          <div class="ew-subtask-card-badges-wrap" style="display:flex; flex-direction:column; align-items:flex-end; gap:0.4rem; flex-shrink:0;">
+            <div class="ew-subtask-card-badges" style="display:flex; align-items:center; gap:0.35rem; flex-shrink:0;">
+              ${buildPriorityToggleHtml(s)}
+              <button type="button" class="ew-subtask-reminder-btn ${hasReminder ? 'active' : ''}" style="border:none; background:none; padding:0; cursor:pointer; display:flex; align-items:center; flex-shrink:0; width:auto; height:auto;" title="${reminderTitle}" aria-label="Set subtask reminder" onclick="event.stopPropagation(); openEwSubtaskReminderModal('${s.tripId}', '${s.id}')">
+                ${reminderBadge || '<span class="ew-reminder-badge" style="color:var(--crm-text-3);background:transparent; font-size:0.66rem; font-weight:700; padding:0.14rem 0; border-radius:999px; white-space:nowrap;">Set Reminder</span>'}
+              </button>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:flex-end; gap:0.35rem; flex-shrink:0;">
+              <span class="ew-subtask-card-count" style="flex-shrink:0;">${remarkCount} remark${remarkCount === 1 ? '' : 's'}</span>
+            </div>
           </div>
-          <div class="ew-subtask-card-reminder-row" style="display:flex; align-items:center; gap:0.35rem; margin-top:0.1rem;">
-            ${reminderBadge}
-            <button type="button" class="ew-subtask-reminder-btn ${hasReminder ? 'active' : ''}" title="${reminderTitle}" aria-label="Set subtask reminder" onclick="event.stopPropagation(); openEwSubtaskReminderModal('${s.tripId}', '${s.id}')">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path><path d="M18 8A6 6 0 0 0 6 8c0 7-3 7-3 9h18c0-2-3-2-3-9"></path></svg>
-            </button>
+      </summary>
+      <div class="ew-subtask-card-body">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.5rem; gap:1rem;">
+          <div class="ew-remark-thread" style="flex:1;">${remarkThreadHtml(s)}</div>
+          <div style="display:flex; align-items:center; gap:0.5rem; flex-shrink:0; margin-top:0.15rem;">
+            <div style="font-size:0.7rem; color:var(--crm-text-3);">Created: ${escHtml(createdAt || '\u2014')}</div>
             ${buildDeleteSubtaskButtonHtml(s.tripId, s.id)}
           </div>
         </div>
-      </summary>
-      <div class="ew-subtask-card-body">
-        <div class="ew-remark-thread">${remarkThreadHtml(s)}</div>
         <div class="ew-remark-compose">
           <textarea class="ew-remark-input ew-remark-textarea" rows="2" placeholder="Add remark..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();appendSubtaskRemark('${s.tripId}', '${s.id}', this.value); this.value='';}"></textarea>
             <button type="button" class="ew-remark-send" title="Send remark" aria-label="Send remark" onclick="appendSubtaskRemark('${s.tripId}', '${s.id}', this.parentElement.querySelector('textarea').value); this.parentElement.querySelector('textarea').value='';">
@@ -997,7 +1128,8 @@ function getEmployeeData() {
     );
     allSubtasks = allSubtasks.filter(s => 
       s.text.toLowerCase().includes(q) || 
-      s.tripName.toLowerCase().includes(q)
+      s.tripName.toLowerCase().includes(q) ||
+      (s.trip.destination || '').toLowerCase().includes(q)
     );
   }
 
@@ -1136,6 +1268,7 @@ document.getElementById('ewAddSubtaskSave')?.addEventListener('click', async () 
     done: false,
     assignee: activeEmployee?.name || trip.owner || '',
     createdAt: new Date().toISOString(),
+    metadata: { reminder: { date: new Date().toISOString().slice(0, 10), label: 'Due today' } }
   };
 
   subsObj[cat].push(newSubtask);
@@ -1761,7 +1894,11 @@ async function deleteSubtask(tripId, subtaskId) {
   if (found) {
     trip.subtasks = subsObj;
     refreshWorkspaceStats();
-    removeSubtaskCardDom(subtaskId);
+    if (currentView === "workspace") {
+      renderWorkspace();
+    } else {
+      removeSubtaskCardDom(subtaskId);
+    }
     if (currentDetailContext && currentDetailContext.tripId === tripId) {
       refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
     }
