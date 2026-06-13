@@ -1885,14 +1885,17 @@ function openSubtaskReminderModal(subtaskId) {
   };
   typeSelect.onchange = _syncReminderTypeView;
 
-  if (currentReminder?.date) {
+  if (currentReminder?.days !== undefined) {
+    typeSelect.value = 'relative';
+    document.getElementById('subtaskReminderDays').value = Math.abs(currentReminder.days);
+    document.getElementById('subtaskReminderDir').value = currentReminder.days < 0 ? 'after' : 'before';
+  } else if (currentReminder?.date) {
     typeSelect.value = 'date';
     document.getElementById('subtaskReminderDate').value = currentReminder.date;
   } else {
-    typeSelect.value = 'relative';
-    const currentDays = currentReminder?.days ?? 7;
-    document.getElementById('subtaskReminderDays').value = Math.abs(currentDays);
-    document.getElementById('subtaskReminderDir').value = currentDays < 0 ? 'after' : 'before';
+    typeSelect.value = 'date';
+    const todayStr = new Date().toISOString().slice(0, 10);
+    document.getElementById('subtaskReminderDate').value = todayStr;
   }
   _syncReminderTypeView();
   modal.classList.add('open');

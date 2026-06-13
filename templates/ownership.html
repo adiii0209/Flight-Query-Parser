@@ -539,18 +539,31 @@
       <div class="crm-modal-header">
         <div>
           <div class="crm-modal-title">Add Subtask</div>
-          <div class="crm-modal-subtitle">Pick the trip and task, then save the new subtask.</div>
+          <div class="crm-modal-subtitle">Pick a trip, choose trip-specific or generic, then save the new subtask.</div>
         </div>
         <button class="crm-modal-close" id="ewAddSubtaskClose">✕</button>
       </div>
       <div class="crm-modal-body">
-        <div class="crm-form-group">
-          <label class="crm-form-label">Trip</label>
-          <select class="crm-form-select" id="ewAddSubtaskTripSelect"></select>
+        <div class="crm-form-group" id="ewAddSubtaskTypeGroup">
+          <label class="crm-form-label">Subtask Type</label>
+          <div class="ew-add-subtask-type-tabs" role="tablist" aria-label="Subtask type">
+            <button type="button" class="ew-add-subtask-type-tab active" data-mode="tripSpecific">Trip Specific</button>
+            <button type="button" class="ew-add-subtask-type-tab" data-mode="generic">Generic</button>
+          </div>
         </div>
-        <div class="crm-form-group">
-          <label class="crm-form-label">Task</label>
-          <select class="crm-form-select" id="ewAddSubtaskTaskSelect"></select>
+        <div class="ew-add-subtask-mode-panel" data-mode="tripSpecific">
+          <div class="crm-form-group">
+            <label class="crm-form-label">Trip</label>
+            <input class="crm-form-input" id="ewAddSubtaskTripInput" type="text" list="ewAddSubtaskTripList" placeholder="Search trips...">
+            <datalist id="ewAddSubtaskTripList"></datalist>
+            <input type="hidden" id="ewAddSubtaskTripSelect">
+          </div>
+          <div class="crm-form-group">
+            <label class="crm-form-label">Task</label>
+            <select class="crm-form-select" id="ewAddSubtaskTaskSelect"></select>
+          </div>
+        </div>
+        <div class="ew-add-subtask-mode-panel" data-mode="generic" style="display:none;">
         </div>
         <div class="crm-form-group">
           <label class="crm-form-label">Subtask</label>

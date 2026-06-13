@@ -463,6 +463,7 @@ class OwnershipEmployee(db.Model):
     name = db.Column(db.String(120), nullable=False)
     color = db.Column(db.String(20), default="")
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    subtasks_json = db.Column(CompatJSON(empty_factory=dict))
 
     def to_dict(self):
         return {
@@ -470,6 +471,7 @@ class OwnershipEmployee(db.Model):
             "name": self.name,
             "color": self.color or "",
             "isActive": bool(self.is_active),
+            "subtasks": self.subtasks_json if isinstance(self.subtasks_json, dict) else {},
         }
 
 

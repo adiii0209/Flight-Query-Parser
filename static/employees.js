@@ -266,12 +266,23 @@ function buildReminderBadgeHtml(subtask) {
 }
 
 function openEwSubtaskReminderModal(tripId, subtaskId) {
-  const trip = trips.find(function(t) { return t.id === tripId; });
-  if (!trip) return;
+  let trip = null;
   let sub = null;
-  Object.values(trip.subtasks || {}).forEach(function(arr) {
-    if (Array.isArray(arr)) { const s = arr.find(function(x) { return x.id === subtaskId; }); if (s) sub = s; }
-  });
+  
+  if (tripId) {
+    trip = trips.find(function(t) { return t.id === tripId; });
+    if (!trip) return;
+    Object.values(trip.subtasks || {}).forEach(function(arr) {
+      if (Array.isArray(arr)) { const s = arr.find(function(x) { return x.id === subtaskId; }); if (s) sub = s; }
+    });
+  } else {
+    // Generic task
+    if (!activeEmployee || !activeEmployee.subtasks) return;
+    Object.values(activeEmployee.subtasks).forEach(function(arr) {
+      if (Array.isArray(arr)) { const s = arr.find(function(x) { return x.id === subtaskId; }); if (s) sub = s; }
+    });
+  }
+  
   if (!sub) return;
 
   const BELL = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path><path d="M18 8A6 6 0 0 0 6 8c0 7-3 7-3 9h18c0-2-3-2-3-9"></path></svg>';
@@ -360,13 +371,13 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
   if (currentReminder && currentReminder.recurring) {
     typeSelect.value = 'recurring';
     document.getElementById('ewSubtaskReminderDate').value = currentReminder.date || todayStr;
-  } else if (currentReminder && currentReminder.date) {
-    typeSelect.value = 'date';
-    document.getElementById('ewSubtaskReminderDate').value = currentReminder.date;
-  } else if (currentReminder && currentReminder.days) {
+  } else if (currentReminder && currentReminder.days !== undefined) {
     typeSelect.value = 'relative';
     document.getElementById('ewSubtaskReminderDays').value = Math.abs(currentReminder.days);
     document.getElementById('ewSubtaskReminderDir').value = currentReminder.days < 0 ? 'after' : 'before';
+  } else if (currentReminder && currentReminder.date) {
+    typeSelect.value = 'date';
+    document.getElementById('ewSubtaskReminderDate').value = currentReminder.date;
   } else {
     typeSelect.value = 'date';
     document.getElementById('ewSubtaskReminderDate').value = todayStr;
@@ -382,7 +393,14 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
     if (!sub.metadata) sub.metadata = {};
     delete sub.metadata.reminder;
     modal.classList.remove('open');
-    updateTripField(tripId, 'subtasks', trip.subtasks).catch(function() {});
+    if (tripId) {
+      updateTripField(tripId, 'subtasks', trip.subtasks).catch(function() {});
+    } else if (activeEmployee) {
+      apiJson(`/api/ownership/employees/${activeEmployee.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ subtasks: activeEmployee.subtasks })
+      }).catch(err => console.error(err));
+    }
     if (currentView === "workspace") {
       renderWorkspace();
     } else {
@@ -406,7 +424,7 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
       if (isNaN(days) || days < 1) return;
       const dir = document.getElementById('ewSubtaskReminderDir').value;
       
-      const targetDate = getCalculatedRelativeDate(trip.startDate, days, dir);
+      const targetDate = trip ? getCalculatedRelativeDate(trip.startDate, days, dir) : null;
       let dateVal = '';
       if (targetDate) {
         const year = targetDate.getFullYear();
@@ -419,7 +437,14 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
       sub.metadata.reminder = { days: days, date: dateVal, label: dateVal };
     }
     modal.classList.remove('open');
-    updateTripField(tripId, 'subtasks', trip.subtasks).catch(function() {});
+    if (tripId) {
+      updateTripField(tripId, 'subtasks', trip.subtasks).catch(function() {});
+    } else if (activeEmployee) {
+      apiJson(`/api/ownership/employees/${activeEmployee.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ subtasks: activeEmployee.subtasks })
+      }).catch(err => console.error(err));
+    }
     if (currentView === "workspace") {
       renderWorkspace();
     } else {
@@ -464,7 +489,7 @@ function compareSubtasksForDisplay(a, b) {
 
 function buildSubtaskCardHtml(s) {
   const catLabel = s.taskCategory ? s.taskCategory.charAt(0).toUpperCase() + s.taskCategory.slice(1) : '';
-  const dest = s.trip.destination ? s.trip.destination : '';
+  const dest = s.trip && s.trip.destination ? s.trip.destination : '';
   const tripDate = s.tripDate ? formatDate(s.tripDate) : '';
   const createdAt = formatCompactDateTime(getSubtaskCreatedAt(s));
   const remarkCount = normalizeRemarkEntries(s.metadata?.remarks).length;
@@ -478,12 +503,12 @@ function buildSubtaskCardHtml(s) {
     <details class="ew-subtask-card" data-subtask-id="${escHtml(s.id)}">
       <summary class="ew-subtask-card-summary">
         <label class="ew-subtask-card-checkwrap" onclick="event.stopPropagation();">
-          <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${s.tripId}', '${s.id}', this.checked)">
+          <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${s.tripId || ''}', '${s.id}', this.checked)">
         </label>
         <div class="ew-subtask-card-copy">
           <div class="ew-subtask-card-title ${s.done ? 'ew-subtask-done' : ''}">${escHtml(s.text)}</div>
           <div class="ew-subtask-card-meta">
-            <span>${escHtml(s.trip.guestName || 'Unnamed Trip')}</span>
+            <span>${escHtml(s.trip ? s.trip.guestName || 'Unnamed Trip' : s.tripName || 'Generic Task')}</span>
             ${dest ? `<span>${escHtml(dest)}</span>` : ''}
             ${tripDate ? `<span>${escHtml(tripDate)}</span>` : ''}
             ${catLabel ? `<span>[${escHtml(catLabel)}]</span>` : ''}
@@ -639,6 +664,18 @@ function appendSubtaskRemark(tripId, subtaskId, rawText) {
 }
 
 async function editSubtaskRemark(tripId, subtaskId, remarkIndex) {
+  if (!tripId) return _handleGenericSubtaskUpdate(subtaskId, (s) => {
+    const current = normalizeRemarkEntries(s.metadata?.remarks)[remarkIndex];
+    if (!current) return;
+    const nextText = window.prompt('Edit remark', current.text || '');
+    if (nextText === null) return;
+    const trimmed = String(nextText).trim();
+    if (!trimmed) { toast('Remark cannot be empty', '??'); return; }
+    if (!s.metadata) s.metadata = {};
+    const next = normalizeRemarkEntries(s.metadata.remarks);
+    if (next[remarkIndex]) next[remarkIndex] = { ...next[remarkIndex], text: trimmed };
+    s.metadata.remarks = next;
+  });
   const trip = trips.find(t => t.id === tripId);
   if (!trip) return;
   const remarks = normalizeRemarkEntries(
@@ -676,6 +713,15 @@ async function editSubtaskRemark(tripId, subtaskId, remarkIndex) {
 }
 
 async function deleteSubtaskRemark(tripId, subtaskId, remarkIndex) {
+  if (!tripId) {
+    if (!confirm('Delete this remark?')) return;
+    return _handleGenericSubtaskUpdate(subtaskId, (s) => {
+      if (!s.metadata) s.metadata = {};
+      const next = normalizeRemarkEntries(s.metadata.remarks);
+      if (next[remarkIndex]) next.splice(remarkIndex, 1);
+      s.metadata.remarks = next;
+    });
+  }
   const trip = trips.find(t => t.id === tripId);
   if (!trip) return;
   if (!confirm('Delete this remark?')) return;
@@ -1122,7 +1168,7 @@ function getEmployeeData() {
     });
   });
   
-  // Subtasks: assigned to this employee (can be from ANY trip, not just owned trips)
+  // Subtasks: assigned to this employee (from any trip)
   trips.forEach(trip => {
     try {
       const subsObj = trip.subtasks || {};
@@ -1147,6 +1193,28 @@ function getEmployeeData() {
       });
     } catch(e){}
   });
+
+  // Generic subtasks: assigned to this employee directly (no trip)
+  try {
+    const empSubs = activeEmployee.subtasks || {};
+    Object.entries(empSubs).forEach(([catName, catArray]) => {
+      if (!Array.isArray(catArray)) return;
+      catArray.forEach(s => {
+        const subtask = {
+          ...s,
+          tripId: '', // No trip
+          tripName: 'General Task',
+          tripDate: '',
+          taskCategory: catName,
+          trip: null
+        };
+        allSubtasks.push(subtask);
+        if (isRecurringSubtask(subtask)) {
+          allRecurringSubtasks.push(subtask);
+        }
+      });
+    });
+  } catch(e){}
 
   // Filter tasks and subtasks by search query
   if (empSearchQuery) {
@@ -1293,47 +1361,92 @@ document.getElementById('ewAddSubtaskTripSelect')?.addEventListener('change', ()
 document.getElementById('ewAddSubtaskTaskSelect')?.addEventListener('change', () => refreshAddSubtaskSelects());
 
 document.getElementById('ewAddSubtaskSave')?.addEventListener('click', async () => {
-  const tripId = document.getElementById('ewAddSubtaskTripSelect')?.value;
+  const tripInput = document.getElementById('ewAddSubtaskTripInput');
+  const tripList = document.getElementById('ewAddSubtaskTripList');
+  let tripId = document.getElementById('ewAddSubtaskTripSelect')?.value;
+  
+  if (tripInput && tripList && tripInput.value) {
+    const option = Array.from(tripList.options).find(opt => opt.value === tripInput.value);
+    if (option) {
+      tripId = option.dataset.id;
+    }
+  }
+
   const taskKey = document.getElementById('ewAddSubtaskTaskSelect')?.value;
   const text = document.getElementById('ewAddSubtaskText')?.value.trim();
   const mode = addSubtaskModalMode;
-  if (!tripId || !text || (mode === 'tripSpecific' && !taskKey)) {
-    toast(mode === 'tripSpecific' ? 'Choose a trip, task, and subtask text' : 'Choose a trip and subtask text', '⚠️');
+  
+  if (!text) {
+    toast('Subtask text is required', '⚠️');
     return;
   }
 
-  const trip = trips.find(t => t.id === tripId);
-  if (!trip) {
-    toast('Trip not found', '⚠️');
-    return;
-  }
-
-  const cat = mode === 'generic' ? 'generic' : getSubtaskCategory(taskKey);
-  const subsObj = trip.subtasks || {};
-  if (!subsObj[cat]) subsObj[cat] = [];
-
-  const newSubtask = {
-    id: 's_' + Date.now(),
-    text,
-    done: false,
-    assignee: activeEmployee?.name || trip.owner || '',
-    createdAt: new Date().toISOString(),
-    metadata: {}
-  };
   if (mode === 'tripSpecific') {
-    newSubtask.metadata.reminder = { date: new Date().toISOString().slice(0, 10), label: 'Due today' };
-  }
+    if (!tripId || !taskKey) {
+      toast('Choose a trip and a task stage', '⚠️');
+      return;
+    }
+    const trip = trips.find(t => t.id === tripId);
+    if (!trip) {
+      toast('Trip not found', '⚠️');
+      return;
+    }
 
-  subsObj[cat].push(newSubtask);
-  trip.subtasks = subsObj;
-  closeAddSubtaskModal();
-  renderWorkspace();
-  updateTripField(trip.id, 'subtasks', subsObj)
-    .then(() => toast('Subtask added'))
-    .catch(err => {
-      console.error('Add subtask failed', err);
-      toast('Failed to add subtask', '⚠️');
-    });
+    const cat = getSubtaskCategory(taskKey);
+    const subsObj = trip.subtasks || {};
+    if (!subsObj[cat]) subsObj[cat] = [];
+
+    const newSubtask = {
+      id: 's_' + Date.now(),
+      text,
+      done: false,
+      assignee: activeEmployee?.name || trip.owner || '',
+      createdAt: new Date().toISOString(),
+      metadata: { reminder: { date: new Date().toISOString().slice(0, 10), label: 'Due today' } }
+    };
+
+    subsObj[cat].push(newSubtask);
+    trip.subtasks = subsObj;
+    closeAddSubtaskModal();
+    renderWorkspace();
+    updateTripField(trip.id, 'subtasks', subsObj)
+      .then(() => toast('Subtask added'))
+      .catch(err => {
+        console.error('Add subtask failed', err);
+        toast('Failed to add subtask', '⚠️');
+      });
+  } else {
+    // Generic subtask
+    if (!activeEmployee) {
+      toast('No active employee selected', '⚠️');
+      return;
+    }
+    const newSubtask = {
+      id: 's_' + Date.now(),
+      text,
+      done: false,
+      assignee: activeEmployee.name,
+      createdAt: new Date().toISOString(),
+      metadata: {}
+    };
+    
+    const empSubs = activeEmployee.subtasks || {};
+    if (!empSubs['generic']) empSubs['generic'] = [];
+    empSubs['generic'].push(newSubtask);
+    activeEmployee.subtasks = empSubs;
+    
+    closeAddSubtaskModal();
+    renderWorkspace();
+    
+    apiJson(`/api/ownership/employees/${activeEmployee.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ subtasks: empSubs })
+    }).then(() => toast('Generic subtask added'))
+      .catch(err => {
+        console.error('Add generic subtask failed', err);
+        toast('Failed to add generic subtask', '⚠️');
+      });
+  }
 });
 
 function renderStatsRow(stats) {
@@ -1410,26 +1523,26 @@ function syncAddSubtaskFieldVisibility() {
 function refreshAddSubtaskSelects() {
   const modal = document.getElementById('ewAddSubtaskModal');
   if (!modal) return;
-  const tripSearch = document.getElementById('ewAddSubtaskTripSearch');
-  const tripSelect = document.getElementById('ewAddSubtaskTripSelect');
-  const taskSearch = document.getElementById('ewAddSubtaskTaskSearch');
+  const tripInput = document.getElementById('ewAddSubtaskTripInput');
+  const tripList = document.getElementById('ewAddSubtaskTripList');
+  const tripSelect = document.getElementById('ewAddSubtaskTripSelect'); // Hidden input
   const taskSelect = document.getElementById('ewAddSubtaskTaskSelect');
 
-  if (tripSelect) {
-    const selectedTripValue = tripSelect.value || trips[0]?.id || '';
-    tripSelect.innerHTML = buildFilteredOptions(
-      getAddSubtaskTripOptions(),
-      tripSearch?.value,
-      selectedTripValue,
-      'No trips available',
-      item => item.searchText || item.label
-    );
-    if (selectedTripValue) tripSelect.value = selectedTripValue;
+  if (tripList) {
+    const options = getAddSubtaskTripOptions();
+    tripList.innerHTML = options.map(opt => `<option data-id="${opt.value}" value="${escHtml(opt.label)}"></option>`).join('');
+    
+    if (tripInput && tripSelect && tripSelect.value) {
+      const selectedOpt = options.find(o => o.value === tripSelect.value);
+      if (selectedOpt) {
+        tripInput.value = selectedOpt.label;
+      }
+    }
   }
 
   if (taskSelect) {
     const selectedTaskKey = taskSelect.value || currentDetailContext?.taskKey || taskFields[0]?.key || '';
-    taskSelect.innerHTML = buildFilteredOptions(getAddSubtaskTaskOptions(), taskSearch?.value, selectedTaskKey, 'No tasks available');
+    taskSelect.innerHTML = buildFilteredOptions(getAddSubtaskTaskOptions(), '', selectedTaskKey, 'No tasks available');
     if (selectedTaskKey) taskSelect.value = selectedTaskKey;
   }
 }
@@ -1438,15 +1551,13 @@ function openAddSubtaskModal(prefill = {}) {
   const modal = document.getElementById('ewAddSubtaskModal');
   if (!modal) return;
   addSubtaskModalMode = prefill.mode === 'generic' ? 'generic' : 'tripSpecific';
+  const tripInput = document.getElementById('ewAddSubtaskTripInput');
   const tripSelect = document.getElementById('ewAddSubtaskTripSelect');
-  const tripSearch = document.getElementById('ewAddSubtaskTripSearch');
   const taskSelect = document.getElementById('ewAddSubtaskTaskSelect');
-  const taskSearch = document.getElementById('ewAddSubtaskTaskSearch');
   const textInput = document.getElementById('ewAddSubtaskText');
 
-  if (tripSearch) tripSearch.value = '';
-  if (taskSearch) taskSearch.value = '';
-  if (tripSelect) tripSelect.value = prefill.tripId || selectedTripId || trips[0]?.id || '';
+  if (tripInput) tripInput.value = '';
+  if (tripSelect) tripSelect.value = prefill.tripId || '';
   if (taskSelect) taskSelect.value = prefill.taskKey || currentDetailContext?.taskKey || taskFields[0]?.key || '';
   if (textInput) textInput.value = prefill.text || '';
 
@@ -1454,8 +1565,8 @@ function openAddSubtaskModal(prefill = {}) {
   refreshAddSubtaskSelects();
   modal.classList.add('open');
   setTimeout(() => {
-    if (addSubtaskModalMode === 'tripSpecific' && taskSelect) {
-      taskSelect.focus();
+    if (addSubtaskModalMode === 'tripSpecific' && tripInput) {
+      tripInput.focus();
     } else if (textInput) {
       textInput.focus();
     }
@@ -1912,6 +2023,11 @@ async function updateTripField(tripId, field, value) {
 }
 
 async function toggleSubtaskPriority(tripId, subtaskId) {
+  if (!tripId) return _handleGenericSubtaskUpdate(subtaskId, (s) => {
+    if (!s.metadata) s.metadata = {};
+    s.metadata.isHighPriority = !s.metadata.isHighPriority;
+    s.metadata.priorityUpdatedAt = new Date().toISOString();
+  });
   const trip = trips.find(t => t.id === tripId);
   if (!trip) return;
   let subsObj = trip.subtasks || {};
@@ -1943,6 +2059,7 @@ async function toggleSubtaskPriority(tripId, subtaskId) {
 }
 
 async function toggleSubtaskDone(tripId, subtaskId, isDone) {
+  if (!tripId) return _handleGenericSubtaskUpdate(subtaskId, (s) => { s.done = isDone; });
   const trip = trips.find(t => t.id === tripId);
   if (!trip) return;
   let subsObj = trip.subtasks || {};
@@ -1975,6 +2092,13 @@ async function updateSubtaskRemarks(tripId, subtaskId, remarks) {
 }
 
 async function appendSubtaskRemark(tripId, subtaskId, remarks) {
+  if (!tripId) return _handleGenericSubtaskUpdate(subtaskId, (s) => {
+    if (!s.metadata) s.metadata = {};
+    const next = normalizeRemarkEntries(s.metadata.remarks);
+    const text = String(remarks || '').trim();
+    if (text) next.push({ text, ts: new Date().toISOString() });
+    s.metadata.remarks = next;
+  });
   const trip = trips.find(t => t.id === tripId);
   if (!trip) return;
   let subsObj = trip.subtasks || {};
@@ -2009,6 +2133,12 @@ async function appendSubtaskRemark(tripId, subtaskId, remarks) {
 }
 
 async function deleteSubtask(tripId, subtaskId) {
+  if (!tripId) {
+    if (!confirm('Are you sure you want to delete this subtask?')) return;
+    return _handleGenericSubtaskUpdate(subtaskId, (s, arr) => {
+      arr.splice(arr.indexOf(s), 1);
+    });
+  }
   if (!confirm('Are you sure you want to delete this subtask?')) return;
   const trip = trips.find(t => t.id === tripId);
   if (!trip) return;
@@ -2135,3 +2265,22 @@ document.addEventListener('DOMContentLoaded', () => {
     restoreEmployeeWorkspaceState();
   }
 });
+
+function _handleGenericSubtaskUpdate(subtaskId, updaterFn) {
+  if (!activeEmployee || !activeEmployee.subtasks) return false;
+  let found = false;
+  Object.values(activeEmployee.subtasks).forEach(arr => {
+    if (Array.isArray(arr)) {
+      const s = arr.find(x => x.id === subtaskId);
+      if (s) { updaterFn(s, arr); found = true; }
+    }
+  });
+  if (found) {
+    if (currentView === "workspace") renderWorkspace();
+    apiJson('/api/ownership/employees/' + activeEmployee.id, {
+      method: 'PATCH',
+      body: JSON.stringify({ subtasks: activeEmployee.subtasks })
+    }).catch(() => {});
+  }
+  return found;
+}

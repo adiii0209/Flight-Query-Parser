@@ -7450,7 +7450,7 @@ def _employee_color(name):
 def _ensure_ownership_employees():
     existing = {
         (employee.name or "").strip().lower(): employee
-        for employee in OwnershipEmployee.query.filter_by(is_active=True).all()
+        for employee in OwnershipEmployee.query.all()
         if employee.name and employee.name.strip()
     }
     names = [
@@ -7467,6 +7467,9 @@ def _ensure_ownership_employees():
             db.session.add(OwnershipEmployee(name=name, color=_employee_color(name), is_active=True))
             changed = True
             continue
+        if not employee.is_active:
+            employee.is_active = True
+            changed = True
         if not employee.color:
             employee.color = _employee_color(name)
             changed = True
@@ -8027,19 +8030,39 @@ def create_ownership_employee():
     employee_payload = employee.to_dict()
     _publish_ownership_event("employee_saved", version=version, sender_id=sender_id, employeeId=employee.id, employee=employee_payload)
     return jsonify({"employee": employee_payload, "cacheVersion": version}), 201
+@app.route("/api/ownership/employees/<employee_id>", methods=["PATCH", "DELETE"])
+def update_ownership_employee(employee_id):
+    if request.method == "DELETE":
+        employee = OwnershipEmployee.query.get(employee_id)
+        if not employee:
+            return jsonify({"error": "Employee not found"}), 404
+        deleted_employee = employee.to_dict()
+        employee.is_active = False
+        db.session.commit()
+        version = _invalidate_ownership_cache()
+        _ownership_cache_delete_employee(employee_id)
+        _publish_ownership_event("employee_deleted", version=version, sender_id=_request_ownership_sender_id(), employeeId=employee_id, employee=deleted_employee)
+        return jsonify({"success": True, "cacheVersion": version})
 
-
-@app.route("/api/ownership/employees/<employee_id>", methods=["DELETE"])
-def delete_ownership_employee(employee_id):
+    payload = request.get_json(force=True) or {}
+    sender_id = _request_ownership_sender_id(payload)
     employee = OwnershipEmployee.query.get(employee_id)
     if not employee:
         return jsonify({"error": "Employee not found"}), 404
-    deleted_employee = employee.to_dict()
-    employee.is_active = False
+    if "subtasks" in payload:
+        employee.subtasks_json = payload["subtasks"]
+    if "color" in payload:
+        employee.color = str(payload.get("color") or "").strip()
+    if "isActive" in payload:
+        employee.is_active = bool(payload["isActive"])
     db.session.commit()
     version = _invalidate_ownership_cache()
-    _publish_ownership_event("employee_deleted", version=version, sender_id=_request_ownership_sender_id(), employeeId=employee_id, employee=deleted_employee)
-    return jsonify({"success": True, "cacheVersion": version})
+    employee_payload = employee.to_dict()
+    _publish_ownership_event("employee_saved", version=version, sender_id=sender_id, employeeId=employee.id, employee=employee_payload)
+    return jsonify({"employee": employee_payload, "cacheVersion": version})
+
+
+
 
 
 # SSE /api/ownership/stream endpoint removed — all clients use WebSocket via SharedWorker now.
