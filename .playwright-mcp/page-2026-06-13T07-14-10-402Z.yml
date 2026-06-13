@@ -1,0 +1,31 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - generic:
+      - generic: ✈
+  - generic [ref=e2]:
+    - link "← Back" [ref=e4] [cursor=pointer]:
+      - /url: /
+    - generic [ref=e5]:
+      - generic [ref=e6]: ✈️
+      - generic [ref=e7]: Time Tours
+      - generic [ref=e8]: Travel with ease
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - button "Login" [ref=e11] [cursor=pointer]
+        - button "Register" [ref=e12] [cursor=pointer]
+      - alert
+      - generic [ref=e13]:
+        - generic [ref=e14]:
+          - generic [ref=e15]: Username
+          - generic [ref=e16]:
+            - generic: 👤
+            - textbox "your_username" [ref=e17]
+        - generic [ref=e18]:
+          - generic [ref=e19]: Password
+          - generic [ref=e20]:
+            - generic: 🔒
+            - textbox "••••••••" [ref=e21]
+            - button "👁️" [ref=e22] [cursor=pointer]
+        - button "Sign In" [ref=e23] [cursor=pointer]
+        - generic [ref=e24]: or
+        - button "🧪 Continue as Test User" [ref=e25] [cursor=pointer]

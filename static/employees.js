@@ -9,6 +9,7 @@ let currentTab = 'subtasks';
 let empSearchQuery = '';
 let selectedTripId = null;
 let doneSubtasksExpanded = false;
+let addSubtaskModalMode = 'tripSpecific';
 let employeeWorkspaceBooting = false;
 let employeeWorkspaceReady = false;
 const EMPLOYEE_TRIPS_CACHE_KEY = 'ownership_trips_cache_v1';
@@ -223,11 +224,18 @@ function ewFormatReminderDateLabel(dateStr) {
 
 function ewReminderLabel(reminder) {
   if (!reminder) return '';
-  if (reminder.date) return ewFormatReminderDateLabel(reminder.date);
+  if (reminder.date) {
+    const label = ewFormatReminderDateLabel(reminder.date);
+    return reminder.recurring ? `${label} · Recurring` : label;
+  }
   const days = parseInt(reminder.days, 10);
   if (!days) return '';
   const dir = days < 0 ? 'after' : 'before';
   return Math.abs(days) + ' days ' + dir;
+}
+
+function isRecurringSubtask(subtask) {
+  return !!(subtask && subtask.metadata && subtask.metadata.reminder && subtask.metadata.reminder.recurring);
 }
 
 function buildReminderBadgeHtml(subtask) {
@@ -252,8 +260,9 @@ function buildReminderBadgeHtml(subtask) {
   const bg = 'transparent';
   
   const label = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).format(d);
+  const recurringLabel = reminder.recurring ? ' · Recurring' : '';
   
-  return '<span class="ew-reminder-badge" style="color:' + color + ';background:' + bg + '; font-size:0.66rem; font-weight:700; padding:0.14rem 0; border-radius:999px; white-space:nowrap; display:inline-flex; align-items:center;">' + escHtml(label) + calendarIconHtml + '</span>';
+  return '<span class="ew-reminder-badge' + (reminder.recurring ? ' is-recurring' : '') + '" style="color:' + color + ';background:' + bg + '; font-size:0.66rem; font-weight:700; padding:0.14rem 0; border-radius:999px; white-space:nowrap; display:inline-flex; align-items:center;">' + escHtml(label + recurringLabel) + calendarIconHtml + '</span>';
 }
 
 function openEwSubtaskReminderModal(tripId, subtaskId) {
@@ -278,11 +287,12 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
           '<span style="font-size:0.75rem;color:var(--crm-text-3);">Type</span>' +
           '<select id="ewSubtaskReminderType" class="crm-form-input" style="padding:0.2rem 0.4rem;height:auto;width:auto;font-size:0.75rem;">' +
             '<option value="date">On specific date</option>' +
+            '<option value="recurring">Recurring</option>' +
             '<option value="relative">Days before/after trip</option>' +
           '</select>' +
         '</div>' +
         '<div id="ewSubtaskReminderDateRow" class="crm-reminder-row">' +
-          '<span style="font-size:0.75rem;color:var(--crm-text-3);">Date</span>' +
+          '<span id="ewSubtaskReminderDateLabel" style="font-size:0.75rem;color:var(--crm-text-3);">Date</span>' +
           '<input type="date" id="ewSubtaskReminderDate" class="crm-form-input" style="font-size:0.75rem;height:auto;padding:0.2rem 0.4rem;">' +
         '</div>' +
         '<div id="ewSubtaskReminderRelativeRow" class="crm-reminder-row" style="display:none;">' +
@@ -327,11 +337,15 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
   }
 
   function _syncView() {
-    const isDate = typeSelect.value === 'date';
+    const isDate = typeSelect.value === 'date' || typeSelect.value === 'recurring';
     dateRow.style.display = isDate ? '' : 'none';
     relRow.style.display = isDate ? 'none' : '';
+    const dateLabel = document.getElementById('ewSubtaskReminderDateLabel');
+    if (dateLabel) {
+      dateLabel.textContent = typeSelect.value === 'recurring' ? 'Recurring Date' : 'Date';
+    }
     const calcRow = document.getElementById('ewSubtaskReminderCalcDateRow');
-    if (!isDate) {
+    if (typeSelect.value === 'relative') {
       calcRow.style.display = '';
       _updateCalcDate();
     } else {
@@ -343,7 +357,10 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
   document.getElementById('ewSubtaskReminderDays').oninput = _updateCalcDate;
   document.getElementById('ewSubtaskReminderDir').onchange = _updateCalcDate;
 
-  if (currentReminder && currentReminder.date) {
+  if (currentReminder && currentReminder.recurring) {
+    typeSelect.value = 'recurring';
+    document.getElementById('ewSubtaskReminderDate').value = currentReminder.date || todayStr;
+  } else if (currentReminder && currentReminder.date) {
     typeSelect.value = 'date';
     document.getElementById('ewSubtaskReminderDate').value = currentReminder.date;
   } else if (currentReminder && currentReminder.days) {
@@ -380,6 +397,10 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
       const dateVal = document.getElementById('ewSubtaskReminderDate').value;
       if (!dateVal) return;
       sub.metadata.reminder = { date: dateVal, label: dateVal };
+    } else if (type === 'recurring') {
+      const dateVal = document.getElementById('ewSubtaskReminderDate').value;
+      if (!dateVal) return;
+      sub.metadata.reminder = { date: dateVal, label: dateVal, recurring: true };
     } else {
       let days = parseInt(document.getElementById('ewSubtaskReminderDays').value, 10);
       if (isNaN(days) || days < 1) return;
@@ -448,6 +469,9 @@ function buildSubtaskCardHtml(s) {
   const createdAt = formatCompactDateTime(getSubtaskCreatedAt(s));
   const remarkCount = normalizeRemarkEntries(s.metadata?.remarks).length;
   const reminderBadge = buildReminderBadgeHtml(s);
+  const recurringBadge = isRecurringSubtask(s)
+    ? '<span class="ew-recurring-badge">Recurring</span>'
+    : '';
   const hasReminder = !!(s.metadata && s.metadata.reminder);
   const reminderTitle = hasReminder ? escHtml(ewReminderLabel(s.metadata.reminder)) : 'Set reminder';
   return `
@@ -466,7 +490,8 @@ function buildSubtaskCardHtml(s) {
           </div>
         </div>
           <div class="ew-subtask-card-badges-wrap" style="display:flex; flex-direction:column; align-items:flex-end; gap:0.4rem; flex-shrink:0;">
-            <div class="ew-subtask-card-badges" style="display:flex; align-items:center; gap:0.35rem; flex-shrink:0;">
+            <div class="ew-subtask-card-badges" style="display:flex; align-items:center; gap:0.35rem; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end;">
+              ${recurringBadge}
               ${buildPriorityToggleHtml(s)}
               <button type="button" class="ew-subtask-reminder-btn ${hasReminder ? 'active' : ''}" style="border:none; background:none; padding:0; cursor:pointer; display:flex; align-items:center; flex-shrink:0; width:auto; height:auto;" title="${reminderTitle}" aria-label="Set subtask reminder" onclick="event.stopPropagation(); openEwSubtaskReminderModal('${s.tripId}', '${s.id}')">
                 ${reminderBadge || '<span class="ew-reminder-badge" style="color:var(--crm-text-3);background:transparent; font-size:0.66rem; font-weight:700; padding:0.14rem 0; border-radius:999px; white-space:nowrap;">Set Reminder</span>'}
@@ -1069,11 +1094,12 @@ function normalizeEmployeeTaskStatus(value) {
 }
 
 function getEmployeeData() {
-  if (!activeEmployee) return { tasks: [], subtasks: [], stats: {} };
+  if (!activeEmployee) return { tasks: [], subtasks: [], recurringSubtasks: [], stats: {} };
   
   const empName = activeEmployee.name;
   let allTasks = [];
   let allSubtasks = [];
+  let allRecurringSubtasks = [];
   let tripCount = 0;
   
   // Tasks are extracted from trips owned by this employee
@@ -1104,14 +1130,18 @@ function getEmployeeData() {
         if (!Array.isArray(catArray)) return;
         catArray.forEach(s => {
           if (s.assignee === empName) {
-            allSubtasks.push({
+            const subtask = {
               ...s,
               tripId: trip.id,
               tripName: trip.guestName || trip.destination || 'Unnamed Trip',
               tripDate: formatDate(trip.startDate),
               taskCategory: catName,
               trip: trip
-            });
+            };
+            allSubtasks.push(subtask);
+            if (isRecurringSubtask(subtask)) {
+              allRecurringSubtasks.push(subtask);
+            }
           }
         });
       });
@@ -1131,10 +1161,16 @@ function getEmployeeData() {
       s.tripName.toLowerCase().includes(q) ||
       (s.trip.destination || '').toLowerCase().includes(q)
     );
+    allRecurringSubtasks = allRecurringSubtasks.filter(s =>
+      s.text.toLowerCase().includes(q) ||
+      s.tripName.toLowerCase().includes(q) ||
+      (s.trip.destination || '').toLowerCase().includes(q)
+    );
   }
 
   // Sort subtasks so priorities stay above normal items.
   allSubtasks.sort(compareSubtasksForDisplay);
+  allRecurringSubtasks.sort(compareSubtasksForDisplay);
   
   // Calculate Stats
   const stats = {
@@ -1152,7 +1188,7 @@ function getEmployeeData() {
     stats.completionRate = Math.round((stats.completedTasks / totalRelevant) * 100);
   }
   
-  return { tasks: allTasks, subtasks: allSubtasks, stats };
+  return { tasks: allTasks, subtasks: allSubtasks, recurringSubtasks: allRecurringSubtasks, stats };
 }
 
 // ============================================================================
@@ -1171,7 +1207,7 @@ function renderWorkspace() {
     : [];
   if (currentTab === 'kanban') container.innerHTML = renderKanban(data.tasks);
   else if (currentTab === 'trip') container.innerHTML = renderTripView(data.tasks, data.subtasks);
-  else if (currentTab === 'subtasks') container.innerHTML = renderSubtasks(data.subtasks);
+  else if (currentTab === 'subtasks') container.innerHTML = renderSubtasks(data.subtasks, data.recurringSubtasks);
   else if (currentTab === 'timeline') container.innerHTML = renderTimeline(data.tasks);
   else if (currentTab === 'calendar') container.innerHTML = renderEmployeeCalendar(data.tasks);
 
@@ -1243,12 +1279,26 @@ document.getElementById('ewAddSubtaskModal')?.addEventListener('click', (e) => {
   if (e.target && e.target.id === 'ewAddSubtaskModal') closeAddSubtaskModal();
 });
 
+document.querySelectorAll('.ew-add-subtask-type-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    addSubtaskModalMode = btn.dataset.mode === 'generic' ? 'generic' : 'tripSpecific';
+    syncAddSubtaskFieldVisibility();
+    refreshAddSubtaskSelects();
+  });
+});
+
+document.getElementById('ewAddSubtaskTripSearch')?.addEventListener('input', () => refreshAddSubtaskSelects());
+document.getElementById('ewAddSubtaskTaskSearch')?.addEventListener('input', () => refreshAddSubtaskSelects());
+document.getElementById('ewAddSubtaskTripSelect')?.addEventListener('change', () => refreshAddSubtaskSelects());
+document.getElementById('ewAddSubtaskTaskSelect')?.addEventListener('change', () => refreshAddSubtaskSelects());
+
 document.getElementById('ewAddSubtaskSave')?.addEventListener('click', async () => {
   const tripId = document.getElementById('ewAddSubtaskTripSelect')?.value;
   const taskKey = document.getElementById('ewAddSubtaskTaskSelect')?.value;
   const text = document.getElementById('ewAddSubtaskText')?.value.trim();
-  if (!tripId || !taskKey || !text) {
-    toast('Choose a trip, task, and subtask text', '⚠️');
+  const mode = addSubtaskModalMode;
+  if (!tripId || !text || (mode === 'tripSpecific' && !taskKey)) {
+    toast(mode === 'tripSpecific' ? 'Choose a trip, task, and subtask text' : 'Choose a trip and subtask text', '⚠️');
     return;
   }
 
@@ -1258,7 +1308,7 @@ document.getElementById('ewAddSubtaskSave')?.addEventListener('click', async () 
     return;
   }
 
-  const cat = getSubtaskCategory(taskKey);
+  const cat = mode === 'generic' ? 'generic' : getSubtaskCategory(taskKey);
   const subsObj = trip.subtasks || {};
   if (!subsObj[cat]) subsObj[cat] = [];
 
@@ -1268,8 +1318,11 @@ document.getElementById('ewAddSubtaskSave')?.addEventListener('click', async () 
     done: false,
     assignee: activeEmployee?.name || trip.owner || '',
     createdAt: new Date().toISOString(),
-    metadata: { reminder: { date: new Date().toISOString().slice(0, 10), label: 'Due today' } }
+    metadata: {}
   };
+  if (mode === 'tripSpecific') {
+    newSubtask.metadata.reminder = { date: new Date().toISOString().slice(0, 10), label: 'Due today' };
+  }
 
   subsObj[cat].push(newSubtask);
   trip.subtasks = subsObj;
@@ -1317,29 +1370,96 @@ function tripLabel(trip) {
   return `${name}${dest}${date}`;
 }
 
-function buildAddSubtaskTripOptions(selectedTripId = '') {
-  const sortedTrips = [...trips].sort((a, b) => tripLabel(a).localeCompare(tripLabel(b)));
-  if (!sortedTrips.length) return '<option value="">No trips available</option>';
-  return sortedTrips.map(trip => `<option value="${trip.id}" ${trip.id === selectedTripId ? 'selected' : ''}>${escHtml(tripLabel(trip))}</option>`).join('');
+function getAddSubtaskTripOptions() {
+  return [...trips]
+    .sort((a, b) => tripLabel(a).localeCompare(tripLabel(b)))
+    .map(trip => ({
+      value: trip.id,
+      label: tripLabel(trip),
+      searchText: `${trip.guestName || ''} ${trip.destination || ''} ${trip.owner || ''} ${trip.id || ''}`.trim()
+    }));
 }
 
-function buildAddSubtaskTaskOptions(selectedKey = '') {
-  return taskFields.map(tf => `<option value="${tf.key}" ${tf.key === selectedKey ? 'selected' : ''}>${escHtml(tf.label)}</option>`).join('');
+function getAddSubtaskTaskOptions() {
+  return taskFields.map(tf => ({ value: tf.key, label: tf.label }));
+}
+
+function buildFilteredOptions(items, query, selectedValue, emptyLabel, searchFn = item => item.label) {
+  const normalizedQuery = String(query || '').trim().toLowerCase();
+  const filtered = normalizedQuery
+    ? items.filter(item => String(searchFn(item) || '').toLowerCase().includes(normalizedQuery))
+    : items;
+  if (!filtered.length) return `<option value="">${escHtml(emptyLabel)}</option>`;
+  return filtered
+    .map(item => `<option value="${escHtml(item.value)}" ${item.value === selectedValue ? 'selected' : ''}>${escHtml(item.label)}</option>`)
+    .join('');
+}
+
+function syncAddSubtaskFieldVisibility() {
+  const modal = document.getElementById('ewAddSubtaskModal');
+  if (!modal) return;
+  modal.dataset.mode = addSubtaskModalMode;
+  modal.querySelectorAll('.ew-add-subtask-type-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === addSubtaskModalMode);
+  });
+  modal.querySelectorAll('.ew-add-subtask-mode-panel').forEach(panel => {
+    panel.style.display = panel.dataset.mode === addSubtaskModalMode ? '' : 'none';
+  });
+}
+
+function refreshAddSubtaskSelects() {
+  const modal = document.getElementById('ewAddSubtaskModal');
+  if (!modal) return;
+  const tripSearch = document.getElementById('ewAddSubtaskTripSearch');
+  const tripSelect = document.getElementById('ewAddSubtaskTripSelect');
+  const taskSearch = document.getElementById('ewAddSubtaskTaskSearch');
+  const taskSelect = document.getElementById('ewAddSubtaskTaskSelect');
+
+  if (tripSelect) {
+    const selectedTripValue = tripSelect.value || trips[0]?.id || '';
+    tripSelect.innerHTML = buildFilteredOptions(
+      getAddSubtaskTripOptions(),
+      tripSearch?.value,
+      selectedTripValue,
+      'No trips available',
+      item => item.searchText || item.label
+    );
+    if (selectedTripValue) tripSelect.value = selectedTripValue;
+  }
+
+  if (taskSelect) {
+    const selectedTaskKey = taskSelect.value || currentDetailContext?.taskKey || taskFields[0]?.key || '';
+    taskSelect.innerHTML = buildFilteredOptions(getAddSubtaskTaskOptions(), taskSearch?.value, selectedTaskKey, 'No tasks available');
+    if (selectedTaskKey) taskSelect.value = selectedTaskKey;
+  }
 }
 
 function openAddSubtaskModal(prefill = {}) {
   const modal = document.getElementById('ewAddSubtaskModal');
   if (!modal) return;
+  addSubtaskModalMode = prefill.mode === 'generic' ? 'generic' : 'tripSpecific';
   const tripSelect = document.getElementById('ewAddSubtaskTripSelect');
+  const tripSearch = document.getElementById('ewAddSubtaskTripSearch');
   const taskSelect = document.getElementById('ewAddSubtaskTaskSelect');
+  const taskSearch = document.getElementById('ewAddSubtaskTaskSearch');
   const textInput = document.getElementById('ewAddSubtaskText');
 
-  tripSelect.innerHTML = buildAddSubtaskTripOptions(prefill.tripId || selectedTripId || trips[0]?.id || '');
-  taskSelect.innerHTML = buildAddSubtaskTaskOptions(prefill.taskKey || currentDetailContext?.taskKey || taskFields[0]?.key || '');
-  textInput.value = prefill.text || '';
+  if (tripSearch) tripSearch.value = '';
+  if (taskSearch) taskSearch.value = '';
+  if (tripSelect) tripSelect.value = prefill.tripId || selectedTripId || trips[0]?.id || '';
+  if (taskSelect) taskSelect.value = prefill.taskKey || currentDetailContext?.taskKey || taskFields[0]?.key || '';
+  if (textInput) textInput.value = prefill.text || '';
 
+  syncAddSubtaskFieldVisibility();
+  refreshAddSubtaskSelects();
   modal.classList.add('open');
-  setTimeout(() => textInput.focus(), 0);
+  setTimeout(() => {
+    if (addSubtaskModalMode === 'tripSpecific' && taskSelect) {
+      taskSelect.focus();
+    } else if (textInput) {
+      textInput.focus();
+    }
+  }, 0);
 }
 
 function closeAddSubtaskModal() {
@@ -1441,12 +1561,13 @@ function renderTripView(tasks, subtasks = []) {
       <div class="ew-detail-subtasks">
         ${activeSubtasks.map(s => {
           const catLabel = s.taskCategory ? s.taskCategory.charAt(0).toUpperCase() + s.taskCategory.slice(1) : '';
+          const recurringBadge = isRecurringSubtask(s) ? '<span class="ew-recurring-badge" style="margin-left:0.35rem;">Recurring</span>' : '';
           return `
           <div class="ew-detail-subtask" style="display:flex; gap:1rem; align-items:center; background:var(--crm-surface); padding:0.75rem; border-radius:8px; border:1px solid var(--crm-border);">
             <input type="checkbox" ${s.done ? 'checked' : ''} onchange="toggleSubtaskDone('${s.tripId}', '${s.id}', this.checked)">
             <div style="flex:1;">
               <div class="ew-detail-subtask-text ${s.done ? 'done' : ''}" style="border:none;background:transparent;width:100%;color:var(--crm-text);font-size:0.85rem;" readonly>${escHtml(s.text)}</div>
-              ${catLabel ? `<div style="font-size:0.7rem;color:var(--crm-text-3);">[${catLabel}]</div>` : ''}
+              ${catLabel || recurringBadge ? `<div style="font-size:0.7rem;color:var(--crm-text-3);">${catLabel ? `[${catLabel}]` : ''}${recurringBadge}</div>` : ''}
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center;">
               <input type="text" style="background:transparent;border:1px solid var(--crm-border);border-radius:4px;padding:0.3rem 0.5rem;color:var(--crm-text);font-size:0.8rem;width:200px;" placeholder="Add remark..." value="${escHtml(s.metadata?.remarks || '')}" onchange="updateSubtaskRemarks('${s.tripId}', '${s.id}', this.value)">
@@ -1475,10 +1596,11 @@ function renderTripView(tasks, subtasks = []) {
 }
 
 // Subtasks View
-function renderSubtasks(subtasks) {
+function renderSubtasks(subtasks, recurringSubtasks = []) {
   if (subtasks.length === 0) return '<div style="color:var(--crm-text-3);text-align:center;margin-top:2rem;">No subtasks assigned.</div>';
   const ordered = [...subtasks].sort(compareSubtasksForDisplay);
-  const pending = ordered.filter(s => !s.done);
+  const recurring = [...recurringSubtasks].sort(compareSubtasksForDisplay);
+  const pending = ordered.filter(s => !s.done && !isRecurringSubtask(s));
   const done = ordered.filter(s => s.done);
 
   const container = document.getElementById('ewSubtasksTabContainer');
@@ -1497,16 +1619,27 @@ function renderSubtasks(subtasks) {
         <button
           type="button"
           class="ew-subtask-tab-btn ${activeSubTab === 'pending' ? 'active' : ''}"
+          data-tab="pending"
           onclick="ewSwitchSubtaskTab('pending')"
         >Pending <span class="ew-subtask-tab-count">${pending.length}</span></button>
         <button
           type="button"
+          class="ew-subtask-tab-btn ${activeSubTab === 'recurring' ? 'active' : ''}"
+          data-tab="recurring"
+          onclick="ewSwitchSubtaskTab('recurring')"
+        >Recurring <span class="ew-subtask-tab-count">${recurring.length}</span></button>
+        <button
+          type="button"
           class="ew-subtask-tab-btn ${activeSubTab === 'done' ? 'active' : ''}"
+          data-tab="done"
           onclick="ewSwitchSubtaskTab('done')"
         >Done <span class="ew-subtask-tab-count">${done.length}</span></button>
       </div>
       <div class="ew-subtask-tab-panel" id="ewSubtaskPanelPending" style="display:${activeSubTab === 'pending' ? '' : 'none'};">
         ${buildList(pending, 'No pending subtasks.', ' id="ewPendingSubtasksList"')}
+      </div>
+      <div class="ew-subtask-tab-panel" id="ewSubtaskPanelRecurring" style="display:${activeSubTab === 'recurring' ? '' : 'none'};">
+        ${buildList(recurring, 'No recurring subtasks yet.', ' id="ewRecurringSubtasksList"')}
       </div>
       <div class="ew-subtask-tab-panel" id="ewSubtaskPanelDone" style="display:${activeSubTab === 'done' ? '' : 'none'};">
         ${buildList(done, 'No completed subtasks yet.', '')}
@@ -1520,11 +1653,13 @@ window.ewSwitchSubtaskTab = function(tab) {
   if (!container) return;
   container.dataset.activeSubTab = tab;
   const pendingPanel = document.getElementById('ewSubtaskPanelPending');
+  const recurringPanel = document.getElementById('ewSubtaskPanelRecurring');
   const donePanel = document.getElementById('ewSubtaskPanelDone');
   if (pendingPanel) pendingPanel.style.display = tab === 'pending' ? '' : 'none';
+  if (recurringPanel) recurringPanel.style.display = tab === 'recurring' ? '' : 'none';
   if (donePanel) donePanel.style.display = tab === 'done' ? '' : 'none';
   container.querySelectorAll('.ew-subtask-tab-btn').forEach(btn => {
-    const btnTab = btn.textContent.trim().toLowerCase().startsWith('p') ? 'pending' : 'done';
+    const btnTab = btn.dataset.tab || 'pending';
     btn.classList.toggle('active', btnTab === tab);
   });
 };
