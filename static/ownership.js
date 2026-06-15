@@ -767,12 +767,19 @@ function scheduleOwnershipRefreshDeferred(delayMs = 220) {
 }
 
 function recalculateTableTextareaHeights() {
-  document.querySelectorAll('td.col-sticky-3 textarea, td.col-sticky-5 textarea').forEach(ta => {
-    if (ta.offsetParent !== null) {
-      ta.style.height = 'auto';
-      ta.style.height = ta.scrollHeight + 'px';
-    }
-  });
+  const textareas = Array.from(document.querySelectorAll('td.col-sticky-3 textarea, td.col-sticky-5 textarea'))
+    .filter(ta => ta.offsetParent !== null);
+  
+  if (textareas.length === 0) return;
+
+  // Batch DOM writes: set all to auto
+  textareas.forEach(ta => ta.style.height = 'auto');
+  
+  // Batch DOM reads: read all scrollHeights (triggers layout once)
+  const heights = textareas.map(ta => ta.scrollHeight);
+  
+  // Batch DOM writes: set all pixel heights
+  textareas.forEach((ta, i) => ta.style.height = heights[i] + 'px');
 }
 
 function refreshAuxiliaryViews() {
@@ -1386,13 +1393,15 @@ function renderTable() {
   // Attach events
   attachTableEvents();
   
-  // Adjust textarea heights for wrapping guest names and countries
-  document.querySelectorAll('td.col-sticky-3 textarea, td.col-sticky-5 textarea').forEach(ta => {
-    if (ta.offsetParent !== null) {
-      ta.style.height = 'auto';
-      ta.style.height = ta.scrollHeight + 'px';
-    }
-  });
+  // Adjust textarea heights for wrapping guest names and countries using batched DOM reads/writes
+  const textareas = Array.from(document.querySelectorAll('td.col-sticky-3 textarea, td.col-sticky-5 textarea'))
+    .filter(ta => ta.offsetParent !== null);
+  
+  if (textareas.length > 0) {
+    textareas.forEach(ta => ta.style.height = 'auto');
+    const heights = textareas.map(ta => ta.scrollHeight);
+    textareas.forEach((ta, i) => ta.style.height = heights[i] + 'px');
+  }
   
   updateKPIs();
   } catch (err) {
