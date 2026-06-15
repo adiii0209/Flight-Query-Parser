@@ -2380,41 +2380,7 @@ function renderSubtaskBody(subtasks) {
   addReminderBtn.addEventListener('click', openNewSubtaskReminderModal);
   addInput.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
 
-  // Reminder section
-  const trip = trips.find(t => t.id === subtaskContext.tripId);
-  const remDiv = document.createElement('div');
-  remDiv.style.cssText = 'border-top:1px solid var(--crm-border);padding-top:.65rem;display:flex;flex-direction:column;gap:.5rem; margin-top:.5rem;';
-  remDiv.innerHTML = `
-    <div class="crm-form-label" style="display:flex; align-items:center;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;color:var(--crm-text-3);"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> Reminders for this trip
-    </div>
-    <div class="crm-reminder-row" id="reminderBuildRow">
-      <span style="font-size:.78rem;color:var(--crm-text-3);">Alert me</span>
-      <input type="number" id="reminderDaysInput" min="1" max="180" value="7" placeholder="7">
-      <select id="reminderDirInput" class="crm-form-input" style="padding:0.1rem 0.2rem; height:auto; width:auto; font-size:0.75rem; border-color:transparent;">
-        <option value="before">days before trip</option>
-        <option value="after">days after trip</option>
-      </select>
-      <button class="crm-btn crm-btn-ghost crm-icon-btn" id="addReminderBtn" title="Add reminder">${BELL_ICON}</button>
-    </div>
-    <div id="reminderTagsWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;">
-      ${(trip.reminders||[]).map(r => `<span class="crm-reminder-tag"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:text-bottom; margin-right:2px;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> ${escHtml(r.label)} <button onclick="removeReminder(${r.days})" style="background:none;border:none;cursor:pointer;font-size:.75rem;margin-left:.2rem;">✕</button></span>`).join('')}
-    </div>
-  `;
-  body.appendChild(remDiv);
-
-  document.getElementById('addReminderBtn').addEventListener('click', () => {
-    let days = parseInt(document.getElementById('reminderDaysInput').value, 10);
-    if (isNaN(days) || days < 1) return;
-    const dir = document.getElementById('reminderDirInput').value;
-    if (dir === 'after') days = -days;
-    const trip = trips.find(t => t.id === subtaskContext.tripId);
-    if (!trip.reminders) trip.reminders = [];
-    if (!trip.reminders.find(r => r.days === days)) {
-      trip.reminders.push({ days, label: `${Math.abs(days)} days ${dir}` });
-      scheduleSubtaskModalRefresh();
-    }
-  });
+  // (Trip reminders section removed per user request, since subtasks have individual reminders)
 }
 
 window.removeReminder = function(days) {
@@ -2537,39 +2503,7 @@ function renderSubtaskBody(subtasks) {
   });
   body.appendChild(draftsWrap);
 
-  const remDiv = document.createElement('div');
-  remDiv.style.cssText = 'border-top:1px solid var(--crm-border);padding-top:.65rem;display:flex;flex-direction:column;gap:.5rem; margin-top:.5rem;';
-  remDiv.innerHTML = `
-    <div class="crm-form-label" style="display:flex; align-items:center;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;color:var(--crm-text-3);"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> Reminders for this trip
-    </div>
-    <div class="crm-reminder-row" id="reminderBuildRow">
-      <span style="font-size:.78rem;color:var(--crm-text-3);">Alert me</span>
-      <input type="number" id="reminderDaysInput" min="1" max="180" value="7" placeholder="7">
-      <select id="reminderDirInput" class="crm-form-input" style="padding:0.1rem 0.2rem; height:auto; width:auto; font-size:0.75rem; border-color:transparent;">
-        <option value="before">days before trip</option>
-        <option value="after">days after trip</option>
-      </select>
-      <button class="crm-btn crm-btn-ghost crm-icon-btn" id="addReminderBtn" title="Add reminder">${BELL_ICON}</button>
-    </div>
-    <div id="reminderTagsWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;">
-      ${(trip.reminders||[]).map(r => `<span class="crm-reminder-tag"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:text-bottom; margin-right:2px;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> ${escHtml(r.label)} <button onclick="removeReminder(${r.days})" style="background:none;border:none;cursor:pointer;font-size:.75rem;margin-left:.2rem;">✕</button></span>`).join('')}
-    </div>
-  `;
-  body.appendChild(remDiv);
-
-  document.getElementById('addReminderBtn').addEventListener('click', () => {
-    let days = parseInt(document.getElementById('reminderDaysInput').value, 10);
-    if (isNaN(days) || days < 1) return;
-    const dir = document.getElementById('reminderDirInput').value;
-    if (dir === 'after') days = -days;
-    const trip = trips.find(t => t.id === subtaskContext.tripId);
-    if (!trip.reminders) trip.reminders = [];
-    if (!trip.reminders.find(r => r.days === days)) {
-      trip.reminders.push({ days, label: `${Math.abs(days)} days ${dir}` });
-      scheduleSubtaskModalRefresh();
-    }
-  });
+  // (Trip reminders section removed per user request)
 }
 
 document.getElementById('btnSaveSubtasks').addEventListener('click', () => {
