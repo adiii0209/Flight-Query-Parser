@@ -8194,9 +8194,8 @@ def realtime_ws():
             try:
                 raw = ws.receive(timeout=5)
                 if raw is None:
-                    # Client disconnected gracefully
-                    ws_alive["value"] = False
-                    break
+                    # Timeout reached, continue looping
+                    continue
                 # Handle client heartbeat messages (keep-alive)
                 if isinstance(raw, str):
                     try:

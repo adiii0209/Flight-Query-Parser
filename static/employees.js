@@ -265,7 +265,7 @@ function buildReminderBadgeHtml(subtask) {
   return '<span class="ew-reminder-badge' + (reminder.recurring ? ' is-recurring' : '') + '" style="color:' + color + ';background:' + bg + '; font-size:0.66rem; font-weight:700; padding:0.14rem 0; border-radius:999px; white-space:nowrap; display:inline-flex; align-items:center;">' + escHtml(label + recurringLabel) + calendarIconHtml + '</span>';
 }
 
-function openEwSubtaskReminderModal(tripId, subtaskId) {
+function openEwSubtaskReminderModal(tripId, subtaskId, isNewAdd = false) {
   let trip = null;
   let sub = null;
   
@@ -283,7 +283,7 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
     });
   }
   
-  if (!sub) return;
+  if (!sub && !isNewAdd) return;
 
   const BELL = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path><path d="M18 8A6 6 0 0 0 6 8c0 7-3 7-3 9h18c0-2-3-2-3-9"></path></svg>';
   let modal = document.getElementById('ewSubtaskReminderModal');
@@ -326,7 +326,7 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
     document.body.appendChild(modal);
   }
 
-  const currentReminder = sub.metadata && sub.metadata.reminder;
+  const currentReminder = isNewAdd ? pendingEwAddSubtaskReminder : (sub.metadata && sub.metadata.reminder);
   const typeSelect = document.getElementById('ewSubtaskReminderType');
   const dateRow = document.getElementById('ewSubtaskReminderDateRow');
   const relRow = document.getElementById('ewSubtaskReminderRelativeRow');
@@ -390,9 +390,14 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
 
   document.getElementById('cancelEwSubtaskReminder').onclick = function() { modal.classList.remove('open'); };
   document.getElementById('clearEwSubtaskReminder').onclick = function() {
+    modal.classList.remove('open');
+    if (isNewAdd) {
+      pendingEwAddSubtaskReminder = null;
+      document.getElementById('ewAddSubtaskReminderBtn')?.classList.remove('active');
+      return;
+    }
     if (!sub.metadata) sub.metadata = {};
     delete sub.metadata.reminder;
-    modal.classList.remove('open');
     if (tripId) {
       updateTripField(tripId, 'subtasks', trip.subtasks).catch(function() {});
     } else if (activeEmployee) {
@@ -409,16 +414,17 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
     if (currentDetailContext && currentDetailContext.tripId === tripId) refreshDetailSubtaskList(trip, currentDetailContext.taskKey);
   };
   document.getElementById('saveEwSubtaskReminder').onclick = function() {
-    if (!sub.metadata) sub.metadata = {};
+    let newRem = null;
+    if (!isNewAdd && !sub.metadata) sub.metadata = {};
     const type = document.getElementById('ewSubtaskReminderType').value;
     if (type === 'date') {
       const dateVal = document.getElementById('ewSubtaskReminderDate').value;
       if (!dateVal) return;
-      sub.metadata.reminder = { date: dateVal, label: dateVal };
+      newRem = { date: dateVal, label: dateVal };
     } else if (type === 'recurring') {
       const dateVal = document.getElementById('ewSubtaskReminderDate').value;
       if (!dateVal) return;
-      sub.metadata.reminder = { date: dateVal, label: dateVal, recurring: true };
+      newRem = { date: dateVal, label: dateVal, recurring: true };
     } else {
       let days = parseInt(document.getElementById('ewSubtaskReminderDays').value, 10);
       if (isNaN(days) || days < 1) return;
@@ -434,9 +440,15 @@ function openEwSubtaskReminderModal(tripId, subtaskId) {
       }
       
       if (dir === 'after') days = -days;
-      sub.metadata.reminder = { days: days, date: dateVal, label: dateVal };
+      newRem = { days: days, date: dateVal, label: dateVal || `${Math.abs(days)} days ${dir}` };
     }
     modal.classList.remove('open');
+    if (isNewAdd) {
+      pendingEwAddSubtaskReminder = newRem;
+      document.getElementById('ewAddSubtaskReminderBtn')?.classList.add('active');
+      return;
+    }
+    sub.metadata.reminder = newRem;
     if (tripId) {
       updateTripField(tripId, 'subtasks', trip.subtasks).catch(function() {});
     } else if (activeEmployee) {
@@ -1337,6 +1349,10 @@ function syncWorkspaceTopStrip() {
 
 window.openAddSubtaskModal = openAddSubtaskModal;
 
+document.getElementById('ewAddSubtaskReminderBtn')?.addEventListener('click', () => {
+  openEwSubtaskReminderModal(null, null, true);
+});
+
 document.getElementById('ewAddSubtaskBtn')?.addEventListener('click', () => {
   openAddSubtaskModal();
 });
@@ -1402,7 +1418,7 @@ document.getElementById('ewAddSubtaskSave')?.addEventListener('click', async () 
       done: false,
       assignee: activeEmployee?.name || trip.owner || '',
       createdAt: new Date().toISOString(),
-      metadata: { reminder: { date: new Date().toISOString().slice(0, 10), label: 'Due today' } }
+      metadata: { reminder: pendingEwAddSubtaskReminder || { date: new Date().toISOString().slice(0, 10), label: 'Due today' } }
     };
 
     subsObj[cat].push(newSubtask);
@@ -1427,7 +1443,7 @@ document.getElementById('ewAddSubtaskSave')?.addEventListener('click', async () 
       done: false,
       assignee: activeEmployee.name,
       createdAt: new Date().toISOString(),
-      metadata: {}
+      metadata: { reminder: pendingEwAddSubtaskReminder || { date: new Date().toISOString().slice(0, 10), label: 'Due today' } }
     };
     
     const empSubs = activeEmployee.subtasks || {};
@@ -1574,6 +1590,9 @@ function openAddSubtaskModal(prefill = {}) {
 }
 
 function closeAddSubtaskModal() {
+  pendingEwAddSubtaskReminder = null;
+  const btn = document.getElementById('ewAddSubtaskReminderBtn');
+  if (btn) btn.classList.remove('active');
   document.getElementById('ewAddSubtaskModal')?.classList.remove('open');
 }
 
@@ -1808,6 +1827,7 @@ function renderEmployeeCalendar(tasks) {
 // ============================================================================
 
 let currentDetailContext = null;
+let pendingEwAddSubtaskReminder = null;
 
 function openTaskDetail(tripId, taskKey) {
   const trip = trips.find(t => t.id === tripId);
@@ -1928,7 +1948,10 @@ async function flushEmployeeTripQueue(tripId) {
       const idx = trips.findIndex(x => x.id === tripId);
       const hasPendingLocalChanges = !!(queue && (queue.inFlight || Object.keys(queue.patch || {}).length > 0));
       const mergedTrip = idx !== -1 && hasPendingLocalChanges ? { ...saved, ...trips[idx] } : saved;
-      if (idx !== -1) trips[idx] = mergedTrip;
+      if (idx !== -1) {
+        trips[idx] = mergedTrip;
+        if (typeof syncTripRowDom === 'function') syncTripRowDom(mergedTrip);
+      }
       queue.snapshot = JSON.parse(JSON.stringify(mergedTrip));
       queue.version = mergedTrip.version || queue.version;
       if (typeof rememberOwnershipVersion === 'function') {
@@ -1952,7 +1975,10 @@ async function flushEmployeeTripQueue(tripId) {
     const hasPendingLocalChanges = !!(queue && (queue.inFlight || Object.keys(queue.patch || {}).length > 0));
     const fallbackTrip = serverTrip ? (hasPendingLocalChanges ? { ...serverTrip, ...(currentTrip || {}) } : serverTrip) : queue.snapshot;
     const idx = trips.findIndex(x => x.id === tripId);
-    if (idx !== -1 && fallbackTrip) trips[idx] = fallbackTrip;
+    if (idx !== -1 && fallbackTrip) {
+      trips[idx] = fallbackTrip;
+      if (typeof syncTripRowDom === 'function') syncTripRowDom(fallbackTrip);
+    }
     if (serverTrip) {
       queue.snapshot = JSON.parse(JSON.stringify(fallbackTrip));
       queue.version = fallbackTrip.version || queue.version;

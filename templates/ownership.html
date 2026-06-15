@@ -357,6 +357,10 @@
           <label class="crm-form-label">Guest / Trip Name</label>
           <input class="crm-form-input" id="tf-guestName" placeholder="e.g. Riya Sharma">
         </div>
+        <div class="crm-form-group" style="grid-column:1/-1;">
+          <label class="crm-form-label">No. of Guests (Pax)</label>
+          <input class="crm-form-input" type="number" id="tf-pax" placeholder="e.g. 2">
+        </div>
         <div class="crm-form-group">
           <label class="crm-form-label">Destination / Country</label>
           <input class="crm-form-input" id="tf-destination" placeholder="e.g. Maldives">
@@ -567,7 +571,12 @@
         </div>
         <div class="crm-form-group">
           <label class="crm-form-label">Subtask</label>
-          <input class="crm-form-input" id="ewAddSubtaskText" type="text" placeholder="Write the subtask...">
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <input class="crm-form-input" id="ewAddSubtaskText" type="text" placeholder="Write the subtask..." style="flex:1;">
+            <button type="button" class="crm-btn crm-btn-ghost crm-icon-btn" id="ewAddSubtaskReminderBtn" title="Set reminder">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path><path d="M18 8A6 6 0 0 0 6 8c0 7-3 7-3 9h18c0-2-3-2-3-9"></path></svg>
+            </button>
+          </div>
         </div>
       </div>
       <div class="crm-modal-footer">

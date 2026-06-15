@@ -479,7 +479,11 @@ function upsertOwnershipTripFromEvent(trip) {
       trips[idx] = nextTrip;
     }
     cacheTripsForFastPaint(trips);
-    refreshOwnershipViews();
+    if (typeof syncTripRowDom === 'function') {
+      syncTripRowDom(trips[idx], { refreshExpanded: true });
+    } else {
+      scheduleOwnershipRefreshDeferred(150);
+    }
     return true;
   }
   trips.unshift(nextTrip);
@@ -762,6 +766,27 @@ function scheduleOwnershipRefreshDeferred(delayMs = 220) {
   }, delayMs);
 }
 
+function recalculateTableTextareaHeights() {
+  document.querySelectorAll('td.col-sticky-3 textarea, td.col-sticky-5 textarea').forEach(ta => {
+    if (ta.offsetParent !== null) {
+      ta.style.height = 'auto';
+      ta.style.height = ta.scrollHeight + 'px';
+    }
+  });
+}
+
+function refreshAuxiliaryViews() {
+  requestAnimationFrame(() => {
+    refreshOwnerControls();
+    populateOwnerFilter();
+    populateMonthFilter();
+    renderActivityFeed();
+    renderCalendar();
+    renderUpcomingTrips();
+    recalculateTableTextareaHeights();
+  });
+}
+
 function scheduleSubtaskModalRefresh(delayMs = 0) {
   if (!subtaskContext) return;
   subtaskModalRefreshState = { tripId: subtaskContext.tripId, key: subtaskContext.key };
@@ -913,8 +938,10 @@ function syncTripRowDom(trip, { refreshExpanded = false } = {}) {
   const guestName = row.querySelector('.crm-guest-name');
   if (guestName) {
     guestName.value = trip.guestName || '';
-    guestName.style.height = 'auto';
-    guestName.style.height = guestName.scrollHeight + 'px';
+    if (guestName.offsetParent !== null) {
+      guestName.style.height = 'auto';
+      guestName.style.height = guestName.scrollHeight + 'px';
+    }
   }
 
   const pax = row.querySelector('input[data-field="pax"]');
@@ -923,8 +950,10 @@ function syncTripRowDom(trip, { refreshExpanded = false } = {}) {
   const destination = row.querySelector('textarea[data-field="destination"]');
   if (destination) {
     destination.value = trip.destination || '';
-    destination.style.height = 'auto';
-    destination.style.height = destination.scrollHeight + 'px';
+    if (destination.offsetParent !== null) {
+      destination.style.height = 'auto';
+      destination.style.height = destination.scrollHeight + 'px';
+    }
   }
 
   const startDate = row.querySelector('input[data-field="startDate"]');
@@ -1359,8 +1388,10 @@ function renderTable() {
   
   // Adjust textarea heights for wrapping guest names and countries
   document.querySelectorAll('td.col-sticky-3 textarea, td.col-sticky-5 textarea').forEach(ta => {
-    ta.style.height = 'auto';
-    ta.style.height = ta.scrollHeight + 'px';
+    if (ta.offsetParent !== null) {
+      ta.style.height = 'auto';
+      ta.style.height = ta.scrollHeight + 'px';
+    }
   });
   
   updateKPIs();
@@ -1856,11 +1887,14 @@ function openSubtaskReminderModal(subtaskId) {
         </div>
         <div id="subtaskReminderRelativeRow" class="crm-reminder-row" style="display:none;">
           <span style="font-size:0.75rem;color:var(--crm-text-3);">Alert</span>
-          <input type="number" id="subtaskReminderDays" min="1" max="180" value="7">
+          <input type="number" id="subtaskReminderDays" min="1" max="180" value="7" style="width:4rem;">
           <select id="subtaskReminderDir" class="crm-form-input" style="padding:0.2rem 0.4rem; height:auto; width:auto; font-size:0.75rem;">
             <option value="before">days before trip</option>
             <option value="after">days after trip</option>
           </select>
+        </div>
+        <div id="subtaskReminderCalcDateRow" style="font-size:0.7rem;color:var(--crm-primary);margin-top:0.35rem;text-align:right;display:none;">
+          Target Date: <span id="subtaskReminderCalcDateVal" style="font-weight:700;">—</span>
         </div>
         <div class="crm-mini-modal-actions">
           <button class="crm-btn crm-btn-ghost" id="clearSubtaskReminder">Clear</button>
@@ -1878,12 +1912,38 @@ function openSubtaskReminderModal(subtaskId) {
   const dateRow = document.getElementById('subtaskReminderDateRow');
   const relRow = document.getElementById('subtaskReminderRelativeRow');
 
+  const _updateCalcDate = () => {
+    let days = parseInt(document.getElementById('subtaskReminderDays').value, 10);
+    if (isNaN(days) || days < 1) {
+      document.getElementById('subtaskReminderCalcDateVal').textContent = '—';
+      return;
+    }
+    const dir = document.getElementById('subtaskReminderDir').value;
+    const calculatedDate = window.getCalculatedRelativeDate ? getCalculatedRelativeDate(trip.startDate, days, dir) : null;
+    if (calculatedDate) {
+      document.getElementById('subtaskReminderCalcDateVal').textContent = calculatedDate.toISOString().slice(0, 10);
+    } else {
+      document.getElementById('subtaskReminderCalcDateVal').textContent = '—';
+    }
+  };
+
   const _syncReminderTypeView = () => {
     const isDate = typeSelect.value === 'date';
     dateRow.style.display = isDate ? '' : 'none';
     relRow.style.display = isDate ? 'none' : '';
+    const calcRow = document.getElementById('subtaskReminderCalcDateRow');
+    if (calcRow) {
+      if (typeSelect.value === 'relative') {
+        calcRow.style.display = '';
+        _updateCalcDate();
+      } else {
+        calcRow.style.display = 'none';
+      }
+    }
   };
   typeSelect.onchange = _syncReminderTypeView;
+  document.getElementById('subtaskReminderDays').oninput = _updateCalcDate;
+  document.getElementById('subtaskReminderDir').onchange = _updateCalcDate;
 
   if (currentReminder?.days !== undefined) {
     typeSelect.value = 'relative';
@@ -1918,8 +1978,13 @@ function openSubtaskReminderModal(subtaskId) {
       let days = parseInt(document.getElementById('subtaskReminderDays').value, 10);
       if (isNaN(days) || days < 1) return;
       const dir = document.getElementById('subtaskReminderDir').value;
+      const targetDate = window.getCalculatedRelativeDate ? getCalculatedRelativeDate(trip.startDate, days, dir) : null;
+      let dateVal = '';
+      if (targetDate) {
+        dateVal = targetDate.toISOString().slice(0, 10);
+      }
       if (dir === 'after') days = -days;
-      sub.metadata = { ...(sub.metadata || {}), reminder: { days, label: `${Math.abs(days)} days ${dir}` } };
+      sub.metadata = { ...(sub.metadata || {}), reminder: { days, date: dateVal, label: dateVal || `${Math.abs(days)} days ${dir}` } };
     }
     modal.classList.remove('open');
     scheduleSubtaskModalRefresh();
@@ -1948,11 +2013,14 @@ function openNewSubtaskReminderModal() {
         </div>
         <div id="newSubtaskReminderRelativeRow" class="crm-reminder-row" style="display:none;">
           <span style="font-size:0.75rem;color:var(--crm-text-3);">Alert</span>
-          <input type="number" id="newSubtaskReminderDays" min="1" max="180" value="7">
+          <input type="number" id="newSubtaskReminderDays" min="1" max="180" value="7" style="width:4rem;">
           <select id="newSubtaskReminderDir" class="crm-form-input" style="padding:0.2rem 0.4rem; height:auto; width:auto; font-size:0.75rem;">
             <option value="before">days before trip</option>
             <option value="after">days after trip</option>
           </select>
+        </div>
+        <div id="newSubtaskReminderCalcDateRow" style="font-size:0.7rem;color:var(--crm-primary);margin-top:0.35rem;text-align:right;display:none;">
+          Target Date: <span id="newSubtaskReminderCalcDateVal" style="font-weight:700;">—</span>
         </div>
         <div class="crm-mini-modal-actions">
           <button class="crm-btn crm-btn-ghost" id="clearNewSubtaskReminder">Clear</button>
@@ -1969,12 +2037,39 @@ function openNewSubtaskReminderModal() {
   const relRow = document.getElementById('newSubtaskReminderRelativeRow');
   const todayStr = new Date().toISOString().slice(0, 10);
 
+  const trip = trips.find(t => t.id === subtaskContext?.tripId);
+  const _updateCalcDate = () => {
+    let days = parseInt(document.getElementById('newSubtaskReminderDays').value, 10);
+    if (isNaN(days) || days < 1) {
+      document.getElementById('newSubtaskReminderCalcDateVal').textContent = '—';
+      return;
+    }
+    const dir = document.getElementById('newSubtaskReminderDir').value;
+    const calculatedDate = (trip && window.getCalculatedRelativeDate) ? getCalculatedRelativeDate(trip.startDate, days, dir) : null;
+    if (calculatedDate) {
+      document.getElementById('newSubtaskReminderCalcDateVal').textContent = calculatedDate.toISOString().slice(0, 10);
+    } else {
+      document.getElementById('newSubtaskReminderCalcDateVal').textContent = '—';
+    }
+  };
+
   const _syncNewReminderTypeView = () => {
     const isDate = typeSelect.value === 'date';
     dateRow.style.display = isDate ? '' : 'none';
     relRow.style.display = isDate ? 'none' : '';
+    const calcRow = document.getElementById('newSubtaskReminderCalcDateRow');
+    if (calcRow) {
+      if (typeSelect.value === 'relative') {
+        calcRow.style.display = '';
+        _updateCalcDate();
+      } else {
+        calcRow.style.display = 'none';
+      }
+    }
   };
   typeSelect.onchange = _syncNewReminderTypeView;
+  document.getElementById('newSubtaskReminderDays').oninput = _updateCalcDate;
+  document.getElementById('newSubtaskReminderDir').onchange = _updateCalcDate;
 
   if (pendingNewSubtaskReminder?.date) {
     typeSelect.value = 'date';
@@ -2007,8 +2102,11 @@ function openNewSubtaskReminderModal() {
       let days = parseInt(document.getElementById('newSubtaskReminderDays').value, 10);
       if (isNaN(days) || days < 1) return;
       const dir = document.getElementById('newSubtaskReminderDir').value;
+      const targetDate = (trip && window.getCalculatedRelativeDate) ? getCalculatedRelativeDate(trip.startDate, days, dir) : null;
+      let dateVal = '';
+      if (targetDate) dateVal = targetDate.toISOString().slice(0, 10);
       if (dir === 'after') days = -days;
-      pendingNewSubtaskReminder = { days, label: `${Math.abs(days)} days ${dir}` };
+      pendingNewSubtaskReminder = { days, date: dateVal, label: dateVal || `${Math.abs(days)} days ${dir}` };
     }
     modal.classList.remove('open');
     document.getElementById('newSubtaskReminderBtn')?.classList.add('active');
@@ -2054,11 +2152,14 @@ function openDraftSubtaskReminderModal(row) {
         </div>
         <div id="draftSubtaskReminderRelativeRow" class="crm-reminder-row" style="display:none;">
           <span style="font-size:0.75rem;color:var(--crm-text-3);">Alert</span>
-          <input type="number" id="draftSubtaskReminderDays" min="1" max="180" value="7">
+          <input type="number" id="draftSubtaskReminderDays" min="1" max="180" value="7" style="width:4rem;">
           <select id="draftSubtaskReminderDir" class="crm-form-input" style="padding:0.2rem 0.4rem; height:auto; width:auto; font-size:0.75rem;">
             <option value="before">days before trip</option>
             <option value="after">days after trip</option>
           </select>
+        </div>
+        <div id="draftSubtaskReminderCalcDateRow" style="font-size:0.7rem;color:var(--crm-primary);margin-top:0.35rem;text-align:right;display:none;">
+          Target Date: <span id="draftSubtaskReminderCalcDateVal" style="font-weight:700;">—</span>
         </div>
         <div class="crm-mini-modal-actions">
           <button class="crm-btn crm-btn-ghost" id="clearDraftSubtaskReminder">Clear</button>
@@ -2070,25 +2171,93 @@ function openDraftSubtaskReminderModal(row) {
     document.body.appendChild(modal);
   }
 
-  const currentDays = draftReminderFromRow(row)?.days || 7;
-  document.getElementById('draftSubtaskReminderDays').value = Math.abs(currentDays);
-  document.getElementById('draftSubtaskReminderDir').value = currentDays < 0 ? 'after' : 'before';
+  const trip = trips.find(t => t.id === subtaskContext?.tripId);
+  const typeSelect = document.getElementById('draftSubtaskReminderType');
+  const dateRow = document.getElementById('draftSubtaskReminderDateRow');
+  const relRow = document.getElementById('draftSubtaskReminderRelativeRow');
+  const calcRow = document.getElementById('draftSubtaskReminderCalcDateRow');
+
+  const _updateCalcDate = () => {
+    let days = parseInt(document.getElementById('draftSubtaskReminderDays').value, 10);
+    if (isNaN(days) || days < 1) {
+      document.getElementById('draftSubtaskReminderCalcDateVal').textContent = '—';
+      return;
+    }
+    const dir = document.getElementById('draftSubtaskReminderDir').value;
+    const calculatedDate = (trip && window.getCalculatedRelativeDate) ? getCalculatedRelativeDate(trip.startDate, days, dir) : null;
+    if (calculatedDate) {
+      document.getElementById('draftSubtaskReminderCalcDateVal').textContent = calculatedDate.toISOString().slice(0, 10);
+    } else {
+      document.getElementById('draftSubtaskReminderCalcDateVal').textContent = '—';
+    }
+  };
+
+  const _syncDraftReminderTypeView = () => {
+    const isDate = typeSelect.value === 'date';
+    dateRow.style.display = isDate ? '' : 'none';
+    relRow.style.display = isDate ? 'none' : '';
+    if (calcRow) {
+      if (typeSelect.value === 'relative') {
+        calcRow.style.display = '';
+        _updateCalcDate();
+      } else {
+        calcRow.style.display = 'none';
+      }
+    }
+  };
+  typeSelect.onchange = _syncDraftReminderTypeView;
+  document.getElementById('draftSubtaskReminderDays').oninput = _updateCalcDate;
+  document.getElementById('draftSubtaskReminderDir').onchange = _updateCalcDate;
+
+  const currentReminder = draftReminderFromRow(row);
+  if (currentReminder?.days !== undefined && !currentReminder?.date) {
+    typeSelect.value = 'relative';
+    document.getElementById('draftSubtaskReminderDays').value = Math.abs(currentReminder.days);
+    document.getElementById('draftSubtaskReminderDir').value = currentReminder.days < 0 ? 'after' : 'before';
+  } else if (currentReminder?.date) {
+    typeSelect.value = 'date';
+    document.getElementById('draftSubtaskReminderDate').value = currentReminder.date;
+  } else {
+    typeSelect.value = 'date';
+    document.getElementById('draftSubtaskReminderDate').value = new Date().toISOString().slice(0, 10);
+  }
+  _syncDraftReminderTypeView();
+
   modal.classList.add('open');
   modal.onclick = e => { if (e.target === modal) modal.classList.remove('open'); };
   document.getElementById('cancelDraftSubtaskReminder').onclick = () => modal.classList.remove('open');
   document.getElementById('clearDraftSubtaskReminder').onclick = () => {
+    delete row.dataset.reminderDate;
     delete row.dataset.reminderDays;
     delete row.dataset.reminderLabel;
     syncDraftReminderButton(row);
     modal.classList.remove('open');
   };
   document.getElementById('saveDraftSubtaskReminder').onclick = () => {
-    let days = parseInt(document.getElementById('draftSubtaskReminderDays').value, 10);
-    if (isNaN(days) || days < 1) return;
-    const dir = document.getElementById('draftSubtaskReminderDir').value;
-    if (dir === 'after') days = -days;
-    row.dataset.reminderDays = String(days);
-    row.dataset.reminderLabel = `${Math.abs(days)} days ${dir}`;
+    const type = document.getElementById('draftSubtaskReminderType').value;
+    if (type === 'date') {
+      const dateVal = document.getElementById('draftSubtaskReminderDate').value;
+      if (!dateVal) return;
+      delete row.dataset.reminderDays;
+      row.dataset.reminderDate = dateVal;
+      row.dataset.reminderLabel = formatReminderDateLabel(dateVal);
+    } else {
+      let days = parseInt(document.getElementById('draftSubtaskReminderDays').value, 10);
+      if (isNaN(days) || days < 1) return;
+      const dir = document.getElementById('draftSubtaskReminderDir').value;
+      const targetDate = (trip && window.getCalculatedRelativeDate) ? getCalculatedRelativeDate(trip.startDate, days, dir) : null;
+      let dateVal = '';
+      if (targetDate) dateVal = targetDate.toISOString().slice(0, 10);
+      if (dir === 'after') days = -days;
+      
+      row.dataset.reminderDays = String(days);
+      if (dateVal) {
+        row.dataset.reminderDate = dateVal;
+      } else {
+        delete row.dataset.reminderDate;
+      }
+      row.dataset.reminderLabel = dateVal || `${Math.abs(days)} days ${dir}`;
+    }
     syncDraftReminderButton(row);
     modal.classList.remove('open');
   };
@@ -2426,7 +2595,7 @@ document.getElementById('btnSaveSubtasks').addEventListener('click', () => {
       body.querySelectorAll('.crm-subtask-draft-row').forEach(row => {
         const text = row.querySelector('.crm-subtask-draft-input')?.value.trim();
         if (!text) return;
-        const reminder = draftReminderFromRow(row);
+        const reminder = draftReminderFromRow(row) || { date: ewGetTodayDateStr(), label: 'Due today' };
         nextSubs.push({
           id: uid(),
           text,
@@ -3950,7 +4119,11 @@ function toggleSpaView() {
       if (picker) picker.style.display = 'none';
       if (workspace) workspace.style.display = 'none';
       if (crmPage) crmPage.style.display = 'block';
-      setTimeout(() => refreshOwnershipViews(), 0);
+      setTimeout(() => {
+        if (typeof refreshAuxiliaryViews === 'function') {
+          refreshAuxiliaryViews();
+        }
+      }, 0);
     }
   });
 }
