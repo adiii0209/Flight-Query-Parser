@@ -1887,8 +1887,18 @@ function openSubtaskReminderModal(subtaskId) {
           <span style="font-size:0.75rem;color:var(--crm-text-3);">Type</span>
           <select id="subtaskReminderType" class="crm-form-input" style="padding:0.2rem 0.4rem; height:auto; width:auto; font-size:0.75rem;">
             <option value="date">On specific date</option>
+            <option value="recurring">Recurring</option>
             <option value="relative">Days before/after trip</option>
           </select>
+        </div>
+        <div id="subtaskReminderFreqRow" class="crm-reminder-row" style="display:none;gap:0.4rem;">
+          <span style="font-size:0.75rem;color:var(--crm-text-3);">Freq</span>
+          <input type="number" id="subtaskReminderFreqDays" class="crm-form-input" min="1" max="1000" value="30" style="padding:0.2rem 0.4rem;height:auto;width:3rem;font-size:0.75rem;">
+          <span style="font-size:0.75rem;color:var(--crm-text-3);">days</span>
+          <span id="subtaskReminderFreqLabel" style="font-size:0.75rem;font-weight:600;color:var(--crm-primary);">Monthly</span>
+          <span style="font-size:0.75rem;color:var(--crm-text-3);margin-left:0.5rem;">Show in pending</span>
+          <input type="number" id="subtaskReminderTrigger" min="0" max="365" value="0" style="font-size:0.75rem;height:auto;padding:0.2rem 0.4rem;width:3rem;">
+          <span style="font-size:0.75rem;color:var(--crm-text-3);">days before</span>
         </div>
         <div id="subtaskReminderDateRow" class="crm-reminder-row">
           <span style="font-size:0.75rem;color:var(--crm-text-3);">Date</span>
@@ -1918,10 +1928,7 @@ function openSubtaskReminderModal(subtaskId) {
   modal.dataset.subtaskId = subtaskId;
   const currentReminder = sub.metadata?.reminder;
   const typeSelect = document.getElementById('subtaskReminderType');
-  const dateRow = document.getElementById('subtaskReminderDateRow');
-  const relRow = document.getElementById('subtaskReminderRelativeRow');
-
-  const _updateCalcDate = () => {
+  const updateCalcDate = () => {
     let days = parseInt(document.getElementById('subtaskReminderDays').value, 10);
     if (isNaN(days) || days < 1) {
       document.getElementById('subtaskReminderCalcDateVal').textContent = '—';
@@ -1936,28 +1943,64 @@ function openSubtaskReminderModal(subtaskId) {
     }
   };
 
-  const _syncReminderTypeView = () => {
-    const isDate = typeSelect.value === 'date';
+  const syncReminderTypeView = () => {
+    const isDate = typeSelect.value === 'date' || typeSelect.value === 'recurring';
+    const isRecurring = typeSelect.value === 'recurring';
+    const dateRow = document.getElementById('subtaskReminderDateRow');
+    const relRow = document.getElementById('subtaskReminderRelativeRow');
+    const freqRow = document.getElementById('subtaskReminderFreqRow');
     dateRow.style.display = isDate ? '' : 'none';
     relRow.style.display = isDate ? 'none' : '';
+    if (freqRow) freqRow.style.display = isRecurring ? 'flex' : 'none';
+
+    if (isDate) {
+      dateRow.querySelector('span').textContent = isRecurring ? 'Next Date' : 'Date';
+    }
+
     const calcRow = document.getElementById('subtaskReminderCalcDateRow');
     if (calcRow) {
       if (typeSelect.value === 'relative') {
         calcRow.style.display = '';
-        _updateCalcDate();
+        updateCalcDate();
       } else {
         calcRow.style.display = 'none';
       }
     }
   };
-  typeSelect.onchange = _syncReminderTypeView;
-  document.getElementById('subtaskReminderDays').oninput = _updateCalcDate;
-  document.getElementById('subtaskReminderDir').onchange = _updateCalcDate;
+  typeSelect.onchange = syncReminderTypeView;
+  document.getElementById('subtaskReminderDays').oninput = updateCalcDate;
+  document.getElementById('subtaskReminderDir').onchange = updateCalcDate;
 
-  if (currentReminder?.days !== undefined) {
+  const updateFreqLabelAndTrigger = function(days) {
+    let lbl = 'Custom'; let trig = 2;
+    if (days === 1) { lbl = 'Daily'; trig = 0; }
+    else if (days === 7) { lbl = 'Weekly'; trig = 2; }
+    else if (days >= 28 && days <= 31) { lbl = 'Monthly'; trig = 7; }
+    else if (days >= 365) { lbl = 'Yearly'; trig = 7; }
+    return { lbl, trig };
+  };
+
+  document.getElementById('subtaskReminderFreqDays').addEventListener('input', function() {
+    const d = parseInt(this.value, 10);
+    if (isNaN(d) || d < 1) return;
+    const { lbl, trig } = updateFreqLabelAndTrigger(d);
+    document.getElementById('subtaskReminderFreqLabel').textContent = lbl;
+    document.getElementById('subtaskReminderTrigger').value = trig;
+  });
+
+  if (currentReminder?.recurring) {
+    typeSelect.value = 'recurring';
+    const fDays = currentReminder.frequencyDays || 30;
+    document.getElementById('subtaskReminderFreqDays').value = fDays;
+    const { lbl } = updateFreqLabelAndTrigger(fDays);
+    document.getElementById('subtaskReminderFreqLabel').textContent = lbl;
+    document.getElementById('subtaskReminderTrigger').value = currentReminder.triggerDaysBefore ?? updateFreqLabelAndTrigger(fDays).trig;
+    document.getElementById('subtaskReminderDate').value = currentReminder.date || ewGetTodayDateStr();
+  } else if (currentReminder?.days !== undefined) {
     typeSelect.value = 'relative';
     document.getElementById('subtaskReminderDays').value = Math.abs(currentReminder.days);
     document.getElementById('subtaskReminderDir').value = currentReminder.days < 0 ? 'after' : 'before';
+    document.getElementById('subtaskReminderDate').value = ewGetTodayDateStr();
   } else if (currentReminder?.date) {
     typeSelect.value = 'date';
     document.getElementById('subtaskReminderDate').value = currentReminder.date;
@@ -1966,7 +2009,7 @@ function openSubtaskReminderModal(subtaskId) {
     const todayStr = new Date().toISOString().slice(0, 10);
     document.getElementById('subtaskReminderDate').value = todayStr;
   }
-  _syncReminderTypeView();
+  syncReminderTypeView();
   modal.classList.add('open');
 
   document.getElementById('cancelSubtaskReminder').onclick = () => modal.classList.remove('open');
@@ -1983,6 +2026,12 @@ function openSubtaskReminderModal(subtaskId) {
       const dateVal = document.getElementById('subtaskReminderDate').value;
       if (!dateVal) return;
       sub.metadata = { ...(sub.metadata || {}), reminder: { date: dateVal, label: formatReminderDateLabel(dateVal) } };
+    } else if (type === 'recurring') {
+      const dateVal = document.getElementById('subtaskReminderDate').value;
+      if (!dateVal) return;
+      const fDays = parseInt(document.getElementById('subtaskReminderFreqDays').value, 10) || 30;
+      const trig = parseInt(document.getElementById('subtaskReminderTrigger').value, 10) || 0;
+      sub.metadata = { ...(sub.metadata || {}), reminder: { date: dateVal, label: formatReminderDateLabel(dateVal), recurring: true, frequencyDays: fDays, triggerDaysBefore: trig } };
     } else {
       let days = parseInt(document.getElementById('subtaskReminderDays').value, 10);
       if (isNaN(days) || days < 1) return;
@@ -2309,8 +2358,27 @@ function renderSubtaskBody(subtasks) {
 
     // checkbox
     item.querySelector('.crm-subtask-check').addEventListener('change', e => {
-      sub.done = e.target.checked;
-      item.querySelector('.crm-subtask-text').classList.toggle('done', sub.done);
+      const isChecked = e.target.checked;
+      const textEl = item.querySelector('.crm-subtask-text');
+      if (isChecked && sub.metadata?.reminder?.recurring) {
+        const rem = sub.metadata.reminder;
+        if (rem.date) {
+          const d = new Date(rem.date);
+          if (rem.frequency === 'daily') d.setDate(d.getDate() + 1);
+          else if (rem.frequency === 'weekly') d.setDate(d.getDate() + 7);
+          else if (rem.frequency === 'yearly') d.setFullYear(d.getFullYear() + 1);
+          else d.setMonth(d.getMonth() + 1);
+          rem.date = d.toISOString().slice(0, 10);
+          rem.label = rem.date;
+        }
+        sub.done = false;
+        e.target.checked = false;
+        textEl.classList.remove('done');
+        window.toast && window.toast('Recurring task moved to next ' + (rem.frequency || 'monthly') + ' date');
+      } else {
+        sub.done = isChecked;
+        textEl.classList.toggle('done', isChecked);
+      }
     });
     // text edit
     item.querySelector('.crm-subtask-text').addEventListener('change', e => {
@@ -2411,8 +2479,27 @@ function renderSubtaskBody(subtasks) {
     body.appendChild(item);
 
     item.querySelector('.crm-subtask-check').addEventListener('change', e => {
-      sub.done = e.target.checked;
-      item.querySelector('.crm-subtask-text').classList.toggle('done', sub.done);
+      const isChecked = e.target.checked;
+      const textEl = item.querySelector('.crm-subtask-text');
+      if (isChecked && sub.metadata?.reminder?.recurring) {
+        const rem = sub.metadata.reminder;
+        if (rem.date) {
+          const d = new Date(rem.date);
+          if (rem.frequency === 'daily') d.setDate(d.getDate() + 1);
+          else if (rem.frequency === 'weekly') d.setDate(d.getDate() + 7);
+          else if (rem.frequency === 'yearly') d.setFullYear(d.getFullYear() + 1);
+          else d.setMonth(d.getMonth() + 1);
+          rem.date = d.toISOString().slice(0, 10);
+          rem.label = rem.date;
+        }
+        sub.done = false;
+        e.target.checked = false;
+        textEl.classList.remove('done');
+        window.toast && window.toast('Recurring task moved to next ' + (rem.frequency || 'monthly') + ' date');
+      } else {
+        sub.done = isChecked;
+        textEl.classList.toggle('done', isChecked);
+      }
     });
     item.querySelector('.crm-subtask-text').addEventListener('change', e => {
       sub.text = e.target.value;

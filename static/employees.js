@@ -302,6 +302,15 @@ function openEwSubtaskReminderModal(tripId, subtaskId, isNewAdd = false) {
             '<option value="relative">Days before/after trip</option>' +
           '</select>' +
         '</div>' +
+        '<div id="ewSubtaskReminderFreqRow" class="crm-reminder-row" style="display:none;gap:0.4rem;">' +
+          '<span style="font-size:0.75rem;color:var(--crm-text-3);">Freq</span>' +
+          '<input type="number" id="ewSubtaskReminderFreqDays" class="crm-form-input" min="1" max="1000" value="30" style="padding:0.2rem 0.4rem;height:auto;width:3rem;font-size:0.75rem;">' +
+          '<span style="font-size:0.75rem;color:var(--crm-text-3);">days</span>' +
+          '<span id="ewSubtaskReminderFreqLabel" style="font-size:0.75rem;font-weight:600;color:var(--crm-primary);">Monthly</span>' +
+          '<span style="font-size:0.75rem;color:var(--crm-text-3);margin-left:0.5rem;">Show in pending</span>' +
+          '<input type="number" id="ewSubtaskReminderTrigger" min="0" max="365" value="0" style="font-size:0.75rem;height:auto;padding:0.2rem 0.4rem;width:3rem;">' +
+          '<span style="font-size:0.75rem;color:var(--crm-text-3);">days before</span>' +
+        '</div>' +
         '<div id="ewSubtaskReminderDateRow" class="crm-reminder-row">' +
           '<span id="ewSubtaskReminderDateLabel" style="font-size:0.75rem;color:var(--crm-text-3);">Date</span>' +
           '<input type="date" id="ewSubtaskReminderDate" class="crm-form-input" style="font-size:0.75rem;height:auto;padding:0.2rem 0.4rem;">' +
@@ -349,11 +358,13 @@ function openEwSubtaskReminderModal(tripId, subtaskId, isNewAdd = false) {
 
   function _syncView() {
     const isDate = typeSelect.value === 'date' || typeSelect.value === 'recurring';
-    dateRow.style.display = isDate ? '' : 'none';
-    relRow.style.display = isDate ? 'none' : '';
-    const dateLabel = document.getElementById('ewSubtaskReminderDateLabel');
-    if (dateLabel) {
-      dateLabel.textContent = typeSelect.value === 'recurring' ? 'Recurring Date' : 'Date';
+    const isRecurring = typeSelect.value === 'recurring';
+    document.getElementById('ewSubtaskReminderDateRow').style.display = isDate ? '' : 'none';
+    document.getElementById('ewSubtaskReminderRelativeRow').style.display = typeSelect.value === 'relative' ? '' : 'none';
+    document.getElementById('ewSubtaskReminderFreqRow').style.display = isRecurring ? '' : 'none';
+
+    if (isDate) {
+      document.getElementById('ewSubtaskReminderDateLabel').textContent = isRecurring ? 'Next Date' : 'Date';
     }
     const calcRow = document.getElementById('ewSubtaskReminderCalcDateRow');
     if (typeSelect.value === 'relative') {
@@ -368,16 +379,40 @@ function openEwSubtaskReminderModal(tripId, subtaskId, isNewAdd = false) {
   document.getElementById('ewSubtaskReminderDays').oninput = _updateCalcDate;
   document.getElementById('ewSubtaskReminderDir').onchange = _updateCalcDate;
 
-  if (currentReminder && currentReminder.recurring) {
-    typeSelect.value = 'recurring';
+  // Auto-update trigger default when frequency changes
+  const updateFreqLabelAndTrigger = function(days) {
+    let lbl = 'Custom'; let trig = 2;
+    if (days === 1) { lbl = 'Daily'; trig = 0; }
+    else if (days === 7) { lbl = 'Weekly'; trig = 2; }
+    else if (days >= 28 && days <= 31) { lbl = 'Monthly'; trig = 7; }
+    else if (days >= 365) { lbl = 'Yearly'; trig = 7; }
+    return { lbl, trig };
+  };
+
+  document.getElementById('ewSubtaskReminderFreqDays').oninput = function() {
+    const d = parseInt(this.value, 10);
+    if (isNaN(d) || d < 1) return;
+    const { lbl, trig } = updateFreqLabelAndTrigger(d);
+    document.getElementById('ewSubtaskReminderFreqLabel').textContent = lbl;
+    document.getElementById('ewSubtaskReminderTrigger').value = trig;
+  };
+
+  if (currentReminder) {
+    if (currentReminder.recurring) {
+      typeSelect.value = 'recurring';
+      const fDays = currentReminder.frequencyDays || 30;
+      document.getElementById('ewSubtaskReminderFreqDays').value = fDays;
+      const { lbl } = updateFreqLabelAndTrigger(fDays);
+      document.getElementById('ewSubtaskReminderFreqLabel').textContent = lbl;
+      document.getElementById('ewSubtaskReminderTrigger').value = currentReminder.triggerDaysBefore ?? updateFreqLabelAndTrigger(fDays).trig;
+    } else if (currentReminder.days !== undefined) {
+      typeSelect.value = 'relative';
+      document.getElementById('ewSubtaskReminderDays').value = Math.abs(currentReminder.days);
+      document.getElementById('ewSubtaskReminderDir').value = currentReminder.days < 0 ? 'after' : 'before';
+    } else {
+      typeSelect.value = 'date';
+    }
     document.getElementById('ewSubtaskReminderDate').value = currentReminder.date || todayStr;
-  } else if (currentReminder && currentReminder.days !== undefined) {
-    typeSelect.value = 'relative';
-    document.getElementById('ewSubtaskReminderDays').value = Math.abs(currentReminder.days);
-    document.getElementById('ewSubtaskReminderDir').value = currentReminder.days < 0 ? 'after' : 'before';
-  } else if (currentReminder && currentReminder.date) {
-    typeSelect.value = 'date';
-    document.getElementById('ewSubtaskReminderDate').value = currentReminder.date;
   } else {
     typeSelect.value = 'date';
     document.getElementById('ewSubtaskReminderDate').value = todayStr;
@@ -424,7 +459,9 @@ function openEwSubtaskReminderModal(tripId, subtaskId, isNewAdd = false) {
     } else if (type === 'recurring') {
       const dateVal = document.getElementById('ewSubtaskReminderDate').value;
       if (!dateVal) return;
-      newRem = { date: dateVal, label: dateVal, recurring: true };
+      const fDays = parseInt(document.getElementById('ewSubtaskReminderFreqDays').value, 10) || 30;
+      const trig = parseInt(document.getElementById('ewSubtaskReminderTrigger').value, 10) || 0;
+      newRem = { date: dateVal, label: dateVal, recurring: true, frequencyDays: fDays, triggerDaysBefore: trig };
     } else {
       let days = parseInt(document.getElementById('ewSubtaskReminderDays').value, 10);
       if (isNaN(days) || days < 1) return;
@@ -1729,9 +1766,29 @@ function renderTripView(tasks, subtasks = []) {
 function renderSubtasks(subtasks, recurringSubtasks = []) {
   if (subtasks.length === 0) return '<div style="color:var(--crm-text-3);text-align:center;margin-top:2rem;">No subtasks assigned.</div>';
   const ordered = [...subtasks].sort(compareSubtasksForDisplay);
-  const recurring = [...recurringSubtasks].sort(compareSubtasksForDisplay);
-  const pending = ordered.filter(s => !s.done && !isRecurringSubtask(s));
+  const todayObj = new Date();
+  todayObj.setHours(0,0,0,0);
+  const todayMs = todayObj.getTime();
+
+  const isPending = (s) => {
+    if (s.done) return false;
+    if (isRecurringSubtask(s)) {
+      const rem = s.metadata.reminder;
+      if (!rem.date) return false;
+      const targetDate = new Date(rem.date);
+      targetDate.setHours(0,0,0,0);
+      const fDays = rem.frequencyDays || 30;
+      const defaultTrig = fDays === 1 ? 0 : fDays === 7 ? 2 : 7;
+      const trigDays = typeof rem.triggerDaysBefore === 'number' ? rem.triggerDaysBefore : defaultTrig;
+      const diffDays = Math.floor((targetDate.getTime() - todayMs) / (1000 * 60 * 60 * 24));
+      return diffDays <= trigDays;
+    }
+    return true;
+  };
+
+  const pending = ordered.filter(isPending);
   const done = ordered.filter(s => s.done);
+  const recurring = [...recurringSubtasks].filter(s => !isPending(s)).sort(compareSubtasksForDisplay);
 
   const container = document.getElementById('ewSubtasksTabContainer');
   const activeSubTab = container ? (container.dataset.activeSubTab || 'pending') : 'pending';
@@ -2085,7 +2142,29 @@ async function toggleSubtaskPriority(tripId, subtaskId) {
 }
 
 async function toggleSubtaskDone(tripId, subtaskId, isDone) {
-  if (!tripId) return _handleGenericSubtaskUpdate(subtaskId, (s) => { s.done = isDone; });
+  const advanceRecurring = (s) => {
+    if (isDone && isRecurringSubtask(s)) {
+      const rem = s.metadata.reminder;
+      let freqLabel = 'monthly';
+      if (rem && rem.date) {
+        const d = new Date(rem.date);
+        const fDays = rem.frequencyDays || 30;
+        d.setDate(d.getDate() + fDays);
+        rem.date = d.toISOString().slice(0, 10);
+        rem.label = rem.date;
+        if (fDays === 1) freqLabel = 'daily';
+        else if (fDays === 7) freqLabel = 'weekly';
+        else if (fDays >= 365) freqLabel = 'yearly';
+        else if (fDays !== 30) freqLabel = fDays + ' days';
+      }
+      s.done = false;
+      window.toast && window.toast('Recurring task moved to next ' + freqLabel + ' date');
+    } else {
+      s.done = isDone;
+    }
+  };
+
+  if (!tripId) return _handleGenericSubtaskUpdate(subtaskId, advanceRecurring);
   const trip = trips.find(t => t.id === tripId);
   if (!trip) return;
   let subsObj = trip.subtasks || {};
@@ -2094,7 +2173,7 @@ async function toggleSubtaskDone(tripId, subtaskId, isDone) {
     if (Array.isArray(arr)) {
       const s = arr.find(x => x.id === subtaskId);
       if (s) {
-        s.done = isDone;
+        advanceRecurring(s);
         found = true;
       }
     }
