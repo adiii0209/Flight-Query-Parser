@@ -90,7 +90,6 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Relationships (v2 side — these enable ORM navigation from User to v2 entities)
     corporates: Mapped[List["Corporate"]] = relationship(back_populates="user", cascade="all, delete-orphan", lazy="selectin")
@@ -98,7 +97,7 @@ class User(Base):
     itineraries: Mapped[List["Itinerary"]] = relationship(back_populates="user", cascade="all, delete-orphan", lazy="selectin")
     billing_accounts: Mapped[List["BillingAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan", lazy="selectin")
     supplier_accounts: Mapped[List["SupplierAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan", lazy="selectin")
-    
+
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
     
@@ -111,8 +110,7 @@ class User(Base):
             "username": self.username,
             "email": self.email,
             "full_name": self.full_name,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "is_active": self.is_active
+            "created_at": self.created_at.isoformat() if self.created_at else None
         }
 
 
