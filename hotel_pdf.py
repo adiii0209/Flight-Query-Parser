@@ -193,12 +193,17 @@ def normalize_rooms(data):
         out = []
         for room in rooms:
             if not isinstance(room, dict): continue
-            guests = room.get("guests") or []
-            if not isinstance(guests, list): guests = [guests]
-            guest_values = [str(g).strip() for g in guests if g and str(g).strip()]
             guest_count = room.get("guest_count")
             try: guest_count = int(guest_count) if guest_count is not None else None
             except Exception: guest_count = None
+            
+            if guest_count == 0:
+                continue
+                
+            guests = room.get("guests") or []
+            if not isinstance(guests, list): guests = [guests]
+            guest_values = [str(g).strip() for g in guests if g and str(g).strip()]
+
             out.append({
                 "room_type":     room.get("room_type") or "",
                 "guest_count":   guest_count or max(len(guest_values), 1),
@@ -526,6 +531,13 @@ def draw_hotel_voucher(c, data):
         hline(c, M, T, IW)
         T -= GAP
 
+    if data.get("show_paid_logo"):
+        txt(c, M, T, "PAYMENT", size=7, color=C_TEXT_TER, bold=True)
+        txt(c, M, T - 15, "PAID IN FULL", size=10, color=C_TEXT_PRI, bold=True)
+        T -= 28
+        hline(c, M, T, IW)
+        T -= GAP
+
     # ── 7. AMENITIES ──────────────────────────────────────────────────────────
     amenities = data.get("amenities") or []
     if not isinstance(amenities, list): amenities = []
@@ -549,7 +561,6 @@ def draw_hotel_voucher(c, data):
         T -= GAP
 
     # ── 8. TOTAL AMOUNT ───────────────────────────────────────────────────────
-    paid_logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paid logo.png")
     total_label = format_amount(data.get("total_amount"), data.get("currency"))
     if total_label:
         txt(c, R, T,      "TOTAL AMOUNT", size=7,  color=C_TEXT_TER, bold=True, align="right")
@@ -557,33 +568,6 @@ def draw_hotel_voucher(c, data):
         T -= 32
         hline(c, M, T, IW)
         T -= GAP
-
-    if data.get("show_paid_logo") and os.path.isfile(paid_logo_path):
-        try:
-            logo_w, logo_h = 78, 58
-            top_bound = T + GAP - 10
-            bottom_bound = BOT + 36 + 10 # 10 padding above footer
-            avail_h = top_bound - bottom_bound
-            
-            scale = 1.0
-            if avail_h < logo_h:
-                scale = max(0.3, avail_h / float(logo_h))
-            
-            draw_w = logo_w * scale
-            draw_h = logo_h * scale
-            
-            if avail_h < logo_h:
-                cy = bottom_bound + avail_h / 2
-            else:
-                cy = top_bound - draw_h / 2
-                
-            c.saveState()
-            c.translate(R - 50 - draw_w/2, cy)
-            c.rotate(8)
-            c.drawImage(ImageReader(paid_logo_path), -draw_w/2, -draw_h/2, width=draw_w, height=draw_h,
-                        preserveAspectRatio=True, mask="auto")
-            c.restoreState()
-        except Exception: pass
 
     # ── 9. FOOTER ─────────────────────────────────────────────────────────────
     hline(c, M, BOT + 36, IW)

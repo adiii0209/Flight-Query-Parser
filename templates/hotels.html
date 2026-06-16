@@ -48,6 +48,12 @@ body.detail-mode #hotelDetailPage{display:block}
 .hotel-card:hover{box-shadow:0 12px 30px rgba(0,0,0,.08);transform:translateY(-4px);border-color:#cbd5e1}
 .hotel-card-img{width:100%;height:180px;object-fit:cover;background:#f8fafc;display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:#cbd5e1}
 .hotel-card-img img{width:100%;height:100%;object-fit:cover;display:block}
+.input-group.warning label { color: #b91c1c; }
+.input-group.warning input { border-color: rgba(220, 38, 38, 0.55); box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.08); }
+.field-warning-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 1.2rem; height: 1.2rem; padding: 0 0.35rem; border-radius: 999px; background: rgba(245, 158, 11, 0.18); color: #b45309; font-size: 0.72rem; font-weight: 800; line-height: 1; border: none; margin-left: 0.5rem; cursor: help; }
+.guest-field-row.drag-over { border-color: #10b981; background: rgba(16, 185, 129, 0.05); }
+.drag-handle { cursor: grab; padding-right: 8px; color: #94a3b8; font-size: 1.1rem; }
+.drag-handle:active { cursor: grabbing; }
 .hotel-card-img img.fallback-fit,
 .detail-img-wrap img.fallback-fit{
   object-fit:contain;
@@ -330,6 +336,28 @@ input:checked + .slider:before{transform:translateX(18px)}
 
 <div class="toast" id="toast"></div>
 <script>
+
+function triggerDownloadFromResponse(r) {
+  let filename = 'Hotel_Voucher.pdf';
+  const disposition = r.headers.get('Content-Disposition');
+  if (disposition && disposition.indexOf('filename=') !== -1) {
+    const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+    if (matches != null && matches[1]) {
+      filename = matches[1].replace(/['"]/g, '');
+    }
+  }
+  return r.blob().then(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+}
+
 window.HOTEL_BOOKING_ID = {{ booking_id|tojson }};
 const HOTEL_SVG = '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:#cbd5e1"><path d="M3 20v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8"/><path d="M5 10V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/><path d="M11 4v6"/><path d="M8 11v4"/><path d="M16 11v4"/><path d="M4 15h16"/></svg>';
 const RESORT_FALLBACK_IMAGE = '/resort.png';
@@ -725,24 +753,48 @@ function buildDetailHTML(b) {
 }
 
 function getRoomsForDisplay(b) {
+  let displayRooms = [];
   const rooms = Array.isArray(b?.rooms) ? b.rooms.filter(Boolean) : [];
   if (rooms.length) {
-    return rooms.map(room => ({
-      room_type: room.room_type || '',
-      guest_count: Number.isFinite(Number(room.guest_count)) ? Number(room.guest_count) : ((room.guests || []).length || 1),
-      guests: Array.isArray(room.guests) ? room.guests : [],
-      guest_summary: room.guest_summary || '',
-    }));
-  }
-  if (b?.room_type || b?.guest_name || b?.num_guests) {
-    return [{
+    let seenGuestStrings = new Set();
+    displayRooms = rooms.map((room, index) => {
+      let guests = Array.isArray(room.guests) ? room.guests : [];
+      let guestStr = guests.join('|').toLowerCase();
+      let finalCount = Number.isFinite(Number(room.guest_count)) ? Number(room.guest_count) : ((room.guests || []).length || 1);
+      
+      if (guestStr && seenGuestStrings.has(guestStr) && index > 0) {
+         guests = [];
+         finalCount = 0;
+      }
+      if (guestStr) seenGuestStrings.add(guestStr);
+      
+      return {
+        room_type: room.room_type || b?.room_type || rooms[0]?.room_type || '',
+        guest_count: finalCount,
+        guests: guests,
+        guest_summary: room.guest_summary || '',
+      };
+    });
+  } else if (b?.room_type || b?.guest_name || b?.num_guests) {
+    displayRooms = [{
       room_type: b.room_type || '',
       guest_count: b.num_guests || 1,
       guests: b.guest_name ? [b.guest_name] : [],
       guest_summary: !b.guest_name && b.num_guests ? `${b.num_guests} guest(s)` : ''
     }];
   }
-  return [];
+
+  const targetRoomCount = Number.isFinite(Number(b?.room_count)) ? Number(b.room_count) : 0;
+  while (displayRooms.length < targetRoomCount) {
+    displayRooms.push({
+      room_type: b?.room_type || displayRooms[0]?.room_type || '',
+      guest_count: 0,
+      guests: [],
+      guest_summary: ''
+    });
+  }
+
+  return displayRooms.map(normalizeRoom);
 }
 
 function formatCardMeta(b) {
@@ -795,37 +847,56 @@ function renderRoomCards(items) {
         <input type="text" value="${esc(room.room_type || '')}" oninput="updateRoomField(${index}, 'room_type', this.value)">
       </div>
       <div class="input-group">
-        <label>Guest Count</label>
-        <input type="number" min="1" value="${Math.max(1, parseInt(room.guest_count, 10) || (room.guests || []).length || 1)}" oninput="updateRoomGuestCount(${index}, this.value)">
-      </div>
-      <div class="input-group">
-        <label>Guest Names</label>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+          <label style="margin:0;">Guest Names</label>
+          <button type="button" title="Add Guest" onclick="addRoomGuest(${index}, Math.max(0, parseInt(room.guest_count, 10) || 0) - 1)" style="background:#f1f5f9; border:1px solid #cbd5e1; color:#0f172a; border-radius:4px; padding:0.15rem 0.5rem; font-size:0.75rem; cursor:pointer; display:flex; align-items:center; gap:0.25rem; font-weight:500;">
+            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+            Add Guest
+          </button>
+        </div>
         ${renderGuestFields(room, index)}
-      </div>
-      <div class="input-group" style="margin-bottom:0">
-        <label>Guest Summary (fallback if not segmented)</label>
-        <input type="text" value="${esc(room.guest_summary || '')}" oninput="updateRoomField(${index}, 'guest_summary', this.value)">
       </div>
     </div>`).join('');
 }
 
 function renderGuestFields(room, roomIndex) {
-  const guestCount = Math.max(1, parseInt(room.guest_count, 10) || 1);
+  const guestCount = Math.max(0, parseInt(room.guest_count, 10) || 0);
   const guests = Array.isArray(room.guests) ? room.guests : [];
   const rows = [];
-  for (let i = 0; i < guestCount; i += 1) {
+  if (guestCount === 0) {
     rows.push(`
-      <div class="guest-field-row">
-        <span>${i === 0 ? 'Primary Guest' : `Guest ${i + 1}`}</span>
-        <input type="text" value="${esc(guests[i] || '')}" placeholder="${i === 0 ? 'Primary guest name' : `Guest ${i + 1} name`}" oninput="updateRoomGuestName(${roomIndex}, ${i}, this.value)">
+      <div class="guest-field-row empty-drop-zone" style="background:#f8fafc; color:#94a3b8; font-style:italic; padding:0.5rem; text-align:center; border: 1px dashed #cbd5e1; border-radius:4px; justify-content:center; cursor:default; display:flex; align-items:center; gap:0.5rem;" ondragenter="handleGuestDragEnter(event)" ondragover="handleGuestDragOver(event)" ondragleave="handleGuestDragLeave(event)" ondrop="handleGuestDrop(event, ${roomIndex}, 0)">
+        Empty Room - Drop guests here
       </div>`);
+  } else {
+    for (let i = 0; i < guestCount; i += 1) {
+      rows.push(`
+        <div class="guest-field-row" draggable="true" ondragstart="handleGuestDragStart(event, ${roomIndex}, ${i})" ondragend="handleGuestDragEnd(event)" ondragenter="handleGuestDragEnter(event)" ondragover="handleGuestDragOver(event)" ondragleave="handleGuestDragLeave(event)" ondrop="handleGuestDrop(event, ${roomIndex}, ${i})">
+          <span><span class="drag-handle" title="Drag to reorder/segment">&#10303;</span>${i === 0 ? 'Primary Guest' : `Guest ${i + 1}`}</span>
+          <div style="display:flex; flex:1; align-items:center; gap:0.25rem;">
+            <input type="text" value="${esc(guests[i] || '')}" placeholder="${i === 0 ? 'Primary guest name' : `Guest ${i + 1} name`}" oninput="updateRoomGuestName(${roomIndex}, ${i}, this.value)" style="flex:1;">
+            <button type="button" title="Remove Guest" onclick="removeRoomGuest(${roomIndex}, ${i})" style="background:none; border:none; color:#ef4444; cursor:pointer; display:flex; padding:0.25rem;">
+              <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path></svg>
+            </button>
+          </div>
+        </div>`);
+    }
   }
   return `<div class="guest-fields">${rows.join('')}</div>`;
 }
 
 function normalizeRoom(room = {}) {
-  const guests = Array.isArray(room.guests) ? room.guests.map(g => String(g || '').trim()) : [];
-  const guestCount = Math.max(1, parseInt(room.guest_count, 10) || guests.filter(Boolean).length || 1);
+  let guests = Array.isArray(room.guests) ? room.guests.map(g => String(g || '').trim()) : [];
+  
+  if (guests.length === 1 && guests[0].match(/,|\s+&\s+|\s+and\s+/i)) {
+    guests = guests[0].split(/,|\s+&\s+|\s+and\s+/i).map(s => s.trim()).filter(Boolean);
+  }
+
+  let parsedCount = parseInt(room.guest_count, 10);
+  if (isNaN(parsedCount)) {
+    parsedCount = guests.filter(Boolean).length;
+  }
+  const guestCount = Math.max(0, parsedCount);
   while (guests.length < guestCount) guests.push('');
   return {
     room_type: String(room.room_type || '').trim(),
@@ -836,7 +907,7 @@ function normalizeRoom(room = {}) {
 }
 
 function getRooms() {
-  return Array.isArray(currentBooking?.rooms) ? currentBooking.rooms.map(normalizeRoom) : [];
+  return getRoomsForDisplay(currentBooking).map(normalizeRoom);
 }
 
 function setRooms(nextRooms) {
@@ -846,13 +917,92 @@ function setRooms(nextRooms) {
 }
 
 function addRoom() {
-  setRooms([...getRooms(), { room_type: '', guest_count: 1, guests: [''], guest_summary: '' }]);
+  const rooms = getRooms();
+  const roomType = currentBooking?.room_type || rooms[0]?.room_type || '';
+  setRooms([...rooms, { room_type: roomType, guest_count: 0, guests: [], guest_summary: '' }]);
 }
 
 function removeRoom(index) {
   const rooms = getRooms();
   rooms.splice(index, 1);
   setRooms(rooms);
+}
+
+let draggedGuest = null;
+
+function handleGuestDragStart(event, roomIndex, guestIndex) {
+  draggedGuest = { roomIndex, guestIndex };
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', `${roomIndex},${guestIndex}`);
+  event.target.style.opacity = '0.5';
+}
+
+function handleGuestDragEnd(event) {
+  event.target.style.opacity = '1';
+  draggedGuest = null;
+  document.querySelectorAll('.guest-field-row').forEach(row => {
+    row.classList.remove('drag-over');
+  });
+}
+
+function handleGuestDragEnter(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+}
+
+function handleGuestDragOver(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  const row = event.target.closest('.guest-field-row');
+  if (row) row.classList.add('drag-over');
+}
+
+function handleGuestDragLeave(event) {
+  const row = event.target.closest('.guest-field-row');
+  if (row) row.classList.remove('drag-over');
+}
+
+function handleGuestDrop(event, targetRoomIndex, targetGuestIndex) {
+  event.preventDefault();
+  event.stopPropagation();
+  const row = event.target.closest('.guest-field-row');
+  if (row) row.classList.remove('drag-over');
+  
+  const data = event.dataTransfer.getData('text/plain');
+  if (!data) return;
+  const parts = data.split(',');
+  if (parts.length !== 2) return;
+  
+  const sourceRoomIndex = parseInt(parts[0], 10);
+  const sourceGuestIndex = parseInt(parts[1], 10);
+
+  if (sourceRoomIndex === targetRoomIndex && sourceGuestIndex === targetGuestIndex) return;
+
+  const rooms = getRooms();
+  if (!rooms[sourceRoomIndex] || !rooms[targetRoomIndex]) return;
+  
+  const sourceGuests = rooms[sourceRoomIndex].guests;
+  const targetGuests = rooms[targetRoomIndex].guests;
+  
+  if (sourceRoomIndex !== targetRoomIndex) {
+    const movedGuest = sourceGuests.splice(sourceGuestIndex, 1)[0];
+    
+    if (!targetGuests[targetGuestIndex]) {
+       targetGuests[targetGuestIndex] = movedGuest;
+    } else {
+       targetGuests.splice(targetGuestIndex, 0, movedGuest);
+    }
+    
+    rooms[sourceRoomIndex].guest_count = Math.max(0, sourceGuests.filter(Boolean).length);
+    rooms[targetRoomIndex].guest_count = Math.max(0, targetGuests.filter(Boolean).length);
+  } else {
+    const temp = sourceGuests[sourceGuestIndex];
+    sourceGuests[sourceGuestIndex] = targetGuests[targetGuestIndex];
+    targetGuests[targetGuestIndex] = temp;
+  }
+  
+  setRooms(rooms);
+  handleDetailChange();
 }
 
 function updateRoomField(index, field, value) {
@@ -864,9 +1014,24 @@ function updateRoomField(index, field, value) {
 
 function updateRoomGuestCount(index, value) {
   const rooms = getRooms();
-  if (!rooms[index]) return;
-  const nextCount = Math.max(1, parseInt(value, 10) || 1);
+  const nextCount = Math.max(0, parseInt(value, 10) || 0);
   rooms[index] = normalizeRoom({ ...rooms[index], guest_count: nextCount });
+  setRooms(rooms);
+}
+
+function addRoomGuest(roomIndex, guestIndex) {
+  const rooms = getRooms();
+  if (!rooms[roomIndex]) return;
+  rooms[roomIndex].guests.splice(guestIndex + 1, 0, '');
+  rooms[roomIndex].guest_count = rooms[roomIndex].guests.length;
+  setRooms(rooms);
+}
+
+function removeRoomGuest(roomIndex, guestIndex) {
+  const rooms = getRooms();
+  if (!rooms[roomIndex]) return;
+  rooms[roomIndex].guests.splice(guestIndex, 1);
+  rooms[roomIndex].guest_count = rooms[roomIndex].guests.length;
   setRooms(rooms);
 }
 
@@ -1102,16 +1267,7 @@ function downloadPDF(id) {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify(payload)
-  }).then(r => r.blob()).then(blob => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Hotel_Voucher.pdf';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  });
+  }).then(triggerDownloadFromResponse);
 }
 
 function buildRoomSummary(roomsInput) {
@@ -1227,17 +1383,7 @@ function downloadPDF(id, btnElement = null) {
 
   if (!isCurrent) {
     fetch(`/api/hotels/${id}/pdf`, { method: 'GET' })
-      .then(r => r.blob())
-      .then(blob => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'Hotel_Voucher.pdf';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      })
+      .then(triggerDownloadFromResponse)
       .finally(() => {
         if (btn) {
           btn.disabled = false;
@@ -1276,16 +1422,7 @@ function downloadPDF(id, btnElement = null) {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify(payload)
-  }).then(r => r.blob()).then(blob => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Hotel_Voucher.pdf';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }).finally(() => {
+  }).then(triggerDownloadFromResponse).finally(() => {
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = originalText || `Download PDF`;
@@ -1361,9 +1498,61 @@ function updateDetailHeaderPreview() {
   if (subtitleNode) subtitleNode.textContent = subtitle;
 }
 
+function syncHotelWarningUi() {
+  const phoneInputs = document.querySelectorAll('#f_hotel_phone');
+  phoneInputs.forEach(phoneInput => {
+    const raw = String(phoneInput.value || '').trim();
+    const digitsOnly = raw.replace(/\D/g, '');
+    const invalidPhone = raw.length > 0 && (digitsOnly.length < 7 || raw.length > 15);
+    const missingPhone = raw.length === 0;
+    const isInvalid = invalidPhone || missingPhone;
+    
+    const phoneGroup = phoneInput.closest('.input-group');
+    if (phoneGroup) {
+      if (isInvalid) {
+        phoneGroup.classList.add('warning');
+        if (!phoneGroup.querySelector('.field-warning-badge')) {
+          const labelEl = phoneGroup.querySelector('label');
+          if (labelEl) {
+            labelEl.insertAdjacentHTML('beforeend', '<span class="field-warning-badge" title="Phone number is missing, too short, or too long">&#9888;</span>');
+          }
+        }
+      } else {
+        phoneGroup.classList.remove('warning');
+        const badge = phoneGroup.querySelector('.field-warning-badge');
+        if (badge) badge.remove();
+      }
+    }
+  });
+
+  const addressInputs = document.querySelectorAll('#f_hotel_address');
+  addressInputs.forEach(addressInput => {
+    const raw = String(addressInput.value || '').trim();
+    const isInvalid = raw.length === 0;
+    
+    const addressGroup = addressInput.closest('.input-group');
+    if (addressGroup) {
+      if (isInvalid) {
+        addressGroup.classList.add('warning');
+        if (!addressGroup.querySelector('.field-warning-badge')) {
+          const labelEl = addressGroup.querySelector('label');
+          if (labelEl) {
+            labelEl.insertAdjacentHTML('beforeend', '<span class="field-warning-badge" title="Address is missing">&#9888;</span>');
+          }
+        }
+      } else {
+        addressGroup.classList.remove('warning');
+        const badge = addressGroup.querySelector('.field-warning-badge');
+        if (badge) badge.remove();
+      }
+    }
+  });
+}
+
 function handleDetailChange() {
   if (!currentBooking) return;
   updateDetailHeaderPreview();
+  syncHotelWarningUi();
 }
 
 function renderCard(b) {
@@ -1552,6 +1741,7 @@ function renderDetail(b) {
   }
   document.getElementById('hotelDetailPage').style.display = 'block';
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  syncHotelWarningUi();
 }
 
 function esc(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }

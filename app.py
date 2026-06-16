@@ -4379,7 +4379,7 @@ def hotel_update(booking_id):
         "hotel_name", "hotel_address", "hotel_phone", "guest_name",
         "num_guests", "check_in_date", "check_out_date", "check_in_time",
         "check_out_time", "room_type", "room_count", "meal_plan", "total_amount", "currency",
-        "special_instructions", "image_url", "booking_id",
+        "special_instructions", "image_url", "booking_id", "show_paid_logo",
     ):
         if field in data:
             setattr(b, field, data[field])
@@ -4473,10 +4473,19 @@ def hotel_pdf_generate(booking_id):
     c.save()
     buffer.seek(0)
 
-    hotel_slug = (data.get("hotel_name") or "Hotel").replace(" ", "_")[:30]
-    guest_slug = (data.get("guest_name") or "Guest").replace(" ", "_")[:20]
-    filename = f"Hotel_Voucher_{hotel_slug}_{guest_slug}.pdf"
     import re as _re
+    hotel_name = data.get("hotel_name") or "Hotel"
+    checkin_raw = data.get("check_in_date") or ""
+    date_str = ""
+    if checkin_raw:
+        try:
+            from dateutil.parser import parse as _parse_date
+            dt = _parse_date(checkin_raw)
+            date_str = " " + dt.strftime("%d %b %y")
+        except Exception:
+            date_str = " " + str(checkin_raw).replace("/", "-")
+            
+    filename = f"{hotel_name}{date_str}.pdf"
     filename = _re.sub(r'[\\/*?:"<>|]', "", filename)
 
     return send_file(

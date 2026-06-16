@@ -263,10 +263,10 @@ class HotelParser:
 
         return [{
             "room_type": fallback_room_type,
-            "guest_count": len(guest_values) or fallback_num_guests,
-            "guests": guest_values,
-            "guest_summary": summary,
-        } for _ in range(fallback_rooms)]
+            "guest_count": (len(guest_values) if i == 0 else 1) or fallback_num_guests,
+            "guests": guest_values if i == 0 else [],
+            "guest_summary": summary if i == 0 else None,
+        } for i in range(fallback_rooms)]
 
     @staticmethod
     def _rooms_guest_count(rooms) -> Optional[int]:

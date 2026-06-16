@@ -593,6 +593,7 @@ class HotelBooking(db.Model):
     special_instructions = db.Column(db.Text, nullable=True)
     image_url            = db.Column(db.Text, nullable=True)
     raw_text             = db.Column(db.Text, default="")
+    show_paid_logo       = db.Column(db.Boolean, default=False)
 
     def to_dict(self):
         import json as _json
@@ -630,4 +631,5 @@ class HotelBooking(db.Model):
             "special_instructions": self.special_instructions,
             "image_url":            self.image_url,
             "raw_text":             self.raw_text,
+            "show_paid_logo":       bool(self.show_paid_logo),
         }
