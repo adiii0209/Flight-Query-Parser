@@ -7496,6 +7496,8 @@ def _apply_trip_payload(trip, payload):
                 value = 1
         elif model_field == "owner":
             value = _normalize_owner(value)
+        elif model_field == "archived":
+            value = str(value).strip().lower() in ("true", "1", "yes") if value is not None else False
         elif value is not None:
             value = str(value).strip()
         if model_field == "master_sheet_url":
