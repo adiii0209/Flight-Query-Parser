@@ -462,16 +462,20 @@ class OwnershipEmployee(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     name = db.Column(db.String(120), nullable=False)
     color = db.Column(db.String(20), default="")
+    domain = db.Column(db.String(50), default="")
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     subtasks_json = db.Column(CompatJSON(empty_factory=dict))
+    custom_labels_json = db.Column(CompatJSON(empty_factory=list))
 
     def to_dict(self):
         return {
             "id": self.id,
             "name": self.name,
             "color": self.color or "",
+            "domain": self.domain or "",
             "isActive": bool(self.is_active),
             "subtasks": self.subtasks_json if isinstance(self.subtasks_json, dict) else {},
+            "customLabels": self.custom_labels_json if isinstance(self.custom_labels_json, list) else [],
         }
 
 

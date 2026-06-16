@@ -8051,8 +8051,14 @@ def update_ownership_employee(employee_id):
         return jsonify({"error": "Employee not found"}), 404
     if "subtasks" in payload:
         employee.subtasks_json = payload["subtasks"]
+    if "name" in payload:
+        employee.name = str(payload.get("name") or "").strip()
     if "color" in payload:
         employee.color = str(payload.get("color") or "").strip()
+    if "domain" in payload:
+        employee.domain = str(payload.get("domain") or "").strip()
+    if "customLabels" in payload:
+        employee.custom_labels_json = payload["customLabels"]
     if "isActive" in payload:
         employee.is_active = bool(payload["isActive"])
     db.session.commit()

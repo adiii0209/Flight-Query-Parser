@@ -47,7 +47,10 @@
     <button class="ew-back-btn" id="ewBackBtn">← Back</button>
     <div class="ew-user-info">
       <div class="ew-user-avatar" id="ewUserAvatar">U</div>
-      <div class="ew-user-name" id="ewUserName">User Name</div>
+      <div style="display:flex; flex-direction:column; gap:0.1rem;">
+        <div class="ew-user-name" id="ewUserName">User Name</div>
+        <div class="ew-user-domain" id="ewUserDomain" style="font-size:0.75rem; color:var(--crm-text-3); font-weight:600; text-transform:uppercase; letter-spacing:0.5px; display:none;"></div>
+      </div>
     </div>
     <div class="ew-tabs">
       <button class="ew-tab active" data-view="trip">Trips</button>

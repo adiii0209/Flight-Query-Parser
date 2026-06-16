@@ -10,6 +10,8 @@ let empSearchQuery = '';
 let selectedTripId = null;
 let doneSubtasksExpanded = false;
 let addSubtaskModalMode = 'tripSpecific';
+let selectedGenericLabel = null;
+let showCustomLabelInput = false;
 let employeeWorkspaceBooting = false;
 let employeeWorkspaceReady = false;
 const EMPLOYEE_TRIPS_CACHE_KEY = 'ownership_trips_cache_v1';
@@ -992,6 +994,9 @@ function renderPicker() {
       <div class="emp-card" style="animation-delay: ${delay}s" onclick="selectEmployee('${emp.id}', this)">
         <div class="emp-avatar" style="background: ${emp.name.trim().toLowerCase() === 'c k' ? '#2563eb' : (emp.color || employeeColor(emp.name))}">
           ${emp.name.charAt(0).toUpperCase()}
+          <div class="emp-edit-badge" onclick="event.stopPropagation(); openEditEmployeeModal('${emp.id}')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+          </div>
           <div class="emp-delete-badge" onclick="event.stopPropagation(); deleteEmployee('${emp.id}')">✕</div>
         </div>
         <div class="emp-name">${escHtml(emp.name)}</div>
@@ -1072,6 +1077,108 @@ async function deleteEmployee(id) {
   }
 }
 
+window.openEditEmployeeModal = function(id) {
+  const emp = employees.find(e => e.id === id);
+  if (!emp) return;
+
+  let modal = document.getElementById('ewEditEmployeeModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'crm-modal-overlay';
+    modal.id = 'ewEditEmployeeModal';
+    modal.style.zIndex = '10000';
+    modal.innerHTML = `
+      <div class="crm-modal" role="dialog" aria-modal="true" style="max-width:400px;">
+        <div class="crm-modal-header">
+          <div><div class="crm-modal-title">Edit Profile</div></div>
+          <button class="crm-modal-close" onclick="document.getElementById('ewEditEmployeeModal').classList.remove('open')">✕</button>
+        </div>
+        <div class="crm-modal-body" style="display:flex; flex-direction:column; gap:1rem;">
+          <div class="crm-form-group">
+            <label class="crm-form-label">Name</label>
+            <input type="text" class="crm-form-input" id="ewEditEmpName">
+          </div>
+          <div class="crm-form-group">
+            <label class="crm-form-label">Color Hex</label>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+              <input type="color" id="ewEditEmpColorPicker" style="width: 36px; height: 36px; padding: 0; border: none; cursor: pointer; border-radius: var(--crm-radius);">
+              <input type="text" class="crm-form-input" id="ewEditEmpColor" placeholder="#000000" style="flex:1;">
+            </div>
+          </div>
+          <div class="crm-form-group">
+            <label class="crm-form-label">Domain</label>
+            <select class="crm-form-select" id="ewEditEmpDomain">
+              <option value="">None</option>
+              <option value="Travel">Travel</option>
+              <option value="Accounts">Accounts</option>
+              <option value="Tech">Tech</option>
+              <option value="Sales & Marketing">Sales & Marketing</option>
+              <option value="HR">HR</option>
+            </select>
+          </div>
+        </div>
+        <div class="crm-modal-footer">
+          <button class="crm-btn crm-btn-ghost" onclick="document.getElementById('ewEditEmployeeModal').classList.remove('open')">Cancel</button>
+          <button class="crm-btn crm-btn-primary" id="ewEditEmpSaveBtn">Save</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
+  document.getElementById('ewEditEmpName').value = emp.name;
+  
+  const colorPicker = document.getElementById('ewEditEmpColorPicker');
+  const colorInput = document.getElementById('ewEditEmpColor');
+  colorInput.value = emp.color || '';
+  if (/^#[0-9A-Fa-f]{6}$/.test(emp.color)) {
+    colorPicker.value = emp.color;
+  } else {
+    colorPicker.value = '#000000';
+  }
+
+  colorPicker.oninput = () => { colorInput.value = colorPicker.value; };
+  colorInput.oninput = () => {
+    if (/^#[0-9A-Fa-f]{6}$/.test(colorInput.value)) {
+      colorPicker.value = colorInput.value;
+    }
+  };
+
+  document.getElementById('ewEditEmpDomain').value = emp.domain || '';
+  
+  const saveBtn = document.getElementById('ewEditEmpSaveBtn');
+  saveBtn.onclick = async () => {
+    const newName = document.getElementById('ewEditEmpName').value.trim();
+    const newColor = document.getElementById('ewEditEmpColor').value.trim();
+    const newDomain = document.getElementById('ewEditEmpDomain').value;
+    if (!newName) return toast('Name required', '⚠️');
+    
+    try {
+      const res = await apiJson('/api/ownership/employees/' + emp.id, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: newName, color: newColor, domain: newDomain })
+      });
+      if (res.employee) {
+        Object.assign(emp, res.employee);
+        renderPicker();
+        if (activeEmployee && isSameEmployeeId(activeEmployee.id, emp.id)) {
+          activeEmployee = emp; // update active reference if needed
+        }
+        modal.classList.remove('open');
+        isEditMode = false;
+        document.querySelectorAll('.emp-card').forEach(c => c.classList.remove('edit-mode'));
+        const manageBtn = document.getElementById('empManageBtn');
+        if (manageBtn) manageBtn.textContent = 'Manage Profiles';
+        toast('Profile updated');
+      }
+    } catch (e) {
+      toast('Failed to update profile', '⚠️');
+    }
+  };
+
+  modal.classList.add('open');
+};
+
 window.selectEmployee = function(id, el) {
   if (isEditMode) return;
   const emp = employees.find(x => isSameEmployeeId(x.id, id));
@@ -1087,11 +1194,16 @@ window.selectEmployee = function(id, el) {
   const workspace = document.getElementById('employeeWorkspace');
   const targetAvatar = document.getElementById('ewUserAvatar');
   const targetName = document.getElementById('ewUserName');
+  const targetDomain = document.getElementById('ewUserDomain');
   
   // Pre-fill target header
   targetAvatar.textContent = activeEmployee.name.charAt(0).toUpperCase();
   targetAvatar.style.background = activeEmployee.name.trim().toLowerCase() === 'c k' ? '#2563eb' : (activeEmployee.color || employeeColor(activeEmployee.name));
   targetName.textContent = activeEmployee.name;
+  if (targetDomain) {
+    targetDomain.textContent = activeEmployee.domain || '';
+    targetDomain.style.display = activeEmployee.domain ? '' : 'none';
+  }
   
   if (el) {
     const sourceAvatar = el.querySelector('.emp-avatar');
@@ -1252,7 +1364,7 @@ function getEmployeeData() {
         const subtask = {
           ...s,
           tripId: '', // No trip
-          tripName: 'General Task',
+          tripName: s.tripName || 'Generic Task',
           tripDate: '',
           taskCategory: catName,
           trip: null
@@ -1479,6 +1591,7 @@ document.getElementById('ewAddSubtaskSave')?.addEventListener('click', async () 
       text,
       done: false,
       assignee: activeEmployee.name,
+      tripName: selectedGenericLabel || 'Generic Task',
       createdAt: new Date().toISOString(),
       metadata: { reminder: pendingEwAddSubtaskReminder || { date: new Date().toISOString().slice(0, 10), label: 'Due today' } }
     };
@@ -1570,7 +1683,102 @@ function syncAddSubtaskFieldVisibility() {
   });
   modal.querySelectorAll('.ew-add-subtask-mode-panel').forEach(panel => {
     panel.style.display = panel.dataset.mode === addSubtaskModalMode ? '' : 'none';
+    if (panel.dataset.mode === 'generic' && addSubtaskModalMode === 'generic') {
+      renderGenericLabels(panel);
+    }
   });
+}
+
+function renderGenericLabels(panel) {
+  const emp = activeEmployee;
+  if (!emp) return;
+  
+  const domain = emp.domain || '';
+  const custom = emp.customLabels || [];
+  
+  const defaultLabels = {
+    'Tech': ['bug', 'feature', 'refactor', 'support'],
+    'Accounts': ['payment', 'filing', 'invoice', 'audit'],
+    'Travel': ['booking', 'visa', 'flight', 'hotel'],
+    'Sales & Marketing': ['lead', 'follow-up', 'campaign', 'meeting'],
+    'HR': ['interview', 'onboarding', 'payroll', 'training']
+  };
+  
+  const predefined = defaultLabels[domain] || [];
+  const allLabels = [...new Set([...predefined, ...custom])];
+  
+  let html = '<div class="crm-form-group"><label class="crm-form-label">Labels (' + (domain || 'No Domain') + ')</label>';
+  html += '<div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.5rem;">';
+  allLabels.forEach(lbl => {
+    const isActive = lbl === selectedGenericLabel;
+    const style = isActive 
+      ? 'padding:0.2rem 0.6rem; font-size:0.75rem; border-radius:999px; border:1px solid var(--crm-primary); background:var(--crm-primary); color:#fff;'
+      : 'padding:0.2rem 0.6rem; font-size:0.75rem; border-radius:999px; border:1px solid var(--crm-border);';
+    html += `<button type="button" class="crm-btn crm-btn-ghost" style="${style}" onclick="addGenericLabel('${escHtml(lbl)}')">${escHtml(lbl)}</button>`;
+  });
+  
+  if (!showCustomLabelInput) {
+    html += `<button type="button" class="crm-btn crm-btn-ghost" style="padding:0.2rem 0.6rem; font-size:0.75rem; border-radius:999px; border:1px dashed var(--crm-text-3);" onclick="toggleCustomLabelInput(true)">+ Add</button>`;
+  }
+  html += '</div>';
+
+  if (showCustomLabelInput) {
+    html += '<div style="display:flex; gap:0.5rem;">';
+    html += '<input type="text" id="ewAddCustomLabelInput" class="crm-form-input" placeholder="New custom label..." style="flex:1;">';
+    html += '<button type="button" class="crm-btn crm-btn-ghost" onclick="saveCustomLabel()">Save</button>';
+    html += '<button type="button" class="crm-btn crm-btn-ghost" onclick="toggleCustomLabelInput(false)">✕</button>';
+    html += '</div>';
+  }
+  html += '</div>';
+  
+  panel.innerHTML = html;
+
+  if (showCustomLabelInput) {
+    const inp = document.getElementById('ewAddCustomLabelInput');
+    if (inp) inp.focus();
+  }
+}
+
+window.addGenericLabel = function(lbl) {
+  selectedGenericLabel = selectedGenericLabel === lbl ? null : lbl;
+  syncAddSubtaskFieldVisibility();
+};
+
+window.toggleCustomLabelInput = function(show) {
+  showCustomLabelInput = show;
+  syncAddSubtaskFieldVisibility();
+};
+
+window.saveCustomLabel = async function() {
+  const emp = activeEmployee;
+  if (!emp) return;
+  const input = document.getElementById('ewAddCustomLabelInput');
+  const lbl = input ? input.value.trim() : '';
+  if (!lbl) return;
+  
+  const custom = emp.customLabels || [];
+  if (custom.includes(lbl)) {
+    showCustomLabelInput = false;
+    syncAddSubtaskFieldVisibility();
+    return;
+  }
+  
+  custom.push(lbl);
+  try {
+    const res = await apiJson('/api/ownership/employees/' + emp.id, {
+      method: 'PATCH',
+      body: JSON.stringify({ customLabels: custom })
+    });
+    if (res.employee) {
+      Object.assign(emp, res.employee);
+      showCustomLabelInput = false;
+      selectedGenericLabel = lbl; // Automatically select the new label
+      syncAddSubtaskFieldVisibility(); // Re-render labels
+      toast('Custom label added');
+    }
+  } catch (e) {
+    toast('Failed to save label', '⚠️');
+  }
 }
 
 function refreshAddSubtaskSelects() {
@@ -1627,6 +1835,8 @@ function openAddSubtaskModal(prefill = {}) {
 }
 
 function closeAddSubtaskModal() {
+  selectedGenericLabel = null;
+  showCustomLabelInput = false;
   pendingEwAddSubtaskReminder = null;
   const btn = document.getElementById('ewAddSubtaskReminderBtn');
   if (btn) btn.classList.remove('active');
