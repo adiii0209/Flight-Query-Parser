@@ -1457,6 +1457,54 @@ function renderWorkspace() {
   }
 
   if (currentTab === 'subtasks') {
+    const urlParams = new URLSearchParams(window.location.search);
+    const highlightSubtaskId = urlParams.get('subtaskId');
+    if (highlightSubtaskId) {
+      const card = container.querySelector(`details.ew-subtask-card[data-subtask-id="${CSS.escape(highlightSubtaskId)}"]`);
+      if (card) {
+        card.open = true;
+        let parentDetails = card.parentElement.closest('details');
+        while (parentDetails) {
+          parentDetails.open = true;
+          parentDetails = parentDetails.parentElement.closest('details');
+        }
+        
+        // Use a longer timeout to guarantee DOM and flexbox layouts are fully painted
+        setTimeout(() => {
+          card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          card.style.position = 'relative';
+          card.style.zIndex = '10';
+          card.style.transition = 'all 0.4s ease';
+          card.style.boxShadow = '0 0 0 3px var(--crm-primary), 0 4px 12px rgba(0,0,0,0.1)';
+          card.style.transform = 'scale(1.02)';
+          card.style.background = 'rgba(59, 130, 246, 0.08)';
+          
+          const titleEl = card.querySelector('.ew-subtask-card-title');
+          let badge = null;
+          if (titleEl) {
+            badge = document.createElement('span');
+            badge.textContent = 'Targeted';
+            badge.style.cssText = 'margin-left: 8px; font-size: 0.65rem; background: var(--crm-primary); color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; vertical-align: middle;';
+            titleEl.appendChild(badge);
+          }
+
+          setTimeout(() => {
+            card.style.boxShadow = '';
+            card.style.transform = '';
+            card.style.zIndex = '';
+            card.style.background = '';
+            if (badge) badge.remove();
+          }, 4000);
+          
+          // Fallback scroll just in case the first one fired before paint
+          setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'center' }), 400);
+        }, 500);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+  }
+
+  if (currentTab === 'subtasks') {
     const pendingList = container.querySelector('#ewPendingSubtasksList');
     if (pendingList && window.Sortable) {
       Sortable.create(pendingList, {
@@ -1538,10 +1586,23 @@ document.getElementById('ewAddSubtaskTaskSearch')?.addEventListener('input', () 
 document.getElementById('ewAddSubtaskTripSelect')?.addEventListener('change', () => refreshAddSubtaskSelects());
 document.getElementById('ewAddSubtaskTaskSelect')?.addEventListener('change', () => refreshAddSubtaskSelects());
 
+document.getElementById('ewAddSubtaskReminderBtn')?.addEventListener('click', () => {
+  openEwAddSubtaskReminderModal();
+});
+
+const priBtn = document.getElementById('ewAddSubtaskPriorityBtn');
+if (priBtn) {
+  priBtn.addEventListener('click', () => {
+    const isP = priBtn.classList.toggle('is-priority');
+    priBtn.setAttribute('aria-pressed', isP ? 'true' : 'false');
+  });
+}
+
 document.getElementById('ewAddSubtaskSave')?.addEventListener('click', async () => {
   const tripInput = document.getElementById('ewAddSubtaskTripInput');
   const tripList = document.getElementById('ewAddSubtaskTripList');
   let tripId = document.getElementById('ewAddSubtaskTripSelect')?.value;
+  const isHighPriority = priBtn ? priBtn.classList.contains('is-priority') : false;
   
   if (tripInput && tripList && tripInput.value) {
     const option = Array.from(tripList.options).find(opt => opt.value === tripInput.value);
@@ -1580,8 +1641,17 @@ document.getElementById('ewAddSubtaskSave')?.addEventListener('click', async () 
       done: false,
       assignee: activeEmployee?.name || trip.owner || '',
       createdAt: new Date().toISOString(),
-      metadata: { reminder: pendingEwAddSubtaskReminder || { date: new Date().toISOString().slice(0, 10), label: 'Due today' } }
+      metadata: {}
     };
+    if (pendingEwAddSubtaskReminder) {
+      newSubtask.metadata.reminder = pendingEwAddSubtaskReminder;
+    } else {
+      newSubtask.metadata.reminder = { date: new Date().toISOString().slice(0, 10), label: 'Due today' };
+    }
+    if (isHighPriority) {
+      newSubtask.metadata.isHighPriority = true;
+      newSubtask.metadata.priorityUpdatedAt = new Date().toISOString();
+    }
 
     subsObj[cat].push(newSubtask);
     trip.subtasks = subsObj;
@@ -1606,8 +1676,17 @@ document.getElementById('ewAddSubtaskSave')?.addEventListener('click', async () 
       assignee: activeEmployee.name,
       tripName: selectedGenericLabel || 'Generic Task',
       createdAt: new Date().toISOString(),
-      metadata: { reminder: pendingEwAddSubtaskReminder || { date: new Date().toISOString().slice(0, 10), label: 'Due today' } }
+      metadata: {}
     };
+    if (pendingEwAddSubtaskReminder) {
+      newSubtask.metadata.reminder = pendingEwAddSubtaskReminder;
+    } else {
+      newSubtask.metadata.reminder = { date: new Date().toISOString().slice(0, 10), label: 'Due today' };
+    }
+    if (isHighPriority) {
+      newSubtask.metadata.isHighPriority = true;
+      newSubtask.metadata.priorityUpdatedAt = new Date().toISOString();
+    }
     
     const empSubs = activeEmployee.subtasks || {};
     if (!empSubs['generic']) empSubs['generic'] = [];
@@ -1834,6 +1913,12 @@ function openAddSubtaskModal(prefill = {}) {
   if (tripSelect) tripSelect.value = prefill.tripId || '';
   if (taskSelect) taskSelect.value = prefill.taskKey || currentDetailContext?.taskKey || taskFields[0]?.key || '';
   if (textInput) textInput.value = prefill.text || '';
+  
+  const priBtn = document.getElementById('ewAddSubtaskPriorityBtn');
+  if (priBtn) {
+    priBtn.classList.remove('is-priority');
+    priBtn.setAttribute('aria-pressed', 'false');
+  }
 
   syncAddSubtaskFieldVisibility();
   refreshAddSubtaskSelects();

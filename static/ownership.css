@@ -1,5 +1,5 @@
 /* ============================================================
-   OWNERSHIP CRM DASHBOARD — PREMIUM SAAS STYLES
+   OWNERSHIP CRM DASHBOARD â€” PREMIUM SAAS STYLES
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -69,7 +69,7 @@
   --s-notrequired-border: #1e2a45;
 }
 
-/* ─── Layout ─── */
+/* â”€â”€â”€ Layout â”€â”€â”€ */
 body {
   margin: 0;
   padding: 0;
@@ -125,7 +125,7 @@ body {
 
 .crm-body { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 60px); min-height: 0; min-width: 0; }
 
-/* ─── Main Content ─── */
+/* â”€â”€â”€ Main Content â”€â”€â”€ */
 .crm-main {
   flex: 1;
   height: 100%;
@@ -138,7 +138,7 @@ body {
   gap: 1.25rem;
 }
 
-/* ─── Right Sidebar ─── */
+/* â”€â”€â”€ Right Sidebar â”€â”€â”€ */
 .crm-right-panel {
   width: 320px;
   min-width: 320px;
@@ -167,7 +167,7 @@ body {
   margin-bottom: 0.9rem;
 }
 
-/* ─── KPI Cards ─── */
+/* â”€â”€â”€ KPI Cards â”€â”€â”€ */
 .crm-kpi-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
@@ -309,7 +309,7 @@ body {
 .theme-switch input:checked + .slider:before { transform: translateX(26px); background-color: var(--crm-primary); }
 .theme-switch .icon { font-size: 10px; z-index: 1; user-select: none; }
 
-/* ─── Toolbar ─── */
+/* â”€â”€â”€ Toolbar â”€â”€â”€ */
 .crm-toolbar {
   display: flex;
   align-items: center;
@@ -486,7 +486,7 @@ body {
 [data-crm-theme="dark"] .crm-btn-danger { background: #450a0a; border-color: #7f1d1d; }
 [data-crm-theme="dark"] .crm-btn-ghost { background: var(--crm-surface-2); }
 
-/* ─── Table Container ─── */
+/* â”€â”€â”€ Table Container â”€â”€â”€ */
 .crm-table-wrap {
   background: var(--crm-surface);
   border: 1px solid var(--crm-border);
@@ -540,8 +540,8 @@ body {
   text-align: left;
 }
 .crm-table thead th:hover { background: var(--crm-primary-light); color: var(--crm-primary); }
-.crm-table thead th.sorted-asc::after { content: ' ↑'; color: var(--crm-primary); }
-.crm-table thead th.sorted-desc::after { content: ' ↓'; color: var(--crm-primary); }
+.crm-table thead th.sorted-asc::after { content: '\2191'; color: var(--crm-primary); }
+.crm-table thead th.sorted-desc::after { content: '\2193'; color: var(--crm-primary); }
 
 /* Table Body */
 .crm-table tbody tr {
@@ -567,14 +567,14 @@ body {
 
 .crm-table tbody td:first-child { width: 34px; }
 
-/* ─── Checkbox ─── */
+/* â”€â”€â”€ Checkbox â”€â”€â”€ */
 .crm-checkbox {
   width: 13px; height: 13px;
   cursor: pointer;
   accent-color: var(--crm-primary);
 }
 
-/* ─── Guest Name Cell ─── */
+/* â”€â”€â”€ Guest Name Cell â”€â”€â”€ */
 .crm-guest-cell { display: flex; align-items: center; gap: 0.4rem; }
 .crm-guest-avatar {
   width: 22px; height: 22px;
@@ -600,7 +600,7 @@ body {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--crm-primary) 30%, transparent);
 }
 .crm-link-avatar.has-link::after {
-  content: '↗';
+  content: '\2197';
   position: absolute;
   right: -5px;
   bottom: -5px;
@@ -619,7 +619,7 @@ body {
 .crm-guest-name { font-weight: 600; color: var(--crm-text); white-space: nowrap; }
 .crm-guest-pax { font-size: 0.65rem; color: var(--crm-text-3); }
 
-/* ─── Status Badges ─── */
+/* --- Status Badges --- */
 .crm-badge {
   display: inline-flex;
   align-items: center;
@@ -705,13 +705,13 @@ body {
   vertical-align: middle;
 }
 
-/* ─── Priority Badge ─── */
+/* â”€â”€â”€ Priority Badge â”€â”€â”€ */
 .crm-priority { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; font-weight: 600; }
 .crm-priority.high { color: var(--p-high); }
 .crm-priority.medium { color: var(--p-medium); }
 .crm-priority.low { color: var(--p-low); }
 
-/* ─── Progress Bar ─── */
+/* â”€â”€â”€ Progress Bar â”€â”€â”€ */
 .crm-progress-wrap { min-width: 50px; }
 .crm-progress-bar-bg {
   height: 5px;
@@ -728,7 +728,7 @@ body {
 }
 .crm-progress-label { font-size: 0.65rem; color: var(--crm-text-3); font-weight: 600; }
 
-/* ─── Owner Avatar ─── */
+/* â”€â”€â”€ Owner Avatar â”€â”€â”€ */
 .crm-owner-cell { display: flex; align-items: center; gap: 0.5rem; }
 .crm-owner-avatar {
   width: 20px; height: 20px;
@@ -742,12 +742,12 @@ body {
 }
 .crm-owner-name { font-size: 0.72rem; color: var(--crm-text-2); font-weight: 500; }
 
-/* ─── Date Cell ─── */
+/* â”€â”€â”€ Date Cell â”€â”€â”€ */
 .crm-date-cell { white-space: nowrap; font-size: 0.78rem; color: var(--crm-text-2); }
 .crm-date-soon { color: var(--s-ongoing) !important; font-weight: 600; }
 .crm-date-past { color: var(--s-pending) !important; font-weight: 600; }
 
-/* ─── Inline Edit ─── */
+/* â”€â”€â”€ Inline Edit â”€â”€â”€ */
 .crm-inline-edit {
   background: transparent;
   border: none;
@@ -784,7 +784,7 @@ input[type=number].no-spin {
   -moz-appearance: textfield;
 }
 
-/* ─── Expand Row ─── */
+/* â”€â”€â”€ Expand Row â”€â”€â”€ */
 .crm-expand-btn {
   background: none;
   border: none;
@@ -1059,7 +1059,7 @@ input[type=number].no-spin {
   color: var(--crm-text-2);
 }
 
-/* ─── Activity Feed ─── */
+/* â”€â”€â”€ Activity Feed â”€â”€â”€ */
 .crm-activity-item {
   display: flex;
   gap: 0.65rem;
@@ -1076,7 +1076,7 @@ input[type=number].no-spin {
 .crm-activity-text { font-size: 0.77rem; color: var(--crm-text-2); line-height: 1.4; }
 .crm-activity-meta { font-size: 0.68rem; color: var(--crm-text-3); margin-top: 0.2rem; }
 
-/* ─── Calendar Widget ─── */
+/* â”€â”€â”€ Calendar Widget â”€â”€â”€ */
 .crm-calendar { font-size: 0.8rem; }
 .crm-cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; font-weight: 600; }
 .crm-cal-nav { background: none; border: none; cursor: pointer; color: var(--crm-text-3); padding: 0.25rem; border-radius: 4px; }
@@ -1159,7 +1159,7 @@ input[type=number].no-spin {
   animation: row-flash 2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
-/* ─── Subtask Modal ─── */
+/* â”€â”€â”€ Subtask Modal â”€â”€â”€ */
 .crm-modal-overlay {
   position: fixed;
   inset: 0;
@@ -1407,7 +1407,7 @@ input[type=number].no-spin {
   opacity: 1;
 }
 
-/* ─── Task Template Modal ─── */
+/* â”€â”€â”€ Task Template Modal â”€â”€â”€ */
 .crm-tpl-item {
   display: flex;
   align-items: center;
@@ -1488,7 +1488,7 @@ input[type=number].no-spin {
   margin-top: 0.15rem;
 }
 
-/* ─── Reminder Tag ─── */
+/* â”€â”€â”€ Reminder Tag â”€â”€â”€ */
 .crm-reminder-tag {
   display: inline-flex;
   align-items: center;
@@ -1503,7 +1503,7 @@ input[type=number].no-spin {
 }
 [data-crm-theme="dark"] .crm-reminder-tag { background: #451a03; border-color: #78350f; color: #fbbf24; }
 
-/* ─── Tooltip ─── */
+/* â”€â”€â”€ Tooltip â”€â”€â”€ */
 [data-tooltip] { position: relative; }
 [data-tooltip]::after {
   content: attr(data-tooltip);
@@ -1524,7 +1524,7 @@ input[type=number].no-spin {
 }
 [data-tooltip]:hover::after { opacity: 1; }
 
-/* ─── Empty State ─── */
+/* â”€â”€â”€ Empty State â”€â”€â”€ */
 .crm-empty {
   text-align: center;
   padding: 3rem 1rem;
@@ -1534,7 +1534,7 @@ input[type=number].no-spin {
 .crm-empty-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 0.3rem; }
 .crm-empty-sub { font-size: 0.78rem; }
 
-/* ─── Table Footer ─── */
+/* â”€â”€â”€ Table Footer â”€â”€â”€ */
 .crm-table-footer {
   padding: 0.2rem 0.4rem;
   border-top: 1px solid var(--crm-border);
@@ -1561,7 +1561,7 @@ input[type=number].no-spin {
 .crm-page-btn:hover { background: var(--crm-primary-light); color: var(--crm-primary); border-color: color-mix(in srgb, var(--crm-primary) 30%, transparent); }
 .crm-page-btn.active { background: var(--crm-primary); color: white; border-color: var(--crm-primary); }
 
-/* ─── Scrollbar ─── */
+/* â”€â”€â”€ Scrollbar â”€â”€â”€ */
 .crm-table-scroll::-webkit-scrollbar,
 .crm-right-panel::-webkit-scrollbar,
 .crm-modal-body::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -1574,7 +1574,7 @@ input[type=number].no-spin {
 .crm-table-scroll::-webkit-scrollbar-thumb:hover,
 .crm-right-panel::-webkit-scrollbar-thumb:hover { background: var(--crm-text-3); }
 
-/* ─── Animations ─── */
+/* â”€â”€â”€ Animations â”€â”€â”€ */
 .crm-mini-modal-overlay {
   position: fixed;
   inset: 0;
@@ -1616,7 +1616,7 @@ input[type=number].no-spin {
 
 @keyframes crm-slide-down { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 500px; } }
 
-/* ─── Toast ─── */
+/* â”€â”€â”€ Toast â”€â”€â”€ */
 .crm-toast-container {
   position: fixed;
   bottom: 1.5rem;
@@ -1643,7 +1643,7 @@ input[type=number].no-spin {
 [data-crm-theme="dark"] .crm-toast { background: var(--crm-surface-2); color: var(--crm-text); border: 1px solid var(--crm-border); }
 @keyframes crm-toast-in { from { transform: translateX(100%); opacity: 0; } to { transform: none; opacity: 1; } }
 
-/* ─── Form Elements inside Modal ─── */
+/* â”€â”€â”€ Form Elements inside Modal â”€â”€â”€ */
 .crm-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; }
 .crm-form-group { display: flex; flex-direction: column; gap: 0.3rem; }
 .crm-form-label { font-size: 0.72rem; font-weight: 600; color: var(--crm-text-3); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -1665,7 +1665,7 @@ input[type=number].no-spin {
 }
 .crm-form-textarea { min-height: 72px; resize: vertical; }
 
-/* ─── Assign Select ─── */
+/* â”€â”€â”€ Assign Select â”€â”€â”€ */
 .crm-assignee-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .crm-assignee-chip {
   display: inline-flex; align-items: center; gap: 0.3rem;
@@ -1679,7 +1679,7 @@ input[type=number].no-spin {
 .crm-assignee-chip:not(.selected) { border-color: var(--crm-border); color: var(--crm-text-2); }
 .crm-assignee-chip:not(.selected):hover { border-color: var(--crm-primary); }
 
-/* ─── Reminder Input Row ─── */
+/* â”€â”€â”€ Reminder Input Row â”€â”€â”€ */
 .crm-reminder-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .crm-reminder-row input[type=number] {
   width: 60px; padding: 0.4rem 0.5rem;
@@ -1699,7 +1699,7 @@ input[type=number].no-spin {
 }
 .crm-panel-toggle:hover { background: var(--crm-border); color: var(--crm-text); }
 
-/* ─── Dark mode toggle (header) ─── */
+/* â”€â”€â”€ Dark mode toggle (header) â”€â”€â”€ */
 .crm-theme-toggle {
   background: none; border: 1px solid var(--crm-border);
   border-radius: 8px; padding: 0.45rem 0.7rem;
@@ -1709,7 +1709,7 @@ input[type=number].no-spin {
 }
 .crm-theme-toggle:hover { background: var(--crm-border); color: var(--crm-text); }
 
-/* ─── Trip count badge ─── */
+/* â”€â”€â”€ Trip count badge â”€â”€â”€ */
 .crm-count-badge {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 18px; height: 18px; padding: 0 5px;
@@ -1725,18 +1725,18 @@ input[type=number].no-spin {
 .crm-legend-item { display: flex; align-items: center; gap: 0.3rem; font-size: 0.7rem; color: var(--crm-text-3); }
 .crm-legend-dot { width: 8px; height: 8px; border-radius: 50%; }
 
-/* ─── Responsive ─── */
+/* â”€â”€â”€ Responsive â”€â”€â”€ */
 @media (max-width: 768px) {
   .crm-right-panel { display: none; }
   .crm-kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .crm-main { padding: 0.75rem; }
 }
 
-/* ─── Transition colors ─── */
+/* â”€â”€â”€ Transition colors â”€â”€â”€ */
 * { transition-property: background-color, border-color, color, box-shadow; transition-duration: 0.15s; }
 .crm-progress-bar-fill { transition-duration: 0.5s; }
 
-/* ─── Selection Strip ─── */
+/* â”€â”€â”€ Selection Strip â”€â”€â”€ */
 .crm-selection-strip {
   position: fixed;
   bottom: 2rem;
@@ -1784,7 +1784,7 @@ input[type=number].no-spin {
   background: var(--crm-surface);
 }
 
-/* ─── Sticky / Frozen Columns ─── */
+/* â”€â”€â”€ Sticky / Frozen Columns â”€â”€â”€ */
 .col-sticky-1,
 .col-sticky-2,
 .col-sticky-3,
@@ -1856,9 +1856,9 @@ thead th.col-sticky-6 {
   animation: row-flash 2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
-/* ════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    EMPLOYEE PICKER SCREEN (NETFLIX STYLE)
-════════════════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 .emp-picker-screen {
   position: fixed;
   inset: 0;
@@ -2003,9 +2003,9 @@ thead th.col-sticky-6 {
 @keyframes fadeIn { to { opacity: 1; } }
 @keyframes scaleIn { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 
-/* ════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    EMPLOYEE WORKSPACE
-════════════════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 .ew-workspace {
   padding: 1.5rem 2rem;
   height: 100%;
@@ -2482,7 +2482,7 @@ thead th.col-sticky-6 {
   margin-left: 0.4rem;
 }
 
-/* ─── Skeleton Loaders ─── */
+/* â”€â”€â”€ Skeleton Loaders â”€â”€â”€ */
 @keyframes crm-shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
@@ -2501,3 +2501,5 @@ thead th.col-sticky-6 {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--crm-border);
 }
+.flash-highlight { background-color: rgba(239, 68, 68, 0.4) !important; transition: background-color 1s ease-out; }
+

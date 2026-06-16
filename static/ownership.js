@@ -55,8 +55,8 @@ let trips = [];
 let taskTemplates = [];
 let employees = [];
 
-let sortCol = '';
-let sortDir = 1;
+let sortCol = 'startDate';
+let sortDir = -1;
 let searchQuery = '';
 let filterStatus = '';
 let filterOwner = '';
@@ -1038,8 +1038,10 @@ function subtaskAvatarMarkup(name) {
 function renderExpandedSubtask(sub, trip) {
   const assignee = sub.assignee || trip.owner || 'Unassigned';
   const reminder = sub?.metadata?.reminder;
+  const emp = employees.find(e => e.name === assignee);
+  const href = emp ? `/ownership/employees/${encodeURIComponent(emp.id)}?subtaskId=${encodeURIComponent(sub.id)}` : '#';
   return `
-    <div class="crm-subtask-mini ${sub.done ? 'done' : ''}" title="${escHtml(sub.text)}">
+    <a href="${href}" class="crm-subtask-mini ${sub.done ? 'done' : ''}" title="${escHtml(sub.text)}" style="text-decoration:none; color:inherit; display:flex;">
       ${subtaskAvatarMarkup(assignee)}
       <div class="crm-subtask-mini-main">
         <div class="crm-subtask-mini-text">${escHtml(sub.text)}</div>
@@ -1047,7 +1049,7 @@ function renderExpandedSubtask(sub, trip) {
           ${reminder ? `<span>${escHtml(reminder.label || `${reminder.days} days before`)}</span>` : ''}
         </div>
       </div>
-    </div>
+    </a>
   `;
 }
 
@@ -1290,17 +1292,15 @@ function renderTable() {
   try {
   cancelScheduledTableRender();
   const filtered = getFiltered();
-  const { page, total, pages } = paginate(filtered);
+  const activeTrips = filtered.filter(t => !t.archived);
+  const archivedTrips = filtered.filter(t => t.archived);
+
+  const { page, total, pages } = paginate(activeTrips);
 
   const tbody = document.getElementById('crmTbody');
   const fragment = document.createDocumentFragment();
 
-  if (page.length === 0) {
-    const emptyRow = document.createElement('tr');
-    emptyRow.innerHTML = `<td colspan="18"><div class="crm-empty"><div class="crm-empty-icon">🔍</div><div class="crm-empty-title">No trips found</div><div class="crm-empty-sub">Try adjusting your filters or search query</div></div></td>`;
-    fragment.appendChild(emptyRow);
-  } else {
-    for (const trip of page) {
+  function buildTripRowFragment(trip, frag) {
       const prog = calcProgress(trip);
       const avatar = guestColor(trip.guestName);
       const initials = initialsFor(trip.guestName, 'G');
@@ -1313,6 +1313,7 @@ function renderTable() {
       const row = document.createElement('tr');
       row.dataset.id = trip.id;
       if (isExpanded) row.classList.add('row-expanded');
+      if (trip.archived) row.style.opacity = '0.75';
 
       row.innerHTML = `
         <td class="col-sticky-1"><input type="checkbox" class="crm-checkbox row-check" data-id="${trip.id}" ${selectedTrips.has(trip.id) ? 'checked' : ''}></td>
@@ -1363,7 +1364,7 @@ function renderTable() {
           </div>
         </td>
       `;
-      fragment.appendChild(row);
+      frag.appendChild(row);
 
       // Expanded row
       if (isExpanded) {
@@ -1371,12 +1372,38 @@ function renderTable() {
         expRow.className = 'crm-expanded-row';
         expRow.dataset.expandFor = trip.id;
         expRow.innerHTML = `<td colspan="18">${renderExpandedContent(trip)}</td>`;
-        fragment.appendChild(expRow);
+        frag.appendChild(expRow);
       }
+  }
+
+  if (page.length === 0) {
+    const emptyRow = document.createElement('tr');
+    emptyRow.innerHTML = `<td colspan="18"><div class="crm-empty"><div class="crm-empty-icon">🔍</div><div class="crm-empty-title">No trips found</div><div class="crm-empty-sub">Try adjusting your filters or search query</div></div></td>`;
+    fragment.appendChild(emptyRow);
+  } else {
+    for (const trip of page) {
+      buildTripRowFragment(trip, fragment);
     }
   }
 
   tbody.replaceChildren(fragment);
+
+  // Render archived trips section
+  const archTbody = document.getElementById('crmArchivedTbody');
+  const archHead = document.getElementById('crmArchivedTbodyHead');
+  if (archTbody && archHead) {
+    if (archivedTrips.length > 0) {
+      archHead.style.display = '';
+      const archFragment = document.createDocumentFragment();
+      for (const trip of archivedTrips) {
+        buildTripRowFragment(trip, archFragment);
+      }
+      archTbody.replaceChildren(archFragment);
+    } else {
+      archHead.style.display = 'none';
+      archTbody.replaceChildren();
+    }
+  }
 
   // Footer
   document.getElementById('tableFooterInfo').textContent = `Showing ${page.length} of ${total} trips`;
@@ -1472,6 +1499,7 @@ function renderExpandedContent(trip) {
         </div>
         <div style="margin-top:.5rem;display:flex;gap:.4rem;flex-wrap:wrap;">
           <button class="crm-btn crm-btn-danger" onclick="deleteTrip('${trip.id}')" style="font-size:.72rem;padding:.3rem .7rem;">🗑️ Delete</button>
+          <button class="crm-btn crm-btn-secondary" onclick="toggleTripArchive('${trip.id}', ${trip.archived ? 'false' : 'true'})" style="font-size:.72rem;padding:.3rem .7rem; border: 1px solid var(--crm-border);">${trip.archived ? 'Unarchive' : 'Archive'}</button>
         </div>
         <div class="crm-trip-mini-section">
           <div class="crm-exp-title">Reminders & Notes</div>
@@ -1640,6 +1668,22 @@ function updateSelectionStrip() {
   if (selectedTrips.size > 0) {
     countSpan.textContent = selectedTrips.size;
     strip.classList.add('show');
+    
+    const btnArchive = document.getElementById('btnBulkArchive');
+    const btnUnarchive = document.getElementById('btnBulkUnarchive');
+    if (btnArchive && btnUnarchive) {
+      const allSelectedAreArchived = Array.from(selectedTrips).every(id => {
+        const t = trips.find(trip => trip.id === id);
+        return t && t.archived;
+      });
+      if (allSelectedAreArchived) {
+        btnArchive.style.display = 'none';
+        btnUnarchive.style.display = '';
+      } else {
+        btnArchive.style.display = '';
+        btnUnarchive.style.display = 'none';
+      }
+    }
   } else {
     strip.classList.remove('show');
   }
@@ -2336,120 +2380,7 @@ window.openSubtaskModal = function(event, tripId, key) {
   openModal('subtaskModal');
 };
 
-function renderSubtaskBody(subtasks) {
-  const body = document.getElementById('subtaskModalBody');
-  body.innerHTML = '';
 
-  for (const sub of subtasks) {
-    const item = document.createElement('div');
-    item.className = 'crm-subtask-item';
-    const reminder = subtaskReminder(sub);
-    item.innerHTML = `
-      <input type="checkbox" class="crm-subtask-check" ${sub.done ? 'checked' : ''} data-sid="${sub.id}">
-      <input class="crm-subtask-text ${sub.done ? 'done' : ''}" value="${escHtml(sub.text)}" data-sid="${sub.id}">
-      <select class="crm-subtask-assignee" data-sid="${sub.id}" title="Assign subtask">
-        <option value="">Unassigned</option>
-        ${ownerOptions(sub.assignee || '')}
-      </select>
-      <button class="crm-subtask-reminder ${reminder ? 'active' : ''}" data-sid="${sub.id}" title="${reminder ? escHtml(reminderLabel(reminder)) : 'Set reminder'}">${BELL_ICON}</button>
-      <button class="crm-subtask-del" data-sid="${sub.id}" title="Delete">🗑</button>
-    `;
-    body.appendChild(item);
-
-    // checkbox
-    item.querySelector('.crm-subtask-check').addEventListener('change', e => {
-      const isChecked = e.target.checked;
-      const textEl = item.querySelector('.crm-subtask-text');
-      if (isChecked && sub.metadata?.reminder?.recurring) {
-        const rem = sub.metadata.reminder;
-        if (rem.date) {
-          const d = new Date(rem.date);
-          if (rem.frequency === 'daily') d.setDate(d.getDate() + 1);
-          else if (rem.frequency === 'weekly') d.setDate(d.getDate() + 7);
-          else if (rem.frequency === 'yearly') d.setFullYear(d.getFullYear() + 1);
-          else d.setMonth(d.getMonth() + 1);
-          rem.date = d.toISOString().slice(0, 10);
-          rem.label = rem.date;
-        }
-        sub.done = false;
-        e.target.checked = false;
-        textEl.classList.remove('done');
-        window.toast && window.toast('Recurring task moved to next ' + (rem.frequency || 'monthly') + ' date');
-      } else {
-        sub.done = isChecked;
-        textEl.classList.toggle('done', isChecked);
-      }
-    });
-    // text edit
-    item.querySelector('.crm-subtask-text').addEventListener('change', e => {
-      sub.text = e.target.value;
-    });
-    // assignee edit
-    item.querySelector('.crm-subtask-assignee').addEventListener('change', e => {
-      sub.assignee = e.target.value;
-    });
-    item.querySelector('.crm-subtask-reminder').addEventListener('click', () => {
-      openSubtaskReminderModal(sub.id);
-    });
-    // delete
-    item.querySelector('.crm-subtask-del').addEventListener('click', () => {
-      const trip = trips.find(t => t.id === subtaskContext.tripId);
-      trip.subtasks[subtaskContext.key] = trip.subtasks[subtaskContext.key].filter(s => s.id !== sub.id);
-      scheduleSubtaskModalRefresh();
-    });
-  }
-
-  // Add new subtask row
-  const addRow = document.createElement('div');
-  addRow.className = 'crm-add-subtask-row';
-  const addInput = document.createElement('input');
-  addInput.className = 'crm-add-subtask-input';
-  addInput.placeholder = 'Add a subtask…';
-  addInput.id = 'subtaskNewInput';
-  addRow.appendChild(document.createTextNode('+ '));
-  addRow.appendChild(addInput);
-  const addAssignee = document.createElement('select');
-  addAssignee.className = 'crm-filter-select';
-  addAssignee.style.cssText = 'font-size:.75rem;min-width:130px;';
-  addAssignee.innerHTML = `<option value="">Assign to...</option>${ownerOptions('')}`;
-  addRow.appendChild(addAssignee);
-  const addReminderBtn = document.createElement('button');
-  addReminderBtn.className = `crm-subtask-reminder ${pendingNewSubtaskReminder ? 'active' : ''}`;
-  addReminderBtn.id = 'newSubtaskReminderBtn';
-  addReminderBtn.type = 'button';
-  addReminderBtn.title = pendingNewSubtaskReminder ? reminderLabel(pendingNewSubtaskReminder) : 'Set reminder';
-  addReminderBtn.innerHTML = BELL_ICON;
-  addRow.appendChild(addReminderBtn);
-  const addBtn = document.createElement('button');
-  addBtn.className = 'crm-subtask-add-btn';
-  addBtn.type = 'button';
-  addBtn.title = 'Add subtask';
-  addBtn.textContent = '+';
-  addRow.appendChild(addBtn);
-  body.appendChild(addRow);
-
-  const doAdd = () => {
-    const val = addInput.value.trim();
-    if (!val) return;
-    const trip = trips.find(t => t.id === subtaskContext.tripId);
-    const assignee = addAssignee.value || '';
-    const newSub = { id: uid(), text: val, done: false, assignee, createdAt: new Date().toISOString() };
-    if (pendingNewSubtaskReminder) {
-      newSub.metadata = { reminder: pendingNewSubtaskReminder };
-      pendingNewSubtaskReminder = { date: ewGetTodayDateStr(), label: 'Due today' };
-    } else {
-      pendingNewSubtaskReminder = { date: ewGetTodayDateStr(), label: 'Due today' };
-    }
-    trip.subtasks[subtaskContext.key].push(newSub);
-    scheduleSubtaskModalRefresh();
-    addInput.focus();
-  };
-  addBtn.addEventListener('click', doAdd);
-  addReminderBtn.addEventListener('click', openNewSubtaskReminderModal);
-  addInput.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
-
-  // (Trip reminders section removed per user request, since subtasks have individual reminders)
-}
 
 window.removeReminder = function(days) {
   const trip = trips.find(t => t.id === subtaskContext.tripId);
@@ -2467,6 +2398,7 @@ function renderSubtaskBody(subtasks) {
     const item = document.createElement('div');
     item.className = 'crm-subtask-item';
     const reminder = subtaskReminder(sub);
+    const isPriority = !!sub.metadata?.isHighPriority;
     item.innerHTML = `
       <input type="checkbox" class="crm-subtask-check" ${sub.done ? 'checked' : ''} data-sid="${sub.id}">
       <input class="crm-subtask-text ${sub.done ? 'done' : ''}" value="${escHtml(sub.text)}" data-sid="${sub.id}">
@@ -2474,9 +2406,23 @@ function renderSubtaskBody(subtasks) {
         ${ownerOptions(sub.assignee || trip.owner || '')}
       </select>
       <button class="crm-subtask-reminder ${reminder ? 'active' : ''}" data-sid="${sub.id}" title="${reminder ? escHtml(reminderLabel(reminder)) : 'Set reminder'}">${BELL_ICON}</button>
+      <button type="button" class="ew-priority-toggle ${isPriority ? 'is-priority' : ''}" data-sid="${sub.id}" aria-pressed="${isPriority ? 'true' : 'false'}" title="Toggle Priority">
+        <span class="ew-priority-toggle-track" aria-hidden="true"><span class="ew-priority-toggle-thumb"></span></span>
+      </button>
       <button class="crm-subtask-del" data-sid="${sub.id}" title="Delete">🗑</button>
     `;
     body.appendChild(item);
+
+    const ptToggle = item.querySelector('.ew-priority-toggle');
+    if (ptToggle) {
+      ptToggle.addEventListener('click', () => {
+        const isHigh = ptToggle.classList.toggle('is-priority');
+        ptToggle.setAttribute('aria-pressed', isHigh ? 'true' : 'false');
+        if (!sub.metadata) sub.metadata = {};
+        sub.metadata.isHighPriority = isHigh;
+        sub.metadata.priorityUpdatedAt = new Date().toISOString();
+      });
+    }
 
     item.querySelector('.crm-subtask-check').addEventListener('change', e => {
       const isChecked = e.target.checked;
@@ -2557,6 +2503,17 @@ function renderSubtaskBody(subtasks) {
     reminderBtn.className = 'crm-subtask-reminder crm-draft-reminder-btn';
     reminderBtn.innerHTML = BELL_ICON;
 
+    const priorityBtn = document.createElement('button');
+    priorityBtn.type = 'button';
+    priorityBtn.className = 'ew-priority-toggle crm-draft-priority-btn';
+    priorityBtn.title = 'Toggle Priority';
+    priorityBtn.setAttribute('aria-pressed', 'false');
+    priorityBtn.innerHTML = '<span class="ew-priority-toggle-track" aria-hidden="true"><span class="ew-priority-toggle-thumb"></span></span>';
+    priorityBtn.addEventListener('click', () => {
+      const isHigh = priorityBtn.classList.toggle('is-priority');
+      priorityBtn.setAttribute('aria-pressed', isHigh ? 'true' : 'false');
+    });
+
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.className = 'crm-subtask-del crm-draft-remove-btn';
@@ -2564,6 +2521,7 @@ function renderSubtaskBody(subtasks) {
     removeBtn.textContent = '✕';
 
     actions.appendChild(reminderBtn);
+    actions.appendChild(priorityBtn);
     actions.appendChild(removeBtn);
 
     row.appendChild(core);
@@ -2626,13 +2584,20 @@ document.getElementById('btnSaveSubtasks').addEventListener('click', () => {
         const text = row.querySelector('.crm-subtask-draft-input')?.value.trim();
         if (!text) return;
         const reminder = draftReminderFromRow(row) || { date: ewGetTodayDateStr(), label: 'Due today' };
+        const isHighPriority = row.querySelector('.ew-priority-toggle')?.classList.contains('is-priority');
+        const metadata = reminder ? { reminder } : {};
+        if (isHighPriority) {
+          metadata.isHighPriority = true;
+          metadata.priorityUpdatedAt = new Date().toISOString();
+        }
+        
         nextSubs.push({
           id: uid(),
           text,
           done: false,
           assignee: row.querySelector('.crm-subtask-draft-assignee')?.value || currentTrip.owner || '',
           createdAt: new Date().toISOString(),
-          ...(reminder ? { metadata: { reminder } } : {}),
+          metadata
         });
       });
 
@@ -2842,7 +2807,7 @@ function renderApplyTemplateModal() {
 
 function openApplyTemplateModal(tplId = '') {
   if (!taskTemplates.length) {
-    toast('No category lists saved yet!', 'âš ï¸');
+    toast('No category lists saved yet!', '⚠️');
     return;
   }
   applyTemplateState.tplId = tplId || taskTemplates[0]?.id || '';
@@ -3174,10 +3139,11 @@ document.getElementById('tripModalSave').addEventListener('click', async () => {
       subtasks: { visa:[], flights:[], hotels:[], sectorTickets:[], sightseeing:[], insurance:[], travefy:[], travefyTaskList:[], tripFeedbackForm:[] },
       reminders: [],
     };
+    // Add it to the list temporarily to feel instant, but we won't keep it floating
     trips.unshift(optimisticTrip);
     logActivity(`New trip added: ${name}`, '#10b981');
     toast('Trip created!');
-    scheduleOwnershipRefreshDeferred();
+    renderTable();
     closeModal('tripModal');
     apiJson('/api/ownership/trips', {
       method: 'POST',
@@ -3185,15 +3151,41 @@ document.getElementById('tripModalSave').addEventListener('click', async () => {
     }).then(({ trip: newTrip, cacheVersion }) => {
       const idx = trips.findIndex(t => t.id === tempId);
       if (idx !== -1 && newTrip) {
-        trips[idx] = newTrip;
+        trips[idx] = hydrateTripSearchIndex({ version: 1, ...newTrip });
         rememberOwnershipVersion(cacheVersion || newTrip.version);
-        scheduleOwnershipRefreshDeferred(0);
+        
+        // 1. Find where it landed in the active trips list locally
+        const filtered = getFiltered();
+        const activeTrips = filtered.filter(t => !t.archived);
+        const sortedIdx = activeTrips.findIndex(t => t.id === newTrip.id);
+        
+        if (sortedIdx !== -1) {
+          // 2. Jump to the correct page
+          currentPage = Math.floor(sortedIdx / PAGE_SIZE) + 1;
+        }
+        
+        renderTable();
+
+        // 3. Highlight and scroll
+        setTimeout(() => {
+          const row = document.querySelector(`tr[data-id="${newTrip.id}"]`);
+          if (row) {
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            row.classList.add('flash-highlight');
+            setTimeout(() => row.classList.remove('flash-highlight'), 2000);
+          }
+          
+          // 4. Sync with server in background safely after highlight finishes
+          setTimeout(() => {
+            queueOwnershipServerRefresh(cacheVersion || newTrip.version, 'trip added sync');
+          }, 2100);
+        }, 150);
       }
     }).catch(err => {
       console.error('Trip create failed', err);
       trips = trips.filter(t => t.id !== tempId);
       scheduleOwnershipRefreshDeferred(0);
-      toast('Could not create trip', '⚠️');
+      toast(`Could not create trip: ${err.message || err}`, '⚠️');
     });
     return;
   }
@@ -3221,6 +3213,26 @@ window.deleteTrip = function(id) {
   refreshOwnershipViews();
   if (trip) logActivity(`Trip deleted: ${trip.guestName}`, '#ef4444');
   toast('Trip deleted', '🗑️');
+};
+
+window.toggleTripArchive = async function(tripId, setArchived) {
+  try {
+    const update = { archived: setArchived };
+    applyOptimisticTripUpdate(tripId, update);
+    renderTable(); // ensure UI updates instantly
+    const { cacheVersion } = await apiJson(`/api/ownership/trips/${tripId}`, {
+      method: 'PATCH',
+      body: update
+    });
+    if (cacheVersion) {
+      queueOwnershipServerRefresh(cacheVersion, 'trip archive toggled');
+    }
+    toast(setArchived ? 'Trip archived' : 'Trip unarchived', '🗃️');
+  } catch (err) {
+    console.error('Failed to toggle archive status', err);
+    toast('Failed to update trip archive status', '⚠️');
+    queueOwnershipServerRefresh(0, 'archive toggle conflict rollback');
+  }
 };
 
 function closeExpandedRows() {
@@ -4041,6 +4053,70 @@ document.addEventListener('DOMContentLoaded', () => {
       const failedIds = updatedTrips.filter((_, idx) => results[idx].status !== 'fulfilled').map(t => t.id);
       if (failedIds.length) {
         toast(`Failed to update ${failedIds.length} trips.`, 'error');
+      }
+    });
+  }
+
+  const btnBulkArchive = document.getElementById('btnBulkArchive');
+  if (btnBulkArchive) {
+    btnBulkArchive.addEventListener('click', async () => {
+      if (selectedTrips.size === 0) return;
+      const idsToArchive = Array.from(selectedTrips);
+      const originalText = btnBulkArchive.innerHTML;
+      btnBulkArchive.innerHTML = 'Archiving...';
+      btnBulkArchive.disabled = true;
+
+      const affectedTrips = trips.filter(t => idsToArchive.includes(t.id));
+      affectedTrips.forEach(t => t.archived = true);
+      
+      selectedTrips.clear();
+      refreshOwnershipViews();
+      updateSelectionStrip();
+      btnBulkArchive.innerHTML = originalText;
+      btnBulkArchive.disabled = false;
+      toast(`Archived ${affectedTrips.length} trips`, '🗃️');
+
+      const results = await Promise.allSettled(
+        affectedTrips.map(tripItem => apiJson(`/api/ownership/trips/${tripItem.id}`, {
+          method: 'PATCH',
+          body: { archived: true }
+        }))
+      );
+      const failedIds = affectedTrips.filter((_, idx) => results[idx].status !== 'fulfilled').map(t => t.id);
+      if (failedIds.length) {
+        toast(`Failed to archive ${failedIds.length} trips.`, 'error');
+      }
+    });
+  }
+
+  const btnBulkUnarchive = document.getElementById('btnBulkUnarchive');
+  if (btnBulkUnarchive) {
+    btnBulkUnarchive.addEventListener('click', async () => {
+      if (selectedTrips.size === 0) return;
+      const idsToUnarchive = Array.from(selectedTrips);
+      const originalText = btnBulkUnarchive.innerHTML;
+      btnBulkUnarchive.innerHTML = 'Unarchiving...';
+      btnBulkUnarchive.disabled = true;
+
+      const affectedTrips = trips.filter(t => idsToUnarchive.includes(t.id));
+      affectedTrips.forEach(t => t.archived = false);
+      
+      selectedTrips.clear();
+      refreshOwnershipViews();
+      updateSelectionStrip();
+      btnBulkUnarchive.innerHTML = originalText;
+      btnBulkUnarchive.disabled = false;
+      toast(`Unarchived ${affectedTrips.length} trips`, '📂');
+
+      const results = await Promise.allSettled(
+        affectedTrips.map(tripItem => apiJson(`/api/ownership/trips/${tripItem.id}`, {
+          method: 'PATCH',
+          body: { archived: false }
+        }))
+      );
+      const failedIds = affectedTrips.filter((_, idx) => results[idx].status !== 'fulfilled').map(t => t.id);
+      if (failedIds.length) {
+        toast(`Failed to unarchive ${failedIds.length} trips.`, 'error');
       }
     });
   }

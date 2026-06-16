@@ -243,6 +243,7 @@ class OwnershipTrip(db.Model):
         db.Index("ix_ownership_trip_master_sheet_url", "master_sheet_url"),
         db.Index("ix_ownership_trip_next_reminder_due_date", "next_reminder_due_date"),
     )
+    archived = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text('false'))
     version = db.Column(db.Integer, nullable=False, default=1)
 
     id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -318,6 +319,7 @@ class OwnershipTrip(db.Model):
 
         return {
             "id": self.id,
+            "archived": self.archived,
             "version": self.version or 1,
             "guestName": self.guest_name or "",
             "pax": self.pax or 1,

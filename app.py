@@ -6652,6 +6652,7 @@ OWNERSHIP_TRIP_FIELDS = {
     "lastStatusUpdateDate": "last_status_update_date",
     "latestUpdate": "latest_update",
     "presentWorkAssignedTo": "present_work_assigned_to",
+    "archived": "archived",
     **OWNERSHIP_STATUS_FIELDS,
 }
 OWNERSHIP_STATUS_VALUES = {
@@ -7010,6 +7011,7 @@ def _ownership_scan_and_send_reminders():
                     OwnershipTrip.next_reminder_due_date,
                     OwnershipTrip.reminders_json,
                     OwnershipTrip.subtasks_json,
+                    OwnershipTrip.archived,
                 ),
                 defer(OwnershipTrip.raw_sheet_data),
             ).all()
@@ -7354,6 +7356,7 @@ def _ownership_trips_query():
             OwnershipTrip.present_work_assigned_to,
             OwnershipTrip.subtasks_json,
             OwnershipTrip.reminders_json,
+            OwnershipTrip.archived,
         ),
         defer(OwnershipTrip.raw_sheet_data),
     )

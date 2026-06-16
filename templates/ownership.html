@@ -186,6 +186,16 @@
             <tbody id="crmTbody">
               <!-- Rows injected by JS -->
             </tbody>
+            <tbody id="crmArchivedTbodyHead" style="display:none;">
+              <tr>
+                <td colspan="18" style="padding:1rem; background:var(--crm-bg); text-align:center; font-weight:600; color:var(--crm-text-2); border-top:2px solid var(--crm-border); letter-spacing:0.5px;">
+                  Archived Trips
+                </td>
+              </tr>
+            </tbody>
+            <tbody id="crmArchivedTbody">
+              <!-- Archived Rows injected by JS -->
+            </tbody>
           </table>
         </div>
         <div class="crm-table-footer">
@@ -396,9 +406,15 @@
       <option value="notrequired">Not Required</option>
     </select>
     <button class="crm-btn crm-btn-ghost" id="btnCancelSelection">Cancel</button>
+    <button class="crm-btn crm-btn-secondary" id="btnBulkUnarchive" style="border: 1px solid var(--crm-border);">
+      Unarchive
+    </button>
+    <button class="crm-btn crm-btn-secondary" id="btnBulkArchive" style="border: 1px solid var(--crm-border);">
+      Archive
+    </button>
     <button class="crm-btn crm-btn-danger" id="btnBulkDelete">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-      Delete Selected
+      Delete
     </button>
   </div>
 </div>
