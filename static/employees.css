@@ -899,6 +899,7 @@
 }
 .ew-subtask-card[open] {
   background: var(--crm-surface-2);
+  overflow: visible;
 }
 .ew-subtask-card-summary {
   list-style: none;
@@ -950,11 +951,11 @@
   color: var(--crm-text-3);
   align-items: center;
 }
-.ew-subtask-card-meta span {
+.ew-subtask-card-meta > * {
   padding-right: 0.4rem;
   border-right: 1px solid color-mix(in srgb, var(--crm-border) 75%, transparent);
 }
-.ew-subtask-card-meta span:last-child {
+.ew-subtask-card-meta > *:last-child {
   border-right: none;
   padding-right: 0;
 }
@@ -1011,6 +1012,7 @@
 }
 .ew-remark-details[open] {
   background: var(--crm-surface-2);
+  overflow: visible;
 }
 .ew-remark-summary {
   list-style: none;

@@ -262,9 +262,8 @@ function buildReminderBadgeHtml(subtask) {
   const bg = 'transparent';
   
   const label = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).format(d);
-  const recurringLabel = reminder.recurring ? ' · Recurring' : '';
   
-  return '<span class="ew-reminder-badge' + (reminder.recurring ? ' is-recurring' : '') + '" style="color:' + color + ';background:' + bg + '; font-size:0.66rem; font-weight:700; padding:0.14rem 0; border-radius:999px; white-space:nowrap; display:inline-flex; align-items:center;">' + escHtml(label + recurringLabel) + calendarIconHtml + '</span>';
+  return '<span class="ew-reminder-badge' + (reminder.recurring ? ' is-recurring' : '') + '" style="color:' + color + ';background:' + bg + '; font-size:0.66rem; font-weight:700; padding:0.14rem 0; border-radius:999px; white-space:nowrap; display:inline-flex; align-items:center;">' + escHtml(label) + calendarIconHtml + '</span>';
 }
 
 function openEwSubtaskReminderModal(tripId, subtaskId, isNewAdd = false) {
@@ -545,9 +544,13 @@ function buildSubtaskCardHtml(s) {
   const createdAt = formatCompactDateTime(getSubtaskCreatedAt(s));
   const remarkCount = normalizeRemarkEntries(s.metadata?.remarks).length;
   const reminderBadge = buildReminderBadgeHtml(s);
-  const recurringBadge = isRecurringSubtask(s)
-    ? '<span class="ew-recurring-badge">Recurring</span>'
-    : '';
+  let recurringBadge = '';
+  if (isRecurringSubtask(s) || (s.metadata && s.metadata.wasRecurring)) {
+    const rem = (s.metadata && s.metadata.reminder) || {};
+    const fDays = rem.frequencyDays || 30;
+    const freqText = fDays === 1 ? 'Daily' : fDays === 7 ? 'Weekly' : fDays === 30 ? 'Monthly' : fDays === 365 ? 'Yearly' : `Every ${fDays} days`;
+    recurringBadge = `<span class="ew-recurring-badge" style="display:inline-flex; align-items:center; gap:0.25rem; background:var(--crm-surface-1); padding:0.1rem 0.4rem; border-radius:999px; color:var(--crm-text-2); font-weight:600;"><span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; background:#10b981; color:#fff; border-radius:50%; font-size:0.6rem;">R</span> <span style="font-size:0.65rem;">${freqText}</span></span>`;
+  }
   const hasReminder = !!(s.metadata && s.metadata.reminder);
   const reminderTitle = hasReminder ? escHtml(ewReminderLabel(s.metadata.reminder)) : 'Set reminder';
   return `
@@ -559,7 +562,7 @@ function buildSubtaskCardHtml(s) {
         <div class="ew-subtask-card-copy">
           <div class="ew-subtask-card-title ${s.done ? 'ew-subtask-done' : ''}">${escHtml(s.text)}</div>
           <div class="ew-subtask-card-meta">
-            <span>${escHtml(s.trip ? s.trip.guestName || 'Unnamed Trip' : s.tripName || 'Generic Task')}</span>
+            ${s.trip && s.trip.masterSheetUrl ? `<a href="${escHtml(s.trip.masterSheetUrl)}" target="_blank" onclick="event.stopPropagation();" title="Open Mastersheet" style="color:var(--crm-primary); text-decoration:none; display:inline-flex; align-items:center; gap:0.2rem;"><span style="text-decoration:underline;">${escHtml(s.trip.guestName || 'Unnamed Trip')}</span> <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : `<span>${escHtml(s.trip ? s.trip.guestName || 'Unnamed Trip' : s.tripName || 'Generic Task')}</span>`}
             ${dest ? `<span>${escHtml(dest)}</span>` : ''}
             ${tripDate ? `<span>${escHtml(tripDate)}</span>` : ''}
             ${catLabel ? `<span>[${escHtml(catLabel)}]</span>` : ''}
@@ -581,9 +584,12 @@ function buildSubtaskCardHtml(s) {
       <div class="ew-subtask-card-body">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.5rem; gap:1rem;">
           <div class="ew-remark-thread" style="flex:1;">${remarkThreadHtml(s)}</div>
-          <div style="display:flex; align-items:center; gap:0.5rem; flex-shrink:0; margin-top:0.15rem;">
-            <div style="font-size:0.7rem; color:var(--crm-text-3);">Created: ${escHtml(createdAt || '\u2014')}</div>
-            ${buildDeleteSubtaskButtonHtml(s.tripId, s.id)}
+          <div style="display:flex; flex-direction:column; align-items:flex-end; gap:0.25rem; flex-shrink:0; margin-top:0.15rem;">
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <div style="font-size:0.7rem; color:var(--crm-text-3);">Created: ${escHtml(createdAt || '\u2014')}</div>
+              ${buildDeleteSubtaskButtonHtml(s.tripId, s.id)}
+            </div>
+            ${s.doneAt ? `<div style="font-size:0.7rem; color:#10b981; font-weight:600;">Completed: ${escHtml(formatCompactDateTime(s.doneAt))}</div>` : ''}
           </div>
         </div>
         <div class="ew-remark-compose">
@@ -672,15 +678,18 @@ function remarkThreadHtml(subtask) {
       </summary>
       <div class="ew-remark-thread-body">
         ${remarks.map((r, idx) => `
-          <div class="ew-remark-bubble">
-            <div class="ew-remark-bubble-head">
-              <div class="ew-remark-text">${escHtml(r.text)}</div>
-              <div class="ew-remark-actions">
-                <button type="button" class="ew-remark-action" title="Edit remark" aria-label="Edit remark" onclick="editSubtaskRemark('${subtask?.tripId}', '${subtask?.id}', ${idx})">Edit</button>
-                <button type="button" class="ew-remark-action danger" title="Delete remark" aria-label="Delete remark" onclick="deleteSubtaskRemark('${subtask?.tripId}', '${subtask?.id}', ${idx})">Delete</button>
+          <div class="ew-remark-bubble" style="flex-direction:row; align-items:flex-start; justify-content:space-between; margin-bottom: 0.25rem;">
+            <div style="display:flex; align-items:baseline; gap:0.5rem; flex:1; flex-wrap:wrap;">
+              <div class="ew-remark-text" style="flex:1 1 auto; margin-bottom:0;">${escHtml(r.text)}</div>
+              ${r.ts ? `<div class="ew-remark-meta" style="flex-shrink:0;">${escHtml(formatCompactDateTime(r.ts))}</div>` : ''}
+            </div>
+            <div style="position:relative; margin-left:0.5rem; flex-shrink:0;">
+              <button type="button" style="background:none; border:none; cursor:pointer; color:var(--crm-text-3); font-size:1.1rem; line-height:1; padding:0 0.2rem;" onclick="event.stopPropagation(); const m = this.nextElementSibling; const isVis = m.style.display==='block'; document.querySelectorAll('.ew-remark-menu').forEach(x=>x.style.display='none'); if(!isVis){ m.style.display='block'; const rect = m.getBoundingClientRect(); if(rect.bottom > window.innerHeight){ m.style.top='auto'; m.style.bottom='100%'; } else { m.style.top='100%'; m.style.bottom='auto'; } }">⋮</button>
+              <div class="ew-remark-menu" style="display:none; position:absolute; right:0; top:100%; background:var(--crm-bg); border:1px solid var(--crm-border); border-radius:4px; padding:0.25rem; z-index:1000; box-shadow:0 2px 5px rgba(0,0,0,0.1); min-width:80px;" onclick="event.stopPropagation();">
+                <button type="button" style="display:block; width:100%; text-align:left; background:none; border:none; padding:0.25rem 0.5rem; font-size:0.75rem; cursor:pointer; color:var(--crm-text-1);" onmouseover="this.style.background='var(--crm-surface-2)'" onmouseout="this.style.background='none'" onclick="editSubtaskRemark('${subtask?.tripId}', '${subtask?.id}', ${idx})">Edit</button>
+                <button type="button" style="display:block; width:100%; text-align:left; background:none; border:none; padding:0.25rem 0.5rem; font-size:0.75rem; cursor:pointer; color:var(--crm-danger);" onmouseover="this.style.background='var(--crm-surface-2)'" onmouseout="this.style.background='none'" onclick="deleteSubtaskRemark('${subtask?.tripId}', '${subtask?.id}', ${idx})">Delete</button>
               </div>
             </div>
-            ${r.ts ? `<div class="ew-remark-meta">${escHtml(formatCompactDateTime(r.ts))}</div>` : ''}
           </div>
         `).join('')}
       </div>
@@ -1498,8 +1507,12 @@ function syncWorkspaceTopStrip() {
 
 window.openAddSubtaskModal = openAddSubtaskModal;
 
+document.addEventListener('click', () => {
+  document.querySelectorAll('.ew-remark-menu').forEach(m => m.style.display = 'none');
+});
+
 document.getElementById('ewAddSubtaskReminderBtn')?.addEventListener('click', () => {
-  openEwSubtaskReminderModal(null, null, true);
+  openEwSubtaskReminderModal(selectedTripId, null, true);
 });
 
 document.getElementById('ewAddSubtaskBtn')?.addEventListener('click', () => {
@@ -1997,7 +2010,11 @@ function renderSubtasks(subtasks, recurringSubtasks = []) {
   };
 
   const pending = ordered.filter(isPending);
-  const done = ordered.filter(s => s.done);
+  const done = ordered.filter(s => s.done).sort((a, b) => {
+    const timeA = a.doneAt ? Date.parse(a.doneAt) : (Date.parse(a.updatedAt || a.createdAt) || 0);
+    const timeB = b.doneAt ? Date.parse(b.doneAt) : (Date.parse(b.updatedAt || b.createdAt) || 0);
+    return timeB - timeA;
+  });
   const recurring = [...recurringSubtasks].filter(s => !isPending(s)).sort(compareSubtasksForDisplay);
 
   const container = document.getElementById('ewSubtasksTabContainer');
@@ -2352,8 +2369,19 @@ async function toggleSubtaskPriority(tripId, subtaskId) {
 }
 
 async function toggleSubtaskDone(tripId, subtaskId, isDone) {
-  const advanceRecurring = (s) => {
+  const advanceRecurring = (s, arr) => {
     if (isDone && isRecurringSubtask(s)) {
+      const doneInstance = JSON.parse(JSON.stringify(s));
+      doneInstance.id = 's_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+      doneInstance.done = true;
+      doneInstance.doneAt = new Date().toISOString();
+      if (doneInstance.metadata && doneInstance.metadata.reminder) {
+         delete doneInstance.metadata.reminder.recurring;
+      }
+      if (!doneInstance.metadata) doneInstance.metadata = {};
+      doneInstance.metadata.wasRecurring = true;
+      if (arr) arr.push(doneInstance);
+
       const rem = s.metadata.reminder;
       let freqLabel = 'monthly';
       if (rem && rem.date) {
@@ -2368,9 +2396,11 @@ async function toggleSubtaskDone(tripId, subtaskId, isDone) {
         else if (fDays !== 30) freqLabel = fDays + ' days';
       }
       s.done = false;
-      window.toast && window.toast('Recurring task moved to next ' + freqLabel + ' date');
+      window.toast && window.toast('Task logged & moved to next ' + freqLabel + ' date');
     } else {
       s.done = isDone;
+      if (isDone) s.doneAt = new Date().toISOString();
+      else delete s.doneAt;
     }
   };
 
