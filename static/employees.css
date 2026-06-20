@@ -412,6 +412,26 @@
 .ew-subtask-inline-priority {
   margin-bottom: 0.35rem;
 }
+.ew-edit-subtask-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, #3b82f6 28%, var(--crm-border));
+  background: color-mix(in srgb, #3b82f6 8%, var(--crm-surface));
+  color: #3b82f6;
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+  flex: 0 0 auto;
+}
+.ew-edit-subtask-btn:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, #3b82f6 13%, var(--crm-surface));
+  border-color: color-mix(in srgb, #3b82f6 42%, var(--crm-border));
+}
+
 .ew-delete-subtask-btn {
   display: inline-flex;
   align-items: center;
@@ -1518,4 +1538,33 @@
 .ew-subtask-reminder-btn.active {
   border: none;
   background: transparent;
+}
+
+/* Mobile Fixes for Subtasks and Picker */
+@media (max-width: 768px) {
+  .ew-subtask-card-summary { flex-wrap: wrap; }
+  .ew-subtask-card-copy { width: 100%; flex: 1 1 100%; min-width: 100%; }
+  .ew-subtask-card-badges-wrap { width: 100%; align-items: flex-start !important; margin-top: 0.5rem; }
+  .ew-subtask-card-badges { justify-content: flex-start !important; }
+  .emp-picker-back-btn { top: 1rem !important; left: 1rem !important; z-index: 10; }
+}
+
+@media (max-width: 768px) {
+  .ew-tabs { overflow-x: auto; white-space: nowrap; max-width: 100%; padding-bottom: 0.2rem; }
+  .ew-tab { font-size: 0.75rem; padding: 0.35rem 0.65rem; }
+  .ew-workspace { overflow-x: hidden; }
+  .ew-road-scene { display: block !important; height: 82px !important; min-height: 82px !important; }
+  .emp-picker-title { font-size: 2rem !important; }
+  .emp-picker-grid { gap: 1rem !important; }
+  .emp-avatar { width: 90px !important; height: 90px !important; }
+  .emp-card-name { font-size: 0.9rem !important; }
+}
+
+.ew-workspace { position: relative; overflow-x: hidden; }
+@media (max-width: 768px) {
+  .emp-picker-logo { position: absolute !important; left: auto !important; right: 1rem !important; transform: none !important; top: 1rem !important; font-size: 1.1rem !important; }
+  .emp-picker-title { font-size: 1.8rem !important; margin-bottom: 1.5rem !important; }
+  .ew-subtask-card-body > div:first-child { flex-direction: column; flex-wrap: wrap; }
+  .ew-subtask-card-body > div:first-child > div:last-child { align-items: flex-start !important; margin-top: 0.5rem; }
+  .ew-workspace { overflow-x: hidden; position: relative; width: 100%; }
 }

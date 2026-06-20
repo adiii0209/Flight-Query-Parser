@@ -1725,11 +1725,63 @@ input[type=number].no-spin {
 .crm-legend-item { display: flex; align-items: center; gap: 0.3rem; font-size: 0.7rem; color: var(--crm-text-3); }
 .crm-legend-dot { width: 8px; height: 8px; border-radius: 50%; }
 
-/* â”€â”€â”€ Responsive â”€â”€â”€ */
+/* ═══════════════════════════════════════════════════════════
+   Responsive
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  /* Unstick columns on mobile so horizontal scrolling works fully */
+  .col-sticky-1,
+  .col-sticky-2,
+  .col-sticky-3,
+  .col-sticky-4,
+  .col-sticky-5,
+  .col-sticky-6 {
+    position: static !important;
+    left: auto !important;
+    min-width: auto !important;
+    max-width: none !important;
+    box-shadow: none !important;
+    border-right: none !important;
+  }
+  
+  .crm-header {
+    height: auto;
+    flex-wrap: wrap;
+    padding: 0.75rem;
+  }
+  
+  .crm-toolbar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  
+  .crm-toolbar-left, 
+  .crm-toolbar-center, 
+  .crm-toolbar-right {
+    flex: 1 1 100% !important;
+    width: 100%;
+    justify-content: flex-start !important;
+  }
+  
+  .crm-toolbar-right {
+    margin-top: 0.5rem;
+  }
+  
+  .crm-search-wrap.modern {
+    flex: 1;
+  }
+  
+  .hide-mobile-text {
+    display: none;
+  }
+}
+
 @media (max-width: 768px) {
   .crm-right-panel { display: none; }
   .crm-kpi-grid { grid-template-columns: repeat(2, 1fr); }
-  .crm-main { padding: 0.75rem; }
+  .crm-main { padding: 0.5rem; }
+  .crm-legend { justify-content: flex-start; }
 }
 
 /* â”€â”€â”€ Transition colors â”€â”€â”€ */

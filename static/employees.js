@@ -195,6 +195,18 @@ function buildDeleteSubtaskButtonHtml(tripId, subtaskId) {
   return `
     <button
       type="button"
+      class="ew-edit-subtask-btn"
+      title="Edit Subtask"
+      aria-label="Edit Subtask"
+      onclick="editSubtask('${tripId}', '${subtaskId}')"
+      style="margin-right:0.25rem;"
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+      </svg>
+    </button>
+    <button
+      type="button"
       class="ew-delete-subtask-btn"
       title="Delete Subtask"
       aria-label="Delete Subtask"
@@ -2561,6 +2573,37 @@ async function appendSubtaskRemark(tripId, subtaskId, remarks) {
     updateTripField(tripId, 'subtasks', subsObj).catch(() => {});
   }
 }
+window.editSubtask = async function(tripId, subtaskId) {
+  if (!tripId) {
+    return _handleGenericSubtaskUpdate(subtaskId, (s) => {
+      const newText = prompt('Edit subtask:', s.text);
+      if (newText === null || newText.trim() === '') return false;
+      s.text = newText.trim();
+    });
+  }
+  const trip = trips.find(t => t.id === tripId);
+  if (!trip) return;
+  
+  let subsObj = trip.subtasks || {};
+  let foundSub = null;
+  
+  Object.keys(subsObj).forEach(cat => {
+    if (Array.isArray(subsObj[cat])) {
+      const s = subsObj[cat].find(x => x.id === subtaskId);
+      if (s) foundSub = s;
+    }
+  });
+  
+  if (foundSub) {
+    const newText = prompt('Edit subtask:', foundSub.text);
+    if (newText === null || newText.trim() === '') return;
+    foundSub.text = newText.trim();
+    updateTripField(tripId, 'subtasks', subsObj).catch(() => {});
+    if (typeof refreshEmployeeWorkspaceFromOwnership === 'function') {
+      refreshEmployeeWorkspaceFromOwnership();
+    }
+  }
+};
 
 async function deleteSubtask(tripId, subtaskId) {
   if (!tripId) {
