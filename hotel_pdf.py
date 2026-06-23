@@ -248,6 +248,14 @@ def draw_hotel_voucher(c, data):
     GAP    = 16    # standard gap between sections
     GAP_SM = 10    # small gap
 
+    def draw_footer_and_page(current_y):
+        hline(c, M, BOT + 36, IW)
+        FOOT_Y = BOT + 16
+        txt(c, M, FOOT_Y, "timetours.in  ·  +91 33 400 11 333", size=8, color=C_TEXT_SEC)
+        txt(c, R,  FOOT_Y, "13, Camac Street, Kolkata 700017",   size=8, color=C_TEXT_SEC, align="right")
+        c.showPage()
+        return H - 44
+
     # ── 1. HEADER ─────────────────────────────────────────────────────────────
     # Left: HOTEL VOUCHER label → hotel name → city
     # Right: logo or company name
@@ -468,11 +476,12 @@ def draw_hotel_voucher(c, data):
     )
 
     if has_room_data:
+        if T < BOT + 80: T = draw_footer_and_page(T)
         txt(c, M, T, "ROOMS & GUESTS", size=7, color=C_TEXT_TER, bold=True)
         ry = T - 16
 
-        for idx, room in enumerate(rooms[:6]):
-            if ry - 28 < BOT + 60: break
+        for idx, room in enumerate(rooms):
+            if ry < BOT + 80: ry = draw_footer_and_page(ry)
 
             rtype      = room.get("room_type") or ""
             meal_room  = room.get("meal_plan") or ""
@@ -521,6 +530,7 @@ def draw_hotel_voucher(c, data):
     # ── 6.5 SPECIAL INSTRUCTIONS ──────────────────────────────────────────────
     special = data.get("special_instructions")
     if has_value(special):
+        if T < BOT + 60: T = draw_footer_and_page(T)
         txt(c, M, T, "SPECIAL INSTRUCTIONS", size=7, color=C_TEXT_TER, bold=True)
         sy = T - 14
         sy, num_lines = draw_wrapped_text(
@@ -532,6 +542,7 @@ def draw_hotel_voucher(c, data):
         T -= GAP
 
     if data.get("show_paid_logo"):
+        if T < BOT + 60: T = draw_footer_and_page(T)
         txt(c, M, T, "PAYMENT", size=7, color=C_TEXT_TER, bold=True)
         txt(c, M, T - 15, "PAID IN FULL", size=10, color=C_TEXT_PRI, bold=True)
         T -= 28
@@ -543,6 +554,7 @@ def draw_hotel_voucher(c, data):
     if not isinstance(amenities, list): amenities = []
 
     if amenities:
+        if T < BOT + 80: T = draw_footer_and_page(T)
         txt(c, M, T, "AMENITIES", size=7, color=C_TEXT_TER, bold=True)
 
         CHIP_H = 18; CHIP_GAP = 6
@@ -563,6 +575,7 @@ def draw_hotel_voucher(c, data):
     # ── 8. TOTAL AMOUNT ───────────────────────────────────────────────────────
     total_label = format_amount(data.get("total_amount"), data.get("currency"))
     if total_label:
+        if T < BOT + 60: T = draw_footer_and_page(T)
         txt(c, R, T,      "TOTAL AMOUNT", size=7,  color=C_TEXT_TER, bold=True, align="right")
         txt(c, R, T - 16, total_label,    size=16, color=C_TEXT_PRI, bold=True, align="right")
         T -= 32
@@ -570,10 +583,7 @@ def draw_hotel_voucher(c, data):
         T -= GAP
 
     # ── 9. FOOTER ─────────────────────────────────────────────────────────────
-    hline(c, M, BOT + 36, IW)
-    FOOT_Y = BOT + 16
-    txt(c, M, FOOT_Y, "timetours.in  ·  +91 33 400 11 333", size=8, color=C_TEXT_SEC)
-    txt(c, R,  FOOT_Y, "13, Camac Street, Kolkata 700017",   size=8, color=C_TEXT_SEC, align="right")
+    draw_footer_and_page(T)
 
 
 # ── Sample data ───────────────────────────────────────────────────────────────
