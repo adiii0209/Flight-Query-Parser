@@ -844,12 +844,12 @@ function renderRoomCards(items) {
       </div>
       <div class="input-group">
         <label>Room Type</label>
-        <input type="text" value="${esc(room.room_type || '')}" oninput="updateRoomField(${index}, 'room_type', this.value)">
+        <input type="text" value="${esc(room.room_type || '')}" onchange="updateRoomField(${index}, 'room_type', this.value)">
       </div>
       <div class="input-group">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
           <label style="margin:0;">Guest Names</label>
-          <button type="button" title="Add Guest" onclick="addRoomGuest(${index}, Math.max(0, parseInt(room.guest_count, 10) || 0) - 1)" style="background:#f1f5f9; border:1px solid #cbd5e1; color:#0f172a; border-radius:4px; padding:0.15rem 0.5rem; font-size:0.75rem; cursor:pointer; display:flex; align-items:center; gap:0.25rem; font-weight:500;">
+          <button type="button" title="Add Guest" onclick="addRoomGuest(${index}, ${Math.max(0, parseInt(room.guest_count, 10) || 0) - 1})" style="background:#f1f5f9; border:1px solid #cbd5e1; color:#0f172a; border-radius:4px; padding:0.15rem 0.5rem; font-size:0.75rem; cursor:pointer; display:flex; align-items:center; gap:0.25rem; font-weight:500;">
             <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
             Add Guest
           </button>
@@ -874,7 +874,7 @@ function renderGuestFields(room, roomIndex) {
         <div class="guest-field-row" draggable="true" ondragstart="handleGuestDragStart(event, ${roomIndex}, ${i})" ondragend="handleGuestDragEnd(event)" ondragenter="handleGuestDragEnter(event)" ondragover="handleGuestDragOver(event)" ondragleave="handleGuestDragLeave(event)" ondrop="handleGuestDrop(event, ${roomIndex}, ${i})">
           <span><span class="drag-handle" title="Drag to reorder/segment">&#10303;</span>${i === 0 ? 'Primary Guest' : `Guest ${i + 1}`}</span>
           <div style="display:flex; flex:1; align-items:center; gap:0.25rem;">
-            <input type="text" value="${esc(guests[i] || '')}" placeholder="${i === 0 ? 'Primary guest name' : `Guest ${i + 1} name`}" oninput="updateRoomGuestName(${roomIndex}, ${i}, this.value)" style="flex:1;">
+            <input type="text" value="${esc(guests[i] || '')}" placeholder="${i === 0 ? 'Primary guest name' : `Guest ${i + 1} name`}" onchange="updateRoomGuestName(${roomIndex}, ${i}, this.value)" style="flex:1;">
             <button type="button" title="Remove Guest" onclick="removeRoomGuest(${roomIndex}, ${i})" style="background:none; border:none; color:#ef4444; cursor:pointer; display:flex; padding:0.25rem;">
               <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path></svg>
             </button>
