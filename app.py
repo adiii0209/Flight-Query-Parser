@@ -860,8 +860,8 @@ def _ticket_notifications_payload(user_id):
     merge_groups = _build_pnr_merge_groups(user_id)
     pending_merges = [g for g in merge_groups if g["merged_ticket_count"] < g["ticket_count"]]
     dup_count = Ticket.query.filter_by(
-        user_id=user_id,
-        duplicate_status="pending"
+        duplicate_status="pending",
+        **get_org_scope()
     ).count()
     processing_batches = _get_user_ticket_processing_batches(user_id)
     return {
@@ -2073,7 +2073,7 @@ def _resolve_ticket_scope_from_ids(user_id, ticket_ids):
     for ticket_id in ticket_ids or []:
         if not ticket_id:
             continue
-        ticket = Ticket.query.filter_by(id=ticket_id, user_id=user_id).first()
+        ticket = Ticket.query.filter_by(id=ticket_id, **get_org_scope()).first()
         if not ticket:
             continue
         for scoped_ticket in _expand_ticket_scope(ticket):
@@ -2096,7 +2096,7 @@ def _upsert_ticket_reads(user_id, ticket_ids):
 
 
 def _restore_ticket_snapshot(snapshot, user_id):
-    ticket = Ticket.query.filter_by(id=snapshot["id"], user_id=user_id).first()
+    ticket = Ticket.query.filter_by(id=snapshot["id"], **get_org_scope()).first()
     if not ticket:
         return
     for field, value in snapshot.items():
@@ -2375,12 +2375,12 @@ def _merged_ticket_summary_dict(booking_group, lead_ticket):
 
 
 def _collect_ticket_delete_side_effects(ticket, user_id):
-    ledger_entries = LedgerEntry.query.filter_by(ticket_id=ticket.id, user_id=user_id).all()
+    ledger_entries = LedgerEntry.query.filter_by(ticket_id=ticket.id, **get_org_scope()).all()
     mapped_entry = None
     if ticket.ledger_hash and ticket.ledger_hash.startswith("MAPPED_"):
         mapped_id = ticket.ledger_hash.replace("MAPPED_", "").strip()
         if mapped_id:
-            mapped_entry = LedgerEntry.query.filter_by(id=mapped_id, user_id=user_id).first()
+            mapped_entry = LedgerEntry.query.filter_by(id=mapped_id, **get_org_scope()).first()
 
     agg_ids = set()
     for entry in ledger_entries:
@@ -2449,15 +2449,15 @@ def _reverse_ticket_operation(operation):
 
     metadata = json.loads(operation.metadata_json or "{}")
     created_ticket_ids = metadata.get("created_ticket_ids", [])
-    links = OperationLedgerLink.query.filter_by(operation_id=operation.id, user_id=operation.user_id).all()
+    links = OperationLedgerLink.query.filter_by(operation_id=operation.id, **get_org_scope()).all()
     for link in links:
-        entry = LedgerEntry.query.filter_by(id=link.ledger_entry_id, user_id=operation.user_id).first()
+        entry = LedgerEntry.query.filter_by(id=link.ledger_entry_id, **get_org_scope()).first()
         if entry:
             db.session.delete(entry)
         db.session.delete(link)
 
     for ticket_id in created_ticket_ids:
-        ticket = Ticket.query.filter_by(id=ticket_id, user_id=operation.user_id).first()
+        ticket = Ticket.query.filter_by(id=ticket_id, **get_org_scope()).first()
         if ticket:
             db.session.delete(ticket)
 
@@ -2474,9 +2474,9 @@ def _delete_ledger_entry_with_reverse(entry, user_id):
     if not entry:
         return None
     agg_id = entry.aggregator_id
-    link = OperationLedgerLink.query.filter_by(ledger_entry_id=entry.id, user_id=user_id).first()
+    link = OperationLedgerLink.query.filter_by(ledger_entry_id=entry.id, **get_org_scope()).first()
     if link:
-        operation = TicketOperation.query.filter_by(id=link.operation_id, user_id=user_id).first()
+        operation = TicketOperation.query.filter_by(id=link.operation_id, **get_org_scope()).first()
         _reverse_ticket_operation(operation)
         # Clear ledger flags on tickets involved in this operation
         if operation:
@@ -2489,7 +2489,7 @@ def _delete_ledger_entry_with_reverse(entry, user_id):
                 if isinstance(snapshot, dict) and snapshot.get("id"):
                     affected_ids.add(snapshot["id"])
             for tid in affected_ids:
-                t = Ticket.query.filter_by(id=tid, user_id=user_id).first()
+                t = Ticket.query.filter_by(id=tid, **get_org_scope()).first()
                 if t and t.ledger_hash:
                     t.ledger_hash = None
                     t.last_aggregator = None
@@ -2498,7 +2498,7 @@ def _delete_ledger_entry_with_reverse(entry, user_id):
         db.session.delete(entry)
         # If this ledger entry was directly tied to a ticket, clear ledger_hash
         if entry.ticket_id:
-            ticket = Ticket.query.filter_by(id=entry.ticket_id, user_id=user_id).first()
+            ticket = Ticket.query.filter_by(id=entry.ticket_id, **get_org_scope()).first()
             if ticket and ticket.ledger_hash:
                 ticket.ledger_hash = None
                 ticket.last_aggregator = None
@@ -2506,7 +2506,7 @@ def _delete_ledger_entry_with_reverse(entry, user_id):
         # Also clear any tickets that were marked in-ledger for the same PNR/aggregator
         # If any ticket was mapped to this ledger entry, clear that mapping
         mapped = Ticket.query.filter(
-            Ticket.user_id == user_id,
+            Ticket.organization_id == session.get('organization_id'),
             Ticket.ledger_hash == f"MAPPED_{entry.id}"
         ).all()
         for t in mapped:
@@ -2516,9 +2516,9 @@ def _delete_ledger_entry_with_reverse(entry, user_id):
     # Clear any tickets that were marked in-ledger for the same PNR/aggregator
     if entry.pnr:
         linked_tickets = Ticket.query.filter_by(
-            user_id=user_id,
             pnr=entry.pnr,
-            last_aggregator=entry.aggregator_id
+            last_aggregator=entry.aggregator_id,
+            **get_org_scope()
         ).all()
         for t in linked_tickets:
             if t.ledger_hash:
@@ -3868,6 +3868,14 @@ def receive_ticket():
         if not user:
             return jsonify({"error": "No users found in system"}), 400
 
+        # Determine organization_id for API-created tickets
+        _ticket_org_id = session.get('organization_id')
+        if not _ticket_org_id:
+            from models_rbac import Membership as _M
+            _mem = _M.query.filter_by(user_id=user.id, is_active=True).first()
+            if _mem:
+                _ticket_org_id = _mem.organization_id
+
         passenger_count = len(passengers) or 1
         consolidated_fare = journey.get("consolidated_fare") if isinstance(journey, dict) else None
         if not isinstance(consolidated_fare, dict):
@@ -3991,6 +3999,7 @@ def receive_ticket():
                 raw_data=data,
                 status="unmatched",
                 user_id=user.id,
+                organization_id=_ticket_org_id,
                 parser_version=metadata.get("parser_version")
             )
 
@@ -4019,7 +4028,7 @@ def receive_ticket():
                 from sqlalchemy import or_
                 existing_tickets = Ticket.query.filter(
                     Ticket.pnr == new_pnr,
-                    Ticket.user_id == user.id,
+                    Ticket.organization_id == session.get('organization_id'),
                     or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status.in_(["approved"])),
                 ).order_by(Ticket.created_at.asc()).all()
 
@@ -4592,8 +4601,8 @@ def get_pending_duplicates():
         return _jsonify_dashboard_cache_payload(cached_payload, "HIT", "tickets-duplicates")
 
     query = Ticket.query.filter_by(
-        user_id=user_id,
-        duplicate_status="pending"
+        duplicate_status="pending",
+        **get_org_scope()
     ).order_by(Ticket.created_at.desc())
 
     total_count = query.count()
@@ -4611,7 +4620,7 @@ def get_pending_duplicates():
         # Include info about the original ticket
         original_summary = None
         if dup_ticket.duplicate_of_id:
-            original = Ticket.query.filter_by(id=dup_ticket.duplicate_of_id).first()
+            original = Ticket.query.filter_by(id=dup_ticket.duplicate_of_id, **get_org_scope()).first()
             if original:
                 orig_passengers = _json_list(original.passengers_data)
                 orig_segments = _json_list(original.segments_data)
@@ -4711,7 +4720,7 @@ def get_merged_history():
     if cached_payload is not None:
         return _jsonify_dashboard_cache_payload(cached_payload, "HIT", "tickets-merged-history")
 
-    groups = BookingGroup.query.filter_by(user_id=user_id, status="merged").order_by(BookingGroup.updated_at.desc()).all()
+    groups = BookingGroup.query.filter_by(status="merged", **get_org_scope()).order_by(BookingGroup.updated_at.desc()).all()
 
     result = []
     for bg in groups:
@@ -4783,7 +4792,7 @@ def _build_pnr_merge_groups(user_id):
     from sqlalchemy import or_
     from sqlalchemy.orm import defer
     tickets = Ticket.query.filter(
-        Ticket.user_id == user_id,
+        Ticket.organization_id == session.get('organization_id'),
         Ticket.pnr.isnot(None),
         Ticket.pnr != "",
         Ticket.booking_group_id.is_(None),
@@ -4883,7 +4892,7 @@ def merge_pnr_group(pnr):
     if group["discrepancies"] and not force_merge:
         return jsonify({"error": "Discrepancies detected. Use force merge to continue.", "discrepancies": group["discrepancies"]}), 400
 
-    selected_tickets = Ticket.query.filter_by(user_id=session["user_id"], pnr=normalized_pnr).all()
+    selected_tickets = Ticket.query.filter_by(pnr=normalized_pnr, **get_org_scope()).all()
     if requested_ticket_ids:
         selected_tickets = [ticket for ticket in selected_tickets if ticket.id in requested_ticket_ids]
     if len(selected_tickets) < 2:
@@ -4929,7 +4938,7 @@ def delete_pnr_group_tickets(pnr):
     data = request.get_json() or {}
     requested_ticket_ids = set(data.get("ticket_ids") or [])
     normalized_pnr = (pnr or "").strip().upper()
-    selected_tickets = Ticket.query.filter_by(user_id=session["user_id"], pnr=normalized_pnr).all()
+    selected_tickets = Ticket.query.filter_by(pnr=normalized_pnr, **get_org_scope()).all()
     if requested_ticket_ids:
         selected_tickets = [ticket for ticket in selected_tickets if ticket.id in requested_ticket_ids]
     if not selected_tickets:
@@ -4987,9 +4996,12 @@ def get_tickets():
         return _jsonify_dashboard_cache_payload(cached_payload, "HIT", "tickets-list")
 
     query = Ticket.query.filter(
-        Ticket.user_id == user_id,
         or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status == 'approved'),
-    ).options(
+    )
+    scope = get_org_scope()
+    if scope:
+        query = query.filter_by(**scope)
+    query = query.options(
         load_only(
             Ticket.id,
             Ticket.created_at,
@@ -5174,9 +5186,9 @@ def delete_account():
     # But User model has cascade='all, delete-orphan' for itineraries
     # Tickets and other models should also be cleaned up
     TicketRead.query.filter_by(user_id=user.id).delete()
-    Ticket.query.filter_by(user_id=user.id).delete()
-    Aggregator.query.filter_by(user_id=user.id).delete()
-    LedgerEntry.query.filter_by(user_id=user.id).delete()
+    Ticket.query.filter_by(user_id=user.id).update({'user_id': None})
+    Aggregator.query.filter_by(user_id=user.id).update({'user_id': None})
+    LedgerEntry.query.filter_by(user_id=user.id).update({'user_id': None})
     
     # Cleanup RBAC and Workspace foreign keys
     import models_rbac
@@ -5200,7 +5212,7 @@ def get_ticket(ticket_id):
     user_id = session['user_id']
     user = User.query.get(user_id)
     last_seen_at = user.last_ticket_seen_at if user else None
-    ticket = Ticket.query.filter_by(id=ticket_id, user_id=user_id).first()
+    ticket = Ticket.query.filter_by(id=ticket_id, **get_org_scope()).first()
     if not ticket:
         return jsonify({"error": "Ticket not found"}), 404
 
@@ -5212,7 +5224,7 @@ def get_ticket(ticket_id):
 
     # Auto-map to ledger if PNR exists there but hash is missing
     if not ticket.ledger_hash and ticket.pnr:
-        existing = LedgerEntry.query.filter_by(pnr=ticket.pnr, user_id=user_id).first()
+        existing = LedgerEntry.query.filter_by(pnr=ticket.pnr, **get_org_scope()).first()
         if existing:
             # We use a special marker to indicate it was mapped via PNR
             ticket.ledger_hash = f"MAPPED_{existing.id}"
@@ -6386,7 +6398,7 @@ def _execute_operation(ticket, plan, action_type):
         updated_ticket_ids.append(current.id)
 
     for item in plan["ticket_creates"]:
-        new_ticket = Ticket(user_id=session["user_id"])
+        new_ticket = Ticket(user_id=session["user_id"], organization_id=session.get('organization_id'))
         _apply_ticket_payload(new_ticket, item["payload"])
         db.session.add(new_ticket)
         db.session.flush()
@@ -7092,10 +7104,10 @@ def _ownership_request_version(payload):
 
 
 def _ownership_query():
-    user_id = _ownership_user_id()
+    org_id = session.get("organization_id")
     query = OwnershipTrip.query
-    if user_id:
-        return query.filter(db.or_(OwnershipTrip.user_id == user_id, OwnershipTrip.user_id.is_(None)))
+    if org_id:
+        return query.filter(db.or_(OwnershipTrip.organization_id == org_id, OwnershipTrip.organization_id.is_(None)))
     return query
 
 
@@ -7709,11 +7721,14 @@ def seed_ownership_from_workbook(force=False):
         trip = existing_trips.get(row)
         raw_data = payload.pop("_raw", {})
         if trip is None:
-            trip = OwnershipTrip(source="ownership_sheet", source_row=row)
+            trip = OwnershipTrip(source="ownership_sheet", source_row=row, organization_id=session.get("organization_id"))
             existing_trips[row] = trip
             created += 1
             changed = True
         else:
+            if not trip.organization_id:
+                trip.organization_id = session.get("organization_id")
+                changed = True
             next_snapshot = {
                 "id": trip.id,
                 "version": trip.version or 1,
@@ -7822,7 +7837,7 @@ def create_ownership_trip():
     sender_id = _request_ownership_sender_id(payload)
     if not str(payload.get("guestName") or "").strip():
         return jsonify({"error": "Guest / trip name is required"}), 400
-    trip = OwnershipTrip(user_id=_ownership_user_id())
+    trip = OwnershipTrip(user_id=_ownership_user_id(), organization_id=session.get("organization_id"))
     _apply_trip_payload(trip, payload)
     db.session.add(trip)
     db.session.commit()
