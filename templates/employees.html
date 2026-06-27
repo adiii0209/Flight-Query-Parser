@@ -33,7 +33,9 @@
     <div class="emp-picker-grid" id="empPickerGrid">
       <!-- Cards injected by JS -->
     </div>
+    {% if session.get('role') in ['PLATFORM_SUPER_ADMIN', 'AGENCY_ADMIN', 'CLIENT_ADMIN'] %}
     <button class="emp-picker-manage-btn" id="empManageBtn">Manage Profiles</button>
+    {% endif %}
     <a href="/ownership" class="emp-picker-back-btn" id="empPickerBackBtn">← Back to Dashboard</a>
   </div>
 </div>
@@ -213,7 +215,7 @@
   window.__INITIAL_EMPLOYEE_ID__ = {{ initial_employee_id|default('', true)|tojson }};
   window.__EMPLOYEE_BASE_PATH__ = '/ownership/employees';
 </script>
-<script src="/static/employees.js?v=20260613recurring1"></script>
+<script src="/static/employees.js?v=20260623recurring8"></script>
 <script>
   // Sync with main app sidebar / theme
   document.addEventListener('DOMContentLoaded', () => {

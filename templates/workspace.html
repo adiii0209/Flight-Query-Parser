@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Select Workspace — Time Tours</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow-x: hidden; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: #04060e;
+      color: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+    
+    /* BACKGROUND */
+    .bg-scene {
+      position: fixed; inset: 0; overflow: hidden; z-index: 0; pointer-events: none;
+    }
+    .bg-gradient {
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse 90% 70% at 20% 10%, #0f2a6e 0%, transparent 60%),
+                  radial-gradient(ellipse 60% 50% at 80% 80%, #072236 0%, transparent 55%),
+                  radial-gradient(ellipse 70% 60% at 60% 30%, #091a3e 0%, transparent 50%),
+                  #04060e;
+    }
+    .stars {
+      position: absolute; inset: 0;
+      background-image: radial-gradient(1.5px 1.5px at 15% 25%, rgba(255, 255, 255, 0.5) 0%, transparent 100%),
+                        radial-gradient(1px 1px at 73% 12%, rgba(255, 255, 255, 0.35) 0%, transparent 100%);
+    }
+    
+    /* NAV */
+    .nav-top {
+      position: relative; z-index: 10; width: 100%; max-width: 800px;
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 3rem;
+    }
+    .nav-brand {
+      font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.4rem;
+      color: #fff; text-decoration: none;
+    }
+    .nav-brand span { color: #60a5fa; }
+    
+    .btn-logout {
+      font-family: 'DM Sans', sans-serif; font-size: 0.85rem; font-weight: 600;
+      color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
+      padding: 0.5rem 1rem; cursor: pointer; transition: all 0.2s ease;
+    }
+    .btn-logout:hover { background: rgba(255,255,255,0.15); color: #fff; }
+    
+    /* PAGE CONTAINER */
+    .page {
+      position: relative; z-index: 1; width: 100%; max-width: 800px;
+      animation: pageIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    @keyframes pageIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .header-text { text-align: center; margin-bottom: 3rem; }
+    .header-text h1 { font-family: 'Syne', sans-serif; font-size: 2.2rem; margin-bottom: 0.5rem; }
+    .header-text p { color: rgba(255,255,255,0.6); font-size: 1.05rem; }
+    
+    /* GRID */
+    .grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem;
+    }
+    
+    .workspace-card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 20px; padding: 1.8rem;
+      backdrop-filter: blur(20px); cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+      display: flex; flex-direction: column; gap: 1rem;
+      position: relative; overflow: hidden;
+    }
+    .workspace-card::before {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 60%);
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .workspace-card:hover {
+      transform: translateY(-5px);
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(96, 165, 250, 0.4);
+      box-shadow: 0 15px 35px rgba(0,0,0,0.4), 0 0 20px rgba(96, 165, 250, 0.15);
+    }
+    .workspace-card:hover::before { opacity: 1; }
+    
+    .ws-icon {
+      width: 48px; height: 48px; border-radius: 12px;
+      background: linear-gradient(135deg, #1d4ed8, #0ea5e9);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem; color: white;
+    }
+    .ws-info h3 { font-family: 'Syne', sans-serif; font-size: 1.3rem; margin-bottom: 0.2rem; }
+    .ws-info p { color: rgba(255,255,255,0.5); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+    
+    .ws-role {
+      align-self: flex-start; background: rgba(96, 165, 250, 0.15);
+      color: #60a5fa; padding: 0.25rem 0.6rem; border-radius: 6px;
+      font-size: 0.75rem; font-weight: 600; border: 1px solid rgba(96, 165, 250, 0.3);
+    }
+    
+    .loading {
+      text-align: center; padding: 4rem 0; color: rgba(255,255,255,0.5); font-size: 1.1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-scene">
+    <div class="bg-gradient"></div>
+    <div class="stars"></div>
+  </div>
+  
+  <div class="nav-top">
+    <a href="/" class="nav-brand">Time <span>Tours</span></a>
+    <button class="btn-logout" onclick="handleLogout()">Log Out</button>
+  </div>
+  
+  <div class="page">
+    <div class="header-text">
+      <h1>Select Workspace</h1>
+      <p>Choose an organization to continue</p>
+    </div>
+    
+    <div class="grid" id="workspace-grid">
+      <div class="loading">Loading workspaces...</div>
+    </div>
+  </div>
+
+  <script>
+    async function loadWorkspaces() {
+      try {
+        const res = await fetch('/api/workspace/list');
+        if (!res.ok) {
+          if (res.status === 401) window.location.href = '/login';
+          throw new Error('Failed to load workspaces');
+        }
+        const data = await res.json();
+        const grid = document.getElementById('workspace-grid');
+        grid.innerHTML = '';
+        
+        if (!data.workspaces || data.workspaces.length === 0) {
+          grid.innerHTML = '<div class="loading">No workspaces found. <a href="/login" style="color:#60a5fa">Go back</a></div>';
+          return;
+        }
+        
+        data.workspaces.forEach(ws => {
+          const card = document.createElement('div');
+          card.className = 'workspace-card';
+          card.onclick = () => switchWorkspace(ws.organization_id);
+          
+          let iconStr = ws.org_type === 'TRAVEL_AGENCY' ? '🏢' : '👤';
+          let roleStr = ws.role.replace(/_/g, ' ');
+          
+          card.innerHTML = `
+            <div class="ws-icon">${iconStr}</div>
+            <div class="ws-info">
+              <h3>${escapeHtml(ws.name)}</h3>
+              <p>${escapeHtml(ws.org_type.replace(/_/g, ' '))}</p>
+            </div>
+            <div class="ws-role">${escapeHtml(roleStr)}</div>
+          `;
+          grid.appendChild(card);
+        });
+      } catch (err) {
+        console.error(err);
+        document.getElementById('workspace-grid').innerHTML = '<div class="loading" style="color:#f87171">Error loading workspaces.</div>';
+      }
+    }
+    
+    async function switchWorkspace(orgId) {
+      try {
+        const res = await fetch('/api/workspace/switch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ organization_id: orgId })
+        });
+        if (res.ok) {
+          const next = new URLSearchParams(window.location.search).get('next') || '/';
+          window.location.href = next;
+        } else {
+          alert('Failed to switch workspace');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Network error');
+      }
+    }
+    
+    async function handleLogout() {
+      await fetch('/api/logout', { method: 'POST' });
+      window.location.href = '/login';
+    }
+    
+    function escapeHtml(unsafe) {
+      return (unsafe || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                           .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+    
+    loadWorkspaces();
+  </script>
+</body>
+</html>

@@ -4241,6 +4241,9 @@ document.addEventListener('click', e => {
   if (!a || !a.href) return;
   const url = new URL(a.href);
   if (url.origin === window.location.origin && url.pathname.startsWith('/ownership')) {
+    if (url.pathname.startsWith('/ownership/employees')) {
+      return; // Let the browser do a full page load
+    }
     e.preventDefault();
     history.pushState(null, '', url.pathname);
     toggleSpaView();

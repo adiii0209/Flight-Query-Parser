@@ -83,6 +83,9 @@ except Exception:
 load_dotenv()
 app = Flask(__name__)
 
+from routes.auth import auth_bp, login_required, role_required, org_type_required, get_org_scope
+from routes.rbac import rbac_bp
+
 
 def _annotate_segment_duration_warnings(segments, clone=True):
     try:
@@ -339,6 +342,8 @@ from extensions_v2 import db_session, upgrade_itinerary_json_columns_for_postgre
 from ocr import ocr_bp
 app.register_blueprint(api_v2)
 app.register_blueprint(ocr_bp)
+app.register_blueprint(auth_bp)
+app.register_blueprint(rbac_bp)
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):
@@ -352,20 +357,12 @@ def _keep_session_persistent():
 
 # ==================== AUTHENTICATION DECORATOR ====================
 
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            if not request.path.startswith("/api/"):
-                return redirect(url_for("login_page", next=request.full_path if request.query_string else request.path))
-            return jsonify({"error": "Authentication required"}), 401
-        return f(*args, **kwargs)
-    return decorated_function
 
 
 # ==================== ROUTES ====================
 
 @app.route("/")
+@login_required
 def home():
     """Serve the main HTML page"""
     return render_template('index.html')
@@ -1089,13 +1086,21 @@ def _build_cards_render_groups(flights, trip_type, unit_flights):
     return groups
 
 @app.route("/ownership")
-@app.route("/ownership/employees")
-@app.route("/ownership/employees/<employee_id>")
 @login_required
-def ownership_page(employee_id=None):
+def ownership_page():
     """Serve the Ownership CRM dashboard"""
     return render_template(
         'ownership.html',
+        ownership_realtime_ws_enabled=WebSocketServer is not None,
+    )
+
+@app.route("/ownership/employees")
+@app.route("/ownership/employees/<employee_id>")
+@login_required
+def employees_page(employee_id=None):
+    """Serve the Employees Workspace"""
+    return render_template(
+        'employees.html',
         initial_employee_id=employee_id or "",
         ownership_realtime_ws_enabled=WebSocketServer is not None,
     )
@@ -1132,96 +1137,22 @@ def fare_rules_page():
     return render_template('fare_rules.html', airline_codes=AIRLINE_CODES)
 
 @app.route("/login")
+@app.route("/register")
 def login_page():
     """Serve the login/registration page"""
-    return render_template('login.html')
+    token = request.args.get('token')
+    invitation = None
+    invalid_invite = False
+    
+    if token:
+        import models_rbac
+        invitation = models_rbac.OrgInvitation.query.filter_by(token=token).first()
+        if not invitation:
+            invalid_invite = True
+            
+    return render_template('login.html', invitation=invitation, invalid_invite=invalid_invite)
 
 # ==================== AUTH ROUTES ====================
-
-@app.route("/api/register", methods=["POST"])
-def register():
-    """Register a new user"""
-    try:
-        data = request.get_json()
-        
-        if not data or not data.get('username') or not data.get('email') or not data.get('password'):
-            return jsonify({"error": "Missing required fields"}), 400
-        
-        # Check if user already exists
-        if User.query.filter_by(username=data['username']).first():
-            return jsonify({"error": "Username already exists"}), 400
-        
-        if User.query.filter_by(email=data['email']).first():
-            return jsonify({"error": "Email already exists"}), 400
-        
-        # Create new user
-        user = User(
-            username=data['username'],
-            email=data['email'],
-            full_name=data.get('full_name', '')
-        )
-        user.set_password(data['password'])
-        
-        db.session.add(user)
-        db.session.commit()
-        
-        # Log the user in
-        session.permanent = True
-        session['user_id'] = user.id
-        session['username'] = user.username
-        
-        return jsonify({
-            "message": "Registration successful",
-            "user": {
-                "id": user.id,
-                "username": user.username,
-                "email": user.email,
-                "full_name": user.full_name
-            }
-        }), 201
-        
-    except Exception as e:
-        db.session.rollback()
-        print(f"Registration error: {str(e)}")
-        return jsonify({"error": "Registration failed"}), 500
-
-@app.route("/api/login", methods=["POST"])
-def login():
-    """Login user"""
-    try:
-        data = request.get_json()
-        
-        if not data or not data.get('username') or not data.get('password'):
-            return jsonify({"error": "Missing credentials"}), 400
-        
-        user = User.query.filter_by(username=data['username']).first()
-        
-        if not user or not user.check_password(data['password']):
-            return jsonify({"error": "Invalid credentials"}), 401
-        
-        session.permanent = True
-        session['user_id'] = user.id
-        session['username'] = user.username
-        
-        return jsonify({
-            "message": "Login successful",
-            "user": {
-                "id": user.id,
-                "username": user.username,
-                "email": user.email,
-                "full_name": user.full_name
-            }
-        })
-        
-    except Exception as e:
-        print(f"Login error: {str(e)}")
-        return jsonify({"error": "Login failed"}), 500
-
-@app.route("/api/logout", methods=["POST"])
-def logout():
-    """Logout user"""
-    session.clear()
-    return jsonify({"message": "Logout successful"})
 
 @app.route("/api/tickets/<ticket_id>/export-sheet", methods=["POST"])
 @login_required
@@ -2597,17 +2528,28 @@ def _delete_ledger_entry_with_reverse(entry, user_id):
     return agg_id
 
 
+_schema_cache = {"tables": None, "columns": {}}
+
 def _add_column_if_missing(table_name, column_name, column_sql):
     """Add a column if it doesn't exist. Works on both SQLite and PostgreSQL."""
     inspector = inspect(db.engine)
-    if table_name not in inspector.get_table_names():
+    if _schema_cache["tables"] is None:
+        _schema_cache["tables"] = set(inspector.get_table_names())
+        
+    if table_name not in _schema_cache["tables"]:
         return
-    existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
+        
+    if table_name not in _schema_cache["columns"]:
+        _schema_cache["columns"][table_name] = {column["name"] for column in inspector.get_columns(table_name)}
+        
+    existing_columns = _schema_cache["columns"][table_name]
     if column_name in existing_columns:
         return
+        
     quoted_table_name = f'"{table_name}"' if table_name.lower() == "user" else table_name
     db.session.execute(text(f"ALTER TABLE {quoted_table_name} ADD COLUMN {column_name} {column_sql}"))
     db.session.commit()
+    existing_columns.add(column_name)
 
 
 def _create_indexes_if_missing():
@@ -2647,11 +2589,21 @@ def _upgrade_ticket_json_columns_for_postgres():
     engine = db.engine
     if engine.dialect.name != "postgresql":
         return
+        
+    inspector = inspect(engine)
+    if _schema_cache["tables"] is None:
+        _schema_cache["tables"] = set(inspector.get_table_names())
+        
+    if "ticket" not in _schema_cache["tables"]:
+        return
 
-    columns = {
-        column["name"]: str(column.get("type") or "").lower()
-        for column in inspect(engine).get_columns("ticket")
-    }
+    if "ticket" not in _schema_cache["columns"]:
+        _schema_cache["columns"]["ticket"] = {column["name"]: str(column.get("type") or "").lower() for column in inspector.get_columns("ticket")}
+    elif isinstance(next(iter(_schema_cache["columns"]["ticket"])), str):
+        # We stored just a set of names in _add_column_if_missing, let's upgrade to full info for JSON checks if needed, but wait:
+        _schema_cache["columns"]["ticket"] = {column["name"]: str(column.get("type") or "").lower() for column in inspector.get_columns("ticket")}
+        
+    columns = _schema_cache["columns"]["ticket"]
     json_columns = {
         "passengers_data": "[]",
         "segments_data": "[]",
@@ -2687,10 +2639,19 @@ def _upgrade_itinerary_json_columns_for_postgres():
     if engine.dialect.name != "postgresql":
         return
 
-    columns = {
-        column["name"]: str(column.get("type") or "").lower()
-        for column in inspect(engine).get_columns("itinerary")
-    }
+    inspector = inspect(engine)
+    if _schema_cache["tables"] is None:
+        _schema_cache["tables"] = set(inspector.get_table_names())
+        
+    if "itinerary" not in _schema_cache["tables"]:
+        return
+
+    if "itinerary" not in _schema_cache["columns"]:
+        _schema_cache["columns"]["itinerary"] = {column["name"]: str(column.get("type") or "").lower() for column in inspector.get_columns("itinerary")}
+    elif isinstance(next(iter(_schema_cache["columns"]["itinerary"])), str):
+        _schema_cache["columns"]["itinerary"] = {column["name"]: str(column.get("type") or "").lower() for column in inspector.get_columns("itinerary")}
+
+    columns = _schema_cache["columns"]["itinerary"]
     column_type = columns.get("flights_data", "")
     if not column_type or "jsonb" in column_type:
         return
@@ -2722,13 +2683,20 @@ def _upgrade_ownership_json_columns_for_postgres():
     engine = db.engine
     if engine.dialect.name != "postgresql":
         return
-    if "ownership_trip" not in inspect(engine).get_table_names():
+        
+    inspector = inspect(engine)
+    if _schema_cache["tables"] is None:
+        _schema_cache["tables"] = set(inspector.get_table_names())
+        
+    if "ownership_trip" not in _schema_cache["tables"]:
         return
 
-    columns = {
-        column["name"]: str(column.get("type") or "").lower()
-        for column in inspect(engine).get_columns("ownership_trip")
-    }
+    if "ownership_trip" not in _schema_cache["columns"]:
+        _schema_cache["columns"]["ownership_trip"] = {column["name"]: str(column.get("type") or "").lower() for column in inspector.get_columns("ownership_trip")}
+    elif isinstance(next(iter(_schema_cache["columns"]["ownership_trip"])), str):
+        _schema_cache["columns"]["ownership_trip"] = {column["name"]: str(column.get("type") or "").lower() for column in inspector.get_columns("ownership_trip")}
+
+    columns = _schema_cache["columns"]["ownership_trip"]
     json_columns = {
         "subtasks_json": "{}",
         "reminders_json": "[]",
@@ -2850,7 +2818,7 @@ def _entry_dict(e):
 @app.route("/api/aggregators", methods=["GET"])
 @login_required
 def list_aggregators():
-    aggs = Aggregator.query.filter_by(user_id=session['user_id']).order_by(Aggregator.created_at).all()
+    aggs = Aggregator.query.filter_by(**get_org_scope()).order_by(Aggregator.created_at).all()
     return jsonify({"aggregators": [{"id": a.id, "name": a.name} for a in aggs]})
 
 @app.route("/api/aggregators", methods=["POST"])
@@ -2860,7 +2828,7 @@ def create_aggregator():
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "Name is required"}), 400
-    agg = Aggregator(name=name, user_id=session['user_id'])
+    agg = Aggregator(name=name, **get_org_scope())
     db.session.add(agg)
     db.session.commit()
     return jsonify({"id": agg.id, "name": agg.name}), 201
@@ -2868,7 +2836,7 @@ def create_aggregator():
 @app.route("/api/aggregators/<agg_id>", methods=["DELETE"])
 @login_required
 def delete_aggregator(agg_id):
-    agg = Aggregator.query.filter_by(id=agg_id, user_id=session['user_id']).first()
+    agg = Aggregator.query.filter_by(id=agg_id, **get_org_scope()).first()
     if not agg:
         return jsonify({"error": "Not found"}), 404
     db.session.delete(agg)
@@ -2879,7 +2847,7 @@ def delete_aggregator(agg_id):
 @login_required
 def list_entries(agg_id):
     entries = LedgerEntry.query.filter_by(
-        aggregator_id=agg_id, user_id=session['user_id']
+        aggregator_id=agg_id, **get_org_scope()
     ).order_by(LedgerEntry.row_order).all()
     return jsonify({"entries": [_entry_dict(e) for e in entries]})
 
@@ -2889,7 +2857,7 @@ def create_entry(agg_id):
     data = request.get_json() or {}
     # Determine next row_order
     last = LedgerEntry.query.filter_by(
-        aggregator_id=agg_id, user_id=session['user_id']
+        aggregator_id=agg_id, **get_org_scope()
     ).order_by(LedgerEntry.row_order.desc()).first()
     next_order = (last.row_order + 1) if last else 0
 
@@ -2901,8 +2869,7 @@ def create_entry(agg_id):
     aggregator_total = ticket_total - mu
 
     entry = LedgerEntry(
-        aggregator_id=agg_id,
-        user_id=session['user_id'],
+        aggregator_id=agg_id, **get_org_scope(),
         row_order=next_order,
         invoice_no=data.get("invoice_no", ""),
         date=data.get("date", datetime.now().strftime("%d-%b-%Y")),
@@ -2928,7 +2895,7 @@ def create_entry(agg_id):
 @app.route("/api/ledger-entries/<entry_id>", methods=["PUT"])
 @login_required
 def update_entry(entry_id):
-    entry = LedgerEntry.query.filter_by(id=entry_id, user_id=session['user_id']).first()
+    entry = LedgerEntry.query.filter_by(id=entry_id, **get_org_scope()).first()
     if not entry:
         return jsonify({"error": "Not found"}), 404
     data = request.get_json() or {}
@@ -2949,7 +2916,7 @@ def update_entry(entry_id):
 @app.route("/api/ledger-entries/<entry_id>", methods=["DELETE"])
 @login_required
 def delete_entry(entry_id):
-    entry = LedgerEntry.query.filter_by(id=entry_id, user_id=session['user_id']).first()
+    entry = LedgerEntry.query.filter_by(id=entry_id, **get_org_scope()).first()
     if not entry:
         return jsonify({"error": "Not found"}), 404
     agg_id = _delete_ledger_entry_with_reverse(entry, session['user_id'])
@@ -2997,7 +2964,7 @@ def add_ticket_to_ledger(ticket_id):
 
     # Get current balance and next row order
     last = LedgerEntry.query.filter_by(
-        aggregator_id=agg_id, user_id=session['user_id']
+        aggregator_id=agg_id, **get_org_scope()
     ).order_by(LedgerEntry.row_order.desc()).first()
     
     curr_bal = last.running_balance if last else 0.0
@@ -3021,7 +2988,7 @@ def add_ticket_to_ledger(ticket_id):
         return jsonify({"error": "This ticket has already been added to a ledger with this exact fare data."}), 409
         
     # Check for duplicate by PNR (fallback)
-    existing = LedgerEntry.query.filter_by(pnr=ticket.pnr, user_id=session['user_id']).first()
+    existing = LedgerEntry.query.filter_by(pnr=ticket.pnr, **get_org_scope()).first()
     if existing:
         # If it already exists in the ledger with this PNR, we mark the ticket as hashed and stop
         ticket.ledger_hash = new_hash
@@ -3029,8 +2996,7 @@ def add_ticket_to_ledger(ticket_id):
         return jsonify({"error": f"PNR {ticket.pnr} already exists in the ledger. Mapping ticket record now."}), 409
 
     entry = LedgerEntry(
-        aggregator_id=agg_id,
-        user_id=session['user_id'],
+        aggregator_id=agg_id, **get_org_scope(),
         row_order=next_order,
         date=datetime.now().strftime("%d-%b-%Y"),
         pnr=ticket.pnr or "",
@@ -3050,28 +3016,11 @@ def add_ticket_to_ledger(ticket_id):
     return jsonify({"message": "Added to ledger", "entry": _entry_dict(LedgerEntry.query.get(entry.id))}), 201
 
 
-@app.route("/api/user", methods=["GET"])
-@login_required
-def get_user():
-    """Get current user info"""
-    user = User.query.get(session['user_id'])
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-    
-    return jsonify({
-        "id": user.id,
-        "username": user.username,
-        "email": user.email,
-        "full_name": user.full_name
-    })
-
-# ==================== CUSTOMER ROUTES ====================
-
 @app.route("/api/customers", methods=["GET"])
 @login_required
 def get_customers():
     """Get all customers for the logged-in user"""
-    customers = Customer.query.filter_by(user_id=session['user_id']).all()
+    customers = Customer.query.filter_by(**get_org_scope()).all()
     
     return jsonify({
         "customers": [{
@@ -3103,8 +3052,7 @@ def create_customer():
             address=data.get('address'),
             customer_type=data.get('customer_type', 'passenger'),
             company_name=data.get('company_name'),
-            gst_number=data.get('gst_number'),
-            user_id=session['user_id']
+            gst_number=data.get('gst_number'), **get_org_scope()
         )
         
         db.session.add(customer)
@@ -3130,7 +3078,7 @@ def create_customer():
 @login_required
 def get_customer(customer_id):
     """Get a specific customer"""
-    customer = Customer.query.filter_by(id=customer_id, user_id=session['user_id']).first()
+    customer = Customer.query.filter_by(id=customer_id, **get_org_scope()).first()
     
     if not customer:
         return jsonify({"error": "Customer not found"}), 404
@@ -3648,8 +3596,7 @@ def save_itinerary():
             markup=data.get('markup', 0),
             status='draft',
             final_text=data['final_text'],
-            flights_data=json.dumps(data['flights']),
-            user_id=session['user_id'],
+            flights_data=json.dumps(data['flights']), **get_org_scope(),
             billing_type=data.get('billing_type') or 'passenger',
             bill_to_name=data.get('bill_to_name'),
             bill_to_email=data.get('bill_to_email'),
@@ -3705,7 +3652,7 @@ def get_itineraries():
         ),
         joinedload(Itinerary.customer).load_only(Customer.id, Customer.name),
         defer(Itinerary.raw_input_data),
-    ).filter_by(user_id=session['user_id']).order_by(Itinerary.created_at.desc())
+    ).filter_by(**get_org_scope()).order_by(Itinerary.created_at.desc())
     total_count = base_query.count()
     itineraries_query = base_query.offset(offset)
     if limit:
@@ -3741,7 +3688,7 @@ def get_itineraries():
 @login_required
 def get_itinerary(itinerary_id):
     """Get a specific itinerary"""
-    itinerary = Itinerary.query.filter_by(id=itinerary_id, user_id=session['user_id']).first()
+    itinerary = Itinerary.query.filter_by(id=itinerary_id, **get_org_scope()).first()
     
     if not itinerary:
         return jsonify({"error": "Itinerary not found"}), 404
@@ -3774,7 +3721,7 @@ def get_itinerary(itinerary_id):
 def update_itinerary(itinerary_id):
     """Update an existing itinerary"""
     try:
-        itinerary = Itinerary.query.filter_by(id=itinerary_id, user_id=session['user_id']).first()
+        itinerary = Itinerary.query.filter_by(id=itinerary_id, **get_org_scope()).first()
         
         if not itinerary:
             return jsonify({"error": "Itinerary not found"}), 404
@@ -3838,7 +3785,7 @@ def update_itinerary(itinerary_id):
 def delete_itinerary(itinerary_id):
     """Delete an itinerary"""
     try:
-        itinerary = Itinerary.query.filter_by(id=itinerary_id, user_id=session['user_id']).first()
+        itinerary = Itinerary.query.filter_by(id=itinerary_id, **get_org_scope()).first()
         
         if not itinerary:
             return jsonify({"error": "Itinerary not found"}), 404
@@ -4431,7 +4378,7 @@ def hotel_pdf_generate(booking_id):
     from models import HotelBooking
 
     b = HotelBooking.query.filter_by(
-        id=booking_id, user_id=session["user_id"]
+        id=booking_id, **get_org_scope()
     ).first()
     if not b:
         return jsonify({"error": "Hotel booking not found"}), 404
@@ -4719,7 +4666,7 @@ def get_pending_duplicates():
 @login_required
 def approve_duplicate(ticket_id):
     """Approve a pending duplicate - it will appear on the main dashboard."""
-    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session["user_id"]).first()
+    ticket = Ticket.query.filter_by(id=ticket_id, **get_org_scope()).first()
     if not ticket:
         return jsonify({"error": "Ticket not found"}), 404
     if ticket.duplicate_status != "pending":
@@ -4739,7 +4686,7 @@ def approve_duplicate(ticket_id):
 @login_required
 def reject_duplicate(ticket_id):
     """Reject a pending duplicate - it will be hidden permanently."""
-    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session["user_id"]).first()
+    ticket = Ticket.query.filter_by(id=ticket_id, **get_org_scope()).first()
     if not ticket:
         return jsonify({"error": "Ticket not found"}), 404
     if ticket.duplicate_status != "pending":
@@ -4946,7 +4893,7 @@ def merge_pnr_group(pnr):
     existing_group = None
     for ticket in selected_tickets:
         if ticket.booking_group_id:
-            existing_group = BookingGroup.query.filter_by(id=ticket.booking_group_id, user_id=session["user_id"]).first()
+            existing_group = BookingGroup.query.filter_by(id=ticket.booking_group_id, **get_org_scope()).first()
             if existing_group:
                 break
 
@@ -5231,6 +5178,15 @@ def delete_account():
     Aggregator.query.filter_by(user_id=user.id).delete()
     LedgerEntry.query.filter_by(user_id=user.id).delete()
     
+    # Cleanup RBAC and Workspace foreign keys
+    import models_rbac
+    models_rbac.Membership.query.filter_by(user_id=user.id).delete()
+    models_rbac.Membership.query.filter_by(invited_by=user.id).update({'invited_by': None})
+    models_rbac.Organization.query.filter_by(created_by=user.id).update({'created_by': None})
+    models_rbac.OrgInvitation.query.filter_by(invited_by=user.id).update({'invited_by': None})
+    models_rbac.OrgInvitation.query.filter_by(accepted_by=user.id).update({'accepted_by': None})
+    OwnershipEmployee.query.filter_by(user_id=user.id).update({'user_id': None})
+    
     db.session.delete(user)
     db.session.commit()
     session.clear()
@@ -5340,7 +5296,7 @@ def mark_all_tickets_seen():
 
     seen_at = _db_now()
     user.last_ticket_seen_at = seen_at
-    TicketRead.query.filter_by(user_id=session['user_id']).delete(synchronize_session=False)
+    TicketRead.query.filter_by(**get_org_scope()).delete(synchronize_session=False)
     db.session.commit()
     _invalidate_ticket_dashboard_cache(session['user_id'])
 
@@ -5374,7 +5330,7 @@ def mark_selected_tickets_unread():
         target_last_seen_at = earliest_created_at - timedelta(microseconds=1)
         if target_last_seen_at < existing_last_seen_at:
             preserved_rows = Ticket.query.filter(
-                Ticket.user_id == session['user_id'],
+                Ticket.organization_id == session.get("organization_id"),
                 Ticket.created_at > target_last_seen_at,
                 Ticket.created_at <= existing_last_seen_at,
                 ~Ticket.id.in_(scoped_ids),
@@ -5384,7 +5340,7 @@ def mark_selected_tickets_unread():
             user.last_ticket_seen_at = target_last_seen_at
 
     TicketRead.query.filter(
-        TicketRead.user_id == session['user_id'],
+        TicketRead.organization_id == session.get("organization_id"),
         TicketRead.ticket_id.in_(scoped_ids),
     ).delete(synchronize_session=False)
     db.session.commit()
@@ -5447,7 +5403,7 @@ def bulk_delete_tickets():
 def update_ticket(ticket_id):
     """Update a ticket (edit passengers, segments, fares, etc.)"""
     try:
-        ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+        ticket = Ticket.query.filter_by(id=ticket_id, **get_org_scope()).first()
         if not ticket:
             return jsonify({"error": "Ticket not found"}), 404
         
@@ -5629,7 +5585,7 @@ def update_ticket(ticket_id):
 def delete_ticket(ticket_id):
     """Delete a ticket"""
     try:
-        ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+        ticket = Ticket.query.filter_by(id=ticket_id, **get_org_scope()).first()
         if not ticket:
             return jsonify({"error": "Ticket not found"}), 404
 
@@ -5657,7 +5613,7 @@ def delete_ticket(ticket_id):
 @login_required
 def generate_ticket_pdf(ticket_id):
     """Generate PDF for a ticket (with or without fare)"""
-    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+    ticket = Ticket.query.filter_by(id=ticket_id, **get_org_scope()).first()
     if not ticket:
         return jsonify({"error": "Ticket not found"}), 404
     
@@ -5798,7 +5754,7 @@ def generate_ticket_pdf(ticket_id):
 @login_required
 def generate_selected_passenger_pdf(ticket_id):
     """Generate PDF for selected passengers - individual or combined."""
-    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+    ticket = Ticket.query.filter_by(id=ticket_id, **get_org_scope()).first()
     if not ticket:
         return jsonify({"error": "Ticket not found"}), 404
 
@@ -6074,7 +6030,7 @@ def _next_ledger_order(agg_id, user_id):
 def cancel_ticket(ticket_id):
     try:
         data = request.get_json() or {}
-        ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+        ticket = Ticket.query.filter_by(id=ticket_id, **get_org_scope()).first()
         if not ticket:
             return jsonify({"error": "Ticket not found"}), 404
         if not ticket.ledger_hash:
@@ -6101,7 +6057,7 @@ def cancel_ticket(ticket_id):
 def change_ticket(ticket_id):
     try:
         data = request.get_json() or {}
-        ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+        ticket = Ticket.query.filter_by(id=ticket_id, **get_org_scope()).first()
         if not ticket:
             return jsonify({"error": "Ticket not found"}), 404
         if not ticket.ledger_hash:
@@ -6424,7 +6380,7 @@ def _execute_operation(ticket, plan, action_type):
     root_ticket_id = ticket.id
 
     for item in plan["ticket_updates"]:
-        current = Ticket.query.filter_by(id=item["ticket_id"], user_id=session["user_id"]).first()
+        current = Ticket.query.filter_by(id=item["ticket_id"], **get_org_scope()).first()
         before_state.append(_serialize_ticket_model(current))
         _apply_ticket_payload(current, item["payload"])
         updated_ticket_ids.append(current.id)
@@ -6436,7 +6392,7 @@ def _execute_operation(ticket, plan, action_type):
         db.session.flush()
         created_tickets.append(new_ticket)
 
-    root_after = Ticket.query.filter_by(id=ticket.id, user_id=session["user_id"]).first()
+    root_after = Ticket.query.filter_by(id=ticket.id, **get_org_scope()).first()
     operation = TicketOperation(
         user_id=session["user_id"],
         action_type=action_type,
@@ -6487,7 +6443,7 @@ def preview_ticket_operation(ticket_id):
         action_type = (data.get("action_type") or "").strip().lower()
         if action_type not in ("cancel", "change"):
             return jsonify({"error": "action_type must be cancel or change"}), 400
-        ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+        ticket = Ticket.query.filter_by(id=ticket_id, **get_org_scope()).first()
         if not ticket:
             return jsonify({"error": "Ticket not found"}), 404
         if not ticket.ledger_hash:
@@ -6504,7 +6460,7 @@ def preview_ticket_operation(ticket_id):
 @app.route("/api/tickets/<ticket_id>/change-attachment", methods=["POST"])
 @login_required
 def upload_change_attachment(ticket_id):
-    ticket = Ticket.query.filter_by(id=ticket_id, user_id=session['user_id']).first()
+    ticket = Ticket.query.filter_by(id=ticket_id, **get_org_scope()).first()
     if not ticket:
         return jsonify({"error": "Ticket not found"}), 404
     uploaded = request.files.get("file")
@@ -7969,7 +7925,22 @@ def get_ownership_employees():
         response.headers["X-Cache"] = "HIT"
         response.headers["X-Cache-Backend"] = _dashboard_cache.backend_name
         return response
-    base_query = OwnershipEmployee.query.filter_by(is_active=True).order_by(OwnershipEmployee.name.asc())
+    scope = get_org_scope()
+    base_query = OwnershipEmployee.query.filter_by(is_active=True, **scope)
+
+    if session.get('role') == 'AGENCY_EMPLOYEE':
+        # Restrict to their own profile
+        from models import User
+        user = User.query.get(session.get('user_id'))
+        if user:
+            conditions = [OwnershipEmployee.user_id == user.id]
+            if user.email:
+                conditions.append(db.func.lower(OwnershipEmployee.email) == user.email.lower())
+            base_query = base_query.filter(db.or_(*conditions))
+        else:
+            base_query = base_query.filter(OwnershipEmployee.id == 'non-existent')
+
+    base_query = base_query.order_by(OwnershipEmployee.name.asc())
     total_count = base_query.count()
     employees_query = base_query.offset(offset)
     if limit:
@@ -8028,17 +7999,28 @@ def create_ownership_employee():
     name = str(payload.get("name") or "").strip()
     if not name:
         return jsonify({"error": "Employee name is required"}), 400
-    employee = OwnershipEmployee.query.filter(db.func.lower(OwnershipEmployee.name) == name.lower()).first()
+    scope = get_org_scope()
+    employee = OwnershipEmployee.query.filter(db.func.lower(OwnershipEmployee.name) == name.lower()).filter_by(**scope).first()
+    
+    email = str(payload.get("email") or "").strip()
+
     if employee:
         employee.is_active = True
         employee.color = str(payload.get("color") or employee.color or _employee_color(name)).strip()
+        if email:
+            employee.email = email
     else:
         employee = OwnershipEmployee(
             name=name,
             color=str(payload.get("color") or _employee_color(name)).strip(),
             is_active=True,
+            email=email or None,
+            organization_id=session.get('organization_id') if session.get('role') != 'PLATFORM_SUPER_ADMIN' else None
         )
         db.session.add(employee)
+
+    db.session.flush() # flush to get employee.id if needed
+    
     db.session.commit()
     version = _invalidate_ownership_cache()
     employee_payload = employee.to_dict()
@@ -8050,8 +8032,20 @@ def update_ownership_employee(employee_id):
         employee = OwnershipEmployee.query.get(employee_id)
         if not employee:
             return jsonify({"error": "Employee not found"}), 404
+        if session.get('role') != 'PLATFORM_SUPER_ADMIN' and employee.organization_id != session.get('organization_id'):
+            return jsonify({"error": "Access denied"}), 403
         deleted_employee = employee.to_dict()
         employee.is_active = False
+        
+        # Also revoke workspace login access
+        if employee.user_id:
+            import models_rbac
+            models_rbac.Membership.query.filter_by(
+                user_id=employee.user_id, 
+                organization_id=employee.organization_id
+            ).delete()
+            employee.user_id = None
+            
         db.session.commit()
         version = _invalidate_ownership_cache()
         _ownership_cache_delete_employee(employee_id)
@@ -8063,6 +8057,8 @@ def update_ownership_employee(employee_id):
     employee = OwnershipEmployee.query.get(employee_id)
     if not employee:
         return jsonify({"error": "Employee not found"}), 404
+    if session.get('role') != 'PLATFORM_SUPER_ADMIN' and employee.organization_id != session.get('organization_id'):
+        return jsonify({"error": "Access denied"}), 403
     if "subtasks" in payload:
         employee.subtasks_json = payload["subtasks"]
     if "name" in payload:
@@ -8075,6 +8071,11 @@ def update_ownership_employee(employee_id):
         employee.custom_labels_json = payload["customLabels"]
     if "isActive" in payload:
         employee.is_active = bool(payload["isActive"])
+        
+    email = str(payload.get("email") or "").strip()
+    if "email" in payload:
+        employee.email = email or None
+
     db.session.commit()
     version = _invalidate_ownership_cache()
     employee_payload = employee.to_dict()
@@ -8410,6 +8411,19 @@ def apply_global_db_retry(app_instance):
 
 apply_global_db_retry(app)
 
+@app.route('/organizations')
+@login_required
+@role_required('PLATFORM_SUPER_ADMIN')
+def organizations_page():
+    return render_template('organizations.html')
+
+@app.route('/workspace/settings')
+@login_required
+@role_required('AGENCY_ADMIN', 'CLIENT_ADMIN')
+def workspace_settings_page():
+    return render_template('workspace_settings.html')
+
 if __name__ == "__main__":
     init_db()
     app.run(host="0.0.0.0", port=5000, debug=True)
+

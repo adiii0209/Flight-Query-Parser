@@ -882,7 +882,11 @@
                 const u = await r.json();
                 document.getElementById('sidebarUserName').textContent = u.full_name || u.username || 'Guest User';
                 const handleEl = document.getElementById('sidebarUserHandle');
-                if (handleEl) handleEl.textContent = u.username ? '@' + u.username : '';
+                if (handleEl) {
+                    const org = u.org_name ? String(u.org_name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+                    const uname = u.username ? String(u.username).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+                    handleEl.innerHTML = org ? org + '<br><small style="opacity:0.7">@' + uname + '</small>' : '@' + uname;
+                }
                 document.getElementById('sidebarAvatar').textContent = (u.full_name || u.username || 'U').charAt(0).toUpperCase();
                 const authBtn = document.getElementById('sidebarAuthBtn');
                 authBtn.textContent = '🚪 Logout';

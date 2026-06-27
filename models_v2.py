@@ -114,6 +114,17 @@ class User(Base):
         }
 
 
+# ==================== ORGANIZATION STUB ====================
+
+class Organization(Base):
+    """Shared table with models_rbac.py Organization. extend_existing prevents duplicate DDL."""
+    __tablename__ = "organizations"
+    __table_args__ = {"extend_existing": True}
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+
+
 # ==================== CORPORATE MODEL ====================
 
 class Corporate(Base):
@@ -151,6 +162,7 @@ class Corporate(Base):
     
     # Foreign Keys
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("user.id"), nullable=False)
+    organization_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True, index=True)
     
     # Relationships
     user: Mapped["User"] = relationship(back_populates="corporates")
@@ -234,6 +246,7 @@ class Passenger(Base):
     
     # Foreign Keys
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("user.id"), nullable=False)
+    organization_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True, index=True)
     
     # Relationships
     user: Mapped["User"] = relationship(back_populates="passengers")
@@ -662,6 +675,7 @@ class Itinerary(Base):
     
     # Foreign Keys
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("user.id"), nullable=False)
+    organization_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True, index=True)
     passenger_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("passengers.id"), nullable=True)
     corporate_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("corporates.id"), nullable=True)
     billing_account_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("billing_accounts.id"), nullable=True)
@@ -702,6 +716,7 @@ class Itinerary(Base):
 
         route_text = None
         option_count = 0
+        first_flight_time = ""
         has_layover = any(
             bool(f.get("has_layover")) or len(f.get("segments") or []) > 1
             for f in flights
@@ -747,10 +762,17 @@ class Itinerary(Base):
                     route_text = f"{str(origin).upper()}{arrow}{str(destination).upper()}"
                 option_count = (len(flights) + 1) // 2 if self.trip_type == "round_trip" else len(flights)
 
+            # Get timings for the first flight
+            first_f = flights[0] if flights and isinstance(flights[0], dict) else {}
+            dep_time = first_f.get("departure_time") or ""
+            arr_time = first_f.get("arrival_time") or ""
+            first_flight_time = f"{dep_time} - {arr_time}" if dep_time and arr_time else ""
+
         return {
             "route_text": route_text,
             "flight_options_count": option_count,
             "has_layover": has_layover,
+            "first_flight_time": first_flight_time,
         }
 
     def to_summary_dict(self, include_flights: bool = False) -> dict:
@@ -903,6 +925,7 @@ class BillingAccount(Base):
     
     # User ownership
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("user.id"), nullable=False)
+    organization_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True, index=True)
     
     # Timestamps & Active
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -958,6 +981,7 @@ class SupplierAccount(Base):
     
     # User ownership
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("user.id"), nullable=False)
+    organization_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True, index=True)
     
     # Timestamps & Active
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

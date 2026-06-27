@@ -125,6 +125,28 @@ function handleAuthClick() {
 
 // ==================== HELPERS ====================
 function formatCurrency(n) { if (!n && n !== 0) return '₹0'; return '₹' + Number(n).toLocaleString('en-IN'); }
+
+window.copyText = function(text) {
+  if (!navigator.clipboard) {
+    var textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.position = "fixed";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try { document.execCommand('copy'); showToast('Copied to clipboard', 'success'); } 
+    catch (err) { console.error('Fallback: Oops, unable to copy', err); showToast('Copy failed', 'error'); }
+    document.body.removeChild(textArea);
+    return;
+  }
+  navigator.clipboard.writeText(text).then(function() {
+    showToast('Copied to clipboard', 'success');
+  }, function(err) {
+    console.error('Async: Could not copy text: ', err);
+  });
+};
 function formatDate(d) { if (!d) return '-'; return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
 function formatDateTime(d) {
   if (!d) return '-';
@@ -808,23 +830,22 @@ function getItineraryFinalOutputText(it = currentItinerary) {
   if (!it) return '';
   const savedText = [it.parser_output_text, it.final_text]
     .find(value => typeof value === 'string' && value.trim()) || '';
+    
+  let cleanSavedText = savedText.trim();
+  cleanSavedText = cleanSavedText.replace(/^\*Passengers:\*[^\n]*\n*/i, '').trim();
+
   const selectedFlightGroup = getSelectedFlightForOutput(it);
   const flightLegs = flattenFlightLegsForOutput(selectedFlightGroup, it);
   const passengerNames = getItineraryPassengerNames(it);
-  const flightLines = savedText.trim() || (flightLegs.length > 0
+  
+  const flightLines = cleanSavedText || (flightLegs.length > 0
     ? flightLegs.map(leg => formatReadableFinalLine(leg)).filter(Boolean).join('\n')
     : 'No selected flight option available');
 
-  const passengerLines = passengerNames.length > 0
-    ? '\n\nPassengers:\n' + passengerNames.map((name, index) => `${index + 1}. ${name}`).join('\n')
-    : '';
+  const namesStr = passengerNames.join(', ');
+  const passengerPrefix = namesStr ? `*Passengers:* ${namesStr}\n\n` : '';
 
-  return [
-    'Kindly check and confirm to issue',
-    '',
-    flightLines || 'No selected flight option available',
-    passengerLines
-  ].join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return passengerPrefix + flightLines;
 }
 
 function formatAmadeusPassengerName(name) {
@@ -1844,8 +1865,7 @@ function renderPassengers() {
 
   container.innerHTML = pax.map((p, i) => {
     const name = p.name || p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim() || 'Unknown';
-    const isTemp = (p.id && String(p.id).indexOf('temp_') === 0) || p.is_db === false;
-    const isLinked = (p.passenger_id || p.id) && !isTemp;
+    const isLinked = !!p.passenger_id;
     // Ensure we show contact info if available
     const email = p.email || '';
     const phone = p.phone || '';
@@ -2288,19 +2308,30 @@ function renderBilling() {
   const isCorporate = (it.billing_account && it.billing_account.account_type === 'corporate') || (!it.billing_account && (it.bill_to_company || it.bill_to_gst));
   const nameLabel = isCorporate ? 'Contact Name' : 'Name';
 
+  const copyableValue = (val) => {
+      if (!val || val === '-') return '-';
+      const escaped = String(val).replace(/'/g, "\\'");
+      return `<div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:6px;">
+          <span class="copyable-text" style="word-break:break-word;">${val}</span>
+          <button onclick="if(window.copyText) window.copyText('${escaped}')" style="background:none;border:none;cursor:pointer;color:var(--text-secondary);padding:2px;border-radius:4px;display:flex;align-items:center;margin-left:auto;flex-shrink:0;" title="Copy to clipboard" onmouseover="this.style.color='var(--primary)';this.style.background='rgba(37,99,235,0.1)'" onmouseout="this.style.color='var(--text-secondary)';this.style.background='none'">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          </button>
+      </div>`;
+  };
+
   document.getElementById('billingContainer').innerHTML = `<div class="billing-grid">
     ${accountInfo}
-    <div class="billing-item"><div class="label">${nameLabel}</div><div class="value">${it.bill_to_name || '-'}</div></div>
-    ${isCorporate ? `<div class="billing-item"><div class="label">Company</div><div class="value">${it.bill_to_company || '-'}</div></div>` : ''}
-    <div class="billing-item"><div class="label">Email</div><div class="value">${it.bill_to_email || '-'}</div></div>
-    <div class="billing-item"><div class="label">Phone</div><div class="value">${it.bill_to_phone || '-'}</div></div>
-    <div class="billing-item"><div class="label">Address</div><div class="value">${it.bill_to_address || '-'}</div></div>
-    ${isCorporate ? `<div class="billing-item"><div class="label">GST</div><div class="value">${it.bill_to_gst || '-'}</div></div>` : ''}
+    <div class="billing-item"><div class="label">${nameLabel}</div><div class="value">${copyableValue(it.bill_to_name)}</div></div>
+    ${isCorporate ? `<div class="billing-item"><div class="label">Company</div><div class="value">${copyableValue(it.bill_to_company)}</div></div>` : ''}
+    <div class="billing-item"><div class="label">Email</div><div class="value">${copyableValue(it.bill_to_email)}</div></div>
+    <div class="billing-item"><div class="label">Phone</div><div class="value">${copyableValue(it.bill_to_phone)}</div></div>
+    <div class="billing-item"><div class="label">Address</div><div class="value">${copyableValue(it.bill_to_address)}</div></div>
+    ${isCorporate ? `<div class="billing-item"><div class="label">GST</div><div class="value">${copyableValue(it.bill_to_gst)}</div></div>` : ''}
     ${shouldShowFinancials(it) ? `
-    <div class="billing-item"><div class="label">Total Amount</div><div class="value" style="color:var(--primary);font-weight:700;font-size:1.1rem">${formatCurrency(fin.total)}</div></div>
-    <div class="billing-item"><div class="label">Markup</div><div class="value">${formatCurrency(fin.markup)}</div></div>
-    <div class="billing-item"><div class="label">Service Charge</div><div class="value">${formatCurrency(fin.svc)}</div></div>
-    <div class="billing-item"><div class="label">Svc GST (18%)</div><div class="value">${formatCurrency(fin.gst)}</div></div>
+    <div class="billing-item"><div class="label">Total Amount</div><div class="value" style="color:var(--primary);font-weight:700;font-size:1.1rem">${copyableValue(formatCurrency(fin.total))}</div></div>
+    <div class="billing-item"><div class="label">Markup</div><div class="value">${copyableValue(formatCurrency(fin.markup))}</div></div>
+    <div class="billing-item"><div class="label">Service Charge</div><div class="value">${copyableValue(formatCurrency(fin.svc))}</div></div>
+    <div class="billing-item"><div class="label">Svc GST (18%)</div><div class="value">${copyableValue(formatCurrency(fin.gst))}</div></div>
     ` : ''}
   </div>`;
 }
@@ -2824,9 +2855,18 @@ async function addNewPassengerItin() {
         const d = await resp.json();
         newPax.id = d.passenger.id;
         newPax.is_db = true;
+        dbPassengersPromise = null; // Clear cache
         await loadDBPassengers(); // Refresh cache
+      } else {
+        const err = await resp.json();
+        showToast(err.error || 'Failed to save passenger to DB', 'error');
+        return; // Do not add to itinerary if DB save failed
       }
-    } catch (e) { console.error('Error saving pax to DB:', e); }
+    } catch (e) {
+      console.error('Error saving pax to DB:', e);
+      showToast('Error saving passenger to DB', 'error');
+      return;
+    }
   } else {
     newPax.id = 'temp_' + Date.now();
   }

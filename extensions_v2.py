@@ -8,6 +8,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.orm import sessionmaker, scoped_session
 from models_v2 import Base
 import models_enterprise
+import models_rbac
 
 import os
 from dotenv import load_dotenv
@@ -115,17 +116,20 @@ def seed_airlines():
     
     session = SessionLocal()
     try:
-        count = 0
+        # Fetch all existing IATA codes in one query
+        existing_codes = set(code[0] for code in session.query(Airline.iata_code).all())
+        
+        # Determine which airlines are missing
+        new_airlines = []
         for code, name in AIRLINE_CODES.items():
-            # Check if airline already exists
-            existing = session.query(Airline).filter_by(iata_code=code).first()
-            if not existing:
-                airline = Airline(iata_code=code, name=name)
-                session.add(airline)
-                count += 1
-        session.commit()
-        if count > 0:
-            print(f"Seeded {count} new airlines from mappings")
+            if code not in existing_codes:
+                new_airlines.append(Airline(iata_code=code, name=name))
+                
+        # Bulk insert
+        if new_airlines:
+            session.bulk_save_objects(new_airlines)
+            session.commit()
+            print(f"Seeded {len(new_airlines)} new airlines from mappings")
     except Exception as e:
         session.rollback()
         print(f"Error seeding airlines: {e}")

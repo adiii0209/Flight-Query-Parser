@@ -2288,6 +2288,7 @@ body {
   flex-wrap: wrap;
   gap: 0.4rem;
   justify-content: flex-start;
+  padding-right: 65px; /* Prevent overlap with card watermark logo */
 }
 
 .passenger-chip {

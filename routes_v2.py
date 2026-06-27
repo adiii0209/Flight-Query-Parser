@@ -7,6 +7,7 @@ import json
 from datetime import datetime, date
 from functools import wraps
 from flask import Blueprint, request, jsonify, session
+from routes.auth import login_required, role_required, org_type_required, get_org_scope
 from sqlalchemy import String, cast, func
 from sqlalchemy.orm import joinedload, load_only, selectinload, defer
 
@@ -24,13 +25,6 @@ api_v2 = Blueprint('api_v2', __name__, url_prefix='/api/v2')
 
 # ==================== AUTHENTICATION DECORATOR ====================
 
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            return jsonify({"error": "Authentication required"}), 401
-        return f(*args, **kwargs)
-    return decorated_function
 
 
 # ==================== HELPER FUNCTIONS ====================
@@ -348,7 +342,7 @@ def create_corporate():
         
         # Uniqueness Validation
         existing_corp = db_session.query(Corporate).filter(
-            Corporate.user_id == session['user_id'],
+            Corporate.organization_id == session.get("organization_id"),
             Corporate.company_name.ilike(data['company_name'].strip()),
             Corporate.is_active == True
         ).first()
@@ -378,8 +372,7 @@ def create_corporate():
             contact_alternate_phone=data.get('contact_alternate_phone'),
             internal_remarks=data.get('internal_remarks'),
             credit_limit=data.get('credit_limit'),
-            payment_terms_days=data.get('payment_terms_days', 30),
-            user_id=session['user_id']
+            payment_terms_days=data.get('payment_terms_days', 30), **get_org_scope()
         )
         
         db_session.add(corporate)
@@ -406,8 +399,7 @@ def get_corporate(corporate_id):
         selectinload(Corporate.passenger_links).selectinload(CorporatePassenger.passenger),
         selectinload(Corporate.promo_codes).selectinload(CorporateAirlinePromoCode.airline),
     ).filter_by(
-        id=corporate_id,
-        user_id=session['user_id']
+        id=corporate_id, **get_org_scope()
     ).first()
     
     if not corporate:
@@ -419,8 +411,7 @@ def get_corporate(corporate_id):
     itineraries = db_session.query(Itinerary).options(
         *_itinerary_summary_options()
     ).filter_by(
-        corporate_id=corporate_id,
-        user_id=session['user_id']
+        corporate_id=corporate_id, **get_org_scope()
     ).order_by(Itinerary.created_at.desc()).limit(10).all()
     data['itineraries'] = [it.to_summary_dict(include_flights=False) for it in itineraries]
     
@@ -433,8 +424,7 @@ def update_corporate(corporate_id):
     """Update a corporate."""
     try:
         corporate = db_session.query(Corporate).filter_by(
-            id=corporate_id,
-            user_id=session['user_id']
+            id=corporate_id, **get_org_scope()
         ).first()
         
         if not corporate:
@@ -446,7 +436,7 @@ def update_corporate(corporate_id):
         if 'company_name' in data:
             new_name = data['company_name'].strip()
             existing_corp = db_session.query(Corporate).filter(
-                Corporate.user_id == session['user_id'],
+                Corporate.organization_id == session.get("organization_id"),
                 Corporate.company_name.ilike(new_name),
                 Corporate.id != corporate_id,  # Exclude self
                 Corporate.is_active == True
@@ -495,8 +485,7 @@ def delete_corporate(corporate_id):
     """Delete a corporate (soft delete)."""
     try:
         corporate = db_session.query(Corporate).filter_by(
-            id=corporate_id,
-            user_id=session['user_id']
+            id=corporate_id, **get_org_scope()
         ).first()
         
         if not corporate:
@@ -520,7 +509,7 @@ def get_corporate_promo_codes(corporate_id):
     """Get promo codes for a corporate."""
     if not db_session.query(Corporate.id).filter(
         Corporate.id == corporate_id,
-        Corporate.user_id == session['user_id'],
+        Corporate.organization_id == session.get("organization_id"),
         Corporate.is_active == True,
     ).first():
         return jsonify({"error": "Corporate not found"}), 404
@@ -545,8 +534,7 @@ def create_corporate_promo_code(corporate_id):
     """Create a promo code for a corporate."""
     try:
         corporate = db_session.query(Corporate).filter_by(
-            id=corporate_id,
-            user_id=session['user_id']
+            id=corporate_id, **get_org_scope()
         ).first()
         
         if not corporate:
@@ -588,8 +576,7 @@ def delete_corporate_promo_code(corporate_id, promo_id):
     """Delete a corporate promo code."""
     try:
         corporate = db_session.query(Corporate).filter_by(
-            id=corporate_id,
-            user_id=session['user_id']
+            id=corporate_id, **get_org_scope()
         ).first()
         
         if not corporate:
@@ -629,8 +616,7 @@ def get_passengers():
         offset = 0
 
     base_query = db_session.query(Passenger).filter_by(
-        user_id=session['user_id'],
-        is_active=True
+        is_active=True, **get_org_scope()
     ).order_by(Passenger.first_name, Passenger.last_name)
     total_count = base_query.count()
     passengers_query = base_query.offset(offset)
@@ -664,7 +650,7 @@ def create_passenger():
         
         # Uniqueness Validation
         existing_pax = db_session.query(Passenger).filter(
-            Passenger.user_id == session['user_id'],
+            Passenger.organization_id == session.get("organization_id"),
             Passenger.first_name.ilike(first_name),
             Passenger.last_name.ilike(last_name),
             Passenger.is_active == True
@@ -710,8 +696,9 @@ def create_passenger():
             country=data.get('country', 'India'),
             emergency_contact_name=data.get('emergency_contact_name'),
             emergency_contact_phone=data.get('emergency_contact_phone'),
-            emergency_contact_relationship=data.get('emergency_contact_relationship'),
-            user_id=session['user_id']
+            emergency_contact_relationship=data.get('emergency_contact_relationship'), 
+            user_id=session.get('user_id'),
+            **get_org_scope()
         )
         
         db_session.add(passenger)
@@ -739,8 +726,7 @@ def get_passenger(passenger_id):
         selectinload(Passenger.preferences),
         selectinload(Passenger.corporate_links).selectinload(CorporatePassenger.corporate),
     ).filter_by(
-        id=passenger_id,
-        user_id=session['user_id']
+        id=passenger_id, **get_org_scope()
     ).first()
     
     if not passenger:
@@ -755,8 +741,7 @@ def update_passenger(passenger_id):
     """Update a passenger."""
     try:
         passenger = db_session.query(Passenger).filter_by(
-            id=passenger_id,
-            user_id=session['user_id']
+            id=passenger_id, **get_org_scope()
         ).first()
         
         if not passenger:
@@ -780,7 +765,7 @@ def update_passenger(passenger_id):
 
         if should_check_dupes:
             existing_pax = db_session.query(Passenger).filter(
-                Passenger.user_id == session['user_id'],
+                Passenger.organization_id == session.get("organization_id"),
                 Passenger.first_name.ilike(new_first),
                 Passenger.last_name.ilike(new_last),
                 Passenger.id != passenger_id,  # Exclude self
@@ -824,7 +809,7 @@ def update_passenger(passenger_id):
         try:
             search_pattern = f'"{passenger_id}"'
             affected_itineraries = db_session.query(Itinerary).filter(
-                Itinerary.user_id == session['user_id'],
+                Itinerary.organization_id == session.get("organization_id"),
                 (Itinerary.passenger_id == passenger_id) | (cast(Itinerary.passengers_data, String).like(f"%{search_pattern}%"))
             ).all()
 
@@ -865,8 +850,7 @@ def delete_passenger(passenger_id):
     """Delete a passenger (soft delete)."""
     try:
         passenger = db_session.query(Passenger).filter_by(
-            id=passenger_id,
-            user_id=session['user_id']
+            id=passenger_id, **get_org_scope()
         ).first()
         
         if not passenger:
@@ -890,7 +874,7 @@ def get_passenger_frequent_flyer(passenger_id):
     """Get frequent flyer accounts for a passenger."""
     if not db_session.query(Passenger.id).filter(
         Passenger.id == passenger_id,
-        Passenger.user_id == session['user_id'],
+        Passenger.organization_id == session.get("organization_id"),
         Passenger.is_active == True,
     ).first():
         return jsonify({"error": "Passenger not found"}), 404
@@ -915,8 +899,7 @@ def create_passenger_frequent_flyer(passenger_id):
     """Create a frequent flyer account for a passenger."""
     try:
         passenger = db_session.query(Passenger).filter_by(
-            id=passenger_id,
-            user_id=session['user_id']
+            id=passenger_id, **get_org_scope()
         ).first()
         
         if not passenger:
@@ -955,8 +938,7 @@ def update_passenger_frequent_flyer(passenger_id, ff_id):
     """Update a frequent flyer account."""
     try:
         passenger = db_session.query(Passenger).filter_by(
-            id=passenger_id,
-            user_id=session['user_id']
+            id=passenger_id, **get_org_scope()
         ).first()
         
         if not passenger:
@@ -997,8 +979,7 @@ def delete_passenger_frequent_flyer(passenger_id, ff_id):
     """Delete a frequent flyer account."""
     try:
         passenger = db_session.query(Passenger).filter_by(
-            id=passenger_id,
-            user_id=session['user_id']
+            id=passenger_id, **get_org_scope()
         ).first()
         
         if not passenger:
@@ -1029,8 +1010,7 @@ def delete_passenger_frequent_flyer(passenger_id, ff_id):
 def get_passenger_preferences(passenger_id):
     """Get preferences for a passenger."""
     passenger = db_session.query(Passenger).filter_by(
-        id=passenger_id,
-        user_id=session['user_id']
+        id=passenger_id, **get_org_scope()
     ).first()
     
     if not passenger:
@@ -1047,8 +1027,7 @@ def save_passenger_preferences(passenger_id):
     """Save or update preferences for a passenger."""
     try:
         passenger = db_session.query(Passenger).filter_by(
-            id=passenger_id,
-            user_id=session['user_id']
+            id=passenger_id, **get_org_scope()
         ).first()
         
         if not passenger:
@@ -1089,7 +1068,7 @@ def get_passenger_documents(passenger_id):
     """Get travel documents for a passenger."""
     if not db_session.query(Passenger.id).filter(
         Passenger.id == passenger_id,
-        Passenger.user_id == session['user_id'],
+        Passenger.organization_id == session.get("organization_id"),
         Passenger.is_active == True,
     ).first():
         return jsonify({"error": "Passenger not found"}), 404
@@ -1108,8 +1087,7 @@ def create_passenger_document(passenger_id):
     """Create a travel document for a passenger."""
     try:
         passenger = db_session.query(Passenger).filter_by(
-            id=passenger_id,
-            user_id=session['user_id']
+            id=passenger_id, **get_org_scope()
         ).first()
         
         if not passenger:
@@ -1150,8 +1128,7 @@ def update_passenger_document(passenger_id, doc_id):
     """Update a travel document."""
     try:
         passenger = db_session.query(Passenger).filter_by(
-            id=passenger_id,
-            user_id=session['user_id']
+            id=passenger_id, **get_org_scope()
         ).first()
         
         if not passenger:
@@ -1195,8 +1172,7 @@ def delete_passenger_document(passenger_id, doc_id):
     """Delete a travel document."""
     try:
         passenger = db_session.query(Passenger).filter_by(
-            id=passenger_id,
-            user_id=session['user_id']
+            id=passenger_id, **get_org_scope()
         ).first()
         
         if not passenger:
@@ -1227,8 +1203,7 @@ def delete_passenger_document(passenger_id, doc_id):
 def get_corporate_passengers(corporate_id):
     """Get all passengers linked to a corporate."""
     corporate = db_session.query(Corporate).filter_by(
-        id=corporate_id,
-        user_id=session['user_id']
+        id=corporate_id, **get_org_scope()
     ).first()
     
     if not corporate:
@@ -1244,8 +1219,7 @@ def link_passenger_to_corporate(corporate_id):
     """Link a passenger to a corporate."""
     try:
         corporate = db_session.query(Corporate).filter_by(
-            id=corporate_id,
-            user_id=session['user_id']
+            id=corporate_id, **get_org_scope()
         ).first()
         
         if not corporate:
@@ -1258,8 +1232,7 @@ def link_passenger_to_corporate(corporate_id):
         
         # Verify passenger exists and belongs to user
         passenger = db_session.query(Passenger).filter_by(
-            id=data['passenger_id'],
-            user_id=session['user_id']
+            id=data['passenger_id'], **get_org_scope()
         ).first()
         
         if not passenger:
@@ -1318,8 +1291,7 @@ def unlink_passenger_from_corporate(corporate_id, link_id):
     """Unlink a passenger from a corporate."""
     try:
         corporate = db_session.query(Corporate).filter_by(
-            id=corporate_id,
-            user_id=session['user_id']
+            id=corporate_id, **get_org_scope()
         ).first()
         
         if not corporate:
@@ -1363,7 +1335,7 @@ def get_itineraries():
     
     query = db_session.query(Itinerary).options(
         *_itinerary_summary_options()
-    ).filter_by(user_id=session['user_id'])
+    ).filter_by(**get_org_scope())
     
     if status_filter:
         query = query.filter_by(status=status_filter)
@@ -1433,11 +1405,11 @@ def create_itinerary():
             bill_to_gst=data.get('bill_to_gst'),
             requires_approval=data.get('requires_approval', False),
             num_passengers=int(safe_float(data.get('num_passengers')) or 1),
-            passengers_data=_json_or_none(data.get('passengers_data', [])),
-            user_id=session['user_id'],
+            passengers_data=_json_or_none(data.get('passengers_data', [])), **get_org_scope(),
             passenger_id=data.get('passenger_id'),
             corporate_id=data.get('corporate_id'),
             billing_account_id=data.get('billing_account_id'),
+            user_id=session['user_id'],
             supplier_account_id=data.get('supplier_account_id'),
             supplier_name=data.get('supplier_name'),
             supplier_email=data.get('supplier_email'),
@@ -1477,6 +1449,7 @@ def get_itinerary(itinerary_id):
 @login_required
 def update_itinerary(itinerary_id):
     """Update an itinerary."""
+    from sqlalchemy.orm.attributes import flag_modified
     try:
         response_wants_flights = request.args.get('response') == 'detail'
         itinerary = _get_itinerary_detail_record(itinerary_id, session['user_id'], include_flights=response_wants_flights)
@@ -1523,13 +1496,22 @@ def update_itinerary(itinerary_id):
             itinerary.billing_type = data['billing_type']
         
         if 'passengers_data' in data:
-            itinerary.passengers_data = _json_or_none(data['passengers_data'])
+            incoming_pax = data['passengers_data']
+            itinerary.passengers_data = _json_or_none(incoming_pax)
+            flag_modified(itinerary, "passengers_data")
+            import logging
+            logging.getLogger(__name__).info(
+                "UPDATE passengers_data for itin %s: %d passengers received",
+                itinerary_id, len(incoming_pax) if isinstance(incoming_pax, list) else 0
+            )
         
         if 'flights' in data:
             itinerary.flights_data = _json_or_none(data['flights'])
+            flag_modified(itinerary, "flights_data")
         
         if 'raw_input_data' in data:
             itinerary.raw_input_data = _json_or_none(data['raw_input_data'])
+            flag_modified(itinerary, "raw_input_data")
         
         if 'final_text' in data:
             itinerary.parser_output_text = data['final_text']
@@ -1545,6 +1527,7 @@ def update_itinerary(itinerary_id):
             itinerary.reverted_at = datetime.utcnow()
         
         db_session.commit()
+        db_session.expire(itinerary)
         
         detail_itinerary = _get_itinerary_detail_record(itinerary.id, session['user_id'], include_flights=response_wants_flights)
         return jsonify({
@@ -1566,8 +1549,7 @@ def delete_itinerary(itinerary_id):
     """Delete an itinerary."""
     try:
         itinerary = db_session.query(Itinerary).filter_by(
-            id=itinerary_id,
-            user_id=session['user_id']
+            id=itinerary_id, **get_org_scope()
         ).first()
         
         if not itinerary:
@@ -1589,8 +1571,7 @@ def approve_itinerary(itinerary_id):
     """Approve an itinerary."""
     try:
         itinerary = db_session.query(Itinerary).filter_by(
-            id=itinerary_id,
-            user_id=session['user_id']
+            id=itinerary_id, **get_org_scope()
         ).first()
         
         if not itinerary:
@@ -1628,8 +1609,7 @@ def hold_itinerary(itinerary_id):
     """Put an itinerary on hold."""
     try:
         itinerary = db_session.query(Itinerary).filter_by(
-            id=itinerary_id,
-            user_id=session['user_id']
+            id=itinerary_id, **get_org_scope()
         ).first()
         
         if not itinerary:
@@ -1669,8 +1649,7 @@ def confirm_itinerary(itinerary_id):
     """Confirm an itinerary."""
     try:
         itinerary = db_session.query(Itinerary).filter_by(
-            id=itinerary_id,
-            user_id=session['user_id']
+            id=itinerary_id, **get_org_scope()
         ).first()
         
         if not itinerary:
@@ -1698,8 +1677,7 @@ def revert_itinerary(itinerary_id):
     """Revert itinerary back to approved for editing."""
     try:
         itinerary = db_session.query(Itinerary).filter_by(
-            id=itinerary_id,
-            user_id=session['user_id']
+            id=itinerary_id, **get_org_scope()
         ).first()
         
         if not itinerary:
@@ -1823,8 +1801,9 @@ def create_billing_account():
             address=data.get('address'),
             gst_number=gst_number,
             passenger_id=data.get('passenger_id'),
-            corporate_id=data.get('corporate_id'),
-            user_id=session['user_id']
+            corporate_id=data.get('corporate_id'), 
+            user_id=session['user_id'],
+            **get_org_scope()
         )
         
         print(f"Creating billing account: {account.display_name} for user {account.user_id}")
@@ -1847,8 +1826,7 @@ def create_billing_account():
 def get_billing_account(account_id):
     """Get a specific billing account."""
     account = db_session.query(BillingAccount).filter_by(
-        id=account_id,
-        user_id=session['user_id']
+        id=account_id, **get_org_scope()
     ).first()
     
     if not account:
@@ -1863,8 +1841,7 @@ def update_billing_account(account_id):
     """Update a billing account."""
     try:
         account = db_session.query(BillingAccount).filter_by(
-            id=account_id,
-            user_id=session['user_id']
+            id=account_id, **get_org_scope()
         ).first()
         
         if not account:
@@ -1903,8 +1880,7 @@ def delete_billing_account(account_id):
     """Delete (deactivate) a billing account."""
     try:
         account = db_session.query(BillingAccount).filter_by(
-            id=account_id,
-            user_id=session['user_id']
+            id=account_id, **get_org_scope()
         ).first()
         
         if not account:
@@ -1918,6 +1894,51 @@ def delete_billing_account(account_id):
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": f"Failed to delete billing account: {str(e)}"}), 500
+
+
+@api_v2.route('/billing-accounts/<account_id>/passengers', methods=['GET'])
+@login_required
+def get_billing_account_passengers(account_id):
+    """Get all passengers linked to a billing account's underlying entity."""
+    try:
+        account = db_session.query(BillingAccount).filter_by(
+            id=account_id, **get_org_scope(), is_active=True
+        ).first()
+        
+        if not account:
+            return jsonify({"error": "Billing account not found"}), 404
+            
+        passengers = []
+        
+        if account.account_type == "corporate" and account.corporate_id:
+            # Get passengers linked to this corporate
+            links = db_session.query(CorporatePassenger).filter_by(
+                corporate_id=account.corporate_id, 
+                is_active=True,
+                **get_org_scope()
+            ).all()
+            
+            for link in links:
+                if link.passenger and link.passenger.is_active:
+                    passengers.append(link.passenger.to_dict())
+                    
+        elif account.account_type == "individual" and account.passenger_id:
+            # Just return the single passenger
+            passenger = db_session.query(Passenger).filter_by(
+                id=account.passenger_id,
+                is_active=True,
+                **get_org_scope()
+            ).first()
+            if passenger:
+                passengers.append(passenger.to_dict())
+                
+        return jsonify({
+            "passengers": passengers
+        })
+        
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch billing account passengers: {str(e)}"}), 500
+
 
 
 # ==================== SUPPLIER ACCOUNT ROUTES ====================
@@ -1956,8 +1977,7 @@ def create_supplier_account():
             email=data.get('email'),
             phone=data.get('phone'),
             address=data.get('address'),
-            gst_number=data.get('gst_number'),
-            user_id=session['user_id']
+            gst_number=data.get('gst_number'), **get_org_scope()
         )
         
         db_session.add(account)
@@ -1978,8 +1998,7 @@ def create_supplier_account():
 def get_supplier_account(account_id):
     """Get a specific supplier account."""
     account = db_session.query(SupplierAccount).filter_by(
-        id=account_id,
-        user_id=session['user_id']
+        id=account_id, **get_org_scope()
     ).first()
     
     if not account:
@@ -1994,8 +2013,7 @@ def update_supplier_account(account_id):
     """Update a supplier account."""
     try:
         account = db_session.query(SupplierAccount).filter_by(
-            id=account_id,
-            user_id=session['user_id']
+            id=account_id, **get_org_scope()
         ).first()
         
         if not account:
@@ -2026,8 +2044,7 @@ def delete_supplier_account(account_id):
     """Delete (deactivate) a supplier account."""
     try:
         account = db_session.query(SupplierAccount).filter_by(
-            id=account_id,
-            user_id=session['user_id']
+            id=account_id, **get_org_scope()
         ).first()
         
         if not account:

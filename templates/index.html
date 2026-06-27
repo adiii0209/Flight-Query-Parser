@@ -606,10 +606,30 @@
     }
 
     .fare-card-header label {
-      font-weight: 600;
-      font-size: 0.9rem;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 500;
+      font-size: 0.95rem;
       cursor: pointer;
       color: var(--text-primary);
+    }
+
+    .fare-type-selector {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 500;
+      font-size: 0.95rem;
+      color: var(--text-primary);
+      background: transparent url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="%23333" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>') no-repeat right center;
+      padding-right: 18px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      cursor: pointer;
+      flex-grow: 1;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    
+    [data-theme="dark"] .fare-type-selector {
+      background: transparent url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="%23fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>') no-repeat right center;
     }
 
     .fare-card-fields {
@@ -4042,7 +4062,11 @@
         <div class="brand-sub">Bespoke But Smarter</div>
       </div>
 
-      <div class="header-actions" style="display: flex !important;">
+      <div class="header-actions" style="display: flex !important; gap: 1rem; align-items: center;">
+        <button id="recentQueriesBtn" class="btn btn-secondary" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 50px;" onclick="if(window.RecentQueriesModule) window.RecentQueriesModule.openModal();">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          Recent Queries
+        </button>
         <!-- Actions can go here if needed -->
       </div>
     </div>
@@ -4052,9 +4076,23 @@
     <!-- Flight Inputs Section -->
     <div class="section" style="position: relative;">
       <div class="section-header">
-        <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <div style="display: flex; align-items: center; gap: 0.8rem;">
           <div class="section-icon">✈️</div>
           <h2>Flight Details</h2>
+        </div>
+        
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-left: auto;">
+            <button class="btn btn-outline btn-sm" onclick="openFlightPassengerModal(-1)" title="Manage Passengers" style="padding: 6px 12px; border-radius: 20px; display: flex; align-items: center; gap: 6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                Passengers
+            </button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-left: 1rem;" id="billingSearchContainer">
+            <label style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0;">Billing To:</label>
+            <div style="position: relative; display: flex; align-items: center;">
+                <input type="text" id="flightBillingSearchInput" autocomplete="off" placeholder="Search accounts..." style="padding: 6px 16px; border: 1px solid var(--border); border-radius: 20px; outline: none; width: 220px; color: var(--text-primary); background: var(--bg-main); transition: all 0.2s ease; box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);" onfocus="this.style.borderColor='var(--primary)'; this.style.boxShadow='0 0 0 3px rgba(37,99,235,0.1)';" onblur="this.style.borderColor='var(--border)'; this.style.boxShadow='inset 0 1px 2px rgba(0,0,0,0.05)';">
+                <div id="billingDropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1); max-height: 250px; overflow-y: auto; z-index: 1000; margin-top: 8px;"></div>
+            </div>
         </div>
       </div>
 
@@ -4124,13 +4162,19 @@
       <div class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
         <div style="display: flex; align-items: center; gap: 0.75rem;">
           <div class="section-icon">🎫</div>
-          <h2>Flight Cards</h2>
+          <h2 style="margin: 0;">Flight Cards</h2>
+          <div id="globalEditControls" style="display: none; margin-left: 10px;">
+            <button class="btn btn-secondary" id="globalEditBtn" onclick="toggleGlobalEditMode()"
+              style="padding: 0.5rem 1rem; font-size: 0.9rem;">
+              ✏️ Edit Fares
+            </button>
+          </div>
         </div>
-        <div id="globalEditControls" style="display: none;">
-          <button class="btn btn-secondary" id="globalEditBtn" onclick="toggleGlobalEditMode()"
-            style="padding: 0.5rem 1rem; font-size: 0.9rem;">
-            ✏️ Edit Fares
-          </button>
+        <div id="cardsHeaderRight" style="display: flex; align-items: center; gap: 10px; margin-left: auto;">
+            <button id="globalPassengerIconBtn" class="btn btn-outline btn-sm" onclick="openFlightPassengerModal(-1)" title="Manage Passengers" style="padding: 6px 12px; border-radius: 20px; display: flex; align-items: center; gap: 6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                Passengers
+            </button>
         </div>
       </div>
       <div id="cards" class="cards-grid" style="gap: 1rem;"></div>
@@ -4172,7 +4216,74 @@
     </div>
   </div>
 
-  <!-- Save Itinerary Modal -->
+  <!-- Unified Passenger Modal for Flight Cards -->
+  <div id="flightPassengerModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 1000px; padding: 25px; min-height: 500px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <h3 style="margin:0; font-size:1.4rem; color:var(--text-primary);">👤 Assign Passengers</h3>
+            <button class="modal-close" onclick="closeFlightPassengerModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:var(--text-secondary);">✕</button>
+        </div>
+        
+        <div class="modal-body" style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+            <!-- Left Side: Search & Add -->
+            <div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display:block; margin-bottom:8px; font-weight:500;">Search Passenger</label>
+                    <div style="position:relative;">
+                        <input type="text" id="fpSearch" class="form-input"
+                            placeholder="Type name, email or phone..." autocomplete="off"
+                            onkeyup="searchFlightPassenger()">
+                        <div id="fpSearchResults" class="search-results custom-scroll"
+                            style="display:none; position:absolute; width:100%; z-index:1000; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; max-height:250px; overflow-y:auto; box-shadow:0 10px 25px rgba(0,0,0,0.1); margin-top: 5px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Inline New Passenger Form -->
+                <div id="fpNewPassengerForm"
+                    style="display:none; margin-top:20px; padding:20px; border:1px solid var(--border); border-radius:12px; background:var(--bg-main);">
+                    <h4 style="margin-top:0; margin-bottom:15px; font-size:1.1rem;">✨ Create New Passenger</h4>
+                    <div style="display:grid; grid-template-columns: 80px 1fr 1fr; gap:15px; margin-bottom:15px;">
+                        <div>
+                            <label class="form-label">Title</label>
+                            <select id="fpTitle" class="form-input">
+                                <option value="Mr">Mr</option>
+                                <option value="Mrs">Mrs</option>
+                                <option value="Ms">Ms</option>
+                                <option value="Mstr">Mstr</option>
+                                <option value="Miss">Miss</option>
+                                <option value="Dr">Dr</option>
+                            </select>
+                        </div>
+                        <div><label class="form-label">First Name *</label><input type="text" id="fpFirst" class="form-input"></div>
+                        <div><label class="form-label">Last Name *</label><input type="text" id="fpLast" class="form-input"></div>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:15px;">
+                        <div><label class="form-label">Email</label><input type="email" id="fpEmail" class="form-input"></div>
+                        <div><label class="form-label">Phone</label><input type="tel" id="fpPhone" class="form-input"></div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:20px;">
+                        <input type="checkbox" id="fpSaveDB" checked style="width:16px; height:16px;">
+                        <label for="fpSaveDB" style="margin:0; font-weight:500; cursor:pointer;">Save to Database</label>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px;">
+                        <button class="btn btn-secondary btn-sm" onclick="toggleFpNewForm(false)">Cancel</button>
+                        <button class="btn btn-primary btn-sm" onclick="addFlightPassengerNew()">Assign to Flight</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side: Added Passengers -->
+            <div style="border-left: 1px solid var(--border); padding-left: 30px;">
+                <label style="display:block; margin-bottom:15px; font-weight:500;">Added Passengers</label>
+                <div id="fpAddedPassengersList" style="display: flex; flex-direction: column; gap: 10px;">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+  </div>
+
   <!-- Save Itinerary Modal V2 (Wizard) -->
   <div id="saveModal" class="modal-overlay">
     <div class="modal-content modal-large" style="max-width: 850px; min-height: 650px;">
@@ -4398,7 +4509,18 @@
             style="display:none; background:var(--bg-card); padding:15px; margin-top:15px; border-radius:8px; border:1px solid var(--border-color); margin-bottom: 15px;">
             <h4 style="margin-top:0; font-size:1rem; margin-bottom:10px;">New Passenger Details</h4>
 
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom: 10px;">
+            <div style="display:grid; grid-template-columns: 80px 1fr 1fr; gap:10px; margin-bottom: 10px;">
+              <div>
+                  <label class="form-label">Title</label>
+                  <select id="qaTitle" class="form-input input-sm">
+                      <option value="Mr">Mr</option>
+                      <option value="Mrs">Mrs</option>
+                      <option value="Ms">Ms</option>
+                      <option value="Mstr">Mstr</option>
+                      <option value="Miss">Miss</option>
+                      <option value="Dr">Dr</option>
+                  </select>
+              </div>
               <div><label class="form-label">First Name *</label><input id="qaFirst" class="form-input input-sm"></div>
               <div><label class="form-label">Last Name *</label><input id="qaLast" class="form-input input-sm"></div>
             </div>
@@ -4820,6 +4942,8 @@
         if (!r.ok) { showNotification('Failed to load itinerary for editing', 'error'); return; }
         const it = await r.json();
         editingItineraryId = id;
+        const modalEl = document.getElementById('saveModal');
+        if (modalEl) modalEl.dataset.currentlyEditingId = id;
 
         // Restore trip type mode using radio buttons
         const tripType = it.trip_type || 'one_way';
@@ -4875,6 +4999,59 @@
             if (textareas[idx]) textareas[idx].value = text;
           });
         }
+        // Restore Fare Types in the Input Panel based on flights
+        if (flightsByUnit) {
+          unitIds.forEach((uid, idx) => {
+            const domUnitId = idx + 1;
+            const flightsInUnit = flightsByUnit[uid];
+            if (flightsInUnit && flightsInUnit.length > 0) {
+              const firstFlight = flightsInUnit[0];
+              
+              // Handle split fares toggle for Round Trip
+              if (tripType === 'round_trip' && firstFlight.is_split) {
+                const splitToggle = document.getElementById(`split-fares-toggle-${domUnitId}`);
+                if (splitToggle && !splitToggle.checked) {
+                  splitToggle.checked = true;
+                  toggleSplitFares(domUnitId);
+                }
+              }
+
+              if (firstFlight && firstFlight.fares) {
+                const fareKeys = Object.keys(firstFlight.fares);
+                if (fareKeys.length > 0) {
+                   const fareListOut = document.getElementById(`fare-list-${domUnitId}_out`) || document.getElementById(`fare-list-${domUnitId}`);
+                   if (fareListOut) {
+                      fareListOut.innerHTML = '';
+                      fareKeys.forEach(fk => {
+                         const cabinLabels = { 'economy': 'Economy', 'premium_economy': 'Premium Economy', 'business': 'Business Class', 'first': 'First Class', 'saver': 'Saver Fare', 'corporate': 'Corporate Fare', 'sme': 'SME Fare', 'coupon': 'Coupon Fare', 'flexi': 'Flexi Fare' };
+                         const label = cabinLabels[fk] || (fk.charAt(0).toUpperCase() + fk.slice(1).replace('_', ' ') + ' Fare');
+                         fareListOut.insertAdjacentHTML('beforeend', createFareCard(fk, label, domUnitId, true, fareListOut.id.includes('_out') ? '_out' : ''));
+                      });
+                   }
+                }
+              }
+
+              // Return flight fares if split
+              if (tripType === 'round_trip' && firstFlight.is_split && flightsInUnit.length > 1) {
+                const retFlight = flightsInUnit.find(f => f.direction === 'return' || f.is_return) || flightsInUnit[1];
+                if (retFlight && retFlight.fares) {
+                   const fareKeysRet = Object.keys(retFlight.fares);
+                   if (fareKeysRet.length > 0) {
+                      const fareListRet = document.getElementById(`fare-list-${domUnitId}_ret`);
+                      if (fareListRet) {
+                         fareListRet.innerHTML = '';
+                         fareKeysRet.forEach(fk => {
+                            const cabinLabels = { 'economy': 'Economy', 'premium_economy': 'Premium Economy', 'business': 'Business Class', 'first': 'First Class', 'saver': 'Saver Fare', 'corporate': 'Corporate Fare', 'sme': 'SME Fare', 'coupon': 'Coupon Fare', 'flexi': 'Flexi Fare' };
+                            const label = cabinLabels[fk] || (fk.charAt(0).toUpperCase() + fk.slice(1).replace('_', ' ') + ' Fare');
+                            fareListRet.insertAdjacentHTML('beforeend', createFareCard(fk, label, domUnitId, true, '_ret'));
+                         });
+                      }
+                   }
+                }
+              }
+            }
+          });
+        }
 
         // Restore flights
         if (it.flights && it.flights.length > 0) {
@@ -4884,11 +5061,6 @@
             if (outputEl) outputEl.textContent = it.parser_output_text;
             currentFinalText = it.parser_output_text;
           }
-
-          // Re-render
-          renderResults(currentFlights);
-          document.getElementById('cardsSection').style.display = 'block';
-          document.getElementById('outputSection').style.display = 'block';
         }
 
         // --- Restore Save Modal Data ---
@@ -4897,11 +5069,12 @@
         if (document.getElementById('saveReferenceNumber')) document.getElementById('saveReferenceNumber').value = it.reference_number || '';
 
         // Restore Passengers
+        savePassengers = [];
         if (it.passengers_data && Array.isArray(it.passengers_data)) {
           // Map to ensure format matches what renderSavePassengers expects
           savePassengers = it.passengers_data.map(p => {
             const pid = p.passenger_id || p.id;
-            const isDb = !!(p.passenger_id || p.is_db === true || (p.id && String(p.id).indexOf('temp_') !== 0));
+            const isDb = !!p.passenger_id || p.is_db === true;
             return {
               first_name: p.first_name || (p.name ? p.name.split(' ')[0] : ''),
               last_name: p.last_name || (p.name ? p.name.split(' ').slice(1).join(' ') : ''),
@@ -4912,28 +5085,44 @@
               passenger_id: isDb ? pid : null
             };
           });
-          renderSavePassengers();
+        }
+        
+        renderSavePassengers();
 
-          // Prefill Supplier
-          if (it.supplier_account) {
-            document.getElementById('supplierSearchInput').value = it.supplier_account.display_name;
-            document.getElementById('supplierAccountSelect').value = it.supplier_account.id;
-            document.getElementById('selectedSupplierName').textContent = it.supplier_account.display_name;
-            document.getElementById('supplierSummary').style.display = 'flex';
-          } else if (it.supplier_name) {
-            showNewSupplierForm(it.supplier_name);
-            document.getElementById('newSupCompany').value = it.supplier_company || '';
-            document.getElementById('newSupGst').value = it.supplier_gst || '';
-            document.getElementById('newSupEmail').value = it.supplier_email || '';
-            document.getElementById('newSupPhone').value = it.supplier_phone || '';
-            document.getElementById('newSupAddress').value = it.supplier_address || '';
-          }
-
+        // Prefill Supplier
+        if (it.supplier_account) {
+          document.getElementById('supplierSearchInput').value = it.supplier_account.display_name;
+          document.getElementById('supplierAccountSelect').value = it.supplier_account.id;
+          document.getElementById('selectedSupplierName').textContent = it.supplier_account.display_name;
+          document.getElementById('supplierSummary').style.display = 'flex';
+        } else if (it.supplier_name) {
+          showNewSupplierForm(it.supplier_name);
+          document.getElementById('newSupCompany').value = it.supplier_company || '';
+          document.getElementById('newSupGst').value = it.supplier_gst || '';
+          document.getElementById('newSupEmail').value = it.supplier_email || '';
+          document.getElementById('newSupPhone').value = it.supplier_phone || '';
+          document.getElementById('newSupAddress').value = it.supplier_address || '';
         }
 
         // Restore Billing Account Selection
         if (it.billing_account_id && document.getElementById('billingAccountSelect')) {
           document.getElementById('billingAccountSelect').value = it.billing_account_id;
+          if (it.billing_account) {
+            // Restore legacy billing UI if present
+            if (document.getElementById('billingSearchInput')) {
+              document.getElementById('billingSearchInput').value = it.billing_account.display_name;
+            }
+            if (document.getElementById('selectedBillingName')) {
+              document.getElementById('selectedBillingName').textContent = it.billing_account.display_name;
+              if (document.getElementById('billingSummary')) {
+                 document.getElementById('billingSummary').style.display = 'block';
+              }
+            }
+            // Restore new BillingModule UI
+            if (window.BillingModule && document.getElementById('flightBillingSearchInput')) {
+              window.BillingModule.selectAccount(it.billing_account);
+            }
+          }
         }
         // --- End Restore ---
 
@@ -4944,6 +5133,16 @@
         const modalTitle = document.querySelector('#saveModal .modal-title');
         if (modalTitle) modalTitle.textContent = '🔄 Update Itinerary';
 
+        if (currentFlights && currentFlights.length > 0) { 
+            renderResults(currentFlights); 
+            document.getElementById('cardsSection').style.display = 'block'; 
+            document.getElementById('outputSection').style.display = 'block'; 
+            // If parser_output_text was present, restore it and intelligently inject the current passengers
+            if (it.parser_output_text) {
+                currentFinalText = it.parser_output_text;
+                regenerateOutputText(true);
+            }
+        }
         showNotification('Itinerary loaded for editing. Make your changes and click Update.', 'info');
       } catch (e) {
         console.error('Edit load error:', e);
@@ -5081,7 +5280,9 @@
       }
     }
 
+    let isCustomersLoaded = false;
     async function loadCustomers() {
+      if (isCustomersLoaded) return;
       try {
         allCustomers = [];
 
@@ -5129,6 +5330,7 @@
           }
         } catch (e) { console.error("Error fetching corporates:", e); }
 
+        isCustomersLoaded = true;
         populateCustomerSelects();
       } catch (error) {
         console.log('Could not load customers:', error);
@@ -5275,7 +5477,7 @@
 
     // --- Save Wizard Logic ---
 
-    async function openSaveModal() {
+    async function openSaveModal(initialStep = null) {
       // 1. Check if logged in
       try {
         const authRes = await fetch('/api/user');
@@ -5345,14 +5547,19 @@
 
       // Show Modal first so the UI paints before any directory fetches begin
       document.getElementById('saveModal').classList.add('active');
-      goToStep(1);
+      if (initialStep) saveWizardStep = initialStep;
+      goToStep(saveWizardStep || 1);
       await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
 
       // Load Data after modal is visible
       await Promise.all([loadBillingAccounts(), loadCustomers(), loadSupplierAccounts()]);
 
-      // If editing, pre-fill saved data
-      if (editingItineraryId) {
+      // If editing, pre-fill saved data — but only if this is the FIRST open for this itinerary
+      // (i.e., we just switched to it). If the user already loaded this itinerary and is
+      // re-opening the modal, preserve their local edits (e.g., removed passengers).
+      const needsPrefill = editingItineraryId && editingItineraryId !== lastEditedId;
+      if (needsPrefill) {
+        document.getElementById('saveModal').dataset.currentlyEditingId = editingItineraryId;
         try {
           const r = await fetch('/api/v2/itineraries/' + editingItineraryId);
           if (r.ok) {
@@ -5397,7 +5604,7 @@
             if (it.passengers_data && it.passengers_data.length > 0) {
               savePassengers = it.passengers_data.map(p => {
                 const pid = p.passenger_id || p.id;
-                const isDb = !!(p.passenger_id || p.is_db === true || (p.id && String(p.id).indexOf('temp_') !== 0));
+                const isDb = !!p.passenger_id || p.is_db === true;
                 return {
                   id: isDb ? pid : p.id,
                   passenger_id: isDb ? pid : null,
@@ -5439,14 +5646,16 @@
                 document.getElementById('supplierSummary').style.display = 'flex';
               }
             }
-
-            // Update modal title and button text for edit mode
-            const modalTitle = document.querySelector('#saveModal .modal-title');
-            if (modalTitle) modalTitle.textContent = '🔄 Update Itinerary';
-            const saveBtnText = document.getElementById('saveBtnText');
-            if (saveBtnText) saveBtnText.textContent = '🔄 Update Itinerary';
           }
         } catch (e) { console.error('Error pre-filling edit data:', e); }
+      }
+
+      // Set modal title and button text based on editing state
+      if (editingItineraryId) {
+        const modalTitle = document.querySelector('#saveModal .modal-title');
+        if (modalTitle) modalTitle.textContent = '🔄 Update Itinerary';
+        const saveBtnText = document.getElementById('saveBtnText');
+        if (saveBtnText) saveBtnText.textContent = '🔄 Update Itinerary';
       } else {
         // Ensure we show "Save" text for new itineraries
         const modalTitle = document.querySelector('#saveModal .modal-title');
@@ -5495,13 +5704,16 @@
     }
 
     // --- Step 1: Billing ---
+    let isBillingAccountsLoaded = false;
     async function loadBillingAccounts() {
+      if (isBillingAccountsLoaded) return;
       try {
         const response = await fetch('/api/v2/billing-accounts');
         if (response.ok) {
           const data = await response.json();
           billingAccounts = data.billing_accounts || [];
           console.log('Loaded', billingAccounts.length, 'billing accounts');
+          isBillingAccountsLoaded = true;
         }
       } catch (e) {
         console.error('Failed to load billing accounts', e);
@@ -5526,6 +5738,10 @@
       if (res.type === 'billing') {
         idInput.value = raw.id;
         input.value = raw.display_name;
+        // Ensure this account is in the global array so submitItinerary can find it
+        if (!billingAccounts.find(a => a.id == raw.id)) {
+          billingAccounts.push(raw);
+        }
         document.getElementById('selectedBillingName').textContent = raw.display_name;
         document.getElementById('selectedBillingDetails').innerHTML = `
                 ${raw.company_name ? `<div><strong>Company:</strong> ${raw.company_name}</div>` : ''}
@@ -5818,13 +6034,16 @@
     let supplierAccounts = [];
     let currentSupplierResults = [];
     let tempSupplierDetails = null;
+    let isSupplierAccountsLoaded = false;
 
     async function loadSupplierAccounts() {
+      if (isSupplierAccountsLoaded) return;
       try {
         const response = await fetch('/api/v2/supplier-accounts');
         if (response.ok) {
           const data = await response.json();
           supplierAccounts = data.supplier_accounts || [];
+          isSupplierAccountsLoaded = true;
         }
       } catch (e) { console.error('Failed to load supplier accounts', e); }
     }
@@ -5897,6 +6116,10 @@
 
       document.getElementById('supplierAccountSelect').value = res.id;
       document.getElementById('selectedSupplierName').textContent = res.display;
+      // Ensure this account is in the global array so submitItinerary can find it
+      if (!supplierAccounts.find(a => a.id == res.id)) {
+        supplierAccounts.push(res.raw);
+      }
 
       let subText = res.sub;
       if (res.raw.company_name) subText += ` • ${res.raw.company_name}`;
@@ -6112,7 +6335,7 @@
                   ${(p.first_name || '').charAt(0)}${(p.last_name || '').charAt(0)}
                 </div>
                 <div style="flex-grow:1; line-height:1.4;">
-                  <div style="font-weight:600; color:var(--text-primary); font-size:0.95rem;">${p.first_name} ${p.last_name}</div>
+                  <div style="font-weight:600; color:var(--text-primary); font-size:0.95rem;">${p.title ? p.title + ' ' : ''}${p.first_name} ${p.last_name}</div>
                   <div style="font-size:0.8rem; color:var(--text-secondary);">${p.email || 'No email'} ${p.phone ? '• ' + p.phone : ''}</div>
                 </div>
             </div>
@@ -6201,6 +6424,7 @@
     }
 
     async function addQuickPassenger() {
+      const title = document.getElementById('qaTitle').value;
       const first = document.getElementById('qaFirst').value.trim();
       const last = document.getElementById('qaLast').value.trim();
       const email = document.getElementById('qaEmail').value.trim();
@@ -6212,6 +6436,7 @@
       }
 
       const newPax = {
+        title: title,
         first_name: first,
         last_name: last,
         email: email,
@@ -6234,6 +6459,7 @@
             newPax.passenger_id = d.passenger.id;
             showNotification('Passenger saved to Database', 'success');
             allPassengersCache = []; // Clear cache
+            if (typeof isCustomersLoaded !== 'undefined') isCustomersLoaded = false;
           } else if (r.status === 409) {
             const err = await r.json();
             showNotification(err.error || 'Duplicate passenger found. Please check details.', 'error');
@@ -6265,7 +6491,253 @@
     function removeSavePassenger(index) {
       savePassengers.splice(index, 1);
       renderSavePassengers();
+      renderFpAddedPassengers();
+      renderResults(currentFlights, true);
+    }
 
+    // --- Flight Card Passenger Modal Logic ---
+    let activeFlightIndexForPassenger = -1;
+
+    let fetchPassengersPromise = null;
+
+    async function ensurePassengersLoaded() {
+        if (allPassengersCache.length > 0) return;
+        if (fetchPassengersPromise) {
+            await fetchPassengersPromise;
+            return;
+        }
+        fetchPassengersPromise = fetch('/api/v2/passengers')
+            .then(r => r.json())
+            .then(d => {
+                allPassengersCache = d.passengers || [];
+                fetchPassengersPromise = null;
+            })
+            .catch(err => {
+                console.error("Failed to load passengers", err);
+                fetchPassengersPromise = null;
+            });
+        await fetchPassengersPromise;
+    }
+
+    async function openFlightPassengerModal(index) {
+        activeFlightIndexForPassenger = index;
+        document.getElementById('flightPassengerModal').classList.add('active');
+        document.getElementById('fpSearch').value = '';
+        document.getElementById('fpSearchResults').style.display = 'none';
+        document.getElementById('fpNewPassengerForm').style.display = 'none';
+        renderFpAddedPassengers();
+        
+        await ensurePassengersLoaded();
+        
+        // Auto-show linked passengers if any
+        searchFlightPassenger();
+    }
+
+    function closeFlightPassengerModal() {
+        document.getElementById('flightPassengerModal').classList.remove('active');
+        activeFlightIndexForPassenger = -1;
+    }
+
+    async function searchFlightPassenger() {
+        const query = document.getElementById('fpSearch').value.toLowerCase().trim();
+        const resultsDiv = document.getElementById('fpSearchResults');
+        const originalVal = document.getElementById('fpSearch').value.trim();
+
+        if (query.length === 0) {
+            if (window.BillingModule && window.BillingModule.state.linkedPassengers && window.BillingModule.state.linkedPassengers.length > 0) {
+                const linked = window.BillingModule.state.linkedPassengers;
+                let html = '<div style="padding: 10px 15px; font-size: 0.8rem; font-weight: 700; background: var(--bg-main); border-bottom: 1px solid var(--border-color); color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Linked Billing Passengers</div>';
+                html += linked.map(p => `
+                    <div class="search-item" onclick='assignDbPassengerToFlight(${JSON.stringify(p).replace(/'/g, "&apos;")})' 
+                         style="padding:12px 15px; cursor:pointer; border-bottom:1px solid var(--border-color); display:flex; align-items:center; gap:12px; transition: background 0.2s;">
+                        <div class="avatar" style="width:32px; height:32px; border-radius:50%; background:var(--primary); color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; flex-shrink:0; font-size:13px;">
+                          ${(p.first_name || '').charAt(0)}${(p.last_name || '').charAt(0)}
+                        </div>
+                        <div style="flex-grow:1; line-height:1.4;">
+                          <div style="font-weight:600; color:var(--text-primary); font-size:0.95rem;">${p.title ? p.title + ' ' : ''}${p.first_name} ${p.last_name}</div>
+                          <div style="font-size:0.8rem; color:var(--text-secondary);">${p.email || 'No email'} ${p.phone ? '• ' + p.phone : ''}</div>
+                        </div>
+                    </div>
+                `).join('');
+                resultsDiv.innerHTML = html;
+                resultsDiv.style.display = 'block';
+                return;
+            }
+            resultsDiv.style.display = 'none';
+            return;
+        }
+
+        await ensurePassengersLoaded();
+
+        const filtered = allPassengersCache.filter(p =>
+            ((p.first_name || '') + ' ' + (p.last_name || '')).toLowerCase().includes(query) ||
+            (p.email && p.email.toLowerCase().includes(query)) ||
+            (p.phone && p.phone.toLowerCase().includes(query))
+        ).slice(0, 5);
+
+        let html = '';
+        if (filtered.length > 0) {
+            html += filtered.map(p => `
+                <div class="search-item" onclick='assignDbPassengerToFlight(${JSON.stringify(p).replace(/'/g, "&apos;")})' 
+                     style="padding:12px 15px; cursor:pointer; border-bottom:1px solid var(--border-color); display:flex; align-items:center; gap:12px; transition: background 0.2s;">
+                    <div class="avatar" style="width:32px; height:32px; border-radius:50%; background:#8b5cf6; color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; flex-shrink:0; font-size:13px;">
+                      ${(p.first_name || '').charAt(0)}${(p.last_name || '').charAt(0)}
+                    </div>
+                    <div style="flex-grow:1; line-height:1.4;">
+                      <div style="font-weight:600; color:var(--text-primary); font-size:0.95rem;">${p.title ? p.title + ' ' : ''}${p.first_name} ${p.last_name}</div>
+                      <div style="font-size:0.8rem; color:var(--text-secondary);">${p.email || 'No email'} ${p.phone ? '• ' + p.phone : ''}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        html += `
+            <div class="search-item" onclick="prepareNewFlightPassenger('${originalVal.replace(/'/g, "\\'")}')" 
+                 style="padding:12px 15px; cursor:pointer; border-bottom:1px solid var(--border-color); display:flex; align-items:center; gap:12px; transition: background 0.2s; background: rgba(16, 185, 129, 0.05); color: var(--success);">
+                <div class="avatar" style="width:32px; height:32px; border-radius:50%; background:var(--success); color:white; display:flex; align-items:center; justify-content:center; font-weight:bold; flex-shrink:0; font-size:16px;">+</div>
+                <div style="flex-grow:1; line-height:1.4;">
+                  <div style="font-weight:600; font-size:0.95rem;">Create New: "${originalVal}"</div>
+                </div>
+            </div>`;
+
+        resultsDiv.innerHTML = html;
+        resultsDiv.style.display = 'block';
+    }
+
+    function toggleFpNewForm(show) {
+        document.getElementById('fpNewPassengerForm').style.display = show ? 'block' : 'none';
+        if (!show) {
+            document.getElementById('fpSearch').value = '';
+            // Only hide search results if we don't have linked passengers to show
+            searchFlightPassenger();
+        }
+    }
+
+    function prepareNewFlightPassenger(val) {
+        toggleFpNewForm(true);
+        document.getElementById('fpSearchResults').style.display = 'none';
+        const parts = val.trim().split(' ');
+        document.getElementById('fpFirst').value = parts[0] || '';
+        document.getElementById('fpLast').value = parts.slice(1).join(' ') || '';
+        document.getElementById('fpEmail').value = val.includes('@') ? val : '';
+        document.getElementById('fpPhone').value = /^\d+$/.test(val) ? val : '';
+    }
+
+    function assignDbPassengerToFlight(p) {
+        _assignPassengerToFlightState(p);
+    }
+
+    async function addFlightPassengerNew() {
+        const title = document.getElementById('fpTitle').value;
+        const first = document.getElementById('fpFirst').value.trim();
+        const last = document.getElementById('fpLast').value.trim();
+        const email = document.getElementById('fpEmail').value.trim();
+        const phone = document.getElementById('fpPhone').value.trim();
+        const saveToDb = document.getElementById('fpSaveDB').checked;
+
+        if (!first || !last) {
+            showNotification('First and Last Name are required', 'warning'); return;
+        }
+
+        const newPax = {
+            title: title,
+            first_name: first,
+            last_name: last,
+            email: email,
+            phone: phone,
+            is_db: false,
+            id: 'temp_' + Date.now()
+        };
+
+        if (saveToDb) {
+            try {
+                const res = await fetch('/api/v2/passengers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newPax)
+                });
+                if (res.ok) {
+                    const saved = await res.json();
+                    newPax.id = saved.passenger.id;
+                    newPax.passenger_id = saved.passenger.id;
+                    newPax.is_db = true;
+                    allPassengersCache = [];
+                    if (typeof isCustomersLoaded !== 'undefined') isCustomersLoaded = false;
+                } else {
+                    showNotification('Error saving passenger to DB', 'error');
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        _assignPassengerToFlightState(newPax);
+
+        // Clear inputs to prevent duplicate assignment on next click
+        document.getElementById('fpFirst').value = '';
+        document.getElementById('fpLast').value = '';
+        document.getElementById('fpEmail').value = '';
+        document.getElementById('fpPhone').value = '';
+    }
+
+    function _assignPassengerToFlightState(p) {
+        const name = p.first_name + ' ' + (p.last_name || '');
+        if (activeFlightIndexForPassenger === -1) {
+            currentFlights.forEach(f => {
+                f.passenger_name = name;
+                f.passenger_id = p.id;
+            });
+        } else {
+            const flight = currentFlights[activeFlightIndexForPassenger];
+            if (flight) {
+                flight.passenger_name = name;
+                flight.passenger_id = p.id;
+            }
+        }
+        
+        if (!savePassengers.some(existing => existing.id === p.id)) {
+            savePassengers.push({
+                id: p.id,
+                passenger_id: p.id,
+                first_name: p.first_name,
+                last_name: p.last_name,
+                email: p.email,
+                phone: p.phone,
+                is_db: p.is_db || false
+            });
+        }
+        renderSavePassengers();
+
+        renderFpAddedPassengers();
+        document.getElementById('fpSearch').value = '';
+        document.getElementById('fpSearchResults').style.display = 'none';
+        toggleFpNewForm(false);
+        renderResults(currentFlights, true);
+        snapshotCurrentFareStateForDraft();
+        showNotification('Passenger added successfully', 'success');
+    }
+
+    function removeFlightPassenger(id) {
+        savePassengers = savePassengers.filter(p => p.id !== id);
+        renderSavePassengers();
+        renderFpAddedPassengers();
+        renderResults(currentFlights, true);
+        snapshotCurrentFareStateForDraft();
+    }
+
+    function renderFpAddedPassengers() {
+        const list = document.getElementById('fpAddedPassengersList');
+        if (!list) return;
+        if (savePassengers.length === 0) {
+            list.innerHTML = '<div style="color: var(--text-secondary); font-size: 0.9rem; padding: 10px; background: rgba(0,0,0,0.02); border-radius: 8px; text-align: center;">No passengers added yet. Search or create one to add.</div>';
+            return;
+        }
+        list.innerHTML = savePassengers.map(p => `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding: 10px 15px; background: var(--bg-hover); border-radius: 8px; border: 1px solid var(--border);">
+                <div style="font-weight: 500; font-size: 0.95rem;">${p.title ? p.title + ' ' : ''}${p.first_name} ${p.last_name || ''}</div>
+                <button onclick="removeFlightPassenger('${p.id}')" style="background: none; border: none; color: var(--danger); cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 4px; transition: background 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.1)'" onmouseout="this.style.background='none'">&times;</button>
+            </div>
+        `).join('');
     }
 
     function renderSavePassengers() {
@@ -6287,7 +6759,7 @@
                     </div>
                     <div>
                         <div style="display:flex; align-items:center;">
-                            <span style="font-weight:600; color:var(--text-primary); margin-right:8px; font-size:0.95rem;">${p.first_name || ''} ${p.last_name || ''}</span>
+                            <span style="font-weight:600; color:var(--text-primary); margin-right:8px; font-size:0.95rem;">${p.title ? p.title + ' ' : ''}${p.first_name || ''} ${p.last_name || ''}</span>
                         </div>
                         <div style="font-size:0.85em; color:var(--text-secondary); margin-top:2px;">${p.email || 'No email'} ${p.phone ? ' • ' + p.phone : ''}</div>
                     </div>
@@ -6325,6 +6797,7 @@
 
           // Refresh cache
           allPassengersCache = [];
+          if (typeof isCustomersLoaded !== 'undefined') isCustomersLoaded = false;
           showNotification('Passenger saved to database!', 'success');
         } else {
           const e = await r.json();
@@ -6384,20 +6857,22 @@
     }
 
     // --- Final Submit ---
-    async function submitItinerary() {
+    async function submitItinerary(isAutosave = false) {
       const btn = document.getElementById('finalSaveBtn');
       const loading = document.getElementById('saveBtnLoading');
       const text = document.getElementById('saveBtnText');
-      let title = document.getElementById('saveItineraryTitle').value;
-      const billingId = document.getElementById('billingAccountSelect').value;
+      let title = document.getElementById('saveItineraryTitle') ? document.getElementById('saveItineraryTitle').value : '';
+      const billingId = document.getElementById('billingAccountSelect') ? document.getElementById('billingAccountSelect').value : '';
 
       if (!title) {
         title = "Itinerary - " + new Date().toLocaleDateString();
       }
 
-      btn.disabled = true;
-      loading.style.display = 'block';
-      text.style.display = 'none';
+      if (!isAutosave && btn && loading && text) {
+        btn.disabled = true;
+        loading.style.display = 'block';
+        text.style.display = 'none';
+      }
 
       try {
         const firstDbPassenger = savePassengers.find(p => p.is_db);
@@ -6428,7 +6903,7 @@
             billData.email = acc.email;
             billData.phone = acc.phone;
           }
-        } else if (document.getElementById('billingSearchInput').value.trim()) {
+        } else if (document.getElementById('billingSearchInput') && document.getElementById('billingSearchInput').value.trim()) {
           // Fallback: use manual unsaved input (Simple Bill To)
           const manualName = document.getElementById('billingSearchInput').value.trim();
           finalBillingType = 'passenger';
@@ -6436,7 +6911,7 @@
         }
 
         // Determine supplier details
-        const supplierId = document.getElementById('supplierAccountSelect').value;
+        const supplierId = document.getElementById('supplierAccountSelect') ? document.getElementById('supplierAccountSelect').value : null;
         const supData = {
           name: null, email: null, phone: null, address: null, company: null, gst: null
         };
@@ -6472,7 +6947,8 @@
           rawInputData.flight_texts = Array.from(textareas).map(ta => ta.value);
         } catch (e) { }
 
-        currentFlights = applyUnitMetadataToFlights(currentFlights);
+        const latestFlightsSnapshot = snapshotCurrentFareStateForDraft();
+        let finalFlightsForSave = applyUnitMetadataToFlights(latestFlightsSnapshot);
 
         const payload = {
           title: title,
@@ -6484,31 +6960,38 @@
           num_passengers: savePassengers.length || 1,
           passengers_data: savePassengers,
           // Flight Data
-          flights: currentFlights,
+          flights: finalFlightsForSave,
           final_text: currentFinalText,
           raw_input_data: rawInputData,
           // Costing
           markup: parseFloat(document.getElementById('markup').value) || 0,
           service_charge: parseFloat(document.getElementById('serviceCharge').value) || 0,
-          total_amount: calculateTotalAmount(),
-          // Explicit Billing Details
-          bill_to_name: billData.name,
-          bill_to_company: billData.company,
-          bill_to_address: billData.address,
-          bill_to_gst: billData.gst,
-          bill_to_email: billData.email,
-          bill_to_phone: billData.phone,
-          billing_type: finalBillingType,
-          // Explicit Supplier Details
-          supplier_name: supData.name,
-          supplier_email: supData.email,
-          supplier_phone: supData.phone,
-          supplier_address: supData.address,
-          supplier_company: supData.company,
-          supplier_gst: supData.gst
+          total_amount: calculateTotalAmount()
         };
 
-        payload.raw_input_data.unit_flights = buildOrderedUnitFlightMap(currentFlights.length);
+        // Explicit Billing Details
+        const searchInputVal = document.getElementById('flightBillingSearchInput') ? document.getElementById('flightBillingSearchInput').value.trim() : '';
+        if (billData.name || (!billingId && !tempBillingDetails && !searchInputVal)) {
+          payload.bill_to_name = billData.name;
+          payload.bill_to_company = billData.company;
+          payload.bill_to_address = billData.address;
+          payload.bill_to_gst = billData.gst;
+          payload.bill_to_email = billData.email;
+          payload.bill_to_phone = billData.phone;
+          payload.billing_type = finalBillingType;
+        }
+
+        // Explicit Supplier Details
+        if (supData.name || !supplierId) {
+          payload.supplier_name = supData.name;
+          payload.supplier_email = supData.email;
+          payload.supplier_phone = supData.phone;
+          payload.supplier_address = supData.address;
+          payload.supplier_company = supData.company;
+          payload.supplier_gst = supData.gst;
+        }
+
+        payload.raw_input_data.unit_flights = buildOrderedUnitFlightMap(finalFlightsForSave.length);
 
         // If editing existing itinerary, update it; otherwise create new
         const isEditing = !!editingItineraryId;
@@ -6524,25 +7007,39 @@
         if (response.ok) {
           const result = await response.json();
           const itinId = result.itinerary ? result.itinerary.id : editingItineraryId;
-          showNotification(isEditing ? 'Itinerary updated successfully!' : 'Itinerary saved successfully!', 'success');
-          closeSaveModal();
-          localStorage.removeItem('flight_itinerary_draft');
+          
+          if (!isEditing && itinId) {
+            editingItineraryId = itinId;
+            document.getElementById('saveModal').dataset.currentlyEditingId = editingItineraryId;
+          }
 
-          // Redirect to the itinerary detail
-          setTimeout(() => {
-            window.location.href = '/itineraries' + (itinId ? '#' + itinId : '');
-          }, 1500);
+          if (!isAutosave) {
+            showNotification(isEditing ? 'Itinerary updated successfully!' : 'Itinerary saved successfully!', 'success');
+            closeSaveModal();
+            localStorage.removeItem('flight_itinerary_draft');
+
+            // Redirect to the itinerary detail
+            setTimeout(() => {
+              window.location.href = '/itineraries' + (itinId ? '#' + itinId : '');
+            }, 1500);
+          } else {
+            console.log('Autosaved itinerary', itinId);
+            showNotification('Autosaved to database!', 'success', { duration: 2000 });
+          }
         } else {
           const err = await response.json();
-          showNotification(err.error || 'Failed to save itinerary', 'error');
+          if (!isAutosave) showNotification(err.error || 'Failed to save itinerary', 'error');
+          else console.error('Autosave failed:', err.error);
         }
       } catch (e) {
         console.error(e);
-        showNotification('Error saving itinerary', 'error');
+        if (!isAutosave) showNotification('Error saving itinerary', 'error');
       } finally {
-        btn.disabled = false;
-        text.style.display = 'inline';
-        loading.style.display = 'none';
+        if (!isAutosave && btn && loading && text) {
+          btn.disabled = false;
+          text.style.display = 'inline';
+          loading.style.display = 'none';
+        }
       }
     }
 
@@ -6959,7 +7456,19 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         <div class="${cardClass}" data-fare-key="${key}" id="fare-card-${uniqueKey}">
           <div class="fare-card-header">
             <input type="checkbox" id="chk-${uniqueKey}" onchange="toggleFareCard(this, '${key}', ${unitId}, '${suffix}')" ${checkedAttr}>
-            <label for="chk-${uniqueKey}">${label}</label>
+            <select class="fare-type-selector" onchange="changeFareCardType(this, '${key}', ${unitId}, '${suffix}')">
+              <option value="saver" ${key === 'saver' ? 'selected' : ''}>Saver Fare</option>
+              <option value="corporate" ${key === 'corporate' ? 'selected' : ''}>Corporate Fare</option>
+              <option value="sme" ${key === 'sme' ? 'selected' : ''}>SME Fare</option>
+              <option value="coupon" ${key === 'coupon' ? 'selected' : ''}>Coupon Fare</option>
+              <option value="flexi" ${key === 'flexi' ? 'selected' : ''}>Flexi Fare</option>
+              <option value="economy" ${key === 'economy' ? 'selected' : ''}>Economy</option>
+              <option value="premium_economy" ${key === 'premium_economy' ? 'selected' : ''}>Premium Economy</option>
+              <option value="business" ${key === 'business' ? 'selected' : ''}>Business Class</option>
+              <option value="first" ${key === 'first' ? 'selected' : ''}>First Class</option>
+              ${!['saver','corporate','sme','coupon','flexi','economy','premium_economy','business','first'].includes(key) ? `<option value="${key}" selected>${label}</option>` : ''}
+              <option value="custom">Custom...</option>
+            </select>
           </div>
           <div class="fare-card-fields">
             <div class="fare-field-row">
@@ -7032,6 +7541,89 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       `;
     }
 
+    function changeFareCardType(select, oldKey, unitId, suffix = '') {
+      let newKey = select.value;
+      let newLabel = select.options[select.selectedIndex].text;
+
+      if (newKey === 'custom') {
+        const customName = prompt("Enter Name for Custom Fare Type:");
+        if (!customName || customName.trim() === '') {
+          select.value = oldKey; // Revert
+          return;
+        }
+        newLabel = customName.trim();
+        newKey = newLabel.toLowerCase().replace(/\s+/g, '_');
+        select.options[select.selectedIndex].value = newKey;
+        select.options[select.selectedIndex].text = newLabel;
+      }
+
+      const oldUniqueKey = `${oldKey}-unit-${unitId}${suffix}`;
+      const newUniqueKey = `${newKey}-unit-${unitId}${suffix}`;
+
+      const card = document.getElementById(`fare-card-${oldUniqueKey}`);
+      if (!card) return;
+
+      if (document.getElementById(`fare-card-${newUniqueKey}`)) {
+        showNotification('This fare type is already in the list!', 'error');
+        select.value = oldKey; // Revert
+        return;
+      }
+
+      // Update Card
+      card.id = `fare-card-${newUniqueKey}`;
+      card.dataset.fareKey = newKey;
+      
+      // Update Checkbox
+      const chk = document.getElementById(`chk-${oldUniqueKey}`);
+      if (chk) {
+        chk.id = `chk-${newUniqueKey}`;
+        chk.setAttribute('onchange', `toggleFareCard(this, '${newKey}', ${unitId}, '${suffix}')`);
+      }
+
+      // Update Details section and toggle button
+      const details = document.getElementById(`fare-details-input-${oldUniqueKey}`);
+      if (details) {
+        details.id = `fare-details-input-${newUniqueKey}`;
+      }
+
+      const btn = card.querySelector(`button[onclick="toggleFareDetails('fare-details-input-${oldUniqueKey}')"]`);
+      if (btn) {
+        btn.setAttribute('onclick', `toggleFareDetails('fare-details-input-${newUniqueKey}')`);
+      }
+
+      const icon = document.getElementById(`fare-toggle-icon-fare-details-input-${oldUniqueKey}`);
+      if (icon) {
+        icon.id = `fare-toggle-icon-fare-details-input-${newUniqueKey}`;
+      }
+
+      // Update all input classes
+      const classMappings = ['fare', 'mu', 'svc', 'fare-cabin', 'fare-checkin', 'fare-pcs', 'fare-seat', 'fare-meal', 'fare-cancellation', 'fare-penalty'];
+      classMappings.forEach(prefix => {
+        const inputs = card.querySelectorAll(`.${prefix}-${oldUniqueKey}`);
+        inputs.forEach(inp => {
+          inp.classList.remove(`${prefix}-${oldUniqueKey}`);
+          inp.classList.add(`${prefix}-${newUniqueKey}`);
+        });
+      });
+      
+      select.setAttribute('onchange', `changeFareCardType(this, '${newKey}', ${unitId}, '${suffix}')`);
+    }
+
+    function updateFareTotal(uniqueKey) {
+      if (uniqueKey && uniqueKey.includes('inline-')) return;
+      if (typeof snapshotCurrentFareStateForDraft === 'function' && typeof regenerateOutputText === 'function') {
+        const latestFlights = snapshotCurrentFareStateForDraft();
+        if (latestFlights && latestFlights.length > 0) {
+          if (typeof applyUnitMetadataToFlights === 'function') {
+            currentFlights = applyUnitMetadataToFlights(latestFlights);
+          } else {
+            currentFlights = latestFlights;
+          }
+          regenerateOutputText();
+        }
+      }
+    }
+
     function toggleFareCard(checkbox, fareType, unitId, suffix = '') {
       const uniqueKey = `${fareType}-unit-${unitId}${suffix}`;
       const card = document.getElementById(`fare-card-${uniqueKey}`);
@@ -7056,6 +7648,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
       // Check if we need global markup
       updateGlobalMarkupRequirement();
+      updateFareTotal(uniqueKey);
     }
 
     function updateGlobalMarkupRequirement() {
@@ -8348,7 +8941,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       }
     }
 
-    function renderResults(flights) {
+    function renderResults(flights, onlyUpdatePassengers = false) {
       if (!flights || flights.length === 0) {
         return;
       }
@@ -8456,7 +9049,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       });
 
       // Render output text using the consolidated logic
-      regenerateOutputText();
+      regenerateOutputText(onlyUpdatePassengers);
       scheduleCardsImagePreload();
 
       // Scroll to results
@@ -8917,7 +9510,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       const uniqueId = `flight-${index}-${Math.random().toString(36).substr(2, 9)}`;
 
       const isMissingDate = !flight.departure_date || flight.departure_date === 'N/A';
-      const optionLabelHTML = `<div class="card-top-strip"><div class="option-label">Option ${index + 1}</div></div>`;
+      
+      const optionLabelHTML = `<div class="card-top-strip" style="justify-content: flex-end; padding-left: 10px;">
+          <div class="option-label">Option ${index + 1}</div>
+      </div>`;
 
       let dateHeaderHTML = '';
       if (isMissingDate) {
@@ -8935,7 +9531,21 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         inlineEditorPlaceholder = `<div id="inline-editor-${index}" class="inline-fare-editor" style="display: none;"></div>`;
       }
 
-      card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="" loading="eager" decoding="async" fetchpriority="high">` + optionLabelHTML + dateHeaderHTML + summaryHTML + timelineHTML + faresHTML + inlineEditorPlaceholder;
+      let passengerFooterHtml = '';
+      if (savePassengers && savePassengers.length > 0) {
+        passengerFooterHtml = `
+          <div class="itinerary-passengers-footer">
+            <div class="itinerary-passengers-label">PASSENGERS</div>
+            <div class="itinerary-passengers-names">
+              ${savePassengers.map(p => `<span class="passenger-chip">${p.title ? p.title + ' ' : ''}${p.first_name} ${p.last_name || ''}</span>`).join('')}
+            </div>
+            <img class="card-watermark-img" src="/static/logo.png" alt="" loading="eager" decoding="async" fetchpriority="high" style="bottom: 8px; right: 8px;">
+          </div>
+        `;
+        card.innerHTML = optionLabelHTML + dateHeaderHTML + summaryHTML + timelineHTML + faresHTML + inlineEditorPlaceholder + passengerFooterHtml;
+      } else {
+        card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="" loading="eager" decoding="async" fetchpriority="high">` + optionLabelHTML + dateHeaderHTML + summaryHTML + timelineHTML + faresHTML + inlineEditorPlaceholder;
+      }
       return card;
     }
 
@@ -9134,7 +9744,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
         const isMissingDate = !flight.departure_date || flight.departure_date === 'N/A';
         if (isMissingDate) {
-          contentHTML += `<div class="date-warning-strip" id="date-warning-${flightIndex}"><span>⚠️ Date Required for Flight ${i + 1}</span><button class="date-btn" onclick="promptDateInput(${flightIndex})">Select</button></div>`;
+          contentHTML += `<div class="date-warning-strip" id="date-warning-${flightIndex}"><span>⚠️ Date Required for Flight ${i + 1}</span><button class="date-btn" onclick="promptDateInput(${flightIndex})">Select Date</button></div>`;
         }
 
         const label = `<div class="combined-label">Flight ${i + 1}</div>`;
@@ -9517,9 +10127,21 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       return `
         <div class="${cardClass}" data-fare-key="${key}" id="${uniqueId}">
           <div class="fare-card-header" style="display: flex; justify-content: space-between; align-items: center;">
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; width: 100%;">
               <input type="checkbox" id="chk-${uniqueId}" onchange="toggleInlineFareCard(this, '${key}', ${flightIndex}, '${suffix}')" ${checkedAttr}>
-              <label for="chk-${uniqueId}">${label}</label>
+              <select class="fare-type-selector" onchange="changeInlineFareCardType(this, '${key}', ${flightIndex}, '${suffix}')">
+                <option value="saver" ${key === 'saver' ? 'selected' : ''}>Saver Fare</option>
+                <option value="corporate" ${key === 'corporate' ? 'selected' : ''}>Corporate Fare</option>
+                <option value="sme" ${key === 'sme' ? 'selected' : ''}>SME Fare</option>
+                <option value="coupon" ${key === 'coupon' ? 'selected' : ''}>Coupon Fare</option>
+                <option value="flexi" ${key === 'flexi' ? 'selected' : ''}>Flexi Fare</option>
+                <option value="economy" ${key === 'economy' ? 'selected' : ''}>Economy</option>
+                <option value="premium_economy" ${key === 'premium_economy' ? 'selected' : ''}>Premium Economy</option>
+                <option value="business" ${key === 'business' ? 'selected' : ''}>Business Class</option>
+                <option value="first" ${key === 'first' ? 'selected' : ''}>First Class</option>
+                ${!['saver','corporate','sme','coupon','flexi','economy','premium_economy','business','first'].includes(key) ? `<option value="${key}" selected>${label}</option>` : ''}
+                <option value="custom">Custom...</option>
+              </select>
             </div>
             <button class="fare-delete-icon-btn" style="background:none; border:none; color:var(--text-secondary); cursor:pointer; font-size:1rem;" onclick="removeFareFromInline('${uniqueId}')" title="Remove This Fare Type">
               ✕
@@ -9607,6 +10229,80 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     function removeFareFromInline(uniqueId) {
       const card = document.getElementById(uniqueId);
       if (card) card.remove();
+    }
+
+    function changeInlineFareCardType(select, oldKey, flightIndex, suffix = '') {
+      let newKey = select.value;
+      let newLabel = select.options[select.selectedIndex].text;
+
+      if (newKey === 'custom') {
+        const customName = prompt("Enter Name for Custom Fare Type:");
+        if (!customName || customName.trim() === '') {
+          select.value = oldKey;
+          return;
+        }
+        newLabel = customName.trim();
+        newKey = newLabel.toLowerCase().replace(/\s+/g, '_');
+        select.options[select.selectedIndex].value = newKey;
+        select.options[select.selectedIndex].text = newLabel;
+      }
+
+      const oldUniqueId = `inline-fare-card-${oldKey}-${flightIndex}${suffix}`;
+      const newUniqueId = `inline-fare-card-${newKey}-${flightIndex}${suffix}`;
+
+      const card = document.getElementById(oldUniqueId);
+      if (!card) return;
+
+      if (document.getElementById(newUniqueId)) {
+        showNotification('This fare type is already in the list!', 'error');
+        select.value = oldKey;
+        return;
+      }
+
+      // Update Card
+      card.id = newUniqueId;
+      card.dataset.fareKey = newKey;
+
+      // Update Checkbox
+      const chk = document.getElementById(`chk-${oldUniqueId}`);
+      if (chk) {
+        chk.id = `chk-${newUniqueId}`;
+        chk.setAttribute('onchange', `toggleInlineFareCard(this, '${newKey}', ${flightIndex}, '${suffix}')`);
+      }
+      
+      // Update delete button
+      const delBtn = card.querySelector(`button[onclick="removeFareFromInline('${oldUniqueId}')"]`);
+      if (delBtn) {
+        delBtn.setAttribute('onclick', `removeFareFromInline('${newUniqueId}')`);
+      }
+
+      // Update Details section and toggle button
+      const details = document.getElementById(`inline-details-${oldUniqueId}`);
+      if (details) {
+        details.id = `inline-details-${newUniqueId}`;
+      }
+
+      const btn = card.querySelector(`button[onclick="toggleFareDetails('inline-details-${oldUniqueId}')"]`);
+      if (btn) {
+        btn.setAttribute('onclick', `toggleFareDetails('inline-details-${newUniqueId}')`);
+      }
+
+      const icon = document.getElementById(`fare-toggle-icon-inline-details-${oldUniqueId}`);
+      if (icon) {
+        icon.id = `fare-toggle-icon-inline-details-${newUniqueId}`;
+      }
+
+      // Update all input classes
+      const classMappings = ['inline-fare', 'inline-mu', 'inline-svc', 'inline-fare-cabin', 'inline-fare-checkin', 'inline-fare-pcs', 'inline-fare-seat', 'inline-fare-meal', 'inline-fare-cancellation', 'inline-fare-penalty'];
+      classMappings.forEach(prefix => {
+        const inputs = card.querySelectorAll(`.${prefix}-${oldUniqueId}`);
+        inputs.forEach(inp => {
+          inp.classList.remove(`${prefix}-${oldUniqueId}`);
+          inp.classList.add(`${prefix}-${newUniqueId}`);
+        });
+      });
+      
+      select.setAttribute('onchange', `changeInlineFareCardType(this, '${newKey}', ${flightIndex}, '${suffix}')`);
     }
 
     function toggleInlineFareCard(checkbox, fareType, flightIndex, suffix = '') {
@@ -9947,6 +10643,17 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       return ` (${Array.from(airlines).join(' & ')})`;
     }
 
+    function getCabinLabelForOutput(val) {
+      if (!val) return '';
+      const raw = val.toString().trim().toLowerCase();
+      if (!raw || raw === 'none' || raw === 'n/a') return '';
+      if (raw.includes('premium')) return 'Premium Economy';
+      if (raw.includes('business')) return 'Business Class';
+      if (raw.includes('first')) return 'First Class';
+      if (raw.includes('economy')) return 'Economy';
+      return '';
+    }
+
     function formatFlightOutput(flight, flightNumber) {
       const dateDisplay = !flight.departure_date || flight.departure_date === 'N/A' ? '[DATE TO BE CONFIRMED]' : flight.departure_date;
 
@@ -9966,7 +10673,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (hasSegments) {
         // Multi-segment flight with layovers
         flight.segments.forEach((seg, idx) => {
-          output += `*${seg.airline || flight.airline} ${seg.flight_number || ''}*\n`;
+          const rawCabin = seg.cabin_class || seg.class_of_travel || flight.cabin_class || flight.class_of_travel;
+          const cabinClass = getCabinLabelForOutput(rawCabin);
+          const classStr = cabinClass ? ` [${cabinClass}]` : '';
+          output += `*${seg.airline || flight.airline} ${seg.flight_number || ''}*${classStr}\n`;
           output += `*${seg.departure_airport}* ${seg.departure_time} → *${seg.arrival_airport}* ${seg.arrival_time}\n`;
           if (isFieldValid(seg.duration)) output += `Duration: *${seg.duration}*\n`;
 
@@ -9988,7 +10698,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         });
       } else {
         // Single segment flight or fallback
-        output += `*${flight.airline} ${flight.flight_number}*\n`;
+        const rawCabin = flight.cabin_class || flight.class_of_travel;
+        const cabinClass = getCabinLabelForOutput(rawCabin);
+        const classStr = cabinClass ? ` [${cabinClass}]` : '';
+        output += `*${flight.airline} ${flight.flight_number}*${classStr}\n`;
         output += `*${flight.departure_airport}* ${flight.departure_time} → *${flight.arrival_airport}* ${flight.arrival_time}\n`;
         if (isFieldValid(flight.duration)) output += `Duration: *${flight.duration}*\n`;
 
@@ -10060,7 +10773,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         // Multi-segment detailed layout
         flight.segments.forEach((seg, idx) => {
           // Segment Details
-          out += `*${seg.airline || flight.airline} ${seg.flight_number || ''}*\n`;
+          const rawCabin = seg.cabin_class || seg.class_of_travel || flight.cabin_class || flight.class_of_travel;
+          const cabinClass = getCabinLabelForOutput(rawCabin);
+          const classStr = cabinClass ? ` [${cabinClass}]` : '';
+          out += `*${seg.airline || flight.airline} ${seg.flight_number || ''}*${classStr}\n`;
           out += `*${seg.departure_airport}* ${seg.departure_time} → *${seg.arrival_airport}* ${seg.arrival_time}\n`;
           if (isFieldValid(seg.duration)) out += `Duration: *${seg.duration}*\n`;
 
@@ -10077,7 +10793,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         });
 
       } else {
-        out += `*${flight.airline} ${flight.flight_number}*\n`;
+        const rawCabin = flight.cabin_class || flight.class_of_travel;
+        const cabinClass = getCabinLabelForOutput(rawCabin);
+        const classStr = cabinClass ? ` [${cabinClass}]` : '';
+        out += `*${flight.airline} ${flight.flight_number}*${classStr}\n`;
         out += `*${flight.departure_airport}* ${flight.departure_time} → *${flight.arrival_airport}* ${flight.arrival_time}\n`;
         if (isFieldValid(flight.duration)) out += `Duration: *${flight.duration}*\n`;
 
@@ -10178,14 +10897,37 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (modal) modal.remove();
     }
 
-    function regenerateOutputText() {
+    function regenerateOutputText(onlyUpdatePassengers = false) {
       if (!currentFlights || currentFlights.length === 0) {
         console.log('No current flights available');
         return;
       }
 
-      let output = '';
+      if (onlyUpdatePassengers && currentFinalText) {
+        let cleanText = currentFinalText.trim();
+        cleanText = cleanText.replace(/^Kindly check the below options and confirm to issue\n*/i, '');
+        cleanText = cleanText.replace(/^\*Passengers:\*[^\n]*\n*/i, '').trim();
+        
+        let newHeader = 'Kindly check the below options and confirm to issue\n\n';
+        if (savePassengers && savePassengers.length > 0) {
+          const names = savePassengers.map(p => p.first_name + ' ' + (p.last_name || '')).join(', ');
+          newHeader += `*Passengers:* ${names}\n\n`;
+        }
+        currentFinalText = newHeader + cleanText;
+        const outputElement = document.getElementById("output");
+        if (outputElement) {
+          outputElement.textContent = currentFinalText;
+        }
+        return;
+      }
+
+      let output = 'Kindly check the below options and confirm to issue\n\n';
       // Header removed for consistency
+
+      if (savePassengers && savePassengers.length > 0) {
+        const names = savePassengers.map(p => p.first_name + ' ' + (p.last_name || '')).join(', ');
+        output += `*Passengers:* ${names}\n\n`;
+      }
 
       if (currentTripType === 'round_trip') {
         let flightIdx = 0;
@@ -10380,9 +11122,30 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
         showNotification(`Date set to ${formattedDate}`, 'success');
 
-        // Check if there are other flights without dates
+        // Helper to check if two flights are on the same leg
+        const getIndexInUnit = (idx) => {
+            if (!currentFlights[idx]) return 0;
+            const unitId = currentFlights[idx].unit_id || currentFlights[idx].unitId || '1';
+            let indexInUnit = 0;
+            for (let i = 0; i < idx; i++) {
+                if ((currentFlights[i].unit_id || currentFlights[i].unitId || '1') === unitId) {
+                    indexInUnit++;
+                }
+            }
+            return indexInUnit;
+        };
+
+        const shouldApplySameDate = (idxA, idxB) => {
+            const tripType = document.getElementById('tripType') ? document.getElementById('tripType').value : 'one_way';
+            if (tripType === 'one_way') return true;
+            return getIndexInUnit(idxA) === getIndexInUnit(idxB);
+        };
+
+        // Check if there are other flights without dates on the same leg
         const flightsWithoutDate = currentFlights.filter((f, idx) =>
-          idx !== flightIndex && (!f.departure_date || f.departure_date === 'N/A')
+          idx !== flightIndex && 
+          (!f.departure_date || f.departure_date === 'N/A') &&
+          shouldApplySameDate(idx, flightIndex)
         );
 
         if (flightsWithoutDate.length > 0) {
@@ -10404,9 +11167,32 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
     }
 
     function showApplyDatePrompt(formattedDate, excludeIndex, rawDate) {
+      const editedFlight = currentFlights[excludeIndex];
+      const getIndexInUnit = (idx) => {
+          if (!currentFlights[idx]) return 0;
+          const unitId = currentFlights[idx].unit_id || currentFlights[idx].unitId || '1';
+          let indexInUnit = 0;
+          for (let i = 0; i < idx; i++) {
+              if ((currentFlights[i].unit_id || currentFlights[i].unitId || '1') === unitId) {
+                  indexInUnit++;
+              }
+          }
+          return indexInUnit;
+      };
+
+      const shouldApplySameDate = (idxA, idxB) => {
+          const tripType = document.getElementById('tripType') ? document.getElementById('tripType').value : 'one_way';
+          if (tripType === 'one_way') return true;
+          return getIndexInUnit(idxA) === getIndexInUnit(idxB);
+      };
+
       const flightsWithoutDate = currentFlights
         .map((f, idx) => ({ flight: f, index: idx }))
-        .filter(item => item.index !== excludeIndex && (!item.flight.departure_date || item.flight.departure_date === 'N/A'));
+        .filter(item => 
+            item.index !== excludeIndex && 
+            (!item.flight.departure_date || item.flight.departure_date === 'N/A') &&
+            shouldApplySameDate(item.index, excludeIndex)
+        );
 
       if (flightsWithoutDate.length === 0) return;
 
@@ -10416,7 +11202,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           <div style="background: var(--bg-card); padding: 2rem; border-radius: 0.8rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 450px; width: 90%;">
             <h3 style="margin: 0 0 1rem 0; color: var(--primary);">📅 Apply Date to Other Flights?</h3>
             <p style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.95rem;">
-              You have <strong>${count} other flight${count > 1 ? 's' : ''}</strong> without a date set.<br><br>
+              You have <strong>${count} other flight${count > 1 ? 's' : ''}</strong> on this same leg without a date set.<br><br>
               Would you like to apply <strong>${formattedDate}</strong> to ${count > 1 ? 'all of them' : 'it'}?
             </p>
             
@@ -10438,9 +11224,27 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
 
     async function applyDateToAllFlights(formattedDate, excludeIndex) {
       let updatedIndices = [];
+      const editedFlight = currentFlights[excludeIndex];
+      const getIndexInUnit = (idx) => {
+          if (!currentFlights[idx]) return 0;
+          const unitId = currentFlights[idx].unit_id || currentFlights[idx].unitId || '1';
+          let indexInUnit = 0;
+          for (let i = 0; i < idx; i++) {
+              if ((currentFlights[i].unit_id || currentFlights[i].unitId || '1') === unitId) {
+                  indexInUnit++;
+              }
+          }
+          return indexInUnit;
+      };
+
+      const shouldApplySameDate = (idxA, idxB) => {
+          const tripType = document.getElementById('tripType') ? document.getElementById('tripType').value : 'one_way';
+          if (tripType === 'one_way') return true;
+          return getIndexInUnit(idxA) === getIndexInUnit(idxB);
+      };
 
       currentFlights.forEach((flight, idx) => {
-        if (idx !== excludeIndex && (!flight.departure_date || flight.departure_date === 'N/A')) {
+        if (idx !== excludeIndex && (!flight.departure_date || flight.departure_date === 'N/A') && shouldApplySameDate(idx, excludeIndex)) {
           flight.departure_date = formattedDate;
           updatedIndices.push(idx);
 
@@ -10519,6 +11323,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         navigator.clipboard.writeText(output).then(() => {
           showNotification('Copied to clipboard!', 'success');
           animateButton(btn, 'Copied');
+          setTimeout(() => submitItinerary(true), 0); // Fire-and-forget autosave
         }).catch((err) => {
           console.error('Clipboard API failed', err);
           fallbackCopy(output, btn);
@@ -10543,7 +11348,10 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         const successful = document.execCommand('copy');
         if (successful) {
           showNotification('Copied to clipboard!', 'success');
-          if (btn) animateButton(btn, 'Copied');
+          if (btn) {
+            animateButton(btn, 'Copied');
+            setTimeout(() => submitItinerary(true), 0); // Fire-and-forget autosave
+          }
         } else {
           showNotification('Failed to copy. Please select and copy manually.', 'error');
         }
@@ -10604,7 +11412,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         .replace(/<img class="timeline-plane-icon"[^>]*>/g, timelinePlanePng)
         .replace(/<div class="info-icon">[^<]*<\/div>/g, (match) => {
           if (match.includes('âœˆ') || match.includes('✈') || match.includes('?')) return `<div class="info-icon">${expandedPlanePng}</div>`;
-          if (match.includes('â±') || match.includes('⏱') || match.includes('?')) return `<div class="info-icon">${watchPng}</div>`;
+          if (match.includes('â ±') || match.includes('⏱') || match.includes('?')) return `<div class="info-icon">${watchPng}</div>`;
           return match;
         })
         .replace(/<img src="\/static\/travel\.png" alt="Airport">/g, layoverPng)
@@ -11003,6 +11811,7 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
           blob = await generateImageBlob('current');
         }
         await writeImageBlobToClipboard(blob);
+        setTimeout(() => submitItinerary(true), 0); // Fire-and-forget autosave
         setCopyCardsButtonState('success');
         showNotification('Cards image copied to clipboard!', 'success', { id: 'copy-cards-status', duration: 4000 });
       } catch (error) {
@@ -12037,6 +12846,188 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (isRenderPreviewMode()) return;
       // Set initial state for billing type
       handleBillTypeChange();
+    });
+  </script>
+  <!-- Passenger Selection Modal -->
+  <div id="passengerModal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
+    <div style="background: var(--bg-card); padding: 24px; border-radius: 12px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="margin: 0; color: var(--text-primary);">Link Passengers</h3>
+            <button id="closePassengerModalBtn" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-secondary);">&times;</button>
+        </div>
+        <div id="billingDetailsContainer"></div>
+        <div id="passengerListContainer" style="margin-bottom: 20px;"></div>
+        <div style="display: flex; justify-content: flex-end;">
+            <button id="savePassengerSelectionBtn" class="btn btn-primary">Save Selection</button>
+        </div>
+    </div>
+  </div>
+
+  <!-- Recent Queries Modal/Drawer -->
+  <div id="recentQueriesModal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9998; justify-content: flex-end;">
+    <div style="background: var(--bg-main); width: 100%; max-width: 400px; height: 100vh; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; animation: slideInRight 0.3s ease;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0; color: var(--text-primary);">Recent Queries</h3>
+            <button id="closeRecentQueriesBtn" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-secondary);">&times;</button>
+        </div>
+        <div id="recentQueriesContainer" style="flex-grow: 1;"></div>
+    </div>
+  </div>
+
+  <!-- Quick Add Billing Modal -->
+  <div id="quickAddBillingModal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
+    <div style="background: var(--bg-card); padding: 24px; border-radius: 12px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto; position: relative;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="margin: 0; color: var(--text-primary);">Create New Billing Account</h3>
+            <button onclick="closeQuickAddBillingModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-secondary);">&times;</button>
+        </div>
+        <div class="grid-row" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
+          <div>
+            <label class="form-label">Type</label>
+            <select id="quickBillType" class="form-select" onchange="document.getElementById('quickCorporateFields').style.display = this.value === 'corporate' ? 'block' : 'none'">
+              <option value="individual" selected>Individual</option>
+              <option value="corporate">Corporate</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Display Name *</label>
+            <input id="quickBillDisplay" class="form-input" placeholder="e.g. Acme Corp or John Doe">
+          </div>
+        </div>
+
+        <div id="quickCorporateFields" style="display:none;">
+          <div class="grid-row" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">
+            <div><label class="form-label">Company Name</label><input id="quickBillCompany" class="form-input"></div>
+            <div><label class="form-label">Contact Name</label><input id="quickBillContact" class="form-input"></div>
+          </div>
+          <div style="margin-top:10px;">
+            <label class="form-label">GST Number</label>
+            <input id="quickBillGst" class="form-input">
+          </div>
+        </div>
+
+        <div class="grid-row" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">
+          <div><label class="form-label">Email</label><input id="quickBillEmail" class="form-input"></div>
+          <div><label class="form-label">Phone</label><input id="quickBillPhone" class="form-input"></div>
+        </div>
+
+        <div style="margin-top:10px;">
+          <label class="form-label">Address</label>
+          <textarea id="quickBillAddress" class="form-textarea" rows="2"></textarea>
+        </div>
+
+        <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
+          <button type="button" class="btn btn-secondary" onclick="closeQuickAddBillingModal()">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="submitQuickAddBilling()">Create Account</button>
+        </div>
+    </div>
+  </div>
+  
+  <script>
+    function openQuickAddBillingModal(name) {
+        const modal = document.getElementById('quickAddBillingModal');
+        modal.style.display = 'flex';
+        // Force reflow for transition
+        void modal.offsetWidth;
+        modal.classList.add('active');
+        
+        document.getElementById('quickBillDisplay').value = name || '';
+        document.getElementById('quickBillCompany').value = '';
+        document.getElementById('quickBillContact').value = '';
+        document.getElementById('quickBillGst').value = '';
+        document.getElementById('quickBillEmail').value = '';
+        document.getElementById('quickBillPhone').value = '';
+        document.getElementById('quickBillAddress').value = '';
+        document.getElementById('quickBillType').value = 'individual';
+        document.getElementById('quickCorporateFields').style.display = 'none';
+        
+        // Hide the dropdown in the background
+        if (window.BillingModule) window.BillingModule.hideDropdown();
+        
+        if (name) {
+           setTimeout(() => document.getElementById('quickBillCompany').focus(), 150);
+        } else {
+           setTimeout(() => document.getElementById('quickBillDisplay').focus(), 150);
+        }
+    }
+    
+    function closeQuickAddBillingModal() {
+        const modal = document.getElementById('quickAddBillingModal');
+        modal.classList.remove('active');
+        setTimeout(() => { modal.style.display = 'none'; }, 200);
+    }
+    
+    async function submitQuickAddBilling() {
+      const type = document.getElementById('quickBillType').value;
+      const display = document.getElementById('quickBillDisplay').value.trim();
+
+      if (!display) {
+        showNotification('Display Name is required', 'error');
+        return;
+      }
+
+      const payload = {
+        account_type: type,
+        display_name: display,
+        company_name: document.getElementById('quickBillCompany').value,
+        contact_name: document.getElementById('quickBillContact').value,
+        email: document.getElementById('quickBillEmail').value,
+        phone: document.getElementById('quickBillPhone').value,
+        gst_number: document.getElementById('quickBillGst').value,
+        address: document.getElementById('quickBillAddress').value
+      };
+
+      try {
+        const response = await fetch('/api/v2/billing-accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          closeQuickAddBillingModal();
+          showNotification('Billing Account created!', 'success');
+          
+          if (window.BillingModule) {
+              await window.BillingModule.fetchBillingAccounts(); // Refresh the list
+              await window.BillingModule.selectAccount(result.billing_account); // Automatically select it
+          }
+          if (typeof isBillingAccountsLoaded !== 'undefined') isBillingAccountsLoaded = false;
+        } else {
+          const err = await response.json();
+          showNotification(err.error || 'Failed to create account', 'error');
+        }
+      } catch (e) {
+        console.error(e);
+        showNotification('Error creating account', 'error');
+      }
+    }
+  </script>
+
+  <!-- Query Detail Modal -->
+  <div id="queryDetailModal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
+    <div style="background: var(--bg-card); padding: 24px; border-radius: 12px; width: 90%; max-width: 600px; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+            <div id="queryDetailContent" style="flex-grow: 1; color: var(--text-primary);"></div>
+            <button id="closeQueryDetailBtn" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-secondary); margin-left: 16px;">&times;</button>
+        </div>
+    </div>
+  </div>
+  
+  <style>
+    @keyframes slideInRight {
+        from { transform: translateX(100%); }
+        to { transform: translateX(0); }
+    }
+  </style>
+
+  <script src="/static/js/query/billingModule.js?v=2"></script>
+  <script src="/static/js/query/recentQueriesModule.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        if (window.BillingModule) window.BillingModule.init();
+        if (window.RecentQueriesModule) window.RecentQueriesModule.init();
     });
   </script>
 </body>

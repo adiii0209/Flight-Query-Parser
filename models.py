@@ -7,6 +7,8 @@ from sqlalchemy.types import JSON, Text, TypeDecorator
 from werkzeug.security import generate_password_hash, check_password_hash
 from extensions import db
 
+# Multi-tenant RBAC models are in models_rbac.py
+
 # ==================== MODELS ====================
 
 
@@ -78,6 +80,7 @@ class Customer(db.Model):
     gst_number = db.Column(db.String(50))  # For corporate customers
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
+    organization_id = db.Column(db.String, db.ForeignKey('organizations.id'), nullable=True, index=True)
     itineraries = db.relationship('Itinerary', backref='customer', lazy=True)
 
 class Itinerary(db.Model):
@@ -90,6 +93,7 @@ class Itinerary(db.Model):
     final_text = db.Column(db.Text)
     flights_data = db.Column(CompatJSON(empty_factory=list))
     user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
+    organization_id = db.Column(db.String, db.ForeignKey('organizations.id'), nullable=True, index=True)
     customer_id = db.Column(db.String, db.ForeignKey('customer.id'))
     billing_type = db.Column(db.String(20))  # 'passenger' or 'corporate'
     
@@ -127,6 +131,7 @@ class Ticket(db.Model):
     matched_itinerary = db.relationship('Itinerary', backref='tickets', lazy=True)
     # Owner
     user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
+    organization_id = db.Column(db.String, db.ForeignKey('organizations.id'), nullable=True, index=True)
     # Parser metadata
     parser_version = db.Column(db.String(30))
     # ===== Cancellation & Split Fields =====
@@ -161,6 +166,7 @@ class Aggregator(db.Model):
     name = db.Column(db.String(120), nullable=False)  # e.g. Indigo, Riya, TBO, Amadeus
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
+    organization_id = db.Column(db.String, db.ForeignKey('organizations.id'), nullable=True, index=True)
     entries = db.relationship('LedgerEntry', backref='aggregator', lazy=True, cascade='all, delete-orphan',
                               order_by='LedgerEntry.row_order')
 
@@ -170,6 +176,7 @@ class BookingGroup(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
+    organization_id = db.Column(db.String, db.ForeignKey('organizations.id'), nullable=True, index=True)
     pnr = db.Column(db.String(20), nullable=False)
     status = db.Column(db.String(20), default='merged')
     itinerary_data = db.Column(db.Text)
@@ -180,6 +187,7 @@ class LedgerEntry(db.Model):
     id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
     aggregator_id = db.Column(db.String, db.ForeignKey('aggregator.id'), nullable=False)
     user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
+    organization_id = db.Column(db.String, db.ForeignKey('organizations.id'), nullable=True, index=True)
     row_order = db.Column(db.Integer, default=0)  # for ordering
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -211,6 +219,7 @@ class TicketOperation(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     user_id = db.Column(db.String, db.ForeignKey('user.id'), nullable=False)
+    organization_id = db.Column(db.String, db.ForeignKey('organizations.id'), nullable=True, index=True)
     ticket_id = db.Column(db.String, db.ForeignKey('ticket.id'), nullable=True)
     root_ticket_id = db.Column(db.String, db.ForeignKey('ticket.id'), nullable=False)
     action_type = db.Column(db.String(20), nullable=False)  # cancel, change
@@ -251,6 +260,7 @@ class OwnershipTrip(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     user_id = db.Column(db.String, db.ForeignKey("user.id"), nullable=True)
+    organization_id = db.Column(db.String, db.ForeignKey('organizations.id'), nullable=True, index=True)
     source_row = db.Column(db.Integer, nullable=True)
     source = db.Column(db.String(80), default="ownership_sheet")
 
@@ -414,6 +424,7 @@ class OwnershipTaskTemplate(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     user_id = db.Column(db.String, db.ForeignKey("user.id"), nullable=True)
+    organization_id = db.Column(db.String, db.ForeignKey('organizations.id'), nullable=True, index=True)
     name = db.Column(db.String(160), nullable=False)
     task_group = db.Column(db.String(40), default="")
     reminder_days = db.Column(db.Integer, nullable=True)
@@ -466,6 +477,9 @@ class OwnershipEmployee(db.Model):
     color = db.Column(db.String(20), default="")
     domain = db.Column(db.String(50), default="")
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    organization_id = db.Column(db.String(36), db.ForeignKey('organizations.id'), nullable=True, index=True)
+    email = db.Column(db.String(120), nullable=True)
+    user_id = db.Column(db.String(36), db.ForeignKey('user.id'), nullable=True, index=True)
     subtasks_json = db.Column(CompatJSON(empty_factory=dict))
     custom_labels_json = db.Column(CompatJSON(empty_factory=list))
 
@@ -473,6 +487,8 @@ class OwnershipEmployee(db.Model):
         return {
             "id": self.id,
             "name": self.name,
+            "email": self.email or "",
+            "user_id": self.user_id or "",
             "color": self.color or "",
             "domain": self.domain or "",
             "isActive": bool(self.is_active),
@@ -559,6 +575,7 @@ class HotelBooking(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user_id = db.Column(db.String, db.ForeignKey("user.id"), nullable=False)
+    organization_id = db.Column(db.String, db.ForeignKey('organizations.id'), nullable=True, index=True)
 
     # Booking identifiers
     booking_id = db.Column(db.String(50), nullable=True)

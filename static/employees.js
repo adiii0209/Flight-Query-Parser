@@ -14,6 +14,22 @@ let selectedGenericLabel = null;
 let showCustomLabelInput = false;
 let employeeWorkspaceBooting = false;
 let employeeWorkspaceReady = false;
+let employees = [];
+let trips = [];
+
+async function apiJson(url, options = {}) {
+  options.headers = options.headers || {};
+  options.headers['Content-Type'] = 'application/json';
+  const res = await fetch(url, options);
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = text;
+    try { msg = JSON.parse(text).error || text; } catch(e){}
+    throw new Error(msg || res.statusText);
+  }
+  return res.json();
+}
+
 const EMPLOYEE_TRIPS_CACHE_KEY = 'ownership_trips_cache_v1';
 const EMPLOYEE_EMPLOYEES_CACHE_KEY = 'employee_workspace_employees_cache_v1';
 const EMPLOYEE_ACTIVE_ID_CACHE_KEY = 'employee_workspace_active_employee_id_v1';
@@ -944,13 +960,28 @@ function activateEmployeeById(employeeId, { replaceRoute = false, animate = fals
   return true;
 }
 
-function initEmployeeWorkspace() {
-  const hasEmployeeData = Array.isArray(employees) && employees.length > 0;
+async function initEmployeeWorkspace() {
+  let hasEmployeeData = Array.isArray(employees) && employees.length > 0;
   if (!hasEmployeeData) {
     employeeWorkspaceBooting = true;
     employeeWorkspaceReady = false;
     setEmployeeWorkspaceLoading(true);
-    return false;
+    
+    try {
+      const [empRes, tripsRes] = await Promise.all([
+        apiJson('/api/ownership/employees').catch(() => ({ employees: [] })),
+        apiJson('/api/ownership/trips').catch(() => ({ trips: [] }))
+      ]);
+      employees = empRes?.employees || [];
+      trips = tripsRes?.trips || [];
+      cacheEmployeeWorkspaceState();
+    } catch (e) {
+      console.error('Failed to fetch employee workspace data:', e);
+    }
+    
+    employeeWorkspaceBooting = false;
+    employeeWorkspaceReady = true;
+    setEmployeeWorkspaceLoading(false);
   }
   return resolveEmployeeWorkspaceRoute({ replace: true });
 }
@@ -1009,49 +1040,64 @@ function renderPicker() {
   let html = '';
   
   // Existing Employees
-  employees.forEach((emp, i) => {
-    const delay = i * 0.03 + 0.05;
-    html += `
-      <div class="emp-card" style="animation-delay: ${delay}s" onclick="selectEmployee('${emp.id}', this)">
-        <div class="emp-avatar" style="background: ${emp.name.trim().toLowerCase() === 'c k' ? '#2563eb' : (emp.color || employeeColor(emp.name))}">
-          ${emp.name.charAt(0).toUpperCase()}
-          <div class="emp-edit-badge" onclick="event.stopPropagation(); openEditEmployeeModal('${emp.id}')">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+  try {
+    employees.forEach((emp, i) => {
+      const delay = i * 0.03 + 0.05;
+      const safeName = String(emp.name || '?');
+      const firstChar = safeName.charAt(0).toUpperCase();
+      const safeColor = emp.color || employeeColor(safeName);
+      const isCK = safeName.trim().toLowerCase() === 'c k';
+      
+      html += `
+        <div class="emp-card ${isEditMode ? 'edit-mode' : ''}" style="animation-delay: ${delay}s" onclick="selectEmployee('${emp.id}', this)">
+          <div class="emp-avatar" style="background: ${isCK ? '#2563eb' : safeColor}">
+            ${firstChar}
+            <div class="emp-edit-badge" onclick="event.stopPropagation(); openEditEmployeeModal('${emp.id}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            </div>
+            <div class="emp-delete-badge" onclick="event.stopPropagation(); deleteEmployee('${emp.id}')">✕</div>
           </div>
-          <div class="emp-delete-badge" onclick="event.stopPropagation(); deleteEmployee('${emp.id}')">✕</div>
+          <div class="emp-name">${escHtml(safeName)}</div>
         </div>
-        <div class="emp-name">${escHtml(emp.name)}</div>
-      </div>
-    `;
-  });
+      `;
+    });
+  } catch (err) {
+    console.error("Crash rendering employees:", err);
+  }
   
   // Add Profile Card
-  html += `
-    <div class="emp-card" style="animation-delay: ${(employees.length * 0.03) + 0.05}s">
-      <div class="emp-avatar emp-add-btn" id="empAddBtnClick">
-        +
+  const hasManageRights = document.getElementById('empManageBtn') !== null;
+  if (hasManageRights) {
+    html += `
+      <div class="emp-card ${isEditMode ? 'edit-mode' : ''}" style="animation-delay: ${(employees.length * 0.03) + 0.05}s">
+        <div class="emp-avatar emp-add-btn" id="empAddBtnClick">
+          +
+        </div>
+        <div class="emp-name" id="empAddNameArea">Add Profile</div>
       </div>
-      <div class="emp-name" id="empAddNameArea">Add Profile</div>
-    </div>
-  `;
+    `;
+  }
   
   grid.innerHTML = html;
   
   // Add Event Listener for Add Profile
-  document.getElementById('empAddBtnClick').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const area = document.getElementById('empAddNameArea');
-    area.innerHTML = `
-      <div class="emp-add-input-wrapper" onclick="event.stopPropagation()">
-        <input type="text" class="emp-add-input" id="empNewNameInput" placeholder="Name" autofocus>
-        <button class="crm-btn crm-btn-primary" style="padding:0.3rem 0.6rem;" onclick="addEmployee()">✓</button>
-      </div>
-    `;
-    document.getElementById('empNewNameInput').focus();
-    document.getElementById('empNewNameInput').addEventListener('keydown', ev => {
-      if (ev.key === 'Enter') addEmployee();
+  const addBtn = document.getElementById('empAddBtnClick');
+  if (addBtn) {
+    addBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const area = document.getElementById('empAddNameArea');
+      area.innerHTML = `
+        <div class="emp-add-input-wrapper" onclick="event.stopPropagation()">
+          <input type="text" class="emp-add-input" id="empNewNameInput" placeholder="Name" autofocus>
+          <button class="crm-btn crm-btn-primary" style="padding:0.3rem 0.6rem;" onclick="addEmployee()">✓</button>
+        </div>
+      `;
+      document.getElementById('empNewNameInput').focus();
+      document.getElementById('empNewNameInput').addEventListener('keydown', ev => {
+        if (ev.key === 'Enter') addEmployee();
+      });
     });
-  });
+  }
 }
 
 let isEditMode = false;
@@ -1097,57 +1143,76 @@ async function deleteEmployee(id) {
     toast('Failed to remove profile', '⚠️');
   }
 }
-
 window.openEditEmployeeModal = function(id) {
   const emp = employees.find(e => e.id === id);
   if (!emp) return;
 
   let modal = document.getElementById('ewEditEmployeeModal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.className = 'crm-modal-overlay';
-    modal.id = 'ewEditEmployeeModal';
-    modal.style.zIndex = '10000';
-    modal.innerHTML = `
-      <div class="crm-modal" role="dialog" aria-modal="true" style="max-width:400px;">
-        <div class="crm-modal-header">
-          <div><div class="crm-modal-title">Edit Profile</div></div>
-          <button class="crm-modal-close" onclick="document.getElementById('ewEditEmployeeModal').classList.remove('open')">✕</button>
+  if (modal) modal.remove();
+  
+  modal = document.createElement('div');
+  modal.className = 'crm-modal-overlay';
+  modal.id = 'ewEditEmployeeModal';
+  modal.style.zIndex = '10000';
+  modal.innerHTML = `
+    <div class="crm-modal" role="dialog" aria-modal="true" style="max-width:400px;">
+      <div class="crm-modal-header">
+        <div><div class="crm-modal-title">Edit Profile</div></div>
+        <button class="crm-modal-close" onclick="document.getElementById('ewEditEmployeeModal').classList.remove('open')">✕</button>
+      </div>
+      <div class="crm-modal-body" style="display:flex; flex-direction:column; gap:1rem;">
+        <div class="crm-form-group">
+          <label class="crm-form-label">Name</label>
+          <input type="text" class="crm-form-input" id="ewEditEmpName">
         </div>
-        <div class="crm-modal-body" style="display:flex; flex-direction:column; gap:1rem;">
-          <div class="crm-form-group">
-            <label class="crm-form-label">Name</label>
-            <input type="text" class="crm-form-input" id="ewEditEmpName">
-          </div>
-          <div class="crm-form-group">
-            <label class="crm-form-label">Color Hex</label>
-            <div style="display:flex; gap:0.5rem; align-items:center;">
-              <input type="color" id="ewEditEmpColorPicker" style="width: 36px; height: 36px; padding: 0; border: none; cursor: pointer; border-radius: var(--crm-radius);">
-              <input type="text" class="crm-form-input" id="ewEditEmpColor" placeholder="#000000" style="flex:1;">
-            </div>
-          </div>
-          <div class="crm-form-group">
-            <label class="crm-form-label">Domain</label>
-            <select class="crm-form-select" id="ewEditEmpDomain">
-              <option value="">None</option>
-              <option value="Travel">Travel</option>
-              <option value="Accounts">Accounts</option>
-              <option value="Tech">Tech</option>
-              <option value="Sales & Marketing">Sales & Marketing</option>
-              <option value="HR">HR</option>
-            </select>
+        <div class="crm-form-group">
+          <label class="crm-form-label">Email ID <span id="ewEmailLockedStatus" style="font-size: 0.75rem; color: #888; font-weight: normal;"></span></label>
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <input type="email" class="crm-form-input" id="ewEditEmpEmail" placeholder="employee@agency.com" style="flex:1;">
+            <button class="crm-btn crm-btn-secondary" id="ewSendInviteBtn" style="white-space:nowrap; font-size: 0.8rem; padding: 0.4rem 0.8rem;">Send Invite</button>
           </div>
         </div>
-        <div class="crm-modal-footer">
-          <button class="crm-btn crm-btn-ghost" onclick="document.getElementById('ewEditEmployeeModal').classList.remove('open')">Cancel</button>
-          <button class="crm-btn crm-btn-primary" id="ewEditEmpSaveBtn">Save</button>
+        <div class="crm-form-group">
+          <label class="crm-form-label">Color Hex</label>
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <input type="color" id="ewEditEmpColorPicker" style="width: 36px; height: 36px; padding: 0; border: none; cursor: pointer; border-radius: var(--crm-radius);">
+            <input type="text" class="crm-form-input" id="ewEditEmpColor" placeholder="#000000" style="flex:1;">
+          </div>
+        </div>
+        <div class="crm-form-group">
+          <label class="crm-form-label">Domain</label>
+          <select class="crm-form-select" id="ewEditEmpDomain">
+            <option value="">None</option>
+            <option value="Travel">Travel</option>
+            <option value="Accounts">Accounts</option>
+            <option value="Tech">Tech</option>
+            <option value="Sales & Marketing">Sales & Marketing</option>
+            <option value="HR">HR</option>
+          </select>
         </div>
       </div>
-    `;
-    document.body.appendChild(modal);
-  }
+      <div class="crm-modal-footer">
+        <button class="crm-btn crm-btn-ghost" onclick="document.getElementById('ewEditEmployeeModal').classList.remove('open')">Cancel</button>
+        <button class="crm-btn crm-btn-primary" id="ewEditEmpSaveBtn">Save</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
 
   document.getElementById('ewEditEmpName').value = emp.name;
+  document.getElementById('ewEditEmpEmail').value = emp.email || '';
+  
+  const emailInput = document.getElementById('ewEditEmpEmail');
+  const inviteBtn = document.getElementById('ewSendInviteBtn');
+  const lockedStatus = document.getElementById('ewEmailLockedStatus');
+  
+  if (emp.user_id) {
+    emailInput.readOnly = true;
+    emailInput.style.opacity = '0.7';
+    emailInput.title = 'Account claimed. Email is locked.';
+    lockedStatus.textContent = '(Claimed)';
+    inviteBtn.style.display = 'none';
+  }
   
   const colorPicker = document.getElementById('ewEditEmpColorPicker');
   const colorInput = document.getElementById('ewEditEmpColor');
@@ -1167,9 +1232,26 @@ window.openEditEmployeeModal = function(id) {
 
   document.getElementById('ewEditEmpDomain').value = emp.domain || '';
   
+  inviteBtn.onclick = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const res = await apiJson('/api/invitations', {
+        method: 'POST',
+        body: JSON.stringify({ employee_id: emp.id })
+      });
+      if (res.invite_link) {
+        prompt('Invite generated! Send this secure link to the employee so they can register:', res.invite_link);
+      }
+    } catch(e) {
+      toast(e.error || 'Failed to send invite', '⚠️');
+    }
+  };
+
   const saveBtn = document.getElementById('ewEditEmpSaveBtn');
   saveBtn.onclick = async () => {
     const newName = document.getElementById('ewEditEmpName').value.trim();
+    const newEmail = document.getElementById('ewEditEmpEmail').value.trim();
     const newColor = document.getElementById('ewEditEmpColor').value.trim();
     const newDomain = document.getElementById('ewEditEmpDomain').value;
     if (!newName) return toast('Name required', '⚠️');
@@ -1177,28 +1259,29 @@ window.openEditEmployeeModal = function(id) {
     try {
       const res = await apiJson('/api/ownership/employees/' + emp.id, {
         method: 'PATCH',
-        body: JSON.stringify({ name: newName, color: newColor, domain: newDomain })
+        body: JSON.stringify({ name: newName, email: newEmail, color: newColor, domain: newDomain })
       });
       if (res.employee) {
         Object.assign(emp, res.employee);
         renderPicker();
         if (activeEmployee && isSameEmployeeId(activeEmployee.id, emp.id)) {
-          activeEmployee = emp; // update active reference if needed
+          Object.assign(activeEmployee, res.employee);
+          syncWorkspaceTopStrip();
         }
-        modal.classList.remove('open');
-        isEditMode = false;
-        document.querySelectorAll('.emp-card').forEach(c => c.classList.remove('edit-mode'));
-        const manageBtn = document.getElementById('empManageBtn');
-        if (manageBtn) manageBtn.textContent = 'Manage Profiles';
-        toast('Profile updated');
       }
-    } catch (e) {
+      modal.classList.remove('open');
+      toast('Profile updated');
+    } catch(e) {
       toast('Failed to update profile', '⚠️');
     }
   };
 
+  // Trigger reflow
+  modal.offsetHeight;
   modal.classList.add('open');
-};
+}
+
+// END OF REPLACEMENT
 
 window.selectEmployee = function(id, el) {
   if (isEditMode) return;
@@ -2756,4 +2839,14 @@ function _handleGenericSubtaskUpdate(subtaskId, updaterFn) {
     }).catch(() => {});
   }
   return found;
+}
+
+function escHtml(unsafe) {
+  if (!unsafe) return '';
+  return String(unsafe)
+       .replace(/&/g, "&amp;")
+       .replace(/</g, "&lt;")
+       .replace(/>/g, "&gt;")
+       .replace(/"/g, "&quot;")
+       .replace(/'/g, "&#039;");
 }

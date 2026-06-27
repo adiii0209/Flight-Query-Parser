@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workspace Settings | Flight Manager</title>
+    <link rel="icon" type="image/png" href="/static/ticket-flight.png">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/dashboard.css">
+    <link rel="stylesheet" href="/static/sidebar.css">
+    <link rel="stylesheet" href="/static/settings.css">
+    <style>
+        /* Specific overrides for workspace settings table */
+        .members-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        .members-table th {
+            text-align: left;
+            padding: 1rem;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+            font-weight: 500;
+        }
+        .members-table td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+        .member-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .member-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--primary);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+        .member-details div {
+            font-weight: 500;
+        }
+        .member-details span {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        .role-select {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.5rem;
+            border-radius: 4px;
+            outline: none;
+            font-size: 0.85rem;
+        }
+        .role-select:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .btn-sm {
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    {% include 'components/sidebar.html' %}
+
+    <header class="app-header">
+        <div class="header-content">
+            <button class="menu-toggle" id="menuToggle" aria-label="Open menu">
+                <div class="menu-bar"></div>
+                <div class="menu-bar"></div>
+                <div class="menu-bar"></div>
+            </button>
+
+            <div class="header-brand">
+                <div class="brand-name">Time <span>Tours</span></div>
+                <div class="brand-sub">Workspace Settings</div>
+            </div>
+
+            <div class="header-actions">
+                <div class="user-pill">
+                    <div class="user-avatar" id="headerAvatar">U</div>
+                    <span class="user-name" id="headerUserName">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="settings-layout">
+            <aside class="settings-sidebar">
+                <nav class="settings-nav">
+                    <button class="nav-item active" data-tab="general">
+                        <i data-lucide="building"></i>
+                        <span>General</span>
+                    </button>
+                    <button class="nav-item" data-tab="members">
+                        <i data-lucide="users"></i>
+                        <span>Members</span>
+                    </button>
+                </nav>
+            </aside>
+
+            <section class="settings-content">
+                <!-- Tab: General -->
+                <div class="tab-pane active" id="general">
+                    <div class="content-header">
+                        <h2>Workspace Profile</h2>
+                        <p>Manage your agency's name and identity.</p>
+                    </div>
+
+                    <div class="settings-form Card">
+                        <div class="form-group">
+                            <label>Workspace Name</label>
+                            <input type="text" id="orgName" placeholder="Enter workspace name">
+                        </div>
+                        <div class="form-group">
+                            <label>Logo URL (Optional)</label>
+                            <input type="text" id="orgLogo" placeholder="https://example.com/logo.png">
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn primary" id="saveBtn" onclick="saveSettings()">Save Changes</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Members -->
+                <div class="tab-pane" id="members">
+                    <div class="content-header">
+                        <h2>Team Management</h2>
+                        <p>Manage workspace access, roles, and employee connections.</p>
+                    </div>
+
+                    <div class="Card section-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h3>Workspace Members</h3>
+                            <a href="/ownership/employees" class="btn secondary btn-sm"><i data-lucide="user-plus"></i> View Employee Roster</a>
+                        </div>
+                        <div style="overflow-x: auto;">
+                            <table class="members-table" id="membersTable">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Role</th>
+                                        <th>Joined</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="membersList">
+                                    <tr><td colspan="4" style="text-align: center;">Loading members...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        let currentOrgId = null;
+
+        document.addEventListener('DOMContentLoaded', async function() {
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+
+            // Global Sidebar & Auth logic
+            const sideDrawer = document.getElementById('sidebar');
+            const sideOverlay = document.getElementById('sidebarOverlay');
+            const sideClose = document.getElementById('sidebarClose');
+            const menuToggle = document.getElementById('menuToggle');
+
+            function toggleSidebar(show) {
+                if (!sideDrawer || !sideOverlay) return;
+                if (show) {
+                    sideDrawer.classList.add('active');
+                    sideOverlay.classList.add('active');
+                    document.body.style.overflow = 'hidden';
+                } else {
+                    sideDrawer.classList.remove('active');
+                    sideOverlay.classList.remove('active');
+                    document.body.style.overflow = '';
+                }
+            }
+
+            if (menuToggle) menuToggle.addEventListener('click', () => toggleSidebar(true));
+            if (sideClose) sideClose.addEventListener('click', () => toggleSidebar(false));
+            if (sideOverlay) sideOverlay.addEventListener('click', () => toggleSidebar(false));
+
+            // Theme toggle sync
+            const themeBtn = document.getElementById('sidebarThemeToggle');
+            if (themeBtn) {
+                themeBtn.addEventListener('click', () => {
+                    const current = document.documentElement.getAttribute('data-theme');
+                    const next = current === 'dark' ? 'light' : 'dark';
+                    document.documentElement.setAttribute('data-theme', next);
+                    localStorage.setItem('theme', next);
+                    updateThemeDisplay(next);
+                });
+            }
+
+            function updateThemeDisplay(theme) {
+                const text = document.getElementById('themeToggleText');
+                const icon = document.querySelector('.theme-icon-container');
+                if (text && icon) {
+                    if (theme === 'dark') { icon.textContent = '☀️'; text.textContent = 'Light Mode'; }
+                    else { icon.textContent = '🌙'; text.textContent = 'Dark Mode'; }
+                }
+            }
+            updateThemeDisplay(document.documentElement.getAttribute('data-theme') || 'light');
+
+
+            // Tab Switching Logic
+            const tabButtons = document.querySelectorAll('.settings-nav .nav-item');
+            const tabSections = document.querySelectorAll('.settings-content .tab-pane');
+
+            tabButtons.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const targetId = this.getAttribute('data-tab');
+                    if (!targetId) return;
+
+                    tabButtons.forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+
+                    tabSections.forEach(section => {
+                        section.classList.remove('active');
+                        if (section.id === targetId) {
+                            section.classList.add('active');
+                        }
+                    });
+                });
+            });
+
+            await loadUser();
+            await loadWorkspaceData();
+            await loadMembers();
+        });
+
+        async function loadUser() {
+            try {
+                const r = await fetch('/api/user');
+                if (r.ok) {
+                    const u = await r.json();
+                    const name = u.full_name || u.username || 'Guest';
+                    document.getElementById('sidebarUserName').textContent = name;
+                    document.getElementById('headerUserName').textContent = name;
+                    
+                    const handleEl = document.getElementById('sidebarUserHandle');
+                    if (handleEl) {
+                        const org = u.org_name || '';
+                        handleEl.innerHTML = org ? org + '<br><small style="opacity:0.7">@' + u.username + '</small>' : '@' + u.username;
+                    }
+                    const avatarStr = name.charAt(0).toUpperCase();
+                    document.getElementById('sidebarAvatar').textContent = avatarStr;
+                    document.getElementById('headerAvatar').textContent = avatarStr;
+                    
+                    const authBtn = document.getElementById('sidebarAuthBtn');
+                    if (authBtn) {
+                        authBtn.textContent = '🚪 Logout';
+                        authBtn.classList.add('logout');
+                        authBtn.onclick = async () => { 
+                            if (confirm('Logout?')) { 
+                                await fetch('/api/logout', { method: 'POST' }); 
+                                window.location.href = '/login'; 
+                            } 
+                        };
+                    }
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        async function loadWorkspaceData() {
+            try {
+                const r1 = await fetch('/api/workspace/current');
+                if (!r1.ok) throw new Error('Failed to get current workspace');
+                const ws = await r1.json();
+                currentOrgId = ws.organization_id;
+
+                const r2 = await fetch('/api/organizations/' + currentOrgId);
+                if (!r2.ok) throw new Error('Failed to load organization data');
+                const org = await r2.json();
+
+                document.getElementById('orgName').value = org.name || '';
+                document.getElementById('orgLogo').value = org.logo_url || '';
+            } catch (e) {
+                console.error('Error loading settings:', e);
+            }
+        }
+
+        async function saveSettings() {
+            if (!currentOrgId) return;
+            const btn = document.getElementById('saveBtn');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+
+            const name = document.getElementById('orgName').value;
+            const logo = document.getElementById('orgLogo').value;
+
+            try {
+                const r = await fetch('/api/organizations/' + currentOrgId, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name, logo_url: logo })
+                });
+                
+                if (!r.ok) {
+                    const err = await r.json();
+                    throw new Error(err.error || 'Failed to save');
+                }
+                alert('Workspace Profile saved successfully!');
+            } catch (e) {
+                alert(e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Save Changes';
+            }
+        }
+
+        async function loadMembers() {
+            if (!currentOrgId) return;
+            try {
+                const r = await fetch('/api/organizations/' + currentOrgId + '/members');
+                if (!r.ok) throw new Error('Failed to load members');
+                const data = await r.json();
+                const tbody = document.getElementById('membersList');
+                tbody.innerHTML = '';
+                
+                if (!data.members || data.members.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">No members found.</td></tr>';
+                    return;
+                }
+
+                data.members.forEach(m => {
+                    const avatar = (m.name || 'U').charAt(0).toUpperCase();
+                    const joined = m.joined_at ? new Date(m.joined_at).toLocaleDateString() : 'No Access Yet';
+                    
+                    let roleSelect = '';
+                    if (m.has_access) {
+                        roleSelect = `
+                            <select class="role-select" onchange="updateRole('${m.membership_id}', this.value)" ${m.role === 'PLATFORM_SUPER_ADMIN' ? 'disabled' : ''}>
+                                <option value="AGENCY_ADMIN" ${m.role === 'AGENCY_ADMIN' ? 'selected' : ''}>Agency Admin</option>
+                                <option value="AGENCY_EMPLOYEE" ${m.role === 'AGENCY_EMPLOYEE' ? 'selected' : ''}>Employee</option>
+                            </select>
+                        `;
+                    } else {
+                        roleSelect = `<span style="color: var(--text-muted); font-size: 0.85rem;">Access Revoked</span>`;
+                    }
+
+                    let actions = '';
+                    if (m.has_access) {
+                        actions = `
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <button class="btn secondary" style="padding: 0.35rem 0.7rem; font-size: 0.8rem; border-radius: 6px;" onclick="revokeAccess('${m.membership_id}', '${m.name.replace(/'/g, "\\'")}')" ${m.role === 'PLATFORM_SUPER_ADMIN' ? 'disabled' : ''}>
+                                    Revoke Access
+                                </button>
+                                ${m.employee_id ? `<button class="btn danger" style="padding: 0.35rem 0.5rem; border-radius: 6px; display: flex; align-items: center;" onclick="removeEmployee('${m.employee_id}', '${m.name.replace(/'/g, "\\'")}')" title="Delete completely from agency"><i data-lucide="trash-2" style="width: 14px; height: 14px;"></i></button>` : ''}
+                            </div>
+                        `;
+                    } else {
+                        actions = `
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <button class="btn primary" style="padding: 0.35rem 0.7rem; font-size: 0.8rem; border-radius: 6px;" onclick="grantAccess('${m.employee_id}')">
+                                    Grant Access
+                                </button>
+                                <button class="btn danger" style="padding: 0.35rem 0.5rem; border-radius: 6px; display: flex; align-items: center;" onclick="removeEmployee('${m.employee_id}', '${m.name.replace(/'/g, "\\'")}')" title="Delete completely from agency"><i data-lucide="trash-2" style="width: 14px; height: 14px;"></i></button>
+                            </div>
+                        `;
+                    }
+
+                    tbody.innerHTML += `
+                        <tr>
+                            <td>
+                                <div class="member-info">
+                                    <div class="member-avatar" style="${!m.has_access ? 'filter: grayscale(100%); opacity: 0.6;' : ''}">${avatar}</div>
+                                    <div class="member-details">
+                                        <div style="${!m.has_access ? 'color: var(--text-muted)' : ''}">${m.name}</div>
+                                        <span>${m.email || 'No email'}</span>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>${roleSelect}</td>
+                            <td style="color: var(--text-muted); font-size: 0.9rem;">${joined}</td>
+                            <td>${actions}</td>
+                        </tr>
+                    `;
+                });
+                
+                // Re-init lucide icons for any new dynamic content
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function updateRole(membershipId, newRole) {
+            try {
+                const r = await fetch('/api/organizations/' + currentOrgId + '/members/' + membershipId, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ role: newRole })
+                });
+                
+                if (!r.ok) {
+                    const err = await r.json();
+                    alert(err.error || 'Failed to update role');
+                    await loadMembers(); // reload to reset dropdown
+                }
+            } catch (e) {
+                alert('Network error');
+                await loadMembers();
+            }
+        }
+
+        async function revokeAccess(membershipId, name) {
+            if (!confirm(`Are you sure you want to revoke login access for ${name}? They will still remain in your agency roster.`)) {
+                return;
+            }
+            try {
+                const r = await fetch('/api/organizations/' + currentOrgId + '/members/' + membershipId, {
+                    method: 'DELETE'
+                });
+                if (!r.ok) {
+                    const err = await r.json();
+                    alert(err.error || 'Failed to revoke access');
+                } else {
+                    await loadMembers();
+                }
+            } catch (e) {
+                alert('Network error');
+            }
+        }
+
+        async function removeEmployee(employeeId, name) {
+            if (!confirm(`WARNING: Are you sure you want to COMPLETELY REMOVE ${name} from your agency? This will delete their profile and permanently sever their access.`)) {
+                return;
+            }
+            try {
+                const r = await fetch('/api/ownership/employees/' + employeeId, {
+                    method: 'DELETE'
+                });
+                if (!r.ok) {
+                    const err = await r.json();
+                    alert(err.error || 'Failed to delete employee');
+                } else {
+                    await loadMembers();
+                }
+            } catch (e) {
+                alert('Network error');
+            }
+        }
+
+        async function grantAccess(employeeId) {
+            try {
+                const r = await fetch('/api/invitations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ employee_id: employeeId })
+                });
+                if (!r.ok) {
+                    const err = await r.json();
+                    alert(err.error || 'Failed to generate invite link');
+                    return;
+                }
+                const data = await r.json();
+                
+                if (data.access_restored) {
+                    alert('Access has been instantly restored for this employee! They can log back in immediately.');
+                } else {
+                    const inviteLink = window.location.origin + '/register?token=' + data.token;
+                    prompt('Access granted! Copy this invite link and send it to the employee so they can log in:', inviteLink);
+                }
+                
+                await loadMembers();
+            } catch (e) {
+                alert('Network error');
+            }
+        }
+    </script>
+</body>
+</html>

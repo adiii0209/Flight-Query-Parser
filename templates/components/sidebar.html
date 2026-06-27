@@ -11,8 +11,10 @@
       <div class="user-info">
         <div class="user-name" id="sidebarUserName">Guest User</div>
         <div class="user-handle" id="sidebarUserHandle">Welcome to Dashboard</div>
+        <a href="/workspace" class="workspace-switch-btn" style="display:inline-block; margin-top:0.5rem; font-size:0.75rem; color:#60a5fa; text-decoration:none; border:1px solid rgba(96,165,250,0.3); padding:0.2rem 0.5rem; border-radius:4px; transition:all 0.2s ease;">⇄ Switch Workspace</a>
       </div>
     </div>
+
   </div>
 
   <div class="sidebar-body">
@@ -81,8 +83,30 @@
       </nav>
     </div>
 
+    {% if session.get('role') in ['AGENCY_ADMIN', 'CLIENT_ADMIN'] %}
+    <div class="sidebar-nav-group">
+      <span class="sidebar-nav-label">Admin Controls</span>
+      <nav class="sidebar-nav">
+        <a href="/workspace/settings" class="sidebar-link {% if request.path == '/workspace/settings' %}active{% endif %}">
+          <span class="link-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span> Workspace Settings
+        </a>
+      </nav>
+    </div>
+    {% endif %}
+
 
   </div>
+  
+  {% if session.get('role') == 'PLATFORM_SUPER_ADMIN' %}
+  <div class="sidebar-nav-group" style="margin-top: auto; border-top: 1px solid var(--border); padding-top: 1rem;">
+    <span class="sidebar-nav-label">Platform Admin</span>
+    <nav class="sidebar-nav">
+      <a href="/organizations" class="sidebar-link {% if request.path == '/organizations' %}active{% endif %}">
+        <span class="link-icon">🏢</span> Organizations
+      </a>
+    </nav>
+  </div>
+  {% endif %}
 
   <div class="sidebar-footer">
     <div class="theme-toggles">

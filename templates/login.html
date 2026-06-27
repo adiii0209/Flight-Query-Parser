@@ -748,26 +748,63 @@
           </div>
         </div>
         <button class="btn-primary" id="loginBtn" onclick="handleLogin()">Sign In</button>
-        <div class="divider">or</div>
-        <button class="btn-ghost" onclick="loginTestUser()">🧪 Continue as Test User</button>
+        
       </div>
 
       <!-- REGISTER -->
       <div class="form-panel hidden" id="panel-register">
-        <div class="form-group">
-          <label class="form-label">Full Name</label>
+        
+        {% if invalid_invite %}
+        
+          <div style="text-align:center; padding: 2rem 0;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">⚠️</div>
+            <h2 style="margin-bottom: 1rem;">Invalid Invite Link</h2>
+            <p style="color: rgba(255,255,255,0.7); margin-bottom: 1.5rem;">This invitation link has expired or is invalid. Please ask your administrator to send you a new link.</p>
+            <button class="btn-primary" onclick="window.location.href='/login'">Return to Login</button>
+          </div>
+          
+        {% else %}
+          
+          {% if invitation %}
+            <div style="text-align:center; margin-bottom: 1.5rem;">
+              <h2 style="font-size: 1.25rem;">Join {{ invitation.organization.name }}</h2>
+              <p style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-top: 0.5rem;">Create your employee account below.</p>
+            </div>
+            
+            <script>
+              window.SERVER_INVITE_TOKEN = "{{ invitation.token }}";
+            </script>
+          {% else %}
+            <div class="tabs" style="margin-bottom: 1rem;">
+              <button class="tab active" id="tab-reg-agency" onclick="switchRegTab('agency')">Agency</button>
+              <button class="tab" id="tab-reg-indiv" onclick="switchRegTab('indiv')">Individual</button>
+            </div>
+            
+            <div id="reg-agency-fields">
+              <div class="form-group">
+                <label class="form-label">Agency Name</label>
+                <div class="input-wrap">
+                  <span class="input-icon">🏢</span>
+                  <input class="form-input" type="text" id="regAgencyName" placeholder="Your Agency">
+                </div>
+              </div>
+            </div>
+          {% endif %}
+          
+          <div class="form-group">
+            <label class="form-label">Full Name</label>
           <div class="input-wrap">
             <span class="input-icon">✨</span>
             <input class="form-input" type="text" id="regFullName" placeholder="Jane Smith">
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Email</label>
-          <div class="input-wrap">
-            <span class="input-icon">📧</span>
-            <input class="form-input" type="email" id="regEmail" placeholder="you@example.com" autocomplete="email">
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <div class="input-wrap">
+              <span class="input-icon">📧</span>
+              <input class="form-input" type="email" id="regEmail" placeholder="you@example.com" autocomplete="email" {% if invitation and invitation.email %}value="{{ invitation.email }}" readonly style="opacity:0.7"{% endif %}>
+            </div>
           </div>
-        </div>
         <div class="form-group">
           <label class="form-label">Username</label>
           <div class="input-wrap">
@@ -779,8 +816,7 @@
           <label class="form-label">Password</label>
           <div class="input-wrap">
             <span class="input-icon">🔒</span>
-            <input class="form-input" type="password" id="regPassword" placeholder="••••••••"
-              autocomplete="new-password" style="padding-right:2.8rem">
+            <input class="form-input" type="password" id="regPassword" placeholder="••••••••" autocomplete="new-password" style="padding-right:2.8rem">
             <button class="eye-btn" type="button" onclick="toggleVis('regPassword',this)">👁️</button>
           </div>
         </div>
@@ -788,25 +824,51 @@
           <label class="form-label">Confirm Password</label>
           <div class="input-wrap">
             <span class="input-icon">🔐</span>
-            <input class="form-input" type="password" id="regConfirm" placeholder="••••••••" autocomplete="new-password"
-              style="padding-right:2.8rem">
+            <input class="form-input" type="password" id="regConfirm" placeholder="••••••••" autocomplete="new-password" style="padding-right:2.8rem">
             <button class="eye-btn" type="button" onclick="toggleVis('regConfirm',this)">👁️</button>
           </div>
         </div>
-        <button class="btn-primary" id="registerBtn" onclick="handleRegister()">Create Account</button>
+          <button class="btn-primary" id="registerBtn" onclick="handleRegister()">Create Account</button>
+          
+          {% if invitation %}
+            <div style="text-align:center; margin-top: 1.5rem; font-size: 0.95rem;">
+              <span style="color: rgba(255,255,255,0.7);">Already have an account?</span>
+              <a href="javascript:void(0)" onclick="switchTab('login')" style="color: #60a5fa; text-decoration: none; font-weight: 600; margin-left: 0.25rem;">Sign in to join</a>
+            </div>
+          {% endif %}
+          
+        {% endif %} <!-- /invalid_invite -->
+        
       </div>
     </div>
-
   </div>
 
   <script>
+    let inviteToken = window.SERVER_INVITE_TOKEN || null;
+    let regType = 'agency';
+    (async function init() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const token = urlParams.get('token');
+      
+      // If we are server-side injected as an invite, switch to register tab immediately.
+      if (token) {
+        switchTab('register');
+        if (typeof switchRegTab === 'function' && !inviteToken) {
+          // If inviteToken is null but token is in URL, it means invalid_invite=True
+        } else if (typeof switchRegTab === 'function') {
+          // It's a valid invite token
+          switchRegTab('indiv');
+        }
+      }
+    })();
+    
     /* ── TABS ───────────────────────────────────────────── */
     function switchTab(name) {
       ['login', 'register'].forEach(n => {
-        document.getElementById(`tab-${n}`).classList.toggle('active', n === name);
+        document.getElementById(`tab-${n}`)?.classList.toggle('active', n === name);
         const p = document.getElementById(`panel-${n}`);
-        p.classList.toggle('hidden', n !== name);
-        if (n === name) { p.style.animation = 'none'; p.offsetHeight; p.style.animation = ''; }
+        if (p) p.classList.toggle('hidden', n !== name);
+        if (n === name && p) { p.style.animation = 'none'; p.offsetHeight; p.style.animation = ''; }
       });
       clearNotif();
     }
@@ -845,12 +907,20 @@
       setLoading('loginBtn', true, 'Signing in…');
       clearNotif();
       try {
-        const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+        let payload = { username, password };
+        if (typeof inviteToken !== 'undefined' && inviteToken) {
+          payload.token = inviteToken;
+        }
+        const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         const data = await res.json();
         if (res.ok) {
-          showNotif('Welcome back! Redirecting…', 'success');
-          const next = new URLSearchParams(window.location.search).get('next') || '/';
-          setTimeout(() => window.location.href = next, 900);
+          if (data.requires_workspace_selection) {
+            window.location.href = '/workspace';
+          } else {
+            showNotif('Welcome back! Redirecting…', 'success');
+            const next = new URLSearchParams(window.location.search).get('next') || '/';
+            setTimeout(() => window.location.href = next, 900);
+          }
         } else {
           showNotif(data.error || 'Invalid credentials', 'error');
           setLoading('loginBtn', false, 'Sign In');
@@ -859,22 +929,51 @@
     }
 
     /* ── REGISTER ───────────────────────────────────────── */
+    function switchRegTab(type) {
+      regType = type;
+      document.getElementById('tab-reg-agency')?.classList.toggle('active', type === 'agency');
+      document.getElementById('tab-reg-indiv')?.classList.toggle('active', type === 'indiv');
+      const agencyFields = document.getElementById('reg-agency-fields');
+      if (agencyFields) agencyFields.style.display = type === 'agency' ? 'block' : 'none';
+    }
+
     async function handleRegister() {
       const fullName = document.getElementById('regFullName').value.trim();
       const email = document.getElementById('regEmail').value.trim();
       const username = document.getElementById('regUsername').value.trim();
       const password = document.getElementById('regPassword').value;
       const confirm = document.getElementById('regConfirm').value;
-      if (!fullName || !email || !username || !password) { showNotif('Please fill in all fields', 'error'); return; }
+      const agencyName = document.getElementById('regAgencyName') ? document.getElementById('regAgencyName').value.trim() : '';
+
+      if (!fullName || !email || !username || !password || (regType === 'agency' && !agencyName)) { 
+        showNotif('Please fill in all fields', 'error'); return; 
+      }
       if (password !== confirm) { showNotif('Passwords do not match', 'error'); return; }
+      
       setLoading('registerBtn', true, 'Creating account…');
       clearNotif();
       try {
-        const res = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ full_name: fullName, email, username, password }) });
+        let endpoint = regType === 'agency' ? '/api/register/agency' : '/api/register/individual';
+        let payload = { full_name: fullName, email, username, password };
+        
+        if (inviteToken) {
+          endpoint = '/api/register/invite';
+          payload.token = inviteToken;
+          payload.email = email; // Explicitly send email because it might not be locked
+          // Don't need agency_name if it's an invite
+        } else if (regType === 'agency') {
+          payload.agency_name = agencyName;
+        }
+
+        const res = await fetch(endpoint, { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify(payload) 
+        });
         const data = await res.json();
         if (res.ok) {
           showNotif('Account created! Redirecting…', 'success');
-          setTimeout(() => window.location.href = '/', 900);
+          setTimeout(() => window.location.href = '/workspace', 900);
         } else {
           showNotif(data.error || 'Registration failed', 'error');
           setLoading('registerBtn', false, 'Create Account');
@@ -882,61 +981,7 @@
       } catch (e) { showNotif('Network error — try again', 'error'); setLoading('registerBtn', false, 'Create Account'); }
     }
 
-    /* ── TEST USER ──────────────────────────────────────── */
-    async function loginTestUser() {
-      const username = 'timetours.in';
-      const password = 'jdxj66pyic@12';
-
-      document.getElementById('loginUsername').value = username;
-      document.getElementById('loginPassword').value = password;
-
-      setLoading('loginBtn', true, 'Connecting…');
-      clearNotif();
-
-      try {
-        // 1. Try Login first
-        const logRes = await fetch('/api/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
-        });
-
-        if (logRes.ok) {
-          showNotif('Welcome back! Redirecting…', 'success');
-          const next = new URLSearchParams(window.location.search).get('next') || '/';
-          setTimeout(() => window.location.href = next, 900);
-          return;
-        }
-
-        // 2. If login fails, attempt to register automatically
-        const regRes = await fetch('/api/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            full_name: 'Time Tours',
-            email: 'mail@timetours.in',
-            username: username,
-            password: password
-          })
-        });
-
-        if (regRes.ok) {
-          showNotif('Test account ready! Redirecting…', 'success');
-          const next = new URLSearchParams(window.location.search).get('next') || '/';
-          setTimeout(() => window.location.href = next, 900);
-        } else {
-          const errorData = await regRes.json();
-          showNotif(errorData.error || 'Test login failed', 'error');
-          setLoading('loginBtn', false, 'Sign In');
-        }
-      } catch (err) {
-        console.error(err);
-        showNotif('Network error — try again', 'error');
-        setLoading('loginBtn', false, 'Sign In');
-      }
-    }
-
-    /* ── ENTER KEY ──────────────────────────────────────── */
+/* ── ENTER KEY ──────────────────────────────────────── */
     document.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
       document.getElementById('panel-login').classList.contains('hidden') ? handleRegister() : handleLogin();

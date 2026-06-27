@@ -1948,3 +1948,8 @@ body {
     transform: translate(calc(-50% - 225px), -50%) !important;
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 } */
+/* PASSENGERS FOOTER */
+.itinerary-passengers-footer { margin: 0; width: 100%; max-width: 100%; padding: 0.55rem 0.65rem; border-radius: 10px; background: rgba(37, 99, 235, 0.04); border: 1px solid rgba(37, 99, 235, 0.12); text-align: left; margin-top: 10px; position: relative; padding-bottom: 25px; }
+.itinerary-passengers-label { font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); margin-bottom: 0.35rem; }
+.itinerary-passengers-names { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: flex-start; }
+.passenger-chip { display: inline-flex; align-items: center; max-width: 100%; padding: 0.2rem 0.45rem; border-radius: 999px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary); font-size: 0.72rem; font-weight: 500; line-height: 1; }
