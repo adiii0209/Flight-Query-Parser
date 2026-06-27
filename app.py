@@ -5352,7 +5352,7 @@ def mark_selected_tickets_unread():
             user.last_ticket_seen_at = target_last_seen_at
 
     TicketRead.query.filter(
-        TicketRead.organization_id == session.get("organization_id"),
+        TicketRead.user_id == session['user_id'],
         TicketRead.ticket_id.in_(scoped_ids),
     ).delete(synchronize_session=False)
     db.session.commit()
