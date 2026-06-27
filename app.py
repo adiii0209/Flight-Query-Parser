@@ -7415,6 +7415,65 @@ def _employee_color(name):
     return palette[total % len(palette)]
 
 
+def _cascade_employee_rename(old_name, new_name):
+    """When an employee's name changes, update all references across trips and subtasks."""
+    if not old_name or not new_name or old_name == new_name:
+        return
+    from sqlalchemy.orm.attributes import flag_modified
+
+    # 1. Update owner field on trips
+    db.session.execute(
+        text("UPDATE ownership_trip SET owner = :new WHERE owner = :old"),
+        {"new": new_name, "old": old_name}
+    )
+
+    # 2. Update present_work_assigned_to field on trips
+    db.session.execute(
+        text("UPDATE ownership_trip SET present_work_assigned_to = :new WHERE present_work_assigned_to = :old"),
+        {"new": new_name, "old": old_name}
+    )
+
+    # 3. Update assignee inside subtasks_json on trips
+    trips = OwnershipTrip.query.filter(
+        OwnershipTrip.subtasks_json.cast(db.Text).contains(old_name)
+    ).all()
+    for trip in trips:
+        subs = trip.subtasks_json
+        if not isinstance(subs, dict):
+            continue
+        changed = False
+        for group_name, items in subs.items():
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if isinstance(item, dict) and item.get("assignee") == old_name:
+                    item["assignee"] = new_name
+                    changed = True
+        if changed:
+            trip.subtasks_json = subs
+            flag_modified(trip, "subtasks_json")
+
+    # 4. Update assignee inside subtasks_json on employee profiles
+    emps = OwnershipEmployee.query.filter(
+        OwnershipEmployee.subtasks_json.cast(db.Text).contains(old_name)
+    ).all()
+    for emp in emps:
+        subs = emp.subtasks_json
+        if not isinstance(subs, dict):
+            continue
+        changed = False
+        for group_name, items in subs.items():
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if isinstance(item, dict) and item.get("assignee") == old_name:
+                    item["assignee"] = new_name
+                    changed = True
+        if changed:
+            emp.subtasks_json = subs
+            flag_modified(emp, "subtasks_json")
+
+
 def _ensure_ownership_employees():
     existing = {
         (employee.name or "").strip().lower(): employee
@@ -8062,7 +8121,11 @@ def update_ownership_employee(employee_id):
     if "subtasks" in payload:
         employee.subtasks_json = payload["subtasks"]
     if "name" in payload:
-        employee.name = str(payload.get("name") or "").strip()
+        new_name = str(payload.get("name") or "").strip()
+        old_name = employee.name
+        if new_name and new_name != old_name:
+            _cascade_employee_rename(old_name, new_name)
+        employee.name = new_name
     if "color" in payload:
         employee.color = str(payload.get("color") or "").strip()
     if "domain" in payload:

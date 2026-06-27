@@ -320,9 +320,14 @@ def register_invite():
             from models import OwnershipEmployee
             emp = OwnershipEmployee.query.get(invitation.employee_id)
             if emp:
+                old_name = emp.name
                 emp.email = email
-                emp.name = full_name
                 emp.user_id = user.id
+                # Cascade rename if registrant used a different name
+                if full_name and full_name != old_name:
+                    from app import _cascade_employee_rename
+                    _cascade_employee_rename(old_name, full_name)
+                emp.name = full_name
                 
         # Save organization details before deleting invitation
         org_id = invitation.organization_id
