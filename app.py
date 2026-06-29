@@ -4251,6 +4251,7 @@ def hotel_create():
     data = request.get_json(silent=True) or {}
     booking = HotelBooking(
         user_id=session["user_id"],
+        organization_id=session.get("organization_id"),
         booking_id=data.get("booking_id"),
         hotel_name=data.get("hotel_name"),
         hotel_address=data.get("hotel_address"),
@@ -4282,14 +4283,14 @@ def hotel_create():
 def hotel_list():
     """List all hotel bookings for the current user."""
     from models import HotelBooking
-    user_id = session["user_id"]
-    cache_key = f"hotels_list_{user_id}"
+    org_id = session.get("organization_id")
+    cache_key = f"hotels_list_{org_id}"
     cached = _dashboard_cache.get_json(cache_key)
     if cached is not None:
         return jsonify(cached), 200
 
     bookings = HotelBooking.query.filter_by(
-        user_id=user_id
+        **get_org_scope()
     ).order_by(HotelBooking.created_at.desc()).all()
     
     result = [b.to_dict() for b in bookings]
@@ -4302,14 +4303,14 @@ def hotel_list():
 def hotel_get(booking_id):
     """Get a single hotel booking."""
     from models import HotelBooking
-    user_id = session["user_id"]
-    cache_key = f"hotel_{booking_id}_{user_id}"
+    org_id = session.get("organization_id")
+    cache_key = f"hotel_{booking_id}_{org_id}"
     cached = _dashboard_cache.get_json(cache_key)
     if cached is not None:
         return jsonify(cached), 200
 
     b = HotelBooking.query.filter_by(
-        id=booking_id, user_id=user_id
+        id=booking_id, **get_org_scope()
     ).first()
     if not b:
         return jsonify({"error": "Hotel booking not found"}), 404
@@ -4324,9 +4325,9 @@ def hotel_get(booking_id):
 def hotel_update(booking_id):
     """Update a hotel booking (editable dashboard fields + image override)."""
     from models import HotelBooking
-    user_id = session["user_id"]
+    org_id = session.get("organization_id")
     b = HotelBooking.query.filter_by(
-        id=booking_id, user_id=user_id
+        id=booking_id, **get_org_scope()
     ).first()
     if not b:
         return jsonify({"error": "Hotel booking not found"}), 404
@@ -4345,8 +4346,8 @@ def hotel_update(booking_id):
         b.rooms_json = json.dumps(data["rooms"] or [])
     db.session.commit()
     
-    _dashboard_cache.set_json(f"hotels_list_{user_id}", None, 1)
-    _dashboard_cache.set_json(f"hotel_{booking_id}_{user_id}", None, 1)
+    _dashboard_cache.set_json(f"hotels_list_{org_id}", None, 1)
+    _dashboard_cache.set_json(f"hotel_{booking_id}_{org_id}", None, 1)
     
     return jsonify({"success": True, "data": b.to_dict()}), 200
 
@@ -4356,17 +4357,17 @@ def hotel_update(booking_id):
 def hotel_delete(booking_id):
     """Delete a hotel booking."""
     from models import HotelBooking
-    user_id = session["user_id"]
+    org_id = session.get("organization_id")
     b = HotelBooking.query.filter_by(
-        id=booking_id, user_id=user_id
+        id=booking_id, **get_org_scope()
     ).first()
     if not b:
         return jsonify({"error": "Hotel booking not found"}), 404
     db.session.delete(b)
     db.session.commit()
     
-    _dashboard_cache.set_json(f"hotels_list_{user_id}", None, 1)
-    _dashboard_cache.set_json(f"hotel_{booking_id}_{user_id}", None, 1)
+    _dashboard_cache.set_json(f"hotels_list_{org_id}", None, 1)
+    _dashboard_cache.set_json(f"hotel_{booking_id}_{org_id}", None, 1)
     
     return jsonify({"success": True}), 200
 
