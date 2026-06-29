@@ -9698,7 +9698,21 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       if (outbound.is_editable) html += `<div id="inline-editor-${index}" class="inline-fare-editor" style="display: none;"></div>`;
       if (returnFlight.is_editable) html += `<div id="inline-editor-${index + 1}" class="inline-fare-editor" style="display: none;"></div>`;
 
-      card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="" loading="eager" decoding="async" fetchpriority="high">` + html;
+      let passengerFooterHtml = '';
+      if (savePassengers && savePassengers.length > 0) {
+        passengerFooterHtml = `
+          <div class="itinerary-passengers-footer">
+            <div class="itinerary-passengers-label">PASSENGERS</div>
+            <div class="itinerary-passengers-names">
+              ${savePassengers.map(p => `<span class="passenger-chip">${p.title ? p.title + ' ' : ''}${p.first_name} ${p.last_name || ''}</span>`).join('')}
+            </div>
+            <img class="card-watermark-img" src="/static/logo.png" alt="" loading="eager" decoding="async" fetchpriority="high" style="bottom: 8px; right: 8px;">
+          </div>
+        `;
+        card.innerHTML = html + passengerFooterHtml;
+      } else {
+        card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="" loading="eager" decoding="async" fetchpriority="high">` + html;
+      }
       return card;
     }
 
@@ -9764,7 +9778,21 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         if (f.is_editable) editorHTML += `<div id="inline-editor-${startIndex + i}" class="inline-fare-editor" style="display: none;"></div>`;
       });
 
-      card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="" loading="eager" decoding="async" fetchpriority="high">` + contentHTML + faresHTML + editorHTML;
+      let passengerFooterHtml = '';
+      if (savePassengers && savePassengers.length > 0) {
+        passengerFooterHtml = `
+          <div class="itinerary-passengers-footer">
+            <div class="itinerary-passengers-label">PASSENGERS</div>
+            <div class="itinerary-passengers-names">
+              ${savePassengers.map(p => `<span class="passenger-chip">${p.title ? p.title + ' ' : ''}${p.first_name} ${p.last_name || ''}</span>`).join('')}
+            </div>
+            <img class="card-watermark-img" src="/static/logo.png" alt="" loading="eager" decoding="async" fetchpriority="high" style="bottom: 8px; right: 8px;">
+          </div>
+        `;
+        card.innerHTML = contentHTML + faresHTML + editorHTML + passengerFooterHtml;
+      } else {
+        card.innerHTML = `<img class="card-watermark-img" src="/static/logo.png" alt="" loading="eager" decoding="async" fetchpriority="high">` + contentHTML + faresHTML + editorHTML;
+      }
       return card;
     }
 
