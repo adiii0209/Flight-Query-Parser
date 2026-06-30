@@ -7,10 +7,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN apt-get update && apt-get install -y --no-install-recommends libpq-dev \
+RUN apt-get update && apt-get install -y --no-install-recommends libpq-dev build-essential \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --upgrade pip \
-    && pip install -r requirements.txt
+    && pip install --default-timeout=100 --retries=5 -r requirements.txt
 
 COPY . .
 
