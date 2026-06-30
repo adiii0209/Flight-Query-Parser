@@ -178,7 +178,7 @@ def _get_itinerary_detail_record(itinerary_id, user_id, include_flights=False):
         query = query.options(defer(Itinerary.raw_input_data))
     return query.filter_by(
         id=itinerary_id,
-        user_id=user_id
+        **get_org_scope()
     ).first()
 
 
@@ -261,7 +261,7 @@ def get_corporates():
             Corporate.is_active,
         )
     ).filter_by(
-        user_id=session['user_id'],
+        **get_org_scope(),
         is_active=True
     ).order_by(Corporate.company_name)
     total_count = base_query.count()
@@ -372,7 +372,9 @@ def create_corporate():
             contact_alternate_phone=data.get('contact_alternate_phone'),
             internal_remarks=data.get('internal_remarks'),
             credit_limit=data.get('credit_limit'),
-            payment_terms_days=data.get('payment_terms_days', 30), **get_org_scope()
+            payment_terms_days=data.get('payment_terms_days', 30),
+            user_id=session['user_id'],
+            **get_org_scope()
         )
         
         db_session.add(corporate)
@@ -523,7 +525,7 @@ def get_corporate_promo_codes(corporate_id):
     ).filter(
         CorporateAirlinePromoCode.corporate_id == corporate_id,
         CorporateAirlinePromoCode.is_active == True,
-        CorporateAirlinePromoCode.corporate.has(user_id=session['user_id'], is_active=True),
+        CorporateAirlinePromoCode.corporate.has(organization_id=session.get('organization_id'), is_active=True),
     ).order_by(CorporateAirlinePromoCode.created_at.desc()).all()
     return jsonify({"promo_codes": [pc.to_dict() for pc in promo_codes]})
 
@@ -698,6 +700,7 @@ def create_passenger():
             emergency_contact_phone=data.get('emergency_contact_phone'),
             emergency_contact_relationship=data.get('emergency_contact_relationship'), 
             user_id=session.get('user_id'),
+            organization_id=session.get('organization_id'),
             **get_org_scope()
         )
         
@@ -888,7 +891,7 @@ def get_passenger_frequent_flyer(passenger_id):
     ).filter(
         PassengerFrequentFlyer.passenger_id == passenger_id,
         PassengerFrequentFlyer.is_active == True,
-        PassengerFrequentFlyer.passenger.has(user_id=session['user_id'], is_active=True),
+        PassengerFrequentFlyer.passenger.has(organization_id=session.get('organization_id'), is_active=True),
     ).order_by(PassengerFrequentFlyer.created_at.desc()).all()
     return jsonify({"frequent_flyer_accounts": [ff.to_dict() for ff in accounts]})
 
@@ -1076,7 +1079,7 @@ def get_passenger_documents(passenger_id):
     documents = db_session.query(PassengerTravelDocument).filter(
         PassengerTravelDocument.passenger_id == passenger_id,
         PassengerTravelDocument.is_active == True,
-        PassengerTravelDocument.passenger.has(user_id=session['user_id'], is_active=True),
+        PassengerTravelDocument.passenger.has(organization_id=session.get('organization_id'), is_active=True),
     ).order_by(PassengerTravelDocument.created_at.desc()).all()
     return jsonify({"documents": [doc.to_dict() for doc in documents]})
 
@@ -1405,18 +1408,20 @@ def create_itinerary():
             bill_to_gst=data.get('bill_to_gst'),
             requires_approval=data.get('requires_approval', False),
             num_passengers=int(safe_float(data.get('num_passengers')) or 1),
-            passengers_data=_json_or_none(data.get('passengers_data', [])), **get_org_scope(),
+            passengers_data=_json_or_none(data.get('passengers_data', [])),
             passenger_id=data.get('passenger_id'),
             corporate_id=data.get('corporate_id'),
             billing_account_id=data.get('billing_account_id'),
             user_id=session['user_id'],
+            organization_id=session.get('organization_id'),
             supplier_account_id=data.get('supplier_account_id'),
             supplier_name=data.get('supplier_name'),
             supplier_email=data.get('supplier_email'),
             supplier_phone=data.get('supplier_phone'),
             supplier_address=data.get('supplier_address'),
             supplier_company=data.get('supplier_company'),
-            supplier_gst=data.get('supplier_gst')
+            supplier_gst=data.get('supplier_gst'),
+            **get_org_scope()
         )
         
         db_session.add(itinerary)
@@ -1715,14 +1720,13 @@ def get_dashboard_stats():
     ).count()
     
     # Itinerary stats
-    total_itineraries = db_session.query(Itinerary).filter_by(user_id=user_id).count()
-    draft_count = db_session.query(Itinerary).filter_by(user_id=user_id, status='draft').count()
-    approved_count = db_session.query(Itinerary).filter_by(user_id=user_id, status='approved').count()
-    on_hold_count = db_session.query(Itinerary).filter_by(user_id=user_id, status='on_hold').count()
+    total_itineraries = db_session.query(Itinerary).filter_by(**get_org_scope()).count()
+    draft_count = db_session.query(Itinerary).filter_by(status='draft', **get_org_scope()).count()
+    approved_count = db_session.query(Itinerary).filter_by(status='approved', **get_org_scope()).count()
+    on_hold_count = db_session.query(Itinerary).filter_by(status='on_hold', **get_org_scope()).count()
     confirmed_count = db_session.query(Itinerary).filter(
-        Itinerary.user_id == user_id, 
         Itinerary.status.in_(['confirmed', 'issued'])
-    ).count()
+    ).filter_by(**get_org_scope()).count()
     
     # Revenue stats
     from sqlalchemy import func
@@ -1803,6 +1807,7 @@ def create_billing_account():
             passenger_id=data.get('passenger_id'),
             corporate_id=data.get('corporate_id'), 
             user_id=session['user_id'],
+            organization_id=session.get('organization_id'),
             **get_org_scope()
         )
         
@@ -1970,6 +1975,8 @@ def create_supplier_account():
             return jsonify({"error": "Missing required fields"}), 400
             
         account = SupplierAccount(
+            user_id=session['user_id'],
+            organization_id=session.get('organization_id'),
             account_type=data['account_type'],
             display_name=data['display_name'],
             company_name=data.get('company_name'),
