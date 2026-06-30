@@ -11164,7 +11164,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
         };
 
         const shouldApplySameDate = (idxA, idxB) => {
-            const tripType = document.getElementById('tripType') ? document.getElementById('tripType').value : 'one_way';
+            const tripRadio = document.querySelector('input[name="tripType"]:checked');
+            const tripType = tripRadio ? tripRadio.value : 'one_way';
             if (tripType === 'one_way') return true;
             return getIndexInUnit(idxA) === getIndexInUnit(idxB);
         };
@@ -11209,7 +11210,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       };
 
       const shouldApplySameDate = (idxA, idxB) => {
-          const tripType = document.getElementById('tripType') ? document.getElementById('tripType').value : 'one_way';
+          const tripRadio = document.querySelector('input[name="tripType"]:checked');
+          const tripType = tripRadio ? tripRadio.value : 'one_way';
           if (tripType === 'one_way') return true;
           return getIndexInUnit(idxA) === getIndexInUnit(idxB);
       };
@@ -11266,7 +11268,8 @@ For Multiple Flights: Paste each flight's details separated by a blank line."></
       };
 
       const shouldApplySameDate = (idxA, idxB) => {
-          const tripType = document.getElementById('tripType') ? document.getElementById('tripType').value : 'one_way';
+          const tripRadio = document.querySelector('input[name="tripType"]:checked');
+          const tripType = tripRadio ? tripRadio.value : 'one_way';
           if (tripType === 'one_way') return true;
           return getIndexInUnit(idxA) === getIndexInUnit(idxB);
       };
