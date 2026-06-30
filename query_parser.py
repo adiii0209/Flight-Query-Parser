@@ -426,13 +426,13 @@ class TimezoneHandler:
     """Centralized timezone management with DST support — uses AIRPORT_TZ_MAP from mappings.py"""
 
     @staticmethod
-    def get_offset_hours(airport_code: str, date_obj: Optional[datetime] = None) -> float:
+    def get_offset_hours(airport_code: str, date_obj: Optional[datetime] = None) -> Optional[float]:
         if not airport_code:
-            return 0.0
+            return None
         tz_name = AIRPORT_TZ_MAP.get(airport_code.upper())
         if not tz_name:
-            Logger.debug(f"Missing timezone for '{airport_code}' in AIRPORT_TZ_MAP. Using UTC (0.0).")
-            return 0.0
+            Logger.debug(f"Missing timezone for '{airport_code}' in AIRPORT_TZ_MAP. Returning None (naive calculation).")
+            return None
         try:
             tz = pytz.timezone(tz_name)
             dt = date_obj or datetime.now()
@@ -488,7 +488,10 @@ class DurationCalculator:
             arr_tz = TimezoneHandler.get_offset_hours(arr_airport, flight_date)
             diff = arr - dep
             apparent_minutes = int(diff.total_seconds() / 60)
-            tz_diff_minutes = int((arr_tz - dep_tz) * 60)
+            if dep_tz is None or arr_tz is None:
+                tz_diff_minutes = 0
+            else:
+                tz_diff_minutes = int((arr_tz - dep_tz) * 60)
             actual_minutes = apparent_minutes - tz_diff_minutes
             if check_ultra_long and actual_minutes > 24 * 60:
                 alt_minutes = actual_minutes - 24 * 60
@@ -570,7 +573,7 @@ class DayOffsetCalculator:
                 return 0
             dep_tz = TimezoneHandler.get_offset_hours(dep_airport, flight_date)
             arr_tz = TimezoneHandler.get_offset_hours(arr_airport, flight_date)
-            tz_diff_hours = arr_tz - dep_tz
+            tz_diff_hours = (arr_tz - dep_tz) if dep_tz is not None and arr_tz is not None else 0
             dep_hours = dep.hour + dep.minute / 60
             arr_hours = arr.hour + arr.minute / 60
             apparent_diff_hours = arr_hours - dep_hours
