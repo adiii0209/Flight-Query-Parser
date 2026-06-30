@@ -852,6 +852,13 @@ const statusLabels = {
   notrequired: 'Not Required'
 };
 
+function getInitials(name) {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+}
+
 function employeeColor(name) {
   const e = employees.find(x => x.name === name);
   if (e && e.color) return e.color;
@@ -946,7 +953,7 @@ function activateEmployeeById(employeeId, { replaceRoute = false, animate = fals
   const targetAvatar = document.getElementById('ewUserAvatar');
   const targetName = document.getElementById('ewUserName');
   if (targetAvatar) {
-    targetAvatar.textContent = activeEmployee.name.charAt(0).toUpperCase();
+    targetAvatar.textContent = getInitials(activeEmployee.name);
     targetAvatar.style.background = activeEmployee.name.trim().toLowerCase() === 'c k' ? '#2563eb' : (activeEmployee.color || employeeColor(activeEmployee.name));
   }
   if (targetName) targetName.textContent = activeEmployee.name;
@@ -1044,7 +1051,7 @@ function renderPicker() {
     employees.forEach((emp, i) => {
       const delay = i * 0.03 + 0.05;
       const safeName = String(emp.name || '?');
-      const firstChar = safeName.charAt(0).toUpperCase();
+      const firstChar = getInitials(safeName);
       const safeColor = emp.color || employeeColor(safeName);
       const isCK = safeName.trim().toLowerCase() === 'c k';
       
@@ -1301,7 +1308,7 @@ window.selectEmployee = function(id, el) {
   const targetDomain = document.getElementById('ewUserDomain');
   
   // Pre-fill target header
-  targetAvatar.textContent = activeEmployee.name.charAt(0).toUpperCase();
+  targetAvatar.textContent = getInitials(activeEmployee.name);
   targetAvatar.style.background = activeEmployee.name.trim().toLowerCase() === 'c k' ? '#2563eb' : (activeEmployee.color || employeeColor(activeEmployee.name));
   targetName.textContent = activeEmployee.name;
   if (targetDomain) {
