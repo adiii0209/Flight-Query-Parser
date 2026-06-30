@@ -700,7 +700,6 @@ def create_passenger():
             emergency_contact_phone=data.get('emergency_contact_phone'),
             emergency_contact_relationship=data.get('emergency_contact_relationship'), 
             user_id=session.get('user_id'),
-            organization_id=session.get('organization_id'),
             **get_org_scope()
         )
         
@@ -1413,7 +1412,6 @@ def create_itinerary():
             corporate_id=data.get('corporate_id'),
             billing_account_id=data.get('billing_account_id'),
             user_id=session['user_id'],
-            organization_id=session.get('organization_id'),
             supplier_account_id=data.get('supplier_account_id'),
             supplier_name=data.get('supplier_name'),
             supplier_email=data.get('supplier_email'),
@@ -1807,7 +1805,6 @@ def create_billing_account():
             passenger_id=data.get('passenger_id'),
             corporate_id=data.get('corporate_id'), 
             user_id=session['user_id'],
-            organization_id=session.get('organization_id'),
             **get_org_scope()
         )
         
@@ -1976,7 +1973,6 @@ def create_supplier_account():
             
         account = SupplierAccount(
             user_id=session['user_id'],
-            organization_id=session.get('organization_id'),
             account_type=data['account_type'],
             display_name=data['display_name'],
             company_name=data.get('company_name'),
@@ -1984,7 +1980,8 @@ def create_supplier_account():
             email=data.get('email'),
             phone=data.get('phone'),
             address=data.get('address'),
-            gst_number=data.get('gst_number'), **get_org_scope()
+            gst_number=data.get('gst_number'),
+            **get_org_scope()
         )
         
         db_session.add(account)
