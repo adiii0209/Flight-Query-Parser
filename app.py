@@ -4028,7 +4028,7 @@ def receive_ticket():
                 from sqlalchemy import or_
                 existing_tickets = Ticket.query.filter(
                     Ticket.pnr == new_pnr,
-                    Ticket.organization_id == session.get('organization_id'),
+                    Ticket.organization_id == _ticket_org_id,
                     or_(Ticket.duplicate_status.is_(None), Ticket.duplicate_status.in_(["approved"])),
                 ).order_by(Ticket.created_at.asc()).all()
 
