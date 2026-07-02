@@ -476,12 +476,12 @@ def draw_hotel_voucher(c, data):
     )
 
     if has_room_data:
-        if T < BOT + 80: T = draw_footer_and_page(T)
+        if T < BOT + 40: T = draw_footer_and_page(T)
         txt(c, M, T, "ROOMS & GUESTS", size=7, color=C_TEXT_TER, bold=True)
         ry = T - 16
 
         for idx, room in enumerate(rooms):
-            if ry < BOT + 80: ry = draw_footer_and_page(ry)
+            if ry < BOT + 40: ry = draw_footer_and_page(ry)
 
             rtype      = room.get("room_type") or ""
             meal_room  = room.get("meal_plan") or ""
@@ -496,8 +496,11 @@ def draw_hotel_voucher(c, data):
                 c, M, ry, heading, IW - 6, size=9.5 if len(heading) > 28 else 10,
                 color=C_TEXT_PRI, bold=True, line_gap=11, max_lines=2
             )
+            
             if has_value(meal_room):
                 meal_y = heading_y - 12
+                if meal_y < BOT + 15: 
+                    meal_y = draw_footer_and_page(meal_y)
                 meal_y, meal_lines = draw_wrapped_text(
                     c, M + 2, meal_y, meal_room, IW - 10,
                     size=8, color=C_TEXT_TER, line_gap=10, max_lines=2
@@ -505,23 +508,23 @@ def draw_hotel_voucher(c, data):
             else:
                 meal_y = heading_y - 11
 
-            # Guest names — stacked so long names stay aligned and never overflow
+            # Guest names
             guest_y = meal_y - 13
-            guest_line_count = 0
             for gname in guest_names:
                 wrapped_guest_lines = wrap_text_lines(c, gname, IW - 20, "Helvetica", 8.5) or [gname]
                 for guest_line in wrapped_guest_lines:
+                    if guest_y < BOT + 15:
+                        guest_y = draw_footer_and_page(guest_y)
                     txt(c, M, guest_y, guest_line, size=8.5, color=C_TEXT_SEC)
                     guest_y -= 11
-                    guest_line_count += 1
 
-            # Separator between rooms (not after last)
-            room_block_height = max(34, ry - guest_y + 4)
             if idx < len(rooms) - 1:
-                hline(c, M, ry - room_block_height, IW, lw=0.4)
-                ry -= room_block_height + 12
+                if guest_y - 6 < BOT + 10:
+                    guest_y = draw_footer_and_page(guest_y)
+                hline(c, M, guest_y - 6, IW, lw=0.4)
+                ry = guest_y - 18
             else:
-                ry -= room_block_height
+                ry = guest_y - 4
 
         T = ry
         hline(c, M, T, IW)
@@ -530,14 +533,88 @@ def draw_hotel_voucher(c, data):
     # ── 6.5 SPECIAL INSTRUCTIONS ──────────────────────────────────────────────
     special = data.get("special_instructions")
     if has_value(special):
-        if T < BOT + 60: T = draw_footer_and_page(T)
-        txt(c, M, T, "SPECIAL INSTRUCTIONS", size=7, color=C_TEXT_TER, bold=True)
-        sy = T - 14
-        sy, num_lines = draw_wrapped_text(
-            c, M, sy, str(special).strip(), IW,
-            size=9, color=C_TEXT_PRI, line_gap=12
-        )
-        T = sy - 4
+        from reportlab.platypus import Paragraph
+        from reportlab.lib.styles import ParagraphStyle
+        import re
+        
+        html_text = str(special).strip()
+        # Clean up common unsupported unicode characters from Word
+        html_text = html_text.replace('\u2022', '') # Word bullet
+        html_text = html_text.replace('\u25A0', '') # Black square
+        html_text = html_text.replace('\u25CF', '') # Black circle
+        html_text = html_text.replace('\u00B7', '') # Middle dot
+        html_text = html_text.replace('\u25E6', '') # White bullet
+        html_text = html_text.replace('\u2013', '-') # En dash
+        html_text = html_text.replace('\u2014', '--') # Em dash
+        html_text = html_text.replace('\u2018', "'").replace('\u2019', "'") # Smart quotes
+        html_text = html_text.replace('\u201c', '"').replace('\u201d', '"') # Smart double quotes
+        
+        html_text = html_text.replace('<p><br></p>', '<br/>')
+        html_text = html_text.replace('</p><p>', '<br/><br/>')
+        html_text = html_text.replace('<p>', '').replace('</p>', '')
+        html_text = html_text.replace('<br>', '<br/>').replace('<br/>/>', '<br/>')
+        html_text = html_text.replace('<ul>', '').replace('</ul>', '')
+        html_text = html_text.replace('<ol>', '').replace('</ol>', '')
+        html_text = html_text.replace('<li>', '&bull; ').replace('</li>', '<br/>')
+        while html_text.endswith('<br/>'):
+            html_text = html_text[:-5]
+            
+        style = ParagraphStyle(name='Normal', fontName='Helvetica', fontSize=9, leading=14, textColor=C_TEXT_PRI)
+        try:
+            p = Paragraph(html_text, style)
+            
+            if T - 16 < BOT + 20: T = draw_footer_and_page(T)
+            txt(c, M, T, "SPECIAL INSTRUCTIONS", size=7, color=C_TEXT_TER, bold=True)
+            T -= 14
+            
+            while True:
+                avail_h = T - BOT - 10
+                if avail_h < 20:
+                    T = draw_footer_and_page(T)
+                    avail_h = T - BOT - 10
+                
+                w, h = p.wrap(IW, avail_h)
+                if h <= avail_h:
+                    p.drawOn(c, M, T - h)
+                    T = T - h - 16
+                    break
+                else:
+                    parts = p.split(IW, avail_h)
+                    if not parts:
+                        p.drawOn(c, M, T - h)
+                        T = T - h - 16
+                        break
+                    else:
+                        part = parts[0]
+                        w, part_h = part.wrap(IW, avail_h)
+                        part.drawOn(c, M, T - part_h)
+                        T = draw_footer_and_page(T)
+                        if len(parts) > 1:
+                            p = parts[1]
+                        else:
+                            break
+        except Exception as e:
+            if T < BOT + 60: T = draw_footer_and_page(T)
+            txt(c, M, T, "SPECIAL INSTRUCTIONS", size=7, color=C_TEXT_TER, bold=True)
+            sy = T - 16
+            
+            plain = str(special).strip()
+            plain = plain.replace('</p><p>', '\n\n')
+            plain = plain.replace('</p>', '\n').replace('<br>', '\n').replace('<br/>', '\n').replace('</li>', '\n')
+            plain = re.sub('<[^<]+>', '', plain)
+            plain = re.sub(r'\n\s*\n', '\n\n', plain).strip()
+            
+            lines = plain.split('\n')
+            for line in lines:
+                if sy < BOT + 15:
+                    sy = draw_footer_and_page(sy)
+                if not line.strip():
+                    sy -= 8
+                    continue
+                sy, nl = draw_wrapped_text(c, M, sy, line, IW, size=9, color=C_TEXT_PRI, line_gap=13)
+            
+            T = sy - 16
+            
         hline(c, M, T, IW)
         T -= GAP
 

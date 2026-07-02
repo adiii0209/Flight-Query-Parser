@@ -4388,6 +4388,9 @@ def hotel_pdf_generate(booking_id):
     import io as _io
     from reportlab.pdfgen import canvas as pdf_canvas
     from reportlab.lib.pagesizes import A4
+    import importlib
+    import hotel_pdf
+    importlib.reload(hotel_pdf)
     from hotel_pdf import draw_hotel_voucher
     from models import HotelBooking
 
