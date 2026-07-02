@@ -740,7 +740,7 @@ function scheduleOwnershipRefresh() {
     populateOwnerFilter();
     populateMonthFilter();
     renderTable();
-    renderActivityFeed();
+    renderPendingTasksFeed();
     renderCalendar();
     renderUpcomingTrips();
     if (window.location.pathname.startsWith('/ownership/employees')) {
@@ -787,7 +787,7 @@ function refreshAuxiliaryViews() {
     refreshOwnerControls();
     populateOwnerFilter();
     populateMonthFilter();
-    renderActivityFeed();
+    renderPendingTasksFeed();
     renderCalendar();
     renderUpcomingTrips();
     recalculateTableTextareaHeights();
@@ -3373,26 +3373,199 @@ if (themeSwitchEl) {
 // ACTIVITY FEED
 // ═══════════════════════════════════════════════════════════
 
-let activityLog = [...ACTIVITY_LOG];
+let activityLog = [];
 
 function logActivity(text, color = '#6366f1') {
-  activityLog.unshift({ color, text, time: 'just now' });
-  if (activityLog.length > 20) activityLog.pop();
-  renderActivityFeed();
+  // Deprecated: replaced by pending tasks feed
 }
 
-function renderActivityFeed() {
-  const el = document.getElementById('activityFeed');
-  el.innerHTML = activityLog.slice(0, 8).map(a => `
-    <div class="crm-activity-item">
-      <div class="crm-activity-dot" style="background:${a.color}"></div>
-      <div>
-        <div class="crm-activity-text">${escHtml(a.text)}</div>
-        <div class="crm-activity-meta">${a.time}</div>
+function getPendingTaskReminderDateObj(subtask, trip) {
+  const reminder = subtask?.metadata?.reminder;
+  if (!reminder) return null;
+  if (reminder.date) {
+    const parts = reminder.date.split('-');
+    if (parts.length === 3) {
+      return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    }
+    const d = new Date(reminder.date);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (reminder.days !== undefined && reminder.days !== null) {
+    const baseDateStr = trip?.startDate;
+    if (!baseDateStr) return null;
+    const parts = baseDateStr.split('-');
+    let d;
+    if (parts.length === 3) {
+      d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    } else {
+      d = new Date(baseDateStr);
+    }
+    if (isNaN(d.getTime())) return null;
+    const days = parseInt(reminder.days, 10);
+    d.setDate(d.getDate() - days);
+    return d;
+  }
+  return null;
+}
+
+function getSubtaskPrioritySortStamp(subtask) {
+  return subtask?.metadata?.priorityUpdatedAt || subtask?.metadata?.updatedAt || subtask?.updatedAt || subtask?.createdAt || subtask?.metadata?.createdAt || subtask?.metadata?.addedAt || '';
+}
+
+function renderPendingTasksFeed() {
+  const el = document.getElementById('pendingTasksFeed');
+  if (!el) return;
+
+  el.style.maxHeight = '400px';
+  el.style.overflowY = 'auto';
+  el.style.paddingRight = '0.5rem';
+
+  const currentUserName = (window.__CURRENT_USER_NAME__ || '').trim().toLowerCase();
+  let employeeId = null;
+  
+  const updateBadgeCounts = (count) => {
+    const panelBadge = document.getElementById('panelTaskBadge');
+    if (panelBadge) {
+      panelBadge.textContent = count;
+      panelBadge.style.display = count > 0 ? 'inline-block' : 'none';
+    }
+    const titleBadge = document.getElementById('pendingTasksCountBadge');
+    if (titleBadge) {
+      titleBadge.textContent = count;
+      titleBadge.style.display = count > 0 ? 'inline-block' : 'none';
+    }
+  };
+
+  if (!employees || employees.length === 0) {
+    el.innerHTML = '<div style="padding:1rem;color:var(--crm-text-3);text-align:center;">Loading tasks...</div>';
+    updateBadgeCounts(0);
+    return;
+  }
+
+  if (currentUserName) {
+    const emp = employees.find(e => {
+      const eName = (e.name || '').trim().toLowerCase();
+      return eName === currentUserName || currentUserName.includes(eName) || eName.includes(currentUserName);
+    });
+    if (emp) employeeId = emp.id;
+  }
+
+  if (!employeeId) {
+    el.innerHTML = '<div style="padding:1rem;color:var(--crm-text-3);text-align:center;">No employee profile found for logged-in user.</div>';
+    updateBadgeCounts(0);
+    return;
+  }
+
+  let pendingTasks = [];
+
+  const empName = (employees.find(e => e.id === employeeId) || {}).name;
+  if (empName) {
+    trips.forEach(trip => {
+      if (trip.subtasks) {
+        Object.entries(trip.subtasks).forEach(([catName, catArray]) => {
+          if (Array.isArray(catArray)) {
+            catArray.forEach(s => {
+              if (!s.done && s.assignee === empName) {
+                const dObj = getPendingTaskReminderDateObj(s, trip);
+                pendingTasks.push({
+                  ...s,
+                  tripName: trip.guestName || 'Unnamed Trip',
+                  category: taskGroupLabel(catName),
+                  reminderDateObj: dObj,
+                  tripId: trip.id
+                });
+              }
+            });
+          }
+        });
+      }
+    });
+  }
+
+  const empObj = employees.find(e => e.id === employeeId);
+  if (empObj && empObj.subtasks) {
+    Object.entries(empObj.subtasks).forEach(([catName, catArray]) => {
+      if (Array.isArray(catArray)) {
+        catArray.forEach(s => {
+          if (!s.done) {
+             const dObj = getPendingTaskReminderDateObj(s, null);
+             pendingTasks.push({
+               ...s,
+               tripName: 'General Task',
+               category: taskGroupLabel(catName),
+               reminderDateObj: dObj,
+               tripId: null
+             });
+          }
+        });
+      }
+    });
+  }
+
+  updateBadgeCounts(pendingTasks.length);
+
+  if (pendingTasks.length === 0) {
+    el.innerHTML = '<div style="padding:1rem;color:var(--crm-text-3);text-align:center;">No pending tasks.</div>';
+    return;
+  }
+
+  pendingTasks.sort((a, b) => {
+    const aPriority = a.metadata && a.metadata.isHighPriority ? 0 : 1;
+    const bPriority = b.metadata && b.metadata.isHighPriority ? 0 : 1;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    
+    const aDue = a.reminderDateObj ? a.reminderDateObj.getTime() : 9999999999999;
+    const bDue = b.reminderDateObj ? b.reminderDateObj.getTime() : 9999999999999;
+    if (aDue !== bDue) return aDue - bDue;
+
+    const aManual = typeof a.priority === 'number' ? a.priority : 999999;
+    const bManual = typeof b.priority === 'number' ? b.priority : 999999;
+    if (aManual !== bManual) return aManual - bManual;
+
+    const aTime = Date.parse(getSubtaskPrioritySortStamp(a)) || 0;
+    const bTime = Date.parse(getSubtaskPrioritySortStamp(b)) || 0;
+    if (aTime !== bTime) return bTime - aTime;
+    return String(a.text || '').localeCompare(String(b.text || ''));
+  });
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  el.innerHTML = pendingTasks.map(t => {
+    let isRed = false;
+    let reminderHtml = '';
+    if (t.reminderDateObj) {
+      const compDate = new Date(t.reminderDateObj);
+      compDate.setHours(0, 0, 0, 0);
+      isRed = compDate.getTime() <= today.getTime();
+      const iconColor = isRed ? '#ef4444' : '#3b82f6';
+      const label = t.reminderDateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      const calendarIconHtml = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 0.35rem; vertical-align: middle; flex-shrink: 0;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`;
+      const isRecurring = t.metadata && t.metadata.reminder && t.metadata.reminder.recurring;
+      reminderHtml = `<span class="ew-reminder-badge${isRecurring ? ' is-recurring' : ''}" style="color:var(--crm-text-3);background:transparent; font-size:0.66rem; font-weight:700; padding:0.14rem 0; border-radius:999px; white-space:nowrap; display:inline-flex; align-items:center;">${escHtml(label)}${calendarIconHtml}</span>`;
+    }
+    
+    const borderColor = isRed ? '#ef4444' : '#3b82f6';
+    const isPriority = t.metadata && t.metadata.isHighPriority;
+    
+    return `
+    <div class="crm-activity-item" style="display:flex;align-items:flex-start;gap:0.5rem;background:var(--crm-surface-1);padding:0.5rem;border-radius:6px;border-left:3px solid ${borderColor};">
+      <div style="flex:1;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div style="font-weight:600;color:var(--crm-text);">${escHtml(t.text)}</div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.25rem;">
+            ${reminderHtml}
+            ${isPriority ? `<div style="font-size:0.55rem;background:rgba(239, 68, 68, 0.1);color:#ef4444;padding:0.15rem 0.35rem;border-radius:4px;font-weight:700;text-transform:uppercase;white-space:nowrap;">Priority</div>` : ''}
+          </div>
+        </div>
+        <div style="font-size:0.7rem;color:var(--crm-text-3);margin-top:0.2rem;">
+          ${escHtml(t.tripName)} &bull; ${escHtml(t.category)}
+        </div>
       </div>
     </div>
-  `).join('');
+  `}).join('');
 }
+
 
 // ═══════════════════════════════════════════════════════════
 // CALENDAR WIDGET
@@ -3846,7 +4019,7 @@ function restoreTripsForFastPaint() {
     refreshOwnerControls();
     populateMonthFilter();
     renderTable();
-    renderActivityFeed();
+    renderPendingTasksFeed();
     renderCalendar();
     renderUpcomingTrips();
     return true;
@@ -3861,7 +4034,7 @@ async function reloadOwnershipData({ silent = true } = {}) {
     await loadOwnershipData();
     refreshOwnerControls();
     renderTable();
-    renderActivityFeed();
+    renderPendingTasksFeed();
     renderCalendar();
     renderUpcomingTrips();
     if (window.location.pathname.startsWith('/ownership/employees')) {
@@ -3917,7 +4090,7 @@ async function init() {
     renderTable();
   }
 
-  renderActivityFeed();
+  renderPendingTasksFeed();
   renderCalendar();
   renderUpcomingTrips();
 

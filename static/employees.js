@@ -559,6 +559,10 @@ function compareSubtasksForDisplay(a, b) {
   const bDue = getReminderDate(b);
   if (aDue !== bDue) return aDue - bDue;
 
+  const aManual = typeof a.priority === 'number' ? a.priority : 999999;
+  const bManual = typeof b.priority === 'number' ? b.priority : 999999;
+  if (aManual !== bManual) return aManual - bManual;
+
   const aTime = Date.parse(getSubtaskPrioritySortStamp(a)) || 0;
   const bTime = Date.parse(getSubtaskPrioritySortStamp(b)) || 0;
   if (aTime !== bTime) return bTime - aTime;

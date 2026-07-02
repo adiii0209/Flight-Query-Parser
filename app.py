@@ -1089,9 +1089,13 @@ def _build_cards_render_groups(flights, trip_type, unit_flights):
 @login_required
 def ownership_page():
     """Serve the Ownership CRM dashboard"""
+    from models import User
+    user = User.query.get(session.get("user_id"))
+    current_user_name = user.full_name or user.username if user else ""
     return render_template(
         'ownership.html',
         ownership_realtime_ws_enabled=WebSocketServer is not None,
+        current_user_name=current_user_name
     )
 
 @app.route("/ownership/employees")
