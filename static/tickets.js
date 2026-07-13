@@ -195,7 +195,7 @@ const AIRLINE_WEB_CHECKIN_LINKS = {
 function isValidWebCheckinTicket(ticket) {
     if (!ticket || !ticket.id) return false;
     if ((ticket.ticket_status || 'live') === 'cancelled') return false;
-    return Number.isFinite(getTicketDepartureTimestamp(ticket)) && getHoursUntilDeparture(ticket) >= 0;
+    return getWebCheckinFlights().some(t => (t._originalTicketId || t.id) === ticket.id);
 }
 
 function getTicketSegmentCodes(ticket) {
@@ -488,12 +488,47 @@ function getTicketAncillarySummary(ticket) {
 
 function getWebCheckinFlights() {
     const now = Date.now();
-    return (allTickets || [])
+    const items = [];
+    (allTickets || [])
         .filter((ticket) => ticket && ticket.id)
         .filter((ticket) => (ticket.ticket_status || 'live') !== 'cancelled')
-        .map((ticket) => ({ ...ticket, _departureTs: getTicketDepartureTimestamp(ticket) }))
-        .filter((ticket) => Number.isFinite(ticket._departureTs) && ticket._departureTs >= now)
-        .sort((a, b) => a._departureTs - b._departureTs);
+        .forEach((ticket) => {
+            const segments = ticket.segments || [];
+            if (!segments.length) return;
+            const journey = ticket.journey || {};
+            let legs;
+            if (journey.legs && journey.legs.length > 0) {
+                legs = journey.legs.map((leg) => leg.segments || []);
+            } else {
+                legs = groupSegmentsIntoLegs(segments);
+            }
+            if (!legs || legs.length <= 1) {
+                const ts = parseFlightDateTime(segments[0].departure || {});
+                if (Number.isFinite(ts) && ts >= now) {
+                    items.push({ ...ticket, _departureTs: ts, _webCheckinId: ticket.id, _originalTicketId: ticket.id });
+                }
+            } else {
+                legs.forEach((legSegIndices, legIndex) => {
+                    const legSegments = legSegIndices.map(idx => segments[idx]).filter(Boolean);
+                    if (!legSegments.length) return;
+                    const ts = parseFlightDateTime(legSegments[0].departure || {});
+                    if (Number.isFinite(ts) && ts >= now) {
+                        items.push({ 
+                            ...ticket, 
+                            segments: legSegments, 
+                            _departureTs: ts, 
+                            _webCheckinId: `${ticket.id}_leg_${legIndex}`,
+                            _originalTicketId: ticket.id
+                        });
+                    }
+                });
+            }
+        });
+    return items.sort((a, b) => a._departureTs - b._departureTs);
+}
+
+function findWebCheckinTicketById(webCheckinId) {
+    return getWebCheckinFlights().find(t => (t._webCheckinId || t.id) === webCheckinId);
 }
 
 function getFlightsWithinHours(hours) {
@@ -510,7 +545,8 @@ function getUpcomingFlights(days) {
 
 function filterWebCheckinTicketsByStatus(tickets) {
     return (tickets || []).filter((ticket) => {
-        const done = !!webCheckinDoneByTicket[ticket?.id];
+        const checkId = ticket._webCheckinId || ticket.id;
+        const done = !!webCheckinDoneByTicket[checkId];
         if (webCheckinStatusFilter === 'done') return done;
         if (webCheckinStatusFilter === 'all') return true;
         return !done;
@@ -522,9 +558,10 @@ function renderWebCheckinEmptyState(message) {
 }
 
 function renderWebCheckinCard(ticket, { showOpenButton = false } = {}) {
-    const ticketId = safe(ticket?.id, '');
-    const expanded = webCheckinExpandedIds.has(ticketId);
-    const done = !!webCheckinDoneByTicket[ticketId];
+    const webCheckinId = safe(ticket?._webCheckinId || ticket?.id, '');
+    const originalTicketId = safe(ticket?._originalTicketId || ticket?.id, '');
+    const expanded = webCheckinExpandedIds.has(webCheckinId);
+    const done = !!webCheckinDoneByTicket[webCheckinId];
     const lastName = getPassengerLastName(ticket);
     const pnr = safe(ticket?.pnr, 'N/A');
     const pnrCopyValue = JSON.stringify(String(pnr || ''));
@@ -538,10 +575,10 @@ function renderWebCheckinCard(ticket, { showOpenButton = false } = {}) {
         ? '<span class="web-checkin-chip done">Check-in done</span>'
         : '<span class="web-checkin-chip pending">Pending</span>';
     const openButton = showOpenButton
-        ? `<button class="mini-btn ghost" onclick="event.stopPropagation(); openWebCheckinTicket('${ticketId}')">Open Ticket</button>`
+        ? `<button class="mini-btn ghost" onclick="event.stopPropagation(); openWebCheckinTicket('${originalTicketId}')">Open Ticket</button>`
         : '';
     const expandButton = `
-        <button class="web-checkin-expand-btn ${expanded ? 'expanded' : ''}" onclick="event.stopPropagation(); toggleWebCheckinExpanded('${ticketId}')" aria-label="${expanded ? 'Collapse details' : 'Expand details'}">
+        <button class="web-checkin-expand-btn ${expanded ? 'expanded' : ''}" onclick="event.stopPropagation(); toggleWebCheckinExpanded('${webCheckinId}')" aria-label="${expanded ? 'Collapse details' : 'Expand details'}">
             <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m6 9 6 6 6-6" />
             </svg>
@@ -562,12 +599,12 @@ function renderWebCheckinCard(ticket, { showOpenButton = false } = {}) {
     `;
 
     return `
-        <div class="web-checkin-card ${hoursUntil <= 48 ? 'urgent' : ''}" onclick="toggleWebCheckinExpanded('${ticketId}')">
+        <div class="web-checkin-card ${hoursUntil <= 48 ? 'urgent' : ''}" onclick="toggleWebCheckinExpanded('${webCheckinId}')">
             <div class="web-checkin-card-top">
                 <div class="web-checkin-route">
                     <div class="web-checkin-route-row">
                         <strong>${safe(getTicketRouteLabel(ticket))}</strong>
-                        <button class="web-checkin-icon-btn" onclick="event.stopPropagation(); openWebCheckinTicket('${ticketId}')" aria-label="Open ticket">${openIcon}</button>
+                        <button class="web-checkin-icon-btn" onclick="event.stopPropagation(); openWebCheckinTicket('${originalTicketId}')" aria-label="Open ticket">${openIcon}</button>
                     </div>
                     <div class="web-checkin-meta">
                         <span class="web-checkin-chip subtle">${safe(formatWebCheckinDateTime(ticket))}</span>
@@ -597,8 +634,8 @@ function renderWebCheckinCard(ticket, { showOpenButton = false } = {}) {
                 </div>
             </div>
             <div class="web-checkin-actions">
-                <button class="mini-btn ${done ? 'done' : 'primary'}" onclick="event.stopPropagation(); handleWebCheckinDone('${ticketId}')">${done ? 'Undo Done' : 'Web Check-in Done'}</button>
-                <button class="mini-btn primary" style="padding: 0 0.5rem;" onclick="event.stopPropagation(); openAirlineWebCheckin('${ticketId}')" title="Go to Airline Web Check-in">
+                <button class="mini-btn ${done ? 'done' : 'primary'}" onclick="event.stopPropagation(); handleWebCheckinDone('${webCheckinId}')">${done ? 'Undo Done' : 'Web Check-in Done'}</button>
+                <button class="mini-btn primary" style="padding: 0 0.5rem;" onclick="event.stopPropagation(); openAirlineWebCheckin('${webCheckinId}')" title="Go to Airline Web Check-in">
                     <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;">
                         <line x1="22" y1="2" x2="11" y2="13"></line>
                         <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
@@ -635,15 +672,24 @@ function renderWebCheckinPanel() {
     const overlay = document.getElementById('webCheckinOverlay');
     if (!body || !badge || !panel || !overlay) return;
 
-    const focusedTicket = webCheckinFocusedTicketId ? findTicketById(webCheckinFocusedTicketId) : null;
+    const focusedTicketId = webCheckinFocusedTicketId;
+    let focusedTicketsHTML = '';
+    if (focusedTicketId) {
+        const legs = getWebCheckinFlights().filter(t => (t._originalTicketId || t.id) === focusedTicketId);
+        focusedTicketsHTML = legs.map(t => renderWebCheckinCard(t, { showOpenButton: true })).join('');
+    }
+    
     const urgentFlights = filterWebCheckinTicketsByStatus(getFlightsWithinHours(48));
     const upcomingFlights = filterWebCheckinTicketsByStatus(getUpcomingFlights(webCheckinWindowDays));
-    const badgeCount = getFlightsWithinHours(48).filter((ticket) => !webCheckinDoneByTicket[ticket?.id]).length;
+    const badgeCount = getFlightsWithinHours(48).filter((ticket) => {
+        const checkId = ticket._webCheckinId || ticket.id;
+        return !webCheckinDoneByTicket[checkId];
+    }).length;
 
     badge.textContent = String(badgeCount);
     badge.style.display = badgeCount ? 'inline-flex' : 'none';
 
-    body.innerHTML = focusedTicket
+    body.innerHTML = focusedTicketsHTML
         ? `
         <section class="web-checkin-section">
             <div class="web-checkin-section-header">
@@ -657,7 +703,7 @@ function renderWebCheckinPanel() {
                 This panel is focused on one ticket. Use the card below to mark it done and copy the prepared message.
             </div>
             <div class="web-checkin-list">
-                ${renderWebCheckinCard(focusedTicket, { showOpenButton: true })}
+                ${focusedTicketsHTML}
             </div>
         </section>`
         : `
@@ -785,13 +831,13 @@ function toggleWebCheckinDone(ticketId) {
     renderWebCheckinPanel();
 }
 
-async function handleWebCheckinDone(ticketId) {
-    const ticket = findTicketById(ticketId);
+async function handleWebCheckinDone(webCheckinId) {
+    const ticket = findWebCheckinTicketById(webCheckinId);
     if (!ticket) {
         showToast('Ticket not found', 'error');
         return;
     }
-    toggleWebCheckinDone(ticketId);
+    toggleWebCheckinDone(webCheckinId);
     await copyWebCheckinValue(buildWebCheckinCopyMessage(ticket), 'Web check-in message copied');
 }
 
@@ -814,8 +860,8 @@ async function openFocusedWebCheckinTicket(ticketId) {
     }
 }
 
-async function openAirlineWebCheckin(ticketId) {
-    const ticket = findTicketById(ticketId);
+async function openAirlineWebCheckin(webCheckinId) {
+    const ticket = findWebCheckinTicketById(webCheckinId);
     if (!ticket) return;
     
     const pnr = safe(ticket?.pnr, '').trim();
