@@ -19,7 +19,7 @@ AIRPORT_CODES = {
     "CNN": "Kannur", "TRZ": "Tiruchirappalli", "JDH": "Jodhpur", "JSA": "Jaisalmer", "JGA": "Jamnagar",
     "BKB": "Bikaner", "GAY": "Gaya", "DBG": "Darbhanga", "JRG": "Jharsuguda", "GBI": "Kalaburagi",
     "CDP": "Kadapa", "KJB": "Kurnool", "SDW": "Sindhudurg", "KBK": "Kushinagar", "NDC": "Nanded",
-    "DPA": "Durgapur", "TEI": "Tezu", "HDO": "Hindon",
+    "DPA": "Durgapur", "TEI": "Tezu", "HDO": "Hindon", "CJB": "Coimbatore",
     
     # ===== UNITED STATES (Major hubs first) =====
     "ATL": "Atlanta Hartsfield-Jackson", "LAX": "Los Angeles", "ORD": "Chicago O'Hare", 
