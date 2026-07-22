@@ -365,7 +365,7 @@ def login():
     if not username or not password:
         return jsonify({'error': 'Missing credentials'}), 400
         
-    user = User.query.filter_by(username=username).first()
+    user = User.query.filter((User.username == username) | (User.email == username)).first()
     if user and user.check_password(password):
         
         # Check if they are accepting an invite
