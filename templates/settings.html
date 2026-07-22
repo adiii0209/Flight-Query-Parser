@@ -60,6 +60,12 @@
                         <i data-lucide="info"></i>
                         <span>About</span>
                     </button>
+                    {% if session.get('role') in ['AGENCY_ADMIN', 'PLATFORM_SUPER_ADMIN'] %}
+                    <button class="nav-item" data-tab="team">
+                        <i data-lucide="users"></i>
+                        <span>Team Management</span>
+                    </button>
+                    {% endif %}
                 </nav>
             </aside>
 
@@ -172,6 +178,23 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Tab: Team Management -->
+                {% if session.get('role') in ['AGENCY_ADMIN', 'PLATFORM_SUPER_ADMIN'] %}
+                <div class="tab-pane" id="team">
+                    <div class="content-header">
+                        <h2>Team Management</h2>
+                        <p>Manage your team and reset passwords if they forget them.</p>
+                    </div>
+
+                    <div class="Card section-card">
+                        <h3>Employees</h3>
+                        <div id="employeeListContainer" style="margin-top: 1rem;">
+                            <p style="color: rgba(255,255,255,0.6);">Loading employees...</p>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
             </section>
         </div>
     </main>
@@ -283,6 +306,7 @@
                         const headerAvatar = document.getElementById('headerAvatar');
                         if (headerAvatar) headerAvatar.textContent = (user.full_name || user.username || 'U')[0].toUpperCase();
                         
+                        currentOrgId = user.organization_id;
                         return true;
                     }
                 } catch (e) {
@@ -292,8 +316,6 @@
             }
 
             await checkAuthStatus();
-
-            // Sync initial theme display
             updateThemeDisplay(document.documentElement.getAttribute('data-theme') || 'light');
 
             // Tab Switching Logic
@@ -314,6 +336,10 @@
                             section.classList.add('active');
                         }
                     });
+                    
+                    if (targetId === 'team') {
+                        loadTeamMembers();
+                    }
                 });
             });
 
@@ -426,6 +452,66 @@
             } catch (error) {
                 console.error('Error deleting account:', error);
                 alert('An error occurred while deleting your account.');
+            }
+        }
+
+        async function loadTeamMembers() {
+            if (!currentOrgId) return;
+            const container = document.getElementById('employeeListContainer');
+            try {
+                const response = await fetch(`/api/organizations/${currentOrgId}/members`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (!data.members || data.members.length === 0) {
+                        container.innerHTML = '<p style="color: rgba(255,255,255,0.6);">No employees found.</p>';
+                        return;
+                    }
+                    
+                    container.innerHTML = data.members.map(member => {
+                        const isRegistered = member.user_id != null;
+                        const resetBtn = isRegistered ? `<button class="btn secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="adminResetPassword('${member.membership_id}', '${member.name}')">Reset Password</button>` : `<span style="font-size: 0.8rem; color: rgba(255,255,255,0.5);">Not Registered</span>`;
+                        
+                        return `
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                <div>
+                                    <h4 style="margin: 0; font-size: 1rem;">${member.name}</h4>
+                                    <p style="margin: 0.25rem 0 0; font-size: 0.85rem; color: rgba(255,255,255,0.6);">${member.email || 'No email'} · ${member.role}</p>
+                                </div>
+                                <div>
+                                    ${resetBtn}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    container.innerHTML = '<p style="color: #fca5a5;">Failed to load employees.</p>';
+                }
+            } catch (e) {
+                console.error('Error loading members:', e);
+                container.innerHTML = '<p style="color: #fca5a5;">Error loading employees.</p>';
+            }
+        }
+
+        async function adminResetPassword(membershipId, name) {
+            const newPassword = prompt(`Enter a new temporary password for ${name}:`);
+            if (!newPassword) return;
+            
+            try {
+                const response = await fetch(`/api/organizations/${currentOrgId}/members/${membershipId}/reset_password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ new_password: newPassword })
+                });
+                
+                if (response.ok) {
+                    alert(`Password for ${name} has been reset to: ${newPassword}\nPlease share this securely with them.`);
+                } else {
+                    const data = await response.json();
+                    alert('Failed to reset password: ' + (data.error || response.statusText));
+                }
+            } catch (error) {
+                console.error('Error resetting password:', error);
+                alert('An error occurred while resetting the password.');
             }
         }
     </script>

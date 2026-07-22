@@ -269,3 +269,28 @@ def remove_organization_member(org_id, membership_id):
     db.session.commit()
     return jsonify({'message': 'Member removed successfully'})
 
+
+@rbac_bp.route('/api/organizations/<org_id>/members/<membership_id>/reset_password', methods=['POST'])
+@_require_auth
+def reset_member_password(org_id, membership_id):
+    if session.get('role') != Role.PLATFORM_SUPER_ADMIN:
+        m = Membership.query.filter_by(user_id=session['user_id'], organization_id=org_id).first()
+        if not m or m.role not in (Role.AGENCY_ADMIN, Role.CLIENT_ADMIN):
+            return jsonify({'error': 'Access denied'}), 403
+            
+    membership = Membership.query.filter_by(id=membership_id, organization_id=org_id).first_or_404()
+    
+    data = request.get_json()
+    new_password = data.get('new_password')
+    if not new_password:
+        return jsonify({'error': 'New password is required'}), 400
+        
+    user = membership.user
+    if not user:
+        return jsonify({'error': 'No user associated with this membership'}), 400
+        
+    user.set_password(new_password)
+    db.session.commit()
+    
+    return jsonify({'message': 'Password successfully reset'})
+
