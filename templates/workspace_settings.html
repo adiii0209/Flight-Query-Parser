@@ -357,10 +357,12 @@
                         roleSelect = `<span style="color: var(--text-muted); font-size: 0.85rem;">Access Revoked</span>`;
                     }
 
-                    let actions = '';
                     if (m.has_access) {
                         actions = `
                             <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <button class="btn secondary" style="padding: 0.35rem 0.7rem; font-size: 0.8rem; border-radius: 6px;" onclick="adminResetPassword('${m.membership_id}', '${m.name.replace(/'/g, "\\'")}')">
+                                    Reset Password
+                                </button>
                                 <button class="btn secondary" style="padding: 0.35rem 0.7rem; font-size: 0.8rem; border-radius: 6px;" onclick="revokeAccess('${m.membership_id}', '${m.name.replace(/'/g, "\\'")}')" ${m.role === 'PLATFORM_SUPER_ADMIN' ? 'disabled' : ''}>
                                     Revoke Access
                                 </button>
@@ -486,6 +488,29 @@
                 await loadMembers();
             } catch (e) {
                 alert('Network error');
+            }
+        }
+
+        async function adminResetPassword(membershipId, name) {
+            const newPassword = prompt(`Enter a new temporary password for ${name}:`);
+            if (!newPassword) return;
+            
+            try {
+                const response = await fetch(`/api/organizations/${currentOrgId}/members/${membershipId}/reset_password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ new_password: newPassword })
+                });
+                
+                if (response.ok) {
+                    alert(`Password for ${name} has been reset to: ${newPassword}\nPlease share this securely with them.`);
+                } else {
+                    const data = await response.json();
+                    alert('Failed to reset password: ' + (data.error || response.statusText));
+                }
+            } catch (error) {
+                console.error('Error resetting password:', error);
+                alert('An error occurred while resetting the password.');
             }
         }
     </script>
