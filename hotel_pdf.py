@@ -260,12 +260,26 @@ def draw_hotel_voucher(c, data):
     # Left: HOTEL VOUCHER label → hotel name → city
     # Right: logo or company name
     txt(c, M, T,      "HOTEL VOUCHER", size=7,  color=C_TEXT_TER, bold=True)
-    txt(c, M, T-16,   data.get("hotel_name") or "", size=17, color=C_TEXT_PRI, bold=True)
+    
+    current_y = T - 16
+    hotel_name = data.get("hotel_name") or ""
+    max_title_width = IW - 110 
+    
+    hotel_lines = wrap_text_lines(c, hotel_name, max_title_width, "Helvetica-Bold", 17)
+    if not hotel_lines:
+        hotel_lines = [hotel_name]
+        
+    for line in hotel_lines:
+        txt(c, M, current_y, line, size=17, color=C_TEXT_PRI, bold=True)
+        current_y -= 20
+
+    current_y += 6
 
     addr      = data.get("hotel_address") or ""
     city_hint = addr.split(",")[-1].strip() if "," in addr else ""
     if has_value(city_hint):
-        txt(c, M, T-30, city_hint, size=9, color=C_TEXT_SEC)
+        txt(c, M, current_y, city_hint, size=9, color=C_TEXT_SEC)
+        current_y -= 12
 
     logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png")
     if os.path.isfile(logo_path):
@@ -275,7 +289,7 @@ def draw_hotel_voucher(c, data):
         txt(c, R, T - 4,  "TIME TOURS",   size=12, color=C_TEXT_PRI, bold=True, align="right")
         txt(c, R, T - 18, "Tech Pvt Ltd", size=8,  color=C_TEXT_TER, align="right")
 
-    T -= 42
+    T = min(T - 42, current_y)
     hline(c, M, T, IW)
     T -= GAP
 
