@@ -6558,7 +6558,8 @@ function getNormalizedFareState() {
         return {
             base: parseMoneyValue(fare.base_fare),
             k3: parseMoneyValue(fare.k3_gst),
-            other: parseMoneyValue(fare.other_taxes)
+            other: parseMoneyValue(fare.other_taxes),
+            markup: fare.markup !== undefined ? parseMoneyValue(fare.markup) : undefined
         };
     });
     const hasExplicitPassengerFares = explicitPassengerFareRows.some(row => row.base || row.k3 || row.other);
@@ -6613,17 +6614,21 @@ function getNormalizedFareState() {
     }
 
     const perPassengerRows = passengers.map((_, index) => {
+        let row = { base: 0, k3: 0, other: 0, markup: explicitPassengerFareRows[index].markup };
         if (hasExplicitPassengerFares) {
-            return explicitPassengerFareRows[index] || { base: 0, k3: 0, other: 0 };
+            row.base = explicitPassengerFareRows[index].base;
+            row.k3 = explicitPassengerFareRows[index].k3;
+            row.other = explicitPassengerFareRows[index].other;
+        } else if (useConsolidatedSource) {
+            row.base = consolidatedTotals.base / passengerCount;
+            row.k3 = consolidatedTotals.k3 / passengerCount;
+            row.other = consolidatedTotals.other / passengerCount;
+        } else {
+            row.base = explicitPassengerFareRows[index].base;
+            row.k3 = explicitPassengerFareRows[index].k3;
+            row.other = explicitPassengerFareRows[index].other;
         }
-        if (useConsolidatedSource) {
-            return {
-                base: consolidatedTotals.base / passengerCount,
-                k3: consolidatedTotals.k3 / passengerCount,
-                other: consolidatedTotals.other / passengerCount
-            };
-        }
-        return explicitPassengerFareRows[index] || { base: 0, k3: 0, other: 0 };
+        return row;
     });
 
     return {
@@ -6684,6 +6689,19 @@ function updateGlobalMarkupPerPassenger(value) {
     fareFieldsTouched = true;
     if (!editedData.journey) editedData.journey = {};
     editedData.journey.global_markup = parseMoneyValue(value);
+    (editedData.passengers || []).forEach(p => {
+        if (p.fare) p.fare.markup = editedData.journey.global_markup;
+    });
+    recalcFareGlobal();
+    triggerAutoSave();
+}
+
+function updatePassengerMarkupField(index, value) {
+    fareFieldsTouched = true;
+    if (!editedData.passengers) editedData.passengers = [];
+    if (!editedData.passengers[index]) return;
+    if (!editedData.passengers[index].fare) editedData.passengers[index].fare = {};
+    editedData.passengers[index].fare.markup = parseMoneyValue(value);
     recalcFareGlobal();
     triggerAutoSave();
 }
@@ -6904,7 +6922,8 @@ function renderFareSection() {
             const base = parseMoneyValue(fare.base);
             const k3 = parseMoneyValue(fare.k3);
             const other = parseMoneyValue(fare.other);
-            const bothAddition = other + globalMarkup;
+            const pMarkup = fare.markup !== undefined ? parseMoneyValue(fare.markup) : globalMarkup;
+            const bothAddition = other + pMarkup;
             const total = base + k3 + bothAddition;
 
             if (!editedData.passengers[i].fare) editedData.passengers[i].fare = {};
@@ -6912,6 +6931,9 @@ function renderFareSection() {
                 editedData.passengers[i].fare.base_fare = base;
                 editedData.passengers[i].fare.k3_gst = k3;
                 editedData.passengers[i].fare.other_taxes = other;
+            }
+            if (editedData.passengers[i].fare.markup === undefined) {
+                 editedData.passengers[i].fare.markup = pMarkup;
             }
             if (parseMoneyValue(editedData.passengers[i].fare.total_fare) !== total) {
                 if (!editedData.passengers[i].fare) editedData.passengers[i].fare = {};
@@ -6927,7 +6949,7 @@ function renderFareSection() {
                     <input type="number" id="pax-other-${i}" value="${other}" oninput="updatePassengerFareField(${i}, 'other_taxes', this.value)" onchange="updatePassengerFareField(${i}, 'other_taxes', this.value)">
                 </td>
                 <td>
-                    <input type="number" id="pax-markup-${i}" value="${globalMarkup}" oninput="updateGlobalMarkupPerPassenger(this.value)" onchange="updateGlobalMarkupPerPassenger(this.value)">
+                    <input type="number" id="pax-markup-${i}" value="${pMarkup}" oninput="updatePassengerMarkupField(${i}, this.value)" onchange="updatePassengerMarkupField(${i}, this.value)">
                 </td>
                 <td style="color:var(--accent-primary); font-weight:600;" id="pax-both-${i}">${formatCurrency(bothAddition, curr)}</td>
                 <td><strong id="pax-total-${i}">${formatCurrency(total, curr)}</strong></td>
@@ -7114,6 +7136,7 @@ function recalcFareGlobal(redraw = true) {
                 passenger.fare.k3_gst = row.k3;
                 passenger.fare.other_taxes = row.other;
             }
+            passenger.fare.markup = perPassengerMarkup;
             passenger.fare.total_fare = row.base + row.k3 + row.other + perPassengerMarkup;
         });
 
@@ -7146,7 +7169,8 @@ function recalcFareGlobal(redraw = true) {
             const base = parseMoneyValue(f.base);
             const k3 = parseMoneyValue(f.k3);
             const other = parseMoneyValue(f.other);
-            const bothAddition = other + globalMarkup;
+            const pMarkup = f.markup !== undefined ? parseMoneyValue(f.markup) : globalMarkup;
+            const bothAddition = other + pMarkup;
             const total = base + k3 + bothAddition;
             totalBase += base;
             totalK3 += k3;
@@ -7157,6 +7181,7 @@ function recalcFareGlobal(redraw = true) {
                 editedData.passengers[i].fare.k3_gst = k3;
                 editedData.passengers[i].fare.other_taxes = other;
             }
+            editedData.passengers[i].fare.markup = pMarkup;
             editedData.passengers[i].fare.total_fare = total;
             gt += total;
 
@@ -7164,10 +7189,7 @@ function recalcFareGlobal(redraw = true) {
             if (otherEl && redraw) otherEl.value = other;
 
             const markupEl = document.getElementById('pax-markup-' + i);
-            if (markupEl && redraw) markupEl.value = globalMarkup;
-
-            // Sync global markups dynamically
-            if (redraw && i > 0 && markupEl) markupEl.value = globalMarkup;
+            if (markupEl && redraw) markupEl.value = pMarkup;
 
             const bothEl = document.getElementById('pax-both-' + i);
             if (bothEl && redraw) bothEl.textContent = formatCurrency(bothAddition, curr);
