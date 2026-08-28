@@ -6770,6 +6770,7 @@ function applyFareQuickFill(rawValue) {
             passenger.fare.base_fare = parsed.base;
             passenger.fare.k3_gst = parsed.k3;
             passenger.fare.other_taxes = parsed.other;
+            passenger.fare.markup = parsed.markup;
         });
         editedData.journey.consolidated_fare.base_fare = parsed.base * passengerCount;
         editedData.journey.consolidated_fare.k3_gst = parsed.k3 * passengerCount;
