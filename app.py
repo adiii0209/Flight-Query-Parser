@@ -2736,7 +2736,10 @@ def _upgrade_ownership_json_columns_for_postgres():
 
 
 def ensure_schema_compatibility():
-    db.create_all()
+    try:
+        db.create_all()
+    except Exception:
+        db.session.rollback()
 
     _add_column_if_missing("ticket_operation", "updated_at", "TIMESTAMP")
     _add_column_if_missing("ticket_operation", "user_id", "VARCHAR")
