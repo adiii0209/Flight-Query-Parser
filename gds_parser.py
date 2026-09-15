@@ -188,15 +188,29 @@ _RE_FARE   = re.compile(r"[₹$]\s*([\d,]+)|(?:INR|RS\.?)\s*([\d,]+)", re.I)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _parse_gds_date(day: str, month: str,
-                    year: Optional[str], ref_year: int) -> Optional[datetime]:
-    """GDS date parts → datetime at noon (avoids midnight DST edge cases)."""
+                    year: Optional[str], ref_year: Optional[int] = None) -> Optional[datetime]:
+    """
+    GDS date parts → datetime at noon (avoids midnight DST edge cases).
+    If year is omitted:
+      - If ref_year is provided, uses ref_year as baseline.
+      - Otherwise, defaults to current year.
+      - If the date in current year is in the past relative to today, it is assumed to be next year's flight.
+    """
     try:
-        return datetime(
-            int("20" + year) if year else ref_year,
-            GDS_MONTH_MAP[month.upper()],
-            int(day),
-            12, 0, 0,
-        )
+        m_num = GDS_MONTH_MAP[month.upper()]
+        d_num = int(day)
+        
+        if year:
+            y_num = int("20" + year)
+        elif ref_year:
+            y_num = ref_year
+        else:
+            today = datetime.now()
+            y_num = today.year
+            if datetime(y_num, m_num, d_num, 12, 0) < today.replace(hour=0, minute=0, second=0, microsecond=0):
+                y_num += 1
+
+        return datetime(y_num, m_num, d_num, 12, 0, 0)
     except Exception:
         return None
 
@@ -371,10 +385,13 @@ def _stitch_segments(segments: List[Dict]) -> List[Dict]:
                 days_between=days_between,
                 date_obj=seg.get("_dep_date_obj"),
             )
-            seg["layover_city"] = prev["arrival_airport"]
+            seg["layover_city"] = _city(prev["arrival_airport"])
 
             # Advance cumulative counter for overnight layover
             cumulative += days_between
+        else:
+            seg["layover_duration"] = "N/A"
+            seg["layover_city"] = "N/A"
 
         # Advance by this segment's own midnight-crossing offset
         cumulative += seg["days_offset"]
@@ -508,7 +525,6 @@ class GDSParser:
         pnr        = self._pnr(up)
         baggage    = self._baggage(text)
         fare       = self._fare(text)
-        ref_year   = datetime.now().year
         sections   = self._split(text)
 
         Logger.debug(f"GDS sections: {len(sections)}, trip: {ttype}")
@@ -520,10 +536,10 @@ class GDSParser:
             raw = []
             for line in su.split('\n'):
                 line_raw = (
-                    self._parse_amadeus(line, ref_year)
-                    or self._parse_slash(line, ref_year)
-                    or self._parse_galileo(line, ref_year)
-                    or self._parse_generic(line, ref_year)
+                    self._parse_amadeus(line)
+                    or self._parse_slash(line)
+                    or self._parse_galileo(line)
+                    or self._parse_generic(line)
                 )
                 if line_raw:
                     raw.extend(line_raw)
@@ -531,15 +547,26 @@ class GDSParser:
             if not raw:
                 continue
 
-            # Auto-split into logical legs
-            stitched_test = _stitch_segments(raw)
+            # Enforce chronological sequence / year rollover across sequential segments
+            last_date = None
+            for seg in raw:
+                d = seg.get('_dep_date_obj')
+                if d:
+                    if last_date and d < last_date:
+                        # Flight date is earlier than previous segment date (e.g. 18 DEC -> 19 JAN)
+                        years_diff = (last_date.year - d.year) + 1
+                        d = d.replace(year=d.year + years_diff)
+                        seg['_dep_date_obj'] = d
+                        seg['departure_date'] = FlightDate.format(d)
+                    last_date = d
+
+            # Auto-split into logical legs using timezone-aware arrival dates
             legs = []
             curr_leg = [raw[0]]
             
             for i in range(1, len(raw)):
                 prev_raw = raw[i-1]
                 curr_raw = raw[i]
-                curr_stitched = stitched_test[i]
                 
                 is_gap = curr_raw['departure_airport'] != prev_raw['arrival_airport']
                 
@@ -548,20 +575,20 @@ class GDSParser:
                 d2 = curr_raw.get('_dep_date_obj')
                 if d1 and d2:
                     from datetime import timedelta
+                    offset_days = prev_raw.get('days_offset', 0)
+                    prev_arr_date = d1 + timedelta(days=offset_days)
+                    
                     _p_arr = DurationCalculator.parse_time(prev_raw['arrival_time'])
-                    _p_dep = DurationCalculator.parse_time(prev_raw['departure_time'])
                     _c_dep = DurationCalculator.parse_time(curr_raw['departure_time'])
                     
-                    if _p_arr is not None and _p_dep is not None and _c_dep is not None:
-                        crossed = 1 if _p_arr < _p_dep else 0
-                        prev_arr_date = d1 + timedelta(days=crossed)
-                        
-                        gap_days = (d2 - prev_arr_date).days
-                        if gap_days > 1:
+                    gap_days = (d2 - prev_arr_date).days
+                    if gap_days > 1:
+                        is_long = True
+                    elif gap_days == 1:
+                        if _p_arr is not None and _c_dep is not None and _c_dep >= _p_arr:
                             is_long = True
-                        elif gap_days == 1:
-                            if _c_dep >= _p_arr:
-                                is_long = True
+                    elif gap_days < 0:
+                        is_long = True
                 
                 if is_gap or is_long:
                     legs.append(curr_leg)
@@ -593,7 +620,7 @@ class GDSParser:
 
     # ── Segment extractors ────────────────────────────────────────────────────
 
-    def _parse_amadeus(self, text: str, ref_year: int) -> List[Dict]:
+    def _parse_amadeus(self, text: str, ref_year: Optional[int] = None) -> List[Dict]:
         segs = []
         for m in _RE_AMADEUS.finditer(text):
             g = m.groupdict()
@@ -604,8 +631,9 @@ class GDSParser:
                                         g.get("dep_yr"), ref_year)
             arr_date = None
             if g.get("arr_day") and g.get("arr_mon"):
+                arr_ref = dep_date.year if dep_date else ref_year
                 arr_date = _parse_gds_date(g.get("arr_day"), g.get("arr_mon"),
-                                            g.get("arr_yr"), ref_year)
+                                            g.get("arr_yr"), arr_ref)
                 if dep_date and arr_date and arr_date < dep_date:
                     if (dep_date - arr_date).days > 300:
                         try:
@@ -625,7 +653,7 @@ class GDSParser:
             Logger.debug(f"Amadeus: {seg['flight_number']} {da}→{aa}")
         return segs
 
-    def _parse_slash(self, text: str, ref_year: int) -> List[Dict]:
+    def _parse_slash(self, text: str, ref_year: Optional[int] = None) -> List[Dict]:
         segs = []
         for m in _RE_SLASH.finditer(text):
             g = m.groupdict()
@@ -644,7 +672,7 @@ class GDSParser:
             Logger.debug(f"Slash: {seg['flight_number']} {da}→{aa}")
         return segs
 
-    def _parse_galileo(self, text: str, ref_year: int) -> List[Dict]:
+    def _parse_galileo(self, text: str, ref_year: Optional[int] = None) -> List[Dict]:
         segs = []
         for m in _RE_GALILEO.finditer(text):
             g = m.groupdict()
@@ -655,8 +683,9 @@ class GDSParser:
                                         g.get("dep_yr"), ref_year)
             arr_date = None
             if g.get("arr_day") and g.get("arr_mon"):
+                arr_ref = dep_date.year if dep_date else ref_year
                 arr_date = _parse_gds_date(g.get("arr_day"), g.get("arr_mon"),
-                                            g.get("arr_yr"), ref_year)
+                                            g.get("arr_yr"), arr_ref)
                 if dep_date and arr_date and arr_date < dep_date:
                     if (dep_date - arr_date).days > 300:
                         try:
@@ -675,7 +704,7 @@ class GDSParser:
             Logger.debug(f"Galileo: {seg['flight_number']} {da}→{aa}")
         return segs
 
-    def _parse_generic(self, text: str, ref_year: int) -> List[Dict]:
+    def _parse_generic(self, text: str, ref_year: Optional[int] = None) -> List[Dict]:
         segs = []
         for m in _RE_GENERIC.finditer(text):
             g = m.groupdict()
@@ -831,7 +860,7 @@ BAGGAGE: 23KG   FARE: INR 24500
 
         for fi, f in enumerate(flights, 1):
             print(f"\n  Flight {fi}: "
-                  f"{f['departure_airport']} ({f['departure_city']}) → "
+                  f"{f['departure_airport']} ({f['departure_city']}) -> "
                   f"{f['arrival_airport']} ({f['arrival_city']})")
             print(f"    airline  : {f['airline']}  ({f['flight_number']})")
             print(f"    date/dep : {f['departure_date']}  {f['departure_time']}")
@@ -840,12 +869,12 @@ BAGGAGE: 23KG   FARE: INR 24500
             print(f"    duration : {f['duration']}")
             print(f"    stops    : {f['stops']}")
             print(f"    baggage  : {f['baggage']}   fare: {f['saver_fare']}")
-            print(f"    trip     : {f['trip_type']}   pnr: {f['pnr'] or '—'}")
+            print(f"    trip     : {f['trip_type']}   pnr: {f['pnr'] or '-'}")
             print(f"    valid    : {f['is_valid']}  {f['parse_errors'] or ''}")
             for si, s in enumerate(f["segments"], 1):
                 print(f"    seg {si}: {s['flight_number']:12s} "
                       f"{s['departure_airport']} ({s['departure_city']}) "
-                      f"{s['departure_time']} → "
+                      f"{s['departure_time']} -> "
                       f"{s['arrival_airport']} ({s['arrival_city']}) "
                       f"{s['arrival_time']}  "
                       f"+{s['days_offset']}d  dur={s['duration']}  "
