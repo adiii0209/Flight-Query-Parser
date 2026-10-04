@@ -3,6 +3,7 @@ Flask-Session
 python-dotenv
 Flask-SQLAlchemy
 psycopg2-binary
+psycopg[binary]
 requests
 redis
 pytz

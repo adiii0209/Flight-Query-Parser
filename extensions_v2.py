@@ -21,11 +21,49 @@ _base_dir = os.path.abspath(os.path.dirname(__file__))
 _instance_dir = os.path.join(_base_dir, 'instance')
 os.makedirs(_instance_dir, exist_ok=True)
 _default_db = f"sqlite:///{os.path.join(_instance_dir, 'app.db')}"
-DATABASE_URL = (os.getenv("DATABASE_URL") or _default_db).strip()
+def _normalize_database_uri(database_url):
+    if not database_url:
+        return database_url
+    database_url = database_url.strip()
+    if database_url.startswith("postgres://"):
+        database_url = "postgresql://" + database_url[len("postgres://"):]
 
-# Fix Railway/Heroku postgres:// → postgresql://
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
+    has_psycopg3 = False
+    try:
+        import psycopg  # noqa: F401
+        has_psycopg3 = True
+    except ImportError:
+        pass
+
+    has_psycopg2 = False
+    try:
+        import psycopg2  # noqa: F401
+        has_psycopg2 = True
+    except ImportError:
+        pass
+
+    if database_url.startswith("postgresql+psycopg://") or database_url.startswith("postgresql+psycopg3://"):
+        prefix_len = len("postgresql+psycopg://") if database_url.startswith("postgresql+psycopg://") else len("postgresql+psycopg3://")
+        rest = database_url[prefix_len:]
+        if not has_psycopg3 and has_psycopg2:
+            return "postgresql+psycopg2://" + rest
+        return "postgresql+psycopg://" + rest
+
+    if database_url.startswith("postgresql+psycopg2://"):
+        rest = database_url[len("postgresql+psycopg2://"):]
+        if not has_psycopg2 and has_psycopg3:
+            return "postgresql+psycopg://" + rest
+        return database_url
+
+    if database_url.startswith("postgresql://"):
+        rest = database_url[len("postgresql://"):]
+        if not has_psycopg2 and has_psycopg3:
+            return "postgresql+psycopg://" + rest
+        return database_url
+
+    return database_url
+
+DATABASE_URL = _normalize_database_uri(os.getenv("DATABASE_URL") or _default_db)
 
 # Create engine with SQLAlchemy 2.0 style
 # pool_pre_ping ensures stale connections are recycled (important for PostgreSQL)

@@ -98,12 +98,53 @@ def _annotate_segment_duration_warnings(segments, clone=True):
         app.logger.exception("Failed to annotate segment duration warnings")
         return _clone_json(segments) if clone else (segments or [])
 
+def _normalize_database_uri(database_url):
+    if not database_url:
+        return database_url
+    database_url = database_url.strip()
+    if database_url.startswith("postgres://"):
+        database_url = "postgresql://" + database_url[len("postgres://"):]
+
+    has_psycopg3 = False
+    try:
+        import psycopg  # noqa: F401
+        has_psycopg3 = True
+    except ImportError:
+        pass
+
+    has_psycopg2 = False
+    try:
+        import psycopg2  # noqa: F401
+        has_psycopg2 = True
+    except ImportError:
+        pass
+
+    if database_url.startswith("postgresql+psycopg://") or database_url.startswith("postgresql+psycopg3://"):
+        prefix_len = len("postgresql+psycopg://") if database_url.startswith("postgresql+psycopg://") else len("postgresql+psycopg3://")
+        rest = database_url[prefix_len:]
+        if not has_psycopg3 and has_psycopg2:
+            return "postgresql+psycopg2://" + rest
+        return "postgresql+psycopg://" + rest
+
+    if database_url.startswith("postgresql+psycopg2://"):
+        rest = database_url[len("postgresql+psycopg2://"):]
+        if not has_psycopg2 and has_psycopg3:
+            return "postgresql+psycopg://" + rest
+        return database_url
+
+    if database_url.startswith("postgresql://"):
+        rest = database_url[len("postgresql://"):]
+        if not has_psycopg2 and has_psycopg3:
+            return "postgresql+psycopg://" + rest
+        return database_url
+
+    return database_url
+
+
 def _resolve_database_uri():
     database_url = (os.getenv("DATABASE_URL") or "").strip()
     if database_url:
-        if database_url.startswith("postgres://"):
-            database_url = "postgresql://" + database_url[len("postgres://"):]
-        return database_url
+        return _normalize_database_uri(database_url)
 
     railway_volume_path = (os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or os.getenv("DB_STORAGE_PATH") or "").strip()
     if railway_volume_path:
