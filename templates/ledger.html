@@ -6,11 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ledger | Flight Manager</title>
     <meta name="description" content="Aggregator ledger dashboard for managing airline billing entries.">
-    <link rel="icon" type="image/png" href="/static/ticket-flight.png">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='ticket-flight.png') }}">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/itineraries.css">
-    <link rel="stylesheet" href="/static/dashboard.css">
-    <link rel="stylesheet" href="/static/sidebar.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='itineraries.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}">
     <style>
         /* ===== LEDGER SPECIFIC STYLES ===== */
         .ledger-tabs {

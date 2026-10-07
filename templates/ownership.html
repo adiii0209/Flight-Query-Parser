@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ownership · Travel Ops CRM</title>
   <meta name="description" content="Travel operations ownership dashboard — manage trips, statuses, subtasks, and team assignments in one place.">
-  <link rel="icon" type="image/png" href="/static/ticket-flight.png">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='ticket-flight.png') }}">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/sidebar.css">
-  <link rel="stylesheet" href="/static/ownership.css?v=20260530priority">
-  <link rel="stylesheet" href="/static/employees.css?v=20260530priority11">
-  <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='ownership.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='employees.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.7/Sortable.min.js"></script>
 </head>
 <body>
 {% include 'components/sidebar.html' %}
@@ -618,8 +618,8 @@
   window.__EMPLOYEE_BASE_PATH__ = '/ownership/employees';
   window.__OWNERSHIP_REALTIME_WS_ENABLED__ = {{ ownership_realtime_ws_enabled|default(false)|tojson }};
 </script>
-<script src="/static/ownership.js?v=20260609_ws_fix"></script>
-<script src="/static/employees.js?v=20260530priority11"></script>
+<script src="{{ url_for('static', filename='ownership.js') }}"></script>
+<script src="{{ url_for('static', filename='employees.js') }}"></script>
 <script>
   // Sync with main app sidebar / theme
   document.addEventListener('DOMContentLoaded', () => {
