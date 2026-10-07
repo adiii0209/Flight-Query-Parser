@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Hotel Bookings | Time Tours</title>
 <meta name="description" content="Manage hotel bookings - parse, edit, and generate voucher PDFs.">
-<link rel="icon" type="image/png" href="/static/ticket-flight.png">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='ticket-flight.png') }}">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Syne:wght@700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/dashboard.css">
-<link rel="stylesheet" href="/static/sidebar.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Outfit',sans-serif;background:#f4f7fb;color:#0f172a;min-height:100vh}

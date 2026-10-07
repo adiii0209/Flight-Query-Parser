@@ -220,6 +220,104 @@ def _configure_server_side_session(flask_app):
 _configure_server_side_session(app)
 
 
+_GZIP_MIMETYPES = {
+    "application/json",
+    "text/html",
+    "text/plain",
+    "text/css",
+    "text/javascript",
+    "application/javascript",
+    "image/svg+xml",
+}
+_STATIC_IMMUTABLE_MAX_AGE_SECONDS = 365 * 24 * 3600
+_static_file_hash_cache = {}
+_static_gzip_cache = {}
+_static_cache_lock = threading.Lock()
+
+
+def _static_file_path(filename):
+    from werkzeug.security import safe_join
+    path = safe_join(app.static_folder, filename)
+    if not path or not os.path.isfile(path):
+        return None
+    return path
+
+
+def _static_file_stat_key(path):
+    stat = os.stat(path)
+    return (path, stat.st_mtime_ns, stat.st_size)
+
+
+def _static_file_hash(filename):
+    """Short content hash of a static file, cached until the file changes."""
+    try:
+        path = _static_file_path(filename)
+        if not path:
+            return None
+        stat_key = _static_file_stat_key(path)
+    except (OSError, ValueError):
+        return None
+    with _static_cache_lock:
+        cached = _static_file_hash_cache.get(path)
+        if cached and cached[0] == stat_key:
+            return cached[1]
+    with open(path, "rb") as static_file:
+        digest = hashlib.md5(static_file.read(), usedforsecurity=False).hexdigest()[:12]
+    with _static_cache_lock:
+        _static_file_hash_cache[path] = (stat_key, digest)
+    return digest
+
+
+@app.url_defaults
+def _static_cache_busting(endpoint, values):
+    # url_for('static', ...) gets ?v=<content hash>, so browsers can cache the
+    # file forever and still pick up every change on the next deploy.
+    if endpoint != "static" or "v" in values:
+        return
+    filename = values.get("filename")
+    if not filename:
+        return
+    file_hash = _static_file_hash(filename)
+    if file_hash:
+        values["v"] = file_hash
+
+
+def _gzip_static_payload(filename):
+    try:
+        path = _static_file_path(filename)
+        if not path:
+            return None
+        stat_key = _static_file_stat_key(path)
+    except (OSError, ValueError):
+        return None
+    with _static_cache_lock:
+        cached = _static_gzip_cache.get(path)
+        if cached and cached[0] == stat_key:
+            return cached[1]
+    with open(path, "rb") as static_file:
+        payload = static_file.read()
+    if len(payload) < _GZIP_MIN_BYTES:
+        compressed = None
+    else:
+        compressed = gzip_lib.compress(payload, compresslevel=9)
+        if len(compressed) >= len(payload):
+            compressed = None
+    with _static_cache_lock:
+        _static_gzip_cache[path] = (stat_key, compressed)
+    return compressed
+
+
+@app.after_request
+def _static_cache_headers(response):
+    if request.endpoint != "static" or response.status_code not in (200, 304):
+        return response
+    filename = (request.view_args or {}).get("filename")
+    requested_hash = request.args.get("v")
+    if filename and requested_hash and requested_hash == _static_file_hash(filename):
+        response.headers["Cache-Control"] = f"public, max-age={_STATIC_IMMUTABLE_MAX_AGE_SECONDS}, immutable"
+    return response
+
+
 @app.after_request
 def _gzip_response(response):
     accept_encoding = (request.headers.get("Accept-Encoding") or "").lower()
@@ -227,20 +325,32 @@ def _gzip_response(response):
         return response
     if response.status_code < 200 or response.status_code >= 300:
         return response
-    if response.direct_passthrough or response.is_streamed:
-        return response
     if response.headers.get("Content-Encoding"):
         return response
 
     mimetype = (response.mimetype or "").lower()
-    if mimetype not in {
-        "application/json",
-        "text/html",
-        "text/plain",
-        "text/css",
-        "text/javascript",
-        "application/javascript",
-    }:
+    if mimetype not in _GZIP_MIMETYPES:
+        return response
+
+    if request.endpoint == "static" and response.status_code == 200 and response.direct_passthrough:
+        # Static files are streamed from disk and skipped below; serve a
+        # gzip copy compressed once per file version instead.
+        compressed = _gzip_static_payload((request.view_args or {}).get("filename") or "")
+        if compressed is None:
+            return response
+        original_body = response.response
+        if hasattr(original_body, "close"):
+            original_body.close()
+        response.direct_passthrough = False
+        response.set_data(compressed)
+        response.headers.pop("Accept-Ranges", None)
+        response.headers["Content-Encoding"] = "gzip"
+        response.headers["Content-Length"] = str(len(compressed))
+        vary = response.headers.get("Vary")
+        response.headers["Vary"] = "Accept-Encoding" if not vary else f"{vary}, Accept-Encoding"
+        return response
+
+    if response.direct_passthrough or response.is_streamed:
         return response
 
     payload = response.get_data()
@@ -267,6 +377,9 @@ _playwright_install_attempted = False
 _render_cache = OrderedDict()
 _render_cache_lock = threading.Lock()
 _render_cache_max = 20
+_RENDER_CACHE_MAX_FILES = max(int(os.getenv("RENDER_CACHE_MAX_FILES", "500") or 500), 20)
+_RENDER_CACHE_PRUNE_EVERY = 25
+_render_cache_prune_state = {"stores": 0}
 _render_jobs = {}
 _render_jobs_lock = threading.Lock()
 _render_preview_store = {}
@@ -688,6 +801,33 @@ def _store_render_cache(cache_key, image_bytes):
         os.replace(temp_path, cache_path)
     except Exception as exc:
         _render_log("WARN", "Failed to persist render cache", cache_key=cache_key[:8], error=exc)
+        return
+    _prune_persisted_render_cache()
+
+
+def _prune_persisted_render_cache():
+    # Rendered PNGs are written per unique card snapshot and were never removed,
+    # so the folder grew without bound. Keep only the most recent files.
+    with _render_cache_lock:
+        _render_cache_prune_state["stores"] += 1
+        if _render_cache_prune_state["stores"] % _RENDER_CACHE_PRUNE_EVERY != 1:
+            return
+    try:
+        entries = []
+        with os.scandir(RENDER_CACHE_FOLDER) as scanner:
+            for entry in scanner:
+                if entry.is_file() and entry.name.endswith(".png"):
+                    entries.append((entry.stat().st_mtime, entry.path))
+        if len(entries) <= _RENDER_CACHE_MAX_FILES:
+            return
+        entries.sort()
+        for _, path in entries[:len(entries) - _RENDER_CACHE_MAX_FILES]:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+    except Exception as exc:
+        _render_log("WARN", "Failed to prune render cache", error=exc)
 
 
 def _get_persisted_render_cache(cache_key):

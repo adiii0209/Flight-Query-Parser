@@ -7,15 +7,15 @@
     <title>Tickets | Flight Manager</title>
     <meta name="description"
         content="Manage your flight tickets - view, edit, and generate PDFs for all received tickets.">
-    <link rel="icon" type="image/png" href="/static/ticket-flight.png">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='ticket-flight.png') }}">
     <link
         href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Syne:wght@700;800&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="/static/itineraries.css">
-    <link rel="stylesheet" href="/static/dashboard.css">
-    <link rel="stylesheet" href="/static/sidebar.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='itineraries.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.11.1/tsparticles.bundle.min.js"></script>
-    <script src="https://unpkg.com/@dotlottie/player-component@latest/dist/dotlottie-player.mjs" type="module"></script>
+    <script src="https://unpkg.com/@dotlottie/player-component@2.7.12/dist/dotlottie-player.mjs" type="module"></script>
     <style>
         /* ----- App Header (Synchronized with Index) ----- */
         .app-header {
@@ -3780,7 +3780,7 @@
                 </div>
                 <div class="ticket-toolbar-row">
                     <div id="dashboardLoader" class="status-group" style="display:none;">
-                        <dotlottie-player src="/static/doctor_dancing.lottie" background="transparent" speed="1"
+                        <dotlottie-player src="{{ url_for('static', filename='doctor_dancing.lottie') }}" background="transparent" speed="1"
                             direction="1" playMode="normal" loop autoplay></dotlottie-player>
                         <div class="dashboard-loader">
                             <div class="loader-pulse"></div>
@@ -3861,7 +3861,7 @@
         window.AIRPORT_GEO_MAP = {{ airport_geo_map | tojson }};
         window.AIRPORT_TZ_MAP = {{ airport_tz_map | tojson }};
     </script>
-    <script src="{{ url_for('static', filename='tickets.js') }}?v=20260828a"></script>
+    <script src="{{ url_for('static', filename='tickets.js') }}"></script>
 </body>
 
 </html>
