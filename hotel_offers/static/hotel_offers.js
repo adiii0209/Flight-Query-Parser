@@ -280,7 +280,8 @@
   function layoutScale() {
     TEMPLATES.forEach(t => {
       const card = cards.get(t.id), view = $('.ho-tpl-view', card), box = $('.ho-tpl-scale', card);
-      const avail = view.clientWidth - 20;
+      const cs = getComputedStyle(view);
+      const avail = view.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
       if (avail <= 0) return;
       const k = avail / t.w;
       box.style.width = t.w * k + 'px'; box.style.height = t.h * k + 'px';
@@ -316,9 +317,10 @@
   async function renderCanvas(t) {
     const d = posterData();
     const host = document.createElement('div');
-    host.style.cssText = 'position:fixed;left:-30000px;top:0';
+    // Attach outside <body> (apps may zoom body on phones) and behind the page; layout is sized by the poster itself.
+    host.style.cssText = `position:fixed;left:0;top:0;width:${t.w}px;height:${t.h}px;z-index:-1;pointer-events:none`;
     host.innerHTML = t.render(d);
-    document.body.appendChild(host);
+    document.documentElement.appendChild(host);
     try {
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
       const el = host.firstElementChild;
@@ -328,7 +330,7 @@
         [W, H] = size.split('x').map(Number);
         k = Math.min(W / t.w, H / t.h);
       }
-      const shot = await html2canvas(el, { scale: k, useCORS: true, backgroundColor: null, logging: false });
+      const shot = await html2canvas(el, { scale: k, useCORS: true, backgroundColor: null, logging: false, width: t.w, height: t.h, windowWidth: t.w, windowHeight: t.h, x: 0, y: 0, scrollX: 0, scrollY: 0 });
       const out = document.createElement('canvas');
       out.width = W; out.height = H;
       const ctx = out.getContext('2d');

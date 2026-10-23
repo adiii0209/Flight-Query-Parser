@@ -180,3 +180,26 @@ button,input,select,textarea{font-family:inherit}
 .si-name{border:1px solid transparent;background:transparent;border-radius:8px;padding:.25rem .4rem;margin:0 0 0 -.4rem;font-size:.92rem;font-weight:500;color:var(--text);width:100%}
 .si-name:hover{background:#ececf0}
 .si-name:focus{outline:none;background:#fff;border-color:var(--blue)}
+
+/* phones: the app's dashboard.css sets body{zoom:.8} below 600px, which skews measuring and image export. Opt this page out. */
+@media(max-width:600px){
+  body{zoom:1}
+  .sidebar,.sidebar-overlay{height:100dvh!important}
+  .app-header{padding:.5rem .75rem}
+  .header-brand{position:static;transform:none;flex:1;padding-left:.6rem;text-align:left;font-size:.9rem}
+  .header-actions{gap:.35rem}
+  .header-actions .pill{padding:.38rem .75rem}
+  #app{padding:0 .75rem 2.5rem}
+  .stage-paste{padding-top:4vh}
+  .paste-bar{flex-direction:column-reverse;align-items:stretch}
+  .paste-bar .pill{width:100%}
+  .studio-bar{top:3.2rem;border-radius:16px}
+  .offer-name{flex-basis:100%;order:-1}
+  .export{width:100%}
+  .export .primary{margin-left:auto}
+  .editor{padding:1.1rem}
+  .ho-gallery{grid-template-columns:1fr}
+  .gallery-wrap{order:-1}
+  .ho-modal.drawer .ho-dialog{border-radius:20px 0 0 20px}
+  .ho-grid3{grid-template-columns:1fr 1fr 1fr;gap:.45rem}
+}

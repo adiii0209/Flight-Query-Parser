@@ -86,7 +86,7 @@
   T.push({
     id: 'arch-offer', name: 'Arch · Offer headline', w: 902, h: 1743, slots: [{ key: 'hero', label: 'Arch photo', orient: 'portrait' }],
     render(d) {
-      const head = d.offer_headline ? A('left:76px;top:567px;width:310px', 'po-badge', 'Special offer') + headlineBlock(d, 76, 626, 400, 128) : '';
+      const head = d.offer_headline ? A('left:76px;top:567px;width:310px', 'po-badge', 'Special offer') + headlineBlock(d, 76, 652, 400, 128) : '';
       return root('t1', 902, 1743,
         A('left:490px;top:118px;width:412px;height:1366px;border-radius:206px 206px 0 0;background:linear-gradient(90deg,#eadfcb,#f6efe2);box-shadow:inset 0 0 40px rgba(120,90,40,.18)') +
         PH(d, 'hero', 'left:524px;top:150px;width:378px;height:1334px;border-radius:174px 174px 0 0') +
@@ -229,7 +229,7 @@
       const per = d.perks.slice(0, 4).map((p, i) => A(`left:${cols[i] - 120}px;top:1268px;width:240px;display:flex;flex-direction:column;align-items:center;text-align:center`, '',
         `${perk(d, p, { plain: true, ico: 54, swap: true })}${perkLabel(p, 'margin-top:14px;font-size:17px;color:#f1e9da;letter-spacing:.16em')}`)).join('');
       const divs = [268, 515, 748].map(x => A(`left:${x}px;top:1290px;width:2px;height:86px;background:#b98f45;opacity:.55`)).join('');
-      const head = d.offer_headline ? A('left:66px;top:474px;width:236px', 'po-badge', 'Special offer') + headlineBlock(d, 66, 530, 560, 112) : '';
+      const head = d.offer_headline ? A('left:66px;top:474px;width:236px', 'po-badge', 'Special offer') + headlineBlock(d, 66, 556, 560, 112) : '';
       return root('t7', 1024, 1536,
         PH(d, 'hero', 'left:0;top:0;width:1024px;height:1160px') +
         A('left:0;top:0;width:1024px;height:900px;background:linear-gradient(90deg,rgba(244,238,228,.93) 0%,rgba(244,238,228,.8) 38%,rgba(244,238,228,0) 72%)') +
