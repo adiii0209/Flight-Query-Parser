@@ -14,7 +14,7 @@
     gemini: ['gemini-2.0-flash', 'gemini-2.5-flash'],
   };
 
-  const state = { data: blank(), photos: {}, selected: new Set(), offerId: null, name: '', dirty: false, layout: {}, editing: null, settings: null, picker: null };
+  const state = { data: blank(), photos: {}, selected: new Set(), offerId: null, name: '', dirty: false, live: null, liveStale: false, layout: {}, editing: null, settings: null, picker: null };
 
   function blank() {
     return { brand_line: '', place_line: '', tagline: '', offer_headline: '', headline_scale: 100, currency: 'INR', online_rate: 0, our_deal: 0, perks: [],
@@ -142,7 +142,7 @@
       const [res] = await Promise.all([api('/api/hotel-offers/parse', { method: 'POST', body: { text } }), sleep(900)]);
       step(1);
       state.data = Object.assign(blank(), res.data);
-      state.photos = {}; state.layout = {}; state.offerId = null; state.name = defaultName(); $('#offerName').value = state.name;
+      state.photos = {}; state.layout = {}; state.offerId = null; state.live = null; state.liveStale = false; renderLiveBtn(); state.name = defaultName(); $('#offerName').value = state.name;
       fillForm();
       await sleep(800);
       step(2);
@@ -301,7 +301,7 @@
     });
   }
   function refresh() {
-    if (app.dataset.stage === 'studio') state.dirty = true;
+    if (app.dataset.stage === 'studio') { state.dirty = true; if (state.live && state.live.is_live && !state.liveStale) { state.liveStale = true; renderLiveBtn(); } }
     const has = !!(state.data.brand_line || state.data.place_line || state.data.hotel_name);
     $('#galleryEmpty').hidden = has;
     $('#gallery').hidden = !has;
@@ -588,9 +588,9 @@
   // ---------- saved offers drawer
   const dayLabel = iso => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   const copyText = async text => { try { await navigator.clipboard.writeText(text); return true; } catch (e) { window.prompt('Copy this link', text); return false; } };
-  // Share = copy the link with the caption below it, ready to paste into WhatsApp
+  // Share = copy the caption with the link at the very end, ready to paste into WhatsApp
   async function copyShare(url, dataPromise) {
-    const build = async () => url + '\n\n' + caption(await dataPromise, brand());
+    const build = async () => caption(await dataPromise, brand()) + '\n\n' + url;
     try {
       if (navigator.clipboard && window.ClipboardItem) await navigator.clipboard.write([new ClipboardItem({ 'text/plain': build().then(t => new Blob([t], { type: 'text/plain' })) })]);
       else await navigator.clipboard.writeText(await build());
@@ -610,7 +610,8 @@
     const r = await api('/api/hotel-offers/offers/' + o.id);
     state.data = Object.assign(blank(), r.offer.data.data); state.photos = r.offer.data.photos || {}; state.layout = r.offer.data.layout || {};
     state.offerId = o.id; state.name = o.title; $('#offerName').value = o.title;
-    fillForm(); refresh(); state.dirty = false;
+    state.live = o.live || null; state.liveStale = false;
+    fillForm(); refresh(); state.dirty = false; state.liveStale = false; renderLiveBtn();
     closeModal($('#savedModal')); setStage('studio');
   }
   async function loadSaved() {
@@ -713,22 +714,64 @@
       api('/api/hotel-offers/dashboard-link').then(d => { $('#glOpen').href = d.url; });
       $('#glPick').hidden = true; $('#glDone').hidden = false;
       gl.live = r.live;
+      if (state.offerId === gl.offer.id) { state.live = r.live; state.liveStale = false; renderLiveBtn(); }
       if (!$('#savedModal').hidden) loadSaved();
     } catch (err) { say(msg, err.message, 'err'); }
     gl.busy = false; btn.disabled = false; btn.textContent = 'Go live';
   });
   $('#glCopy').addEventListener('click', async e => { if (await copyText($('#glLink').value)) { e.currentTarget.textContent = 'Copied'; setTimeout(() => { e.currentTarget.textContent = 'Copy'; }, 1500); } });
   $('#glShare').addEventListener('click', () => copyShare($('#glLink').value, Promise.resolve(gl.data)));
+  // The studio button mirrors the real state: "Go live" when not published, "Live" with a menu when it is.
+  const liveOn = () => !!(state.live && state.live.is_live && !state.live.expired);
+  function renderLiveBtn() {
+    const b = $('#btnLive');
+    if (!b) return;
+    const on = liveOn();
+    b.classList.toggle('is-on', on); b.classList.toggle('stale', on && state.liveStale);
+    b.innerHTML = on
+      ? `<i class="live-dot"></i>${state.liveStale ? 'Live · update' : 'Live'}<svg class="caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>`
+      : '<i class="live-dot off"></i>Go live';
+    closeLiveMenu();
+  }
+  function closeLiveMenu() { const m = $('#liveMenu'); if (m) m.remove(); }
+  async function publishFlow() {
+    const id = await saveCurrent();
+    openGoLive({ id, title: state.name, live: state.live });
+  }
+  function openLiveMenu() {
+    closeLiveMenu();
+    const lv = state.live, btn = $('#btnLive'), r = btn.getBoundingClientRect();
+    const m = document.createElement('div');
+    m.id = 'liveMenu'; m.className = 'live-menu';
+    m.style.cssText = `top:${r.bottom + 8}px;left:${Math.max(8, Math.min(r.left, innerWidth - 268))}px`;
+    m.innerHTML = `<div class="lm-head"><b>Live on the client page</b><span>${lv.valid_till ? 'Until ' + dayLabel(lv.valid_till) + ' · ' : ''}${lv.views} view${lv.views === 1 ? '' : 's'}</span>${state.liveStale ? '<em>You have changes that are not on the live page yet.</em>' : ''}</div>
+      <button data-a="update">${state.liveStale ? 'Update live page' : 'Edit live page'}</button>
+      <button data-a="copy">Copy link + caption</button>
+      <a href="${lv.url}" target="_blank" rel="noopener" data-a="view">View live page</a>
+      <button data-a="off" class="danger">Switch off</button>`;
+    document.body.appendChild(m);
+    m.addEventListener('click', async e => {
+      const t = e.target.closest('[data-a]');
+      if (!t) return;
+      const act = t.dataset.a;
+      if (act !== 'view') closeLiveMenu();
+      try {
+        if (act === 'update') await publishFlow();
+        else if (act === 'copy') copyShare(lv.url, Promise.resolve(state.data));
+        else if (act === 'off') {
+          await api(`/api/hotel-offers/offers/${state.offerId}/live/off`, { method: 'POST' });
+          state.live = Object.assign({}, state.live, { is_live: false }); state.liveStale = false; renderLiveBtn(); toast('Taken off the client page');
+        }
+      } catch (err) { alert(err.message); }
+    });
+  }
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('#liveMenu, #btnLive')) closeLiveMenu(); });
   $('#btnLive').addEventListener('click', async e => {
     const btn = e.currentTarget;
     if (!state.data.brand_line && !state.data.hotel_name) return;
+    if (liveOn()) { if ($('#liveMenu')) closeLiveMenu(); else openLiveMenu(); return; }
     btn.disabled = true;
-    try {
-      const id = await saveCurrent();
-      let live = null;
-      try { live = ((await api('/api/hotel-offers/offers')).offers.find(x => x.id === id) || {}).live; } catch (err) { /* no previous publish info */ }
-      openGoLive({ id, title: state.name, live });
-    } catch (err) { alert(err.message); }
+    try { await publishFlow(); } catch (err) { alert(err.message); }
     btn.disabled = false;
   });
 

@@ -99,7 +99,7 @@
     panels.dataset.step = step;
     sheet.classList.toggle('step-book', step === 'book');
     sheet.classList.toggle('step-done', step === 'done');
-    $('#sScroll').scrollTop = 0;
+    $('.sheet-body').scrollTop = 0; $('#sScroll').scrollTop = 0; // every step starts from the top (phones scroll the whole sheet, desktop only the right column)
     if (step === 'book') setTimeout(() => { if (!$('#inName').value) $('#inName').focus({ preventScroll: true }); else $('#inPhone').focus({ preventScroll: true }); }, 420);
   }
   function fillSheet(o) {
@@ -189,7 +189,7 @@
     grab.addEventListener('pointerup', end); grab.addEventListener('pointercancel', end);
   })();
 
-  // ---------- share: copies the link with the same caption the team uses
+  // ---------- share: copies the same caption the team uses, with the link at the end
   function captionFor(o) {
     const fmt = v => parseISO(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     const lines = [`*${[o.brand_line, o.place_line].filter(Boolean).join(' ') || o.hotel_name || o.title}*`];
@@ -209,10 +209,19 @@
   }
   $('#sShare').addEventListener('click', async () => {
     if (!current) return;
-    const text = location.origin + '/o/' + current.slug + '\n\n' + captionFor(current);
+    const text = captionFor(current) + '\n\n' + location.origin + '/o/' + current.slug;
     try { await navigator.clipboard.writeText(text); toast('Link and caption copied'); }
     catch (e) { window.prompt('Copy this text', text); }
   });
+
+  // ---------- booking steps
+  $('#sBook').addEventListener('click', () => setStep('book'));
+  $('#bBack').addEventListener('click', () => setStep('details'));
+  function flag(id, msg) {
+    const f = $(id); f.classList.remove('bad'); void f.offsetWidth;
+    if (msg) { f.classList.add('bad'); $('small', f).textContent = msg; }
+  }
+  $$('#pBook input').forEach(i => i.addEventListener('input', () => i.closest('.field') && i.closest('.field').classList.remove('bad')));
 
   // ---------- stay-date calendar
   const pad = n => String(n).padStart(2, '0');
