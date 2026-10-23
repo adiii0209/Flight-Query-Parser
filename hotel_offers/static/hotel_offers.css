@@ -77,8 +77,10 @@ button,input,select,textarea{font-family:inherit}
 .check input:checked,.ho-tpl-head input:checked{background:var(--blue);border-color:var(--blue)}
 .check input:checked::after,.ho-tpl-head input:checked::after{content:'';width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg) translate(-.5px,-.5px)}
 
-.studio-layout{display:grid;grid-template-columns:400px 1fr;gap:1.4rem;align-items:start}
-@media(max-width:1000px){.studio-layout{grid-template-columns:1fr}}
+.studio-layout>*{min-width:0}
+.ho-tpl{min-width:0}
+.studio-layout{display:grid;grid-template-columns:400px minmax(0,1fr);gap:1.4rem;align-items:start}
+@media(max-width:1000px){.studio-layout{grid-template-columns:minmax(0,1fr)}}
 .editor{background:var(--card);border-radius:22px;box-shadow:var(--shadow);padding:1.4rem 1.3rem}
 @media(min-width:1001px){.editor{position:sticky;top:8.3rem;max-height:calc(100vh - 9.5rem);overflow-y:auto;scrollbar-width:thin}}
 .editor-h{font-size:1.25rem;letter-spacing:-.02em;margin:0 0 .2rem}
@@ -109,7 +111,7 @@ button,input,select,textarea{font-family:inherit}
 .slot-info small{display:block;color:var(--faint);font-weight:400}
 
 /* gallery */
-.ho-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:1.2rem;align-items:start}
+.ho-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(290px,100%),1fr));gap:1.2rem;align-items:start}
 .ho-gallery[hidden]{display:none}
 .ho-tpl{background:var(--card);border-radius:22px;box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;transition:box-shadow .3s,transform .4s var(--ease)}
 #app[data-stage=studio] .ho-tpl{animation:rise .8s var(--ease) both;animation-delay:calc(var(--i,0) * 90ms + 120ms)}
@@ -198,11 +200,24 @@ button,input,select,textarea{font-family:inherit}
   .export{width:100%}
   .export .primary{margin-left:auto}
   .editor{padding:1.1rem}
-  .ho-gallery{grid-template-columns:1fr}
+  .ho-gallery{grid-template-columns:minmax(0,1fr)}
   .gallery-wrap{order:-1}
   .ho-modal.drawer .ho-dialog{border-radius:20px 0 0 20px}
   .ho-grid3{grid-template-columns:1fr 1fr 1fr;gap:.45rem}
 }
+
+/* direct editing */
+.gallery-hint{margin:0 0 .8rem;color:var(--mute);font-size:.85rem}
+.ho-tpl-scale [data-k],.le-stage [data-k]{cursor:move;touch-action:pan-y}
+.ho-tpl-scale [data-k].le-sel,.le-stage [data-k].le-sel{touch-action:none}
+.ho-tpl-scale [data-k]:hover,.le-stage [data-k]:hover{outline:calc(2px / var(--k,1)) dashed rgba(0,113,227,.55);outline-offset:calc(2px / var(--k,1))}
+.ho-tpl-scale [data-k].le-sel,.le-stage [data-k].le-sel{outline:calc(2px / var(--k,1)) solid #0071e3;outline-offset:calc(2px / var(--k,1))}
+.ho-tpl-scale{user-select:none;-webkit-user-select:none}
+.ho-tpl-tools{display:flex;align-items:center;gap:.4rem;padding:0 1rem 1rem;font-size:.78rem}
+.ho-tpl-tools[hidden]{display:none}
+.ho-tpl-tools .tt-name{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ho-tpl-tools button{border:0;border-radius:980px;background:#f2f2f5;color:var(--text);height:28px;min-width:28px;padding:0 .7rem;font-size:.8rem;cursor:pointer}
+.ho-tpl-tools button:hover{background:#e5e5ea}
 
 /* layout editor */
 .layout-modal{padding:2vh 2vw;align-items:center;z-index:3500}
@@ -215,9 +230,6 @@ button,input,select,textarea{font-family:inherit}
 .le-stagewrap{flex:1;min-width:0;background:#e9e9ed;display:flex;align-items:center;justify-content:center;overflow:auto;padding:20px}
 .le-stage{position:relative;flex:none;background:#fff;box-shadow:0 6px 30px rgba(0,0,0,.25);user-select:none;-webkit-user-select:none}
 .le-stage .po{position:absolute;left:0;top:0}
-.le-stage [data-k]{cursor:move;touch-action:none}
-.le-stage [data-k]:hover{outline:2px dashed rgba(0,113,227,.6);outline-offset:2px}
-.le-stage [data-k].le-sel{outline:2px solid var(--blue);outline-offset:2px}
 .le-panel{width:250px;flex:none;padding:1.1rem;border-left:1px solid var(--line);overflow:auto}
 .le-sel{font-weight:600;font-size:.95rem}
 .le-pad{display:grid;grid-template-columns:repeat(3,40px);gap:6px;justify-content:start}

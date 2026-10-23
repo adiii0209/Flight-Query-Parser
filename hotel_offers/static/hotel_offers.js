@@ -263,7 +263,8 @@
       card.style.setProperty('--i', idx);
       card.innerHTML = `<div class="ho-tpl-head"><label class="ho-check"><input type="checkbox"> ${t.name}</label><span class="ho-dim">${t.w}&times;${t.h}</span></div>
         <div class="ho-tpl-view"><div class="ho-tpl-scale"></div></div>
-        <div class="ho-tpl-actions"><button class="pill ghost sm" data-act="dl">Download</button><button class="pill ghost sm" data-act="copy">Copy image</button><button class="pill ghost sm" data-act="edit">Edit layout</button></div>`;
+        <div class="ho-tpl-actions"><button class="pill ghost sm" data-act="dl">Download</button><button class="pill ghost sm" data-act="copy">Copy image</button><button class="pill ghost sm" data-act="edit">Enlarge</button></div>
+        <div class="ho-tpl-tools" hidden><span class="tt-name"></span><button type="button" data-t="minus" aria-label="Smaller">&minus;</button><button type="button" data-t="plus" aria-label="Larger">+</button><button type="button" data-t="reset">Reset part</button></div>`;
       $('input', card).addEventListener('change', e => {
         e.target.checked ? state.selected.add(t.id) : state.selected.delete(t.id);
         card.classList.toggle('sel', e.target.checked);
@@ -272,7 +273,15 @@
       $('[data-act=dl]', card).addEventListener('click', e => run(e.currentTarget, () => download(t)));
       $('[data-act=copy]', card).addEventListener('click', e => run(e.currentTarget, () => copyImage(t)));
       $('[data-act=edit]', card).addEventListener('click', () => openLayout(t));
-      $('.ho-tpl-view', card).addEventListener('dblclick', () => openLayout(t));
+      const box = $('.ho-tpl-scale', card), tools = $('.ho-tpl-tools', card);
+      const editor = makeEditable(box, {
+        tpl: () => t, k: () => box.getBoundingClientRect().width / t.w,
+        onSelect: (name, scale) => { tools.hidden = !name; $('.tt-name', tools).textContent = name ? `${name} · ${Math.round(scale * 100)}%` : ''; },
+      });
+      $('[data-t=minus]', tools).addEventListener('click', () => editor.resize(-0.05));
+      $('[data-t=plus]', tools).addEventListener('click', () => editor.resize(0.05));
+      $('[data-t=reset]', tools).addEventListener('click', () => editor.resetSel());
+      card.editor = editor;
       gal.appendChild(card);
       cards.set(t.id, card);
     });
@@ -298,8 +307,9 @@
     $('#gallery').hidden = !has;
     if (!has) return;
     const d = posterData();
-    TEMPLATES.forEach(t => { $('.ho-tpl-scale', cards.get(t.id)).innerHTML = t.render(d); });
+    TEMPLATES.forEach(t => { const c = cards.get(t.id); $('.ho-tpl-scale', c).innerHTML = t.render(d); });
     layoutScale();
+    TEMPLATES.forEach(t => cards.get(t.id).editor.reselect());
   }
   $('#selAll').addEventListener('change', e => {
     state.selected.clear();
@@ -309,112 +319,173 @@
     });
   });
 
-  // ---------- layout editor: drag, nudge and resize any part of a template
+  // ---------- direct editing: click a part of any poster to select it, drag to move, corner dot to resize
   const PART_NAMES = { logo: 'Time Elevate logo', 't-brand': 'Hotel name', 't-place': 'Place', 't-tag': 'Hotel tagline', 'po-badge': 'Offer badge',
     headline: 'Offer text', perk: 'Perk', note: 'Loyalty note', pricebar: 'Price bar', cta: 'Enquire button', avail: 'Availability note',
     curated: 'Curated by', 'cur-inline': 'Curated by', 'hdr-note': 'Header note', 'cur-t': 'Curated by', 'cur-e': 'Established', ph: 'Photo' };
-  const le = { k: 1, sel: null, drag: null };
-  const tplLayout = () => (state.layout[state.editing.id] = state.layout[state.editing.id] || {});
-  const getOff = key => Object.assign({ dx: 0, dy: 0, s: 1 }, tplLayout()[key]);
-  function setOff(key, o) {
-    const L = tplLayout();
-    if (!o.dx && !o.dy && (!o.s || o.s === 1)) delete L[key]; else L[key] = { dx: Math.round(o.dx * 10) / 10, dy: Math.round(o.dy * 10) / 10, s: Math.round(o.s * 100) / 100 };
+  let activeEditor = null;
+
+  function makeEditable(host, o) {
+    // o: { tpl(): template, k(): screen px per poster px, onSelect(name|null, scale) }
+    let sel = null, selKey = null, drag = null, handle = null, guideV = null, guideH = null;
+    const root = () => host.firstElementChild;
+    const layout = () => (state.layout[o.tpl().id] = state.layout[o.tpl().id] || {});
+    const getOff = key => Object.assign({ dx: 0, dy: 0, s: 1 }, layout()[key]);
+    function setOff(key, v) {
+      const L = layout();
+      if (!v.dx && !v.dy && (!v.s || v.s === 1)) delete L[key];
+      else L[key] = { dx: Math.round(v.dx * 10) / 10, dy: Math.round(v.dy * 10) / 10, s: Math.round(v.s * 100) / 100 };
+      state.dirty = true;
+    }
+    const find = key => key && $$('[data-k]', host).find(e => e.dataset.k === key);
+    function applyEl(el) {
+      const v = getOff(el.dataset.k);
+      el.style.transform = v.dx || v.dy || v.s !== 1 ? `translate(${v.dx}px,${v.dy}px) scale(${v.s})` : '';
+      el.style.transformOrigin = '0 0';
+    }
+    function partName(el) {
+      const cls = Array.from(el.classList).find(c => PART_NAMES[c]);
+      let n = cls ? PART_NAMES[cls] : 'Shape / line';
+      if (cls === 'perk') n += ' ' + ($$('[data-k^="perk@"]', host).indexOf(el) + 1);
+      return n;
+    }
+    const mkDiv = css => { const d = document.createElement('div'); d.style.cssText = css; root().appendChild(d); return d; };
+    function clearHandle() { if (handle) { handle.remove(); handle = null; } }
+    function hideGuides() { [guideV, guideH].forEach(g => g && g.remove()); guideV = guideH = null; }
+    function placeHandle() {
+      clearHandle();
+      if (!sel || !root()) return;
+      const k = o.k(), rr = root().getBoundingClientRect(), er = sel.getBoundingClientRect(), r = 7 / k;
+      handle = mkDiv(`position:absolute;z-index:9999;width:${2 * r}px;height:${2 * r}px;left:${(er.right - rr.left) / k - r}px;top:${(er.bottom - rr.top) / k - r}px;` +
+        `background:#0071e3;border:${2 / k}px solid #fff;border-radius:50%;cursor:nwse-resize;touch-action:none;box-shadow:0 0 ${3 / k}px rgba(0,0,0,.4)`);
+      handle.dataset.handle = '1';
+    }
+    function select(el) {
+      if (activeEditor && activeEditor !== api) activeEditor.deselect();
+      if (sel) sel.classList.remove('le-sel');
+      sel = el || null; selKey = el ? el.dataset.k : null;
+      if (el) { el.classList.add('le-sel'); activeEditor = api; } else if (activeEditor === api) activeEditor = null;
+      host.style.setProperty('--k', o.k());
+      placeHandle();
+      if (o.onSelect) o.onSelect(el ? partName(el) : null, el ? getOff(selKey).s : 1);
+    }
+    function snap(el) {
+      // magnetic centre guides, like a design tool
+      const k = o.k(), rr = root().getBoundingClientRect(), er = el.getBoundingClientRect(), v = getOff(el.dataset.k);
+      const ex = (er.left + er.right) / 2 - (rr.left + rr.right) / 2, ey = (er.top + er.bottom) / 2 - (rr.top + rr.bottom) / 2;
+      const T = 7;
+      let hitX = false, hitY = false;
+      if (Math.abs(ex) < T) { v.dx -= ex / k; hitX = true; }
+      if (Math.abs(ey) < T) { v.dy -= ey / k; hitY = true; }
+      if (hitX || hitY) { setOff(el.dataset.k, v); applyEl(el); }
+      const w = o.tpl().w, h = o.tpl().h;
+      if (hitX && !guideV) guideV = mkDiv(`position:absolute;left:${w / 2 - 1 / k}px;top:0;width:${2 / k}px;height:${h}px;background:#ff2d9b;z-index:9998;pointer-events:none`);
+      if (!hitX && guideV) { guideV.remove(); guideV = null; }
+      if (hitY && !guideH) guideH = mkDiv(`position:absolute;top:${h / 2 - 1 / k}px;left:0;height:${2 / k}px;width:${w}px;background:#ff2d9b;z-index:9998;pointer-events:none`);
+      if (!hitY && guideH) { guideH.remove(); guideH = null; }
+    }
+
+    host.addEventListener('pointerover', () => host.style.setProperty('--k', o.k()));
+    host.addEventListener('pointerdown', e => {
+      if (e.target.dataset && e.target.dataset.handle && sel) {
+        const er = sel.getBoundingClientRect(), v = getOff(selKey);
+        drag = { type: 'resize', el: sel, ox: er.left, oy: er.top, d0: Math.hypot(e.clientX - er.left, e.clientY - er.top) || 1, s0: v.s, v };
+        host.setPointerCapture(e.pointerId); e.preventDefault(); return;
+      }
+      const el = e.target.closest('[data-k]');
+      const was = el && el === sel;
+      select(el);
+      if (!el) return;
+      if (e.pointerType === 'touch' && !was) return; // first tap only selects, so the page can still scroll
+      drag = { type: 'move', el, x0: e.clientX, y0: e.clientY, v: getOff(el.dataset.k) };
+      host.setPointerCapture(e.pointerId); e.preventDefault();
+    });
+    host.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const k = o.k();
+      if (drag.type === 'move') {
+        setOff(drag.el.dataset.k, { dx: drag.v.dx + (e.clientX - drag.x0) / k, dy: drag.v.dy + (e.clientY - drag.y0) / k, s: drag.v.s });
+        applyEl(drag.el); snap(drag.el);
+      } else {
+        const f = Math.hypot(e.clientX - drag.ox, e.clientY - drag.oy) / drag.d0;
+        setOff(drag.el.dataset.k, { dx: drag.v.dx, dy: drag.v.dy, s: Math.min(4, Math.max(0.3, drag.s0 * f)) });
+        applyEl(drag.el);
+      }
+      placeHandle();
+    });
+    const end = () => { if (drag) { drag = null; hideGuides(); placeHandle(); if (o.onSelect && sel) o.onSelect(partName(sel), getOff(selKey).s); } };
+    host.addEventListener('pointerup', end);
+    host.addEventListener('pointercancel', end);
+
+    const api = {
+      deselect() { select(null); },
+      reselect() { sel = find(selKey); if (sel) { sel.classList.add('le-sel'); host.style.setProperty('--k', o.k()); placeHandle(); } else { selKey = null; if (activeEditor === api) activeEditor = null; if (o.onSelect) o.onSelect(null, 1); } },
+      relayout() { placeHandle(); },
+      nudge(dx, dy) { if (!sel) return; const v = getOff(selKey); setOff(selKey, { dx: v.dx + dx, dy: v.dy + dy, s: v.s }); applyEl(sel); placeHandle(); },
+      resize(f) { if (!sel) return; const v = getOff(selKey); setOff(selKey, { dx: v.dx, dy: v.dy, s: Math.min(4, Math.max(0.3, v.s + f)) }); applyEl(sel); placeHandle(); if (o.onSelect) o.onSelect(partName(sel), getOff(selKey).s); },
+      resetSel() { if (!sel) return; setOff(selKey, { dx: 0, dy: 0, s: 1 }); applyEl(sel); placeHandle(); if (o.onSelect) o.onSelect(partName(sel), 1); },
+      hasSel: () => !!sel,
+    };
+    return api;
   }
-  function applyEl(el) {
-    const o = getOff(el.dataset.k);
-    el.style.transform = o.dx || o.dy || o.s !== 1 ? `translate(${o.dx}px,${o.dy}px) scale(${o.s})` : '';
-    el.style.transformOrigin = '0 0';
-  }
-  function partName(el) {
-    const cls = Array.from(el.classList).find(c => PART_NAMES[c]);
-    let n = cls ? PART_NAMES[cls] : 'Shape / line';
-    if (cls === 'perk') { const i = $$('[data-k^="perk@"]', $('#leStage')).indexOf(el); n += ' ' + (i + 1); }
-    return n;
-  }
-  function selectPart(el) {
-    if (le.sel) le.sel.classList.remove('le-sel');
-    le.sel = el || null;
-    if (el) el.classList.add('le-sel');
-    $('#leSel').textContent = el ? partName(el) : 'Click a part of the poster';
-    $('#leSizeVal').textContent = el ? Math.round(getOff(el.dataset.k).s * 100) + '%' : '100%';
-  }
+
+  // keyboard works on whichever poster is being edited
+  document.addEventListener('keydown', e => {
+    if (!activeEditor || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+    const step = e.shiftKey ? 10 : 1;
+    const arrows = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+    if (arrows[e.key]) { e.preventDefault(); activeEditor.nudge(...arrows[e.key]); }
+    else if (e.key === '+' || e.key === '=') activeEditor.resize(0.05);
+    else if (e.key === '-') activeEditor.resize(-0.05);
+    else if (e.key === 'Escape') { if (state.editing) closeLayout(); else activeEditor.deselect(); }
+    else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); activeEditor.resetSel(); }
+  });
+  // clicking anywhere outside a poster or its toolbar deselects
+  document.addEventListener('pointerdown', e => {
+    if (activeEditor && !e.target.closest('.ho-tpl-scale, .le-stage, .ho-tpl-tools, .le-panel')) activeEditor.deselect();
+  });
+
+  // ---------- enlarged editor (same behaviour on a bigger canvas)
+  const le = { k: 1 };
+  const modalEditor = makeEditable($('#leStage'), {
+    tpl: () => state.editing, k: () => le.k,
+    onSelect: (name, scale) => { $('#leSel').textContent = name || 'Click a part of the poster'; $('#leSizeVal').textContent = Math.round(scale * 100) + '%'; },
+  });
   function fitStage() {
     const t = state.editing, wrap = $('.le-stagewrap');
-    const k = Math.min((wrap.clientWidth - 40) / t.w, (wrap.clientHeight - 40) / t.h, 1.1);
-    le.k = Math.max(k, 0.1);
+    le.k = Math.max(Math.min((wrap.clientWidth - 40) / t.w, (wrap.clientHeight - 40) / t.h, 1.1), 0.1);
     const stage = $('#leStage');
     stage.style.width = t.w * le.k + 'px'; stage.style.height = t.h * le.k + 'px';
     const po = stage.firstElementChild;
     if (po) { po.style.transform = `scale(${le.k})`; po.style.transformOrigin = '0 0'; }
+    modalEditor.relayout();
   }
   function openLayout(t) {
     state.editing = t;
     $('#leTitle').textContent = t.name;
     $('#leStage').innerHTML = t.render(posterData());
     $('#layoutModal').hidden = false;
-    selectPart(null);
+    modalEditor.deselect();
     requestAnimationFrame(fitStage);
   }
   function closeLayout() {
+    modalEditor.deselect();
     $('#layoutModal').hidden = true;
-    state.editing = null; le.drag = null;
-    state.dirty = true;
+    state.editing = null;
     refresh();
   }
-  const stage = $('#leStage');
-  stage.addEventListener('pointerdown', e => {
-    const el = e.target.closest('[data-k]');
-    selectPart(el);
-    if (!el) return;
-    le.drag = { el, x0: e.clientX, y0: e.clientY, o: getOff(el.dataset.k) };
-    stage.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  });
-  stage.addEventListener('pointermove', e => {
-    const d = le.drag;
-    if (!d) return;
-    setOff(d.el.dataset.k, { dx: d.o.dx + (e.clientX - d.x0) / le.k, dy: d.o.dy + (e.clientY - d.y0) / le.k, s: d.o.s });
-    applyEl(d.el);
-  });
-  const endDrag = () => { le.drag = null; };
-  stage.addEventListener('pointerup', endDrag);
-  stage.addEventListener('pointercancel', endDrag);
-  function nudge(dx, dy) {
-    if (!le.sel) return;
-    const o = getOff(le.sel.dataset.k);
-    setOff(le.sel.dataset.k, { dx: o.dx + dx, dy: o.dy + dy, s: o.s });
-    applyEl(le.sel);
-  }
-  function resizeSel(f) {
-    if (!le.sel) return;
-    const o = getOff(le.sel.dataset.k);
-    setOff(le.sel.dataset.k, { dx: o.dx, dy: o.dy, s: Math.min(3, Math.max(0.3, o.s + f)) });
-    applyEl(le.sel); selectPart(le.sel);
-  }
-  $$('[data-nudge]').forEach(b => b.addEventListener('click', () => { const [x, y] = b.dataset.nudge.split(',').map(Number); nudge(x * 2, y * 2); }));
-  $('#leMinus').addEventListener('click', () => resizeSel(-0.05));
-  $('#lePlus').addEventListener('click', () => resizeSel(0.05));
-  $('#leResetEl').addEventListener('click', () => {
-    if (!le.sel) return;
-    setOff(le.sel.dataset.k, { dx: 0, dy: 0, s: 1 }); applyEl(le.sel); selectPart(le.sel);
-  });
+  $$('[data-nudge]').forEach(b => b.addEventListener('click', () => { const [x, y] = b.dataset.nudge.split(',').map(Number); modalEditor.nudge(x * 2, y * 2); }));
+  $('#leMinus').addEventListener('click', () => modalEditor.resize(-0.05));
+  $('#lePlus').addEventListener('click', () => modalEditor.resize(0.05));
+  $('#leResetEl').addEventListener('click', () => modalEditor.resetSel());
   $('#leResetAll').addEventListener('click', () => {
     if (!confirm('Put every part of this template back in its original place?')) return;
     delete state.layout[state.editing.id];
     $('#leStage').innerHTML = state.editing.render(posterData());
-    selectPart(null); fitStage();
+    modalEditor.deselect(); fitStage();
   });
   $('#leDone').addEventListener('click', closeLayout);
   window.addEventListener('resize', () => { if (state.editing) fitStage(); });
-  document.addEventListener('keydown', e => {
-    if (!state.editing || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
-    const step = e.shiftKey ? 10 : 1;
-    const arrows = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
-    if (arrows[e.key]) { e.preventDefault(); nudge(...arrows[e.key]); }
-    else if (e.key === '+' || e.key === '=') resizeSel(0.05);
-    else if (e.key === '-') resizeSel(-0.05);
-    else if (e.key === 'Escape') closeLayout();
-  });
 
   // ---------- export
   async function run(btn, fn) {
