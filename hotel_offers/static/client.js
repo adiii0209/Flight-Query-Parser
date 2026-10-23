@@ -189,22 +189,31 @@
     grab.addEventListener('pointerup', end); grab.addEventListener('pointercancel', end);
   })();
 
-  // ---------- share
+  // ---------- share: copies the link with the same caption the team uses
+  function captionFor(o) {
+    const fmt = v => parseISO(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    const lines = [`*${[o.brand_line, o.place_line].filter(Boolean).join(' ') || o.hotel_name || o.title}*`];
+    if (o.offer_headline) lines.push(`*${o.offer_headline}*`);
+    if (o.tagline) lines.push(o.tagline);
+    lines.push('');
+    if (o.room) lines.push(o.room);
+    if (o.check_in && o.check_out) lines.push(`${fmt(o.check_in)} - ${fmt(o.check_out)}${nights(o) ? ' · ' + nights(o) + ' nights' : ''}${o.adults ? ' · ' + o.adults + ' adults' : ''}`);
+    if ((o.perks || []).length) { lines.push('', 'Your stay includes:'); o.perks.forEach(p => lines.push('- ' + p.replace(/\*/g, '').trim())); }
+    if (o.our_deal) {
+      lines.push('');
+      if (o.online_rate > o.our_deal) lines.push(`Online rate: ~${money(o, o.online_rate)}/-~`);
+      lines.push(`*Our deal: ${money(o, o.our_deal)}/-*`);
+    }
+    lines.push('', boot.availability_note || '*Subject to availability.', boot.brand_footer || 'Curated by Time Tours', '', '\u{1F64C} Know someone heading there? Forward this to them');
+    return lines.join('\n');
+  }
   $('#sShare').addEventListener('click', async () => {
     if (!current) return;
-    const url = location.origin + '/o/' + current.slug, title = current.title || current.hotel_name;
-    if (navigator.share) { try { await navigator.share({ title, text: [current.offer_headline, money(current, current.our_deal)].filter(Boolean).join(' · '), url }); return; } catch (e) { if (e.name === 'AbortError') return; } }
-    try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch (e) { window.prompt('Copy this link', url); }
+    const text = location.origin + '/o/' + current.slug + '\n\n' + captionFor(current);
+    try { await navigator.clipboard.writeText(text); toast('Link and caption copied'); }
+    catch (e) { window.prompt('Copy this text', text); }
   });
 
-  // ---------- booking
-  $('#sBook').addEventListener('click', () => setStep('book'));
-  $('#bBack').addEventListener('click', () => setStep('details'));
-  function flag(id, msg) {
-    const f = $(id); f.classList.remove('bad'); void f.offsetWidth;
-    if (msg) { f.classList.add('bad'); $('small', f).textContent = msg; }
-  }
-  $$('#pBook input').forEach(i => i.addEventListener('input', () => i.closest('.field') && i.closest('.field').classList.remove('bad')));
   // ---------- stay-date calendar
   const pad = n => String(n).padStart(2, '0');
   const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
