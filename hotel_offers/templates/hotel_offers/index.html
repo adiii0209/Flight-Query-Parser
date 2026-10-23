@@ -63,9 +63,11 @@
       <button class="pill ghost sm" id="btnNew">&lsaquo; New offer</button>
       <input class="offer-name" id="offerName" placeholder="Name this offer" maxlength="120" aria-label="Offer name">
       <button class="bar-toggle" id="barCollapse" type="button" aria-label="Hide toolbar" title="Hide toolbar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
-      <button class="pill ghost sm" id="btnSave">Save</button>
-      <button class="pill ghost sm" id="btnLive"><i class="live-dot off"></i>Go live</button>
-      <button class="pill ghost sm" id="btnDetails" type="button">Details <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg></button>
+      <div class="bar-actions">
+        <button class="pill ghost sm" id="btnSave">Save</button>
+        <button class="pill ghost sm" id="btnLive"><i class="live-dot off"></i>Go live</button>
+        <button class="pill ghost sm" id="btnDetails" type="button">Details <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg></button>
+      </div>
       <div class="export">
         <label class="check"><input type="checkbox" id="selAll"><span>Select all</span></label>
         <select id="outSize" aria-label="Size">
@@ -143,7 +145,6 @@
   <section class="stage stage-leads">
     <div class="leads-head">
       <button class="pill ghost sm" id="btnLeadsBack">&lsaquo; Offers</button>
-      <div class="leads-title"><h2>Leads</h2><p>Clients who tapped Book now on the client page.</p></div>
       <a class="pill ghost sm" id="btnCsv" href="/api/hotel-offers/leads.csv">Export CSV</a>
     </div>
     <div class="lead-tools">

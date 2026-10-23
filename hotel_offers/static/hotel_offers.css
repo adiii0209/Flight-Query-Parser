@@ -196,9 +196,6 @@ button,input,select,textarea{font-family:inherit}
   .paste-bar{flex-direction:column-reverse;align-items:stretch}
   .paste-bar .pill{width:100%}
   .studio-bar{top:3.2rem;border-radius:16px}
-  .offer-name{flex-basis:100%;order:-1}
-  .export{width:100%}
-  .export .primary{margin-left:auto}
   .editor{padding:1.1rem}
   .ho-gallery{grid-template-columns:minmax(0,1fr)}
   .gallery-wrap{order:-1}
@@ -298,10 +295,6 @@ button,input,select,textarea{font-family:inherit}
 
 /* leads */
 .stage-leads{max-width:900px;margin:0 auto;padding:1.4rem 0 3rem}
-.leads-head{display:flex;align-items:center;gap:1rem;margin-bottom:1.2rem;flex-wrap:wrap}
-.leads-title{flex:1;min-width:180px}
-.leads-title h2{margin:0;font-size:1.7rem;letter-spacing:-.025em}
-.leads-title p{margin:.1rem 0 0;color:var(--mute);font-size:.9rem}
 .lead-tools{display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem}
 .seg{display:inline-flex;background:#ececf0;border-radius:11px;padding:3px;gap:2px;overflow-x:auto;max-width:100%}
 .seg button{border:0;background:none;border-radius:9px;padding:.4rem .85rem;font-size:.82rem;font-weight:500;color:var(--mute);cursor:pointer;white-space:nowrap;transition:all .2s}
@@ -423,4 +416,35 @@ body{height:auto!important;min-height:100vh!important;overflow:visible!important
   .header-actions{gap:.45rem}
 }
 /* collapse button sits at the end of the name row on phones */
-@media(max-width:600px){.bar-toggle{order:-1}.offer-name{flex-basis:calc(100% - 44px)!important}}
+
+/* leads: one compact toolbar row, no heading block */
+.stage-leads{padding-top:.9rem}
+.leads-head{display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:nowrap;margin-bottom:.8rem}
+.hbtn.is-active{background:var(--text);color:#fff;border-color:var(--text)}
+.hbtn.is-active .lead-dot{box-shadow:0 0 0 2px var(--text)}
+
+/* perk rows: label boxes auto-size and line up; on phones the icon picker sits above the label */
+.perk-row{align-items:start}
+.perk-row textarea{resize:none;overflow:hidden;min-height:44px;line-height:1.35;padding-top:.6rem;padding-bottom:.6rem}
+.editor .ho-grid3,.editor .ho-grid2{align-items:end}
+@media(max-width:600px){
+  .perk-row{grid-template-columns:minmax(0,1fr) 34px;grid-template-areas:"sel del" "txt txt";gap:.35rem .5rem;padding-bottom:.35rem;border-bottom:1px solid var(--line-soft,rgba(0,0,0,.06))}
+  .perk-row select{grid-area:sel}
+  .perk-row textarea{grid-area:txt}
+  .perk-row button{grid-area:del;width:34px;height:34px}
+}
+
+/* toolbar: on desktop the action buttons stay inline with everything else; on phones it is a tidy four-row grid */
+.bar-actions{display:contents}
+@media(max-width:600px){
+  .studio-bar{display:grid;grid-template-columns:auto minmax(0,1fr) 34px;gap:.55rem .5rem;align-items:center;padding:.65rem}
+  #btnNew{grid-column:1;grid-row:1}
+  .offer-name{grid-column:2;grid-row:1;min-width:0;width:100%}
+  .bar-toggle{grid-column:3;grid-row:1;order:0;width:34px;height:34px}
+  .bar-actions{display:grid;grid-column:1/-1;grid-row:2;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem}
+  .bar-actions .pill{width:100%;justify-content:center;padding-left:.4rem;padding-right:.4rem}
+  .export{grid-column:1/-1;grid-row:3;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem;width:100%}
+  .export .check{grid-column:1/-1;padding:.1rem .2rem}
+  .export select{width:100%;min-width:0}
+  .export .pill{width:100%;justify-content:center;margin:0}
+}

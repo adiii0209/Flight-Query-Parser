@@ -98,6 +98,12 @@
     refresh();
   }));
 
+  // Perk label boxes grow to fit their text (no manual resize handle, no inner scrolling that fights page scrolling)
+  function autosize(el) {
+    if (!el.offsetParent) { el.style.height = ''; return; }  // hidden: measure later
+    el.style.height = 'auto'; el.style.height = el.scrollHeight + 2 + 'px';
+  }
+  const autosizePerks = () => $$('#perkRows textarea').forEach(autosize);
   function renderPerks() {
     const box = $('#perkRows');
     box.innerHTML = '';
@@ -108,9 +114,10 @@
         <textarea rows="2" placeholder="TWO LINE\nLABEL"></textarea><button type="button" title="Remove" aria-label="Remove perk">&times;</button>`;
       $('textarea', row).value = p.label;
       $('select', row).addEventListener('change', e => { p.icon = e.target.value; refresh(); });
-      $('textarea', row).addEventListener('input', e => { p.label = e.target.value; refresh(); });
+      $('textarea', row).addEventListener('input', e => { p.label = e.target.value; autosize(e.target); refresh(); });
       $('button', row).addEventListener('click', () => { state.data.perks.splice(i, 1); renderPerks(); refresh(); });
       box.appendChild(row);
+      autosize($('textarea', row));
     });
     const full = state.data.perks.length >= 5, addBtn = $('#btnAddPerk');
     addBtn.disabled = full;
@@ -127,7 +134,7 @@
 
   // ---------- stages
   const app = $('#app');
-  const setStage = name => { app.dataset.stage = name; window.scrollTo({ top: 0 }); syncBarFab(); if (name === 'studio') requestAnimationFrame(() => { layoutScale(); }); };
+  const setStage = name => { app.dataset.stage = name; window.scrollTo({ top: 0 }); syncBarFab(); $('#btnLeads').classList.toggle('is-active', name === 'leads'); if (name === 'studio') requestAnimationFrame(() => { layoutScale(); autosizePerks(); }); };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   function stepper() {
     const items = $$('.steps li'), title = $('#procTitle');
@@ -914,8 +921,20 @@
       });
     } catch (e) { list.innerHTML = ''; say(list, e.message, 'err'); }
   }
-  $('#btnLeads').addEventListener('click', () => { setStage('leads'); loadLeads(); });
-  $('#btnLeadsBack').addEventListener('click', () => setStage(state.data.brand_line || state.data.hotel_name ? 'studio' : 'paste'));
+  // The Leads icon toggles: tap again (or "Offers") to return to exactly where you were, scroll position included
+  let leadsReturn = { stage: 'paste', y: 0 };
+  function leaveLeads() {
+    setStage(leadsReturn.stage);
+    requestAnimationFrame(() => window.scrollTo({ top: leadsReturn.y, behavior: 'instant' }));
+  }
+  $('#btnLeads').addEventListener('click', () => {
+    const stage = app.dataset.stage;
+    if (stage === 'leads') { leaveLeads(); return; }
+    if (stage === 'process') return;  // an offer is being generated
+    leadsReturn = { stage, y: window.scrollY };
+    setStage('leads'); loadLeads();
+  });
+  $('#btnLeadsBack').addEventListener('click', leaveLeads);
   $('#leadTabs').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     ls.st = b.dataset.st; $$('#leadTabs button').forEach(x => x.classList.toggle('on', x === b)); loadLeads();
