@@ -98,51 +98,8 @@ def client_offer(slug):
         s = row.snap()
         price = f"{s.get('currency', '')} {int(s.get('our_deal') or 0):,}".strip() if s.get("our_deal") else ""
         og = {"title": s.get("title") or s.get("hotel_name") or "Offer", "desc": " · ".join(x for x in (s.get("offer_headline"), price and f"from {price}") if x) or cfg["client_subtitle"],
-              "image": f"{public_base(row.organization_id)}/offers/og/{row.slug}.jpg?v={int(row.updated_at.timestamp()) if row.updated_at else 0}", "url": f"{public_base(row.organization_id)}/o/{row.slug}"}
+              "image": f"{public_base(row.organization_id)}/offers/img/{row.slug}?v={int(row.updated_at.timestamp()) if row.updated_at else 0}", "url": f"{public_base(row.organization_id)}/o/{row.slug}"}
     return render_template("hotel_offers/client.html", org_slug=org_slug(row.organization_id), focus=slug, cfg=_client_cfg(cfg), og=og)
-
-
-_og_cache = {}  # (slug, version) -> jpeg bytes; small and per worker
-
-
-def _og_card(raw):
-    """Link previews (WhatsApp, iMessage, Slack) want a wide ~1.91:1 picture and crop or shrink tall ones awkwardly.
-    So the share image is a 1200x630 card: the poster at full height, centred, on a soft blurred copy of itself."""
-    from io import BytesIO
-
-    from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
-
-    W, H = 1200, 630
-    poster = Image.open(BytesIO(raw)).convert("RGB")
-    card = ImageOps.fit(poster, (W, H), method=Image.LANCZOS, centering=(0.5, 0.25)).filter(ImageFilter.GaussianBlur(32))
-    card = ImageEnhance.Brightness(card).enhance(0.62)
-    fg = poster.copy()
-    fg.thumbnail((W, H - 56), Image.LANCZOS)  # 28px of blur above and below
-    x, y = (W - fg.width) // 2, (H - fg.height) // 2
-    pad = 40  # soft drop shadow
-    mask = Image.new("L", (fg.width + 2 * pad, fg.height + 2 * pad), 0)
-    ImageDraw.Draw(mask).rectangle((pad, pad + 10, pad + fg.width, pad + 10 + fg.height), fill=150)
-    card.paste((0, 0, 0), (x - pad, y - pad), mask.filter(ImageFilter.GaussianBlur(20)))
-    card.paste(fg, (x, y))
-    out = BytesIO()
-    card.save(out, "JPEG", quality=86, optimize=True)
-    return out.getvalue()
-
-
-@bp.route("/offers/og/<slug>.jpg")
-def offer_og_image(slug):
-    row = HotelOfferLive.query.filter_by(slug=slug).first()
-    if row is None or not row.image:
-        abort(404)
-    key = (slug, int(row.updated_at.timestamp()) if row.updated_at else 0)
-    if key not in _og_cache:
-        if len(_og_cache) > 48:
-            _og_cache.clear()
-        try:
-            _og_cache[key] = _og_card(row.image)
-        except Exception:
-            return redirect(f"/offers/img/{slug}")  # never leave a share without a picture
-    return Response(_og_cache[key], mimetype="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @bp.route("/offers/img/<slug>")
