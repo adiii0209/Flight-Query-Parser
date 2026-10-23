@@ -374,3 +374,20 @@ button,input,select,textarea{font-family:inherit}
 .gl-actions .ho-hint{margin-right:auto}
 .gl-actions .danger{margin-right:auto}
 .si-actions{flex-wrap:wrap}
+
+/* settings save feedback */
+.ho-hint.warn{color:#a35a00}
+#btnSaveSettings{min-width:150px;transition:background .25s,opacity .25s,transform .2s var(--ease)}
+#btnSaveSettings.busy{opacity:.85}
+#btnSaveSettings.ok{background:#34c759;opacity:1}
+
+/* phones and touch screens: posters scroll normally; layout editing lives behind the Edit layout button */
+.lbl-m{display:none}
+.ho-tpl-scale.edit-off [data-k]{pointer-events:none;cursor:default}
+.le-stage [data-k]{touch-action:none}
+@media (max-width:700px),(pointer:coarse){
+  .lbl-d{display:none}
+  .lbl-m{display:inline}
+  .ho-tpl-actions [data-act=edit]{background:var(--text);color:#fff;border-color:var(--text)}
+  .ho-tpl-actions [data-act=edit]:hover{background:#000}
+}

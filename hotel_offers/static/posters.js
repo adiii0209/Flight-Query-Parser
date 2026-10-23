@@ -37,9 +37,19 @@
   const photoStyle = (d, k) => d.photos && d.photos[k] ? `background-image:url(&quot;${esc(d.photos[k])}&quot;)` : '';
   const PH = (d, k, style, cls) => A(`${style};${photoStyle(d, k)}`, `ph ${cls || ''}`, '');
 
-  const logo = (d, style, extra, one) => A(style, 'logo', `<div class="logo-name" ${extra || ''}>${esc(d.brand.name)}</div><i class="gr"></i><div class="logo-tag"${one ? ' style="white-space:nowrap;font-size:18px;letter-spacing:.2em"' : ''}>${one ? esc(d.brand.tagline.replace(/\n/g, ' ')) : nl(d.brand.tagline)}</div>`);
-  const hdrNote = (d, style, line) => A(style, 'hdr-note', nl(d.brand.header_note)) + (line || '');
-  const tagline = (d, style) => A(style, 't-tag', nl((d.tagline || '').toUpperCase().replace(/\s+(ON|IN|AT|OVER|BY)\s+/, '\n$1 ')));
+  const has = v => String(v == null ? '' : v).trim().length > 0;  // empty brand text means "don't print it"
+  const logo = (d, style, extra, one) => {
+    const nm = has(d.brand.name), tg = has(d.brand.tagline);
+    if (!nm && !tg) return '';
+    return A(style, 'logo', (nm ? `<div class="logo-name" ${extra || ''}>${esc(d.brand.name)}</div>` : '') + (nm && tg ? '<i class="gr"></i>' : '') +
+      (tg ? `<div class="logo-tag"${one ? ' style="white-space:nowrap;font-size:18px;letter-spacing:.2em"' : ''}>${one ? esc(d.brand.tagline.replace(/\n/g, ' ')) : nl(d.brand.tagline)}</div>` : ''));
+  };
+  const txt = (v, style, cls) => has(v) ? A(style, cls || '', esc(v)) : '';
+  const curBlock = (d, line, t, e) => has(d.brand.footer) || has(d.brand.est) ? A(line) + txt(d.brand.footer, t, 'cur-t') + txt(d.brand.est, e) : '';
+  const hdrBlock = (d, line, style) => has(d.brand.header_note) ? A(line) + A(style, '', nl(d.brand.header_note)) : '';
+  const availBlock = (d, rule, style) => has(d.brand.availability) ? A(rule) + A(style, '', esc(d.brand.availability)) : '';
+  const hdrNote = (d, style, line) => has(d.brand.header_note) ? A(style, 'hdr-note', nl(d.brand.header_note)) + (line || '') : '';
+  const tagline = (d, style) => !has(d.tagline) ? '' : A(style, 't-tag', nl((d.tagline || '').toUpperCase().replace(/\s+(ON|IN|AT|OVER|BY)\s+/, '\n$1 ')));
   const perk = (d, p, o) => {
     o = o || {};
     const icon = o.swap && p.icon === 'breakfast' ? 'dining' : p.icon;
@@ -55,11 +65,11 @@
     return A(style, 'pricebar', `${old}<div class="pb-col"><div class="pb-l">OUR DEAL</div><div class="pb-new" style="${o.nw || ''}">${money(d, d.our_deal)}</div></div>`)
       .replace('class="a pricebar"', `class="a pricebar" ${o.attr || ''}`);
   };
-  const cta = (d, style) => A(style, 'cta', `${esc(d.brand.enquire)} ${ARROW}`);
-  const avail = (d, style) => A(style, 'avail', esc(d.brand.availability));
-  const curated = (d, style) => A(style, 'curated', `<i></i><div><div class="cur-t">${esc(d.brand.footer)}</div><div class="cur-e">${esc(d.brand.est)}</div></div>`);
-  const curInline = (d, style) => A(style, 'cur-inline', `${esc(d.brand.footer)} <i></i>`);
-  const note = (d, style) => A(style, 'note', esc(d.brand.loyalty));
+  const cta = (d, style) => has(d.brand.enquire) ? A(style, 'cta', `${esc(d.brand.enquire)} ${ARROW}`) : '';
+  const avail = (d, style) => has(d.brand.availability) ? A(style, 'avail', esc(d.brand.availability)) : '';
+  const curated = (d, style) => has(d.brand.footer) || has(d.brand.est) ? A(style, 'curated', `<i></i><div>${has(d.brand.footer) ? `<div class="cur-t">${esc(d.brand.footer)}</div>` : ''}${has(d.brand.est) ? `<div class="cur-e">${esc(d.brand.est)}</div>` : ''}</div>`) : '';
+  const curInline = (d, style) => has(d.brand.footer) ? A(style, 'cur-inline', `${esc(d.brand.footer)} <i></i>`) : '';
+  const note = (d, style) => has(d.brand.loyalty) ? A(style, 'note', esc(d.brand.loyalty)) : '';
   const headlineHtml = d => /^stay\s+\d+\s+pay\s+\d+$/i.test(d.offer_headline.trim()) ? esc(d.offer_headline).replace(/\s+(Pay\b)/i, '<br>$1') : esc(d.offer_headline);
   // Largest size (<= base) at which the text wraps into the given width in at most 3 lines; the user's scale applies on top.
   function headlineFs(text, base, width, scale) {
@@ -148,8 +158,7 @@
         rule(648, 1092, 88) + note(d, 'left:648px;top:1128px;width:340px;font-size:24px') +
         pricebar(d, 'left:52px;top:1264px;width:922px;height:108px;background:#dcddd0;border-radius:0', { old: 'font-size:36px', nw: 'font-size:44px' }) +
         cta(d, 'left:273px;top:1405px;width:308px;height:74px;font-size:21px') +
-        A('left:662px;top:1404px;width:2px;height:76px;background:#c9a56a') +
-        A('left:712px;top:1412px', 'cur-t', esc(d.brand.footer)) + A('left:712px;top:1452px;font-size:14px;letter-spacing:.3em', '', esc(d.brand.est)) +
+        curBlock(d, 'left:662px;top:1404px;width:2px;height:76px;background:#c9a56a', 'left:712px;top:1412px', 'left:712px;top:1452px;font-size:14px;letter-spacing:.3em') +
         avail(d, 'left:56px;top:1490px;font-size:17px;color:#6b6a5e'), 'background:#f4efe6');
     },
   });
@@ -163,8 +172,7 @@
         A('left:548px;top:92px;width:552px;height:1244px;background:#f6f0e6;box-shadow:0 14px 40px rgba(60,40,10,.25)') +
         PH(d, 'hero', 'left:548px;top:92px;width:552px;height:1118px') +
         A('left:548px;top:92px;width:34px;height:1244px;background:linear-gradient(90deg,rgba(60,40,10,.28),transparent)') +
-        A('left:830px;top:130px;width:2px;height:80px;background:#c9a56a') +
-        A('left:862px;top:138px;font-size:14px;line-height:1.6;letter-spacing:.2em;color:#fff;text-transform:uppercase', '', nl(d.brand.header_note)) +
+        hdrBlock(d, 'left:830px;top:130px;width:2px;height:80px;background:#c9a56a', 'left:862px;top:138px;font-size:14px;line-height:1.6;letter-spacing:.2em;color:#fff;text-transform:uppercase') +
         logo(d, 'left:140px;top:140px', 'style="font-size:46px"') +
         brandSmall(d, 144, 330, 30, 9) + A(`left:140px;top:362px;font-size:${fs(d.place_line || d.brand_line, 108, 6.6)}px`, 't-brand', esc(d.place_line || d.brand_line)) +
         rule(144, 482, 62) + tagline(d, 'left:144px;top:508px;font-size:20px') +
@@ -172,9 +180,8 @@
         rule(144, 983, 62) + note(d, 'left:146px;top:1006px;width:380px;font-size:21px') +
         pricebar(d, 'left:88px;top:1093px;width:478px;height:112px;border-radius:0 0 0 0', { old: 'font-size:26px', nw: 'font-size:32px' }) +
         cta(d, 'left:128px;top:1220px;width:300px;height:58px;font-size:19px') +
-        A('left:138px;top:1292px;font-family:Newsreader,serif;font-size:15px', '', esc(d.brand.availability)) +
-        A('left:705px;top:1236px;width:2px;height:68px;background:#c9a56a') +
-        A('left:757px;top:1240px;font-size:23px', 'cur-t', esc(d.brand.footer)) + A('left:757px;top:1278px;font-size:13px;letter-spacing:.3em', '', esc(d.brand.est)), 'background:#e8dfd1');
+        txt(d.brand.availability, 'left:138px;top:1292px;font-family:Newsreader,serif;font-size:15px') +
+        curBlock(d, 'left:705px;top:1236px;width:2px;height:68px;background:#c9a56a', 'left:757px;top:1240px;font-size:23px', 'left:757px;top:1278px;font-size:13px;letter-spacing:.3em'), 'background:#e8dfd1');
     },
   });
 
@@ -190,16 +197,14 @@
         PH(d, 'hero', 'left:0;top:0;width:1122px;height:696px') +
         A('left:0;top:0;width:1122px;height:240px;background:linear-gradient(180deg,rgba(255,236,214,.55),transparent)') +
         logo(d, 'left:55px;top:52px', 'style="font-size:62px"') +
-        A('left:810px;top:48px;width:2px;height:98px;background:#c9a56a') +
-        A('left:852px;top:62px;font-size:15px;line-height:1.7;letter-spacing:.2em;text-transform:uppercase', '', nl(d.brand.header_note)) +
+        hdrBlock(d, 'left:810px;top:48px;width:2px;height:98px;background:#c9a56a', 'left:852px;top:62px;font-size:15px;line-height:1.7;letter-spacing:.2em;text-transform:uppercase') +
         brandSmall(d, 76, 738, 33, 9) + A(`left:68px;top:784px;font-size:${fs(d.place_line || d.brand_line, 112, 6.2)}px`, 't-brand', esc(d.place_line || d.brand_line)) +
         rule(76, 900, 64) + tagline(d, 'left:76px;top:928px;font-size:21px') +
         A('left:458px;top:748px;width:2px;height:258px;background:#c9a56a') + cells +
         A('left:65px;top:1043px;width:992px;height:2px;background:#d3b98a') +
         pricebar(d, 'left:65px;top:1070px;width:992px;height:140px;border-radius:30px;background:linear-gradient(90deg,#ece4d6 50%,#dfe0d2 50%)', { old: 'font-size:40px', nw: 'font-size:56px' }) +
         cta(d, 'left:71px;top:1240px;width:428px;height:78px;font-size:21px') + avail(d, 'left:74px;top:1334px') +
-        A('left:592px;top:1248px;width:2px;height:74px;background:#c9a56a') +
-        A('left:680px;top:1252px', 'cur-t', esc(d.brand.footer)) + A('left:682px;top:1292px;font-size:15px;letter-spacing:.3em', '', esc(d.brand.est)), 'background:#f6f0e6');
+        curBlock(d, 'left:592px;top:1248px;width:2px;height:74px;background:#c9a56a', 'left:680px;top:1252px', 'left:682px;top:1292px;font-size:15px;letter-spacing:.3em'), 'background:#f6f0e6');
     },
   });
 
@@ -228,8 +233,7 @@
         PH(d, 'g1', 'left:0;top:1052px;width:355px;height:232px') + PH(d, 'g2', 'left:363px;top:1052px;width:312px;height:232px') + PH(d, 'g3', 'left:683px;top:1052px;width:341px;height:232px') +
         pricebar(d, 'left:83px;top:1297px;width:857px;height:140px', { old: 'font-size:38px', nw: 'font-size:46px' }) +
         avail(d, 'left:80px;top:1452px;font-size:18px') + cta(d, 'left:387px;top:1425px;width:278px;height:66px;font-size:19px;background:#14231f') +
-        A('left:718px;top:1425px;width:2px;height:72px;background:#c9a56a') +
-        A('left:756px;top:1432px;font-size:22px', 'cur-t', esc(d.brand.footer)) + A('left:757px;top:1468px;font-size:12px;letter-spacing:.3em', '', esc(d.brand.est)), 'background:#f6efe3');
+        curBlock(d, 'left:718px;top:1425px;width:2px;height:72px;background:#c9a56a', 'left:756px;top:1432px;font-size:22px', 'left:757px;top:1468px;font-size:12px;letter-spacing:.3em'), 'background:#f6efe3');
     },
   });
 
@@ -251,8 +255,7 @@
         brandBig(d, 64, 172, 160, 7) + placeSmall(d, 68, 338, 40, 9) + tagline(d, 'left:68px;top:392px;font-size:18px') + head +
         pricebar(d, 'left:67px;top:1066px;width:890px;height:136px;background:rgba(244,240,230,.97)', { old: 'font-size:38px', nw: 'font-size:52px' }) +
         A('left:67px;top:1226px;font-size:17px;letter-spacing:.32em;text-transform:uppercase;color:#f1e9da', '', 'Your stay includes') + A('left:366px;top:1236px;width:591px;height:1px;background:#6f8a78') +
-        divs + per + A('left:67px;top:1448px;width:112px;height:1px;background:#8aa190') +
-        A('left:67px;top:1462px;font-family:Newsreader,serif;font-size:17px;color:#e5dccb', '', esc(d.brand.availability)) +
+        divs + per + availBlock(d, 'left:67px;top:1448px;width:112px;height:1px;background:#8aa190', 'left:67px;top:1462px;font-family:Newsreader,serif;font-size:17px;color:#e5dccb') +
         cta(d, 'right:66px;top:1414px;width:338px;height:68px;font-size:19px;background:#b98f45;color:#14231f').replace('<svg', '<svg style="stroke:#14231f"'), 'background:#14281f');
     },
   });
@@ -265,16 +268,14 @@
         PH(d, 'hero', 'left:523px;top:0;width:599px;height:1102px') +
         A('left:523px;top:0;width:12px;height:1102px;background:linear-gradient(90deg,rgba(0,0,0,.5),transparent)') +
         logo(d, 'left:65px;top:52px', 'style="font-size:58px"') +
-        A('left:848px;top:52px;width:2px;height:76px;background:#b98f45') +
-        A('left:882px;top:58px;font-size:14px;line-height:1.7;letter-spacing:.2em;text-transform:uppercase;color:#f4eee4', '', nl(d.brand.header_note)) +
+        hdrBlock(d, 'left:848px;top:52px;width:2px;height:76px;background:#b98f45', 'left:882px;top:58px;font-size:14px;line-height:1.7;letter-spacing:.2em;text-transform:uppercase;color:#f4eee4') +
         brandSmall(d, 74, 270, 38, 9, '#d3a95f') + A(`left:70px;top:316px;font-size:${fs(d.place_line || d.brand_line, 120, 6.7)}px;color:#f6efe2`, 't-brand', esc(d.place_line || d.brand_line)) +
         rule(76, 444, 72, '#b98f45') + tagline(d, 'left:80px;top:470px;font-size:23px;color:#f4eee4') +
         perkList(d, { left: 76, top: 575, step: 102, w: 440, ico: 86, gap: 40, gap2: 42, fs: 20, color: '#f4eee4' }) +
         rule(76, 996, 86, '#b98f45') + note(d, 'left:76px;top:1018px;width:420px;font-size:25px;color:#f4eee4') +
         pricebar(d, 'left:68px;top:1103px;width:987px;height:120px;background:rgba(14,14,14,.94);border:1.5px solid #b98f45;border-radius:22px', { old: 'font-size:38px', nw: 'font-size:48px' }) +
         cta(d, 'left:68px;top:1242px;width:428px;height:72px;font-size:21px') + avail(d, 'left:74px;top:1332px;color:#f4eee4') +
-        A('left:719px;top:1250px;width:2px;height:80px;background:#b98f45') +
-        A('left:787px;top:1260px;font-size:25px;color:#f4eee4', 'cur-t', esc(d.brand.footer)) + A('left:790px;top:1300px;font-size:14px;letter-spacing:.3em', '', esc(d.brand.est)), '');
+        curBlock(d, 'left:719px;top:1250px;width:2px;height:80px;background:#b98f45', 'left:787px;top:1260px;font-size:25px;color:#f4eee4', 'left:790px;top:1300px;font-size:14px;letter-spacing:.3em'), '');
     },
   });
 

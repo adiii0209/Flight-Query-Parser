@@ -204,7 +204,8 @@
       if (o.online_rate > o.our_deal) lines.push(`Online rate: ~${money(o, o.online_rate)}/-~`);
       lines.push(`*Our deal: ${money(o, o.our_deal)}/-*`);
     }
-    lines.push('', boot.availability_note || '*Subject to availability.', boot.brand_footer || 'Curated by Time Tours', '', '\u{1F64C} Know someone heading there? Forward this to them');
+    const tail = [boot.availability_note, boot.brand_footer].filter(x => x && x.trim());
+    lines.push('', ...tail, ...(tail.length ? [''] : []), '\u{1F64C} Know someone heading there? Forward this to them');
     return lines.join('\n');
   }
   // Share does both: opens the phone's share sheet and copies the caption + link to the clipboard

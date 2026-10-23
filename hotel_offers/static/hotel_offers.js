@@ -40,10 +40,10 @@
   };
 
   function brand() {
-    const s = state.settings || {};
-    return { name: s.brand_name || 'Time Elevate', tagline: s.brand_tagline || 'Luxury stays.\nMore to enjoy.', header_note: s.brand_header_note || '',
-      footer: s.brand_footer || 'Curated by Time Tours', est: s.brand_est || 'EST. 1978', enquire: s.enquire_label || 'Enquire now',
-      loyalty: s.loyalty_note || '', availability: s.availability_note || '' };
+    const s = state.settings || {}, pick = (v, d) => (v == null ? d : v);  // "" stays "", only a missing value uses the default
+    return { name: pick(s.brand_name, 'Time Elevate'), tagline: pick(s.brand_tagline, 'Luxury stays.\nMore to enjoy.'), header_note: pick(s.brand_header_note, ''),
+      footer: pick(s.brand_footer, 'Curated by Time Tours'), est: pick(s.brand_est, 'EST. 1978'), enquire: pick(s.enquire_label, 'Enquire now'),
+      loyalty: pick(s.loyalty_note, ''), availability: pick(s.availability_note, '') };
   }
   const posterData = () => Object.assign({}, state.data, { photos: state.photos, brand: brand(), layout: state.layout });
 
@@ -58,7 +58,10 @@
 
   // ---------- modals
   const openModal = id => { $('#' + id).hidden = false; };
-  const closeModal = el => { el.hidden = true; };
+  const closeModal = el => {
+    if (el.id === 'settingsModal' && !el.hidden && settingsDirty() && !confirm('You have unsaved changes. Discard them?')) return;
+    el.hidden = true;
+  };
   $$('.ho-modal').forEach(m => {
     m.addEventListener('mousedown', e => { if (e.target === m) closeModal(m); });
     $$('[data-close]', m).forEach(b => b.addEventListener('click', () => closeModal(m)));
@@ -263,7 +266,7 @@
       card.style.setProperty('--i', idx);
       card.innerHTML = `<div class="ho-tpl-head"><label class="ho-check"><input type="checkbox"> ${t.name}</label><span class="ho-dim">${t.w}&times;${t.h}</span></div>
         <div class="ho-tpl-view"><div class="ho-tpl-scale"></div></div>
-        <div class="ho-tpl-actions"><button class="pill ghost sm" data-act="dl">Download</button><button class="pill ghost sm" data-act="copy">Copy image</button><button class="pill ghost sm" data-act="edit">Enlarge</button></div>
+        <div class="ho-tpl-actions"><button class="pill ghost sm" data-act="dl">Download</button><button class="pill ghost sm" data-act="copy">Copy image</button><button class="pill ghost sm" data-act="edit"><span class="lbl-d">Enlarge</span><span class="lbl-m">Edit layout</span></button></div>
         <div class="ho-tpl-tools" hidden><span class="tt-name"></span><button type="button" data-t="minus" aria-label="Smaller">&minus;</button><button type="button" data-t="plus" aria-label="Larger">+</button><button type="button" data-t="reset">Reset part</button></div>`;
       $('input', card).addEventListener('change', e => {
         e.target.checked ? state.selected.add(t.id) : state.selected.delete(t.id);
@@ -275,13 +278,15 @@
       $('[data-act=edit]', card).addEventListener('click', () => openLayout(t));
       const box = $('.ho-tpl-scale', card), tools = $('.ho-tpl-tools', card);
       const editor = makeEditable(box, {
-        tpl: () => t, k: () => box.getBoundingClientRect().width / t.w,
+        tpl: () => t, k: () => box.getBoundingClientRect().width / t.w, enabled: () => !touchLike(),
         onSelect: (name, scale) => { tools.hidden = !name; $('.tt-name', tools).textContent = name ? `${name} · ${Math.round(scale * 100)}%` : ''; },
       });
       $('[data-t=minus]', tools).addEventListener('click', () => editor.resize(-0.05));
       $('[data-t=plus]', tools).addEventListener('click', () => editor.resize(0.05));
       $('[data-t=reset]', tools).addEventListener('click', () => editor.resetSel());
       card.editor = editor;
+      box.classList.toggle('edit-off', touchLike());
+      touchLikeMQ.addEventListener('change', () => { box.classList.toggle('edit-off', touchLike()); if (touchLike()) editor.deselect(); });
       gal.appendChild(card);
       cards.set(t.id, card);
     });
@@ -324,6 +329,8 @@
     headline: 'Offer text', perk: 'Perk', note: 'Loyalty note', pricebar: 'Price bar', cta: 'Enquire button', avail: 'Availability note',
     curated: 'Curated by', 'cur-inline': 'Curated by', 'hdr-note': 'Header note', 'cur-t': 'Curated by', 'cur-e': 'Established', ph: 'Photo' };
   let activeEditor = null;
+  const touchLikeMQ = window.matchMedia('(max-width: 700px), (pointer: coarse)');
+  const touchLike = () => touchLikeMQ.matches;
 
   function makeEditable(host, o) {
     // o: { tpl(): template, k(): screen px per poster px, onSelect(name|null, scale) }
@@ -387,6 +394,7 @@
 
     host.addEventListener('pointerover', () => host.style.setProperty('--k', o.k()));
     host.addEventListener('pointerdown', e => {
+      if (o.enabled && !o.enabled()) return; // editing is switched off here (phones use the full-screen editor)
       if (e.target.dataset && e.target.dataset.handle && sel) {
         const er = sel.getBoundingClientRect(), v = getOff(selKey);
         drag = { type: 'resize', el: sel, ox: er.left, oy: er.top, d0: Math.hypot(e.clientX - er.left, e.clientY - er.top) || 1, s0: v.s, v };
@@ -396,7 +404,7 @@
       const was = el && el === sel;
       select(el);
       if (!el) return;
-      if (e.pointerType === 'touch' && !was) return; // first tap only selects, so the page can still scroll
+      if (e.pointerType === 'touch' && !was && !o.touchDrag) return; // first tap only selects, so the page can still scroll
       drag = { type: 'move', el, x0: e.clientX, y0: e.clientY, v: getOff(el.dataset.k) };
       host.setPointerCapture(e.pointerId); e.preventDefault();
     });
@@ -448,7 +456,7 @@
   // ---------- enlarged editor (same behaviour on a bigger canvas)
   const le = { k: 1 };
   const modalEditor = makeEditable($('#leStage'), {
-    tpl: () => state.editing, k: () => le.k,
+    tpl: () => state.editing, k: () => le.k, touchDrag: true,
     onSelect: (name, scale) => { $('#leSel').textContent = name || 'Click a part of the poster'; $('#leSizeVal').textContent = Math.round(scale * 100) + '%'; },
   });
   function fitStage() {
@@ -557,7 +565,8 @@
       if (d.online_rate) lines.push(`Online rate: ~${d.currency} ${fmtMoney(d.online_rate)}/-~`);
       lines.push(`*Our deal: ${d.currency} ${fmtMoney(d.our_deal)}/-*`);
     }
-    lines.push('', b.availability, b.footer, '', '🙌 Know someone heading there? Forward this to them');
+    const tail = [b.availability, b.footer].filter(x => x && x.trim());
+    lines.push('', ...tail, ...(tail.length ? [''] : []), '🙌 Know someone heading there? Forward this to them');
     return lines.join('\n');
   }
   $('#btnCopyCaption').addEventListener('click', async e => {
@@ -901,6 +910,7 @@
       el.textContent = s[k + '_set'] ? `(saved ${s[k + '_hint']})` : '(not set)';
     });
     $('#smtpNote').textContent = state.smtpReady ? '' : '(email is not set up on the server yet)';
+    setTimeout(markSettingsClean, 0);
     $('#settingsRO').hidden = CAN_CONFIGURE;
     $('#btnSaveSettings').hidden = !CAN_CONFIGURE;
     $$('[data-test]').forEach(b => { b.disabled = !CAN_CONFIGURE; });
@@ -931,12 +941,32 @@
     $$('[data-s]').forEach(el => { out[el.dataset.s] = el.type === 'checkbox' ? el.checked : el.value; });
     return out;
   }
+  // Save settings: disabled until something changes, shows Saving, then a clear confirmation
+  let settingsSnap = '', savingSettings = false;
+  const settingsDirty = () => $$('[data-s]').length > 0 && JSON.stringify(collectSettings()) !== settingsSnap;
+  function syncSaveBtn() {
+    const btn = $('#btnSaveSettings'), msg = $('#settingsMsg');
+    if (!btn || btn.dataset.busy) return;
+    const dirty = settingsDirty();
+    btn.disabled = !dirty || savingSettings; btn.textContent = 'Save settings';
+    if (!msg.classList.contains('err')) say(msg, dirty ? 'You have unsaved changes' : '', dirty ? 'warn' : '');
+  }
+  function markSettingsClean() { settingsSnap = JSON.stringify(collectSettings()); $('#settingsMsg').className = 'ho-hint'; syncSaveBtn(); }
+  $$('[data-s]').forEach(el => { el.addEventListener('input', () => { $('#settingsMsg').classList.remove('err'); syncSaveBtn(); }); el.addEventListener('change', syncSaveBtn); });
   $('#btnSaveSettings').addEventListener('click', async () => {
-    const msg = $('#settingsMsg');
+    const btn = $('#btnSaveSettings'), msg = $('#settingsMsg');
+    if (btn.disabled || savingSettings) return;
+    savingSettings = true; btn.dataset.busy = '1'; btn.disabled = true; btn.classList.add('busy'); btn.textContent = 'Saving…'; say(msg, '');
     try {
       const r = await api('/api/hotel-offers/settings', { method: 'PUT', body: collectSettings() });
-      state.settings = r.settings; fillSettings(); say(msg, 'Saved.', 'ok'); refresh();
-    } catch (e) { say(msg, e.message, 'err'); }
+      state.settings = r.settings; fillSettings(); refresh();
+      btn.classList.remove('busy'); btn.classList.add('ok'); btn.textContent = 'Saved';
+      say(msg, 'All changes saved', 'ok'); toast('Settings saved');
+      setTimeout(() => { delete btn.dataset.busy; btn.classList.remove('ok'); savingSettings = false; markSettingsClean(); }, 1500);
+    } catch (e) {
+      btn.classList.remove('busy'); delete btn.dataset.busy; savingSettings = false;
+      say(msg, e.message, 'err'); btn.disabled = false; btn.textContent = 'Save settings';
+    }
   });
   $$('[data-test]').forEach(b => b.addEventListener('click', async () => {
     const kind = b.dataset.test, msg = $(`[data-testmsg=${kind}]`);
@@ -944,7 +974,7 @@
     try {
       // test what is on screen: save first so typed keys are used
       await api('/api/hotel-offers/settings', { method: 'PUT', body: collectSettings() });
-      state.settings = (await api('/api/hotel-offers/settings')).settings; fillSettings();
+      state.settings = (await api('/api/hotel-offers/settings')).settings; fillSettings(); toast('Settings saved');
       const r = await api('/api/hotel-offers/settings/test', { method: 'POST', body: { kind } });
       say(msg, r.message, 'ok');
     } catch (e) { say(msg, e.message, 'err'); }
