@@ -203,3 +203,31 @@ button,input,select,textarea{font-family:inherit}
   .ho-modal.drawer .ho-dialog{border-radius:20px 0 0 20px}
   .ho-grid3{grid-template-columns:1fr 1fr 1fr;gap:.45rem}
 }
+
+/* layout editor */
+.layout-modal{padding:2vh 2vw;align-items:center;z-index:3500}
+.le{background:#fff;border-radius:22px;width:100%;max-width:1320px;height:94vh;margin:0 auto;display:flex;flex-direction:column;box-shadow:0 30px 90px rgba(0,0,0,.3);animation:pop .35s var(--ease) both;overflow:hidden}
+.le-top{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.8rem 1.1rem;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.le-name b{font-size:1.02rem;letter-spacing:-.01em;margin-right:.8rem}
+.le-name span{font-size:.78rem;color:var(--mute)}
+.le-top-actions{display:flex;gap:.5rem}
+.le-body{flex:1;display:flex;min-height:0}
+.le-stagewrap{flex:1;min-width:0;background:#e9e9ed;display:flex;align-items:center;justify-content:center;overflow:auto;padding:20px}
+.le-stage{position:relative;flex:none;background:#fff;box-shadow:0 6px 30px rgba(0,0,0,.25);user-select:none;-webkit-user-select:none}
+.le-stage .po{position:absolute;left:0;top:0}
+.le-stage [data-k]{cursor:move;touch-action:none}
+.le-stage [data-k]:hover{outline:2px dashed rgba(0,113,227,.6);outline-offset:2px}
+.le-stage [data-k].le-sel{outline:2px solid var(--blue);outline-offset:2px}
+.le-panel{width:250px;flex:none;padding:1.1rem;border-left:1px solid var(--line);overflow:auto}
+.le-sel{font-weight:600;font-size:.95rem}
+.le-pad{display:grid;grid-template-columns:repeat(3,40px);gap:6px;justify-content:start}
+.le-pad button{height:40px;border:0;border-radius:12px;background:#f2f2f5;font-size:1.1rem;cursor:pointer}
+.le-pad button:hover{background:#e5e5ea}
+.le-dot{display:block;width:8px;height:8px;border-radius:50%;background:#d2d2d7;margin:auto}
+.le-panel .size-ctl{margin:0 0 1rem}
+@media(max-width:800px){
+  .le{height:96vh;border-radius:16px}
+  .le-body{flex-direction:column}
+  .le-panel{width:auto;border-left:0;border-top:1px solid var(--line);padding:.7rem 1rem;max-height:34vh}
+  .le-name span{display:none}
+}

@@ -136,6 +136,36 @@
   </section>
 </main>
 
+<!-- Layout editor -->
+<div class="ho-modal layout-modal" id="layoutModal" hidden>
+  <div class="le">
+    <div class="le-top">
+      <div class="le-name"><b id="leTitle"></b><span>Drag any part to move it &middot; arrow keys nudge &middot; Shift = bigger steps</span></div>
+      <div class="le-top-actions">
+        <button class="pill ghost sm" id="leResetAll">Reset layout</button>
+        <button class="pill primary sm" id="leDone">Done</button>
+      </div>
+    </div>
+    <div class="le-body">
+      <div class="le-stagewrap"><div class="le-stage" id="leStage"></div></div>
+      <aside class="le-panel">
+        <div class="ho-sub first">Selected</div>
+        <div class="le-sel" id="leSel">Click a part of the poster</div>
+        <div class="ho-sub">Move</div>
+        <div class="le-pad">
+          <span></span><button type="button" data-nudge="0,-1" aria-label="Up">&uarr;</button><span></span>
+          <button type="button" data-nudge="-1,0" aria-label="Left">&larr;</button><span class="le-dot"></span><button type="button" data-nudge="1,0" aria-label="Right">&rarr;</button>
+          <span></span><button type="button" data-nudge="0,1" aria-label="Down">&darr;</button><span></span>
+        </div>
+        <div class="ho-sub">Size</div>
+        <div class="size-ctl"><span id="leSizeVal">100%</span>
+          <button type="button" id="leMinus" aria-label="Smaller">&minus;</button><button type="button" id="lePlus" aria-label="Larger">+</button></div>
+        <button class="pill ghost sm" id="leResetEl" type="button">Reset this part</button>
+      </aside>
+    </div>
+  </div>
+</div>
+
 <!-- Photo picker -->
 <div class="ho-modal" id="photoModal" hidden>
   <div class="ho-dialog wide">

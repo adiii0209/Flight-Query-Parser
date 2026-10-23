@@ -21,9 +21,21 @@
 
   const money = (d, n) => n ? `${esc(d.currency || 'INR')} ${Number(n).toLocaleString('en-US')}/-` : '';
   const fs = (text, base, maxChars) => Math.round(base * Math.min(1, maxChars / Math.max(String(text || '').length, 1)));
-  const A = (style, cls, inner) => `<div class="a ${cls || ''}" style="${style}">${inner || ''}</div>`;
+  // Each positioned part gets a key from its class and original position (stable across data changes) so a
+  // user's moves (dx, dy, scale) can be stored per template and re-applied on every render.
+  let LAYOUT = {};
+  const posKey = (style, cls) => {
+    const x = /(?:left|right):\s*(-?[\d.]+)/.exec(style), y = /(?:top|bottom):\s*(-?[\d.]+)/.exec(style);
+    return `${String(cls || 'x').trim().split(/\s+/)[0]}@${x ? x[1] : 0},${y ? y[1] : 0}`;
+  };
+  const A = (style, cls, inner) => {
+    const k = posKey(style, cls), o = LAYOUT[k];
+    const moved = o && (o.dx || o.dy || (o.s && o.s !== 1));
+    const tf = moved ? `;transform:translate(${o.dx || 0}px,${o.dy || 0}px) scale(${o.s || 1});transform-origin:0 0` : '';
+    return `<div class="a ${cls || ''}" data-k="${esc(k)}" style="${style}${tf}">${inner || ''}</div>`;
+  };
   const photoStyle = (d, k) => d.photos && d.photos[k] ? `background-image:url(&quot;${esc(d.photos[k])}&quot;)` : '';
-  const PH = (d, k, style, cls) => `<div class="a ph ${cls || ''}" style="${style};${photoStyle(d, k)}"></div>`;
+  const PH = (d, k, style, cls) => A(`${style};${photoStyle(d, k)}`, `ph ${cls || ''}`, '');
 
   const logo = (d, style, extra, one) => A(style, 'logo', `<div class="logo-name" ${extra || ''}>${esc(d.brand.name)}</div><i class="gr"></i><div class="logo-tag"${one ? ' style="white-space:nowrap;font-size:18px;letter-spacing:.2em"' : ''}>${one ? esc(d.brand.tagline.replace(/\n/g, ' ')) : nl(d.brand.tagline)}</div>`);
   const hdrNote = (d, style, line) => A(style, 'hdr-note', nl(d.brand.header_note)) + (line || '');
@@ -264,6 +276,14 @@
         A('left:719px;top:1250px;width:2px;height:80px;background:#b98f45') +
         A('left:787px;top:1260px;font-size:25px;color:#f4eee4', 'cur-t', esc(d.brand.footer)) + A('left:790px;top:1300px;font-size:14px;letter-spacing:.3em', '', esc(d.brand.est)), '');
     },
+  });
+
+  T.forEach(t => {
+    const render = t.render;
+    t.render = d => {
+      LAYOUT = (d.layout && d.layout[t.id]) || {};
+      try { return render(d); } finally { LAYOUT = {}; }
+    };
   });
 
   window.HO_POSTERS = T;

@@ -14,7 +14,7 @@
     gemini: ['gemini-2.0-flash', 'gemini-2.5-flash'],
   };
 
-  const state = { data: blank(), photos: {}, selected: new Set(), offerId: null, name: '', dirty: false, settings: null, picker: null };
+  const state = { data: blank(), photos: {}, selected: new Set(), offerId: null, name: '', dirty: false, layout: {}, editing: null, settings: null, picker: null };
 
   function blank() {
     return { brand_line: '', place_line: '', tagline: '', offer_headline: '', headline_scale: 100, currency: 'INR', online_rate: 0, our_deal: 0, perks: [],
@@ -45,7 +45,7 @@
       footer: s.brand_footer || 'Curated by Time Tours', est: s.brand_est || 'EST. 1978', enquire: s.enquire_label || 'Enquire now',
       loyalty: s.loyalty_note || '', availability: s.availability_note || '' };
   }
-  const posterData = () => Object.assign({}, state.data, { photos: state.photos, brand: brand() });
+  const posterData = () => Object.assign({}, state.data, { photos: state.photos, brand: brand(), layout: state.layout });
 
   // ---------- sidebar
   (function () {
@@ -142,7 +142,7 @@
       const [res] = await Promise.all([api('/api/hotel-offers/parse', { method: 'POST', body: { text } }), sleep(900)]);
       step(1);
       state.data = Object.assign(blank(), res.data);
-      state.photos = {}; state.offerId = null; state.name = defaultName(); $('#offerName').value = state.name;
+      state.photos = {}; state.layout = {}; state.offerId = null; state.name = defaultName(); $('#offerName').value = state.name;
       fillForm();
       await sleep(800);
       step(2);
@@ -263,7 +263,7 @@
       card.style.setProperty('--i', idx);
       card.innerHTML = `<div class="ho-tpl-head"><label class="ho-check"><input type="checkbox"> ${t.name}</label><span class="ho-dim">${t.w}&times;${t.h}</span></div>
         <div class="ho-tpl-view"><div class="ho-tpl-scale"></div></div>
-        <div class="ho-tpl-actions"><button class="pill ghost sm" data-act="dl">Download</button><button class="pill ghost sm" data-act="copy">Copy image</button></div>`;
+        <div class="ho-tpl-actions"><button class="pill ghost sm" data-act="dl">Download</button><button class="pill ghost sm" data-act="copy">Copy image</button><button class="pill ghost sm" data-act="edit">Edit layout</button></div>`;
       $('input', card).addEventListener('change', e => {
         e.target.checked ? state.selected.add(t.id) : state.selected.delete(t.id);
         card.classList.toggle('sel', e.target.checked);
@@ -271,6 +271,8 @@
       });
       $('[data-act=dl]', card).addEventListener('click', e => run(e.currentTarget, () => download(t)));
       $('[data-act=copy]', card).addEventListener('click', e => run(e.currentTarget, () => copyImage(t)));
+      $('[data-act=edit]', card).addEventListener('click', () => openLayout(t));
+      $('.ho-tpl-view', card).addEventListener('dblclick', () => openLayout(t));
       gal.appendChild(card);
       cards.set(t.id, card);
     });
@@ -305,6 +307,113 @@
       $('input', c).checked = e.target.checked; c.classList.toggle('sel', e.target.checked);
       if (e.target.checked) state.selected.add(TEMPLATES[i].id);
     });
+  });
+
+  // ---------- layout editor: drag, nudge and resize any part of a template
+  const PART_NAMES = { logo: 'Time Elevate logo', 't-brand': 'Hotel name', 't-place': 'Place', 't-tag': 'Hotel tagline', 'po-badge': 'Offer badge',
+    headline: 'Offer text', perk: 'Perk', note: 'Loyalty note', pricebar: 'Price bar', cta: 'Enquire button', avail: 'Availability note',
+    curated: 'Curated by', 'cur-inline': 'Curated by', 'hdr-note': 'Header note', 'cur-t': 'Curated by', 'cur-e': 'Established', ph: 'Photo' };
+  const le = { k: 1, sel: null, drag: null };
+  const tplLayout = () => (state.layout[state.editing.id] = state.layout[state.editing.id] || {});
+  const getOff = key => Object.assign({ dx: 0, dy: 0, s: 1 }, tplLayout()[key]);
+  function setOff(key, o) {
+    const L = tplLayout();
+    if (!o.dx && !o.dy && (!o.s || o.s === 1)) delete L[key]; else L[key] = { dx: Math.round(o.dx * 10) / 10, dy: Math.round(o.dy * 10) / 10, s: Math.round(o.s * 100) / 100 };
+  }
+  function applyEl(el) {
+    const o = getOff(el.dataset.k);
+    el.style.transform = o.dx || o.dy || o.s !== 1 ? `translate(${o.dx}px,${o.dy}px) scale(${o.s})` : '';
+    el.style.transformOrigin = '0 0';
+  }
+  function partName(el) {
+    const cls = Array.from(el.classList).find(c => PART_NAMES[c]);
+    let n = cls ? PART_NAMES[cls] : 'Shape / line';
+    if (cls === 'perk') { const i = $$('[data-k^="perk@"]', $('#leStage')).indexOf(el); n += ' ' + (i + 1); }
+    return n;
+  }
+  function selectPart(el) {
+    if (le.sel) le.sel.classList.remove('le-sel');
+    le.sel = el || null;
+    if (el) el.classList.add('le-sel');
+    $('#leSel').textContent = el ? partName(el) : 'Click a part of the poster';
+    $('#leSizeVal').textContent = el ? Math.round(getOff(el.dataset.k).s * 100) + '%' : '100%';
+  }
+  function fitStage() {
+    const t = state.editing, wrap = $('.le-stagewrap');
+    const k = Math.min((wrap.clientWidth - 40) / t.w, (wrap.clientHeight - 40) / t.h, 1.1);
+    le.k = Math.max(k, 0.1);
+    const stage = $('#leStage');
+    stage.style.width = t.w * le.k + 'px'; stage.style.height = t.h * le.k + 'px';
+    const po = stage.firstElementChild;
+    if (po) { po.style.transform = `scale(${le.k})`; po.style.transformOrigin = '0 0'; }
+  }
+  function openLayout(t) {
+    state.editing = t;
+    $('#leTitle').textContent = t.name;
+    $('#leStage').innerHTML = t.render(posterData());
+    $('#layoutModal').hidden = false;
+    selectPart(null);
+    requestAnimationFrame(fitStage);
+  }
+  function closeLayout() {
+    $('#layoutModal').hidden = true;
+    state.editing = null; le.drag = null;
+    state.dirty = true;
+    refresh();
+  }
+  const stage = $('#leStage');
+  stage.addEventListener('pointerdown', e => {
+    const el = e.target.closest('[data-k]');
+    selectPart(el);
+    if (!el) return;
+    le.drag = { el, x0: e.clientX, y0: e.clientY, o: getOff(el.dataset.k) };
+    stage.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  stage.addEventListener('pointermove', e => {
+    const d = le.drag;
+    if (!d) return;
+    setOff(d.el.dataset.k, { dx: d.o.dx + (e.clientX - d.x0) / le.k, dy: d.o.dy + (e.clientY - d.y0) / le.k, s: d.o.s });
+    applyEl(d.el);
+  });
+  const endDrag = () => { le.drag = null; };
+  stage.addEventListener('pointerup', endDrag);
+  stage.addEventListener('pointercancel', endDrag);
+  function nudge(dx, dy) {
+    if (!le.sel) return;
+    const o = getOff(le.sel.dataset.k);
+    setOff(le.sel.dataset.k, { dx: o.dx + dx, dy: o.dy + dy, s: o.s });
+    applyEl(le.sel);
+  }
+  function resizeSel(f) {
+    if (!le.sel) return;
+    const o = getOff(le.sel.dataset.k);
+    setOff(le.sel.dataset.k, { dx: o.dx, dy: o.dy, s: Math.min(3, Math.max(0.3, o.s + f)) });
+    applyEl(le.sel); selectPart(le.sel);
+  }
+  $$('[data-nudge]').forEach(b => b.addEventListener('click', () => { const [x, y] = b.dataset.nudge.split(',').map(Number); nudge(x * 2, y * 2); }));
+  $('#leMinus').addEventListener('click', () => resizeSel(-0.05));
+  $('#lePlus').addEventListener('click', () => resizeSel(0.05));
+  $('#leResetEl').addEventListener('click', () => {
+    if (!le.sel) return;
+    setOff(le.sel.dataset.k, { dx: 0, dy: 0, s: 1 }); applyEl(le.sel); selectPart(le.sel);
+  });
+  $('#leResetAll').addEventListener('click', () => {
+    if (!confirm('Put every part of this template back in its original place?')) return;
+    delete state.layout[state.editing.id];
+    $('#leStage').innerHTML = state.editing.render(posterData());
+    selectPart(null); fitStage();
+  });
+  $('#leDone').addEventListener('click', closeLayout);
+  window.addEventListener('resize', () => { if (state.editing) fitStage(); });
+  document.addEventListener('keydown', e => {
+    if (!state.editing || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+    const step = e.shiftKey ? 10 : 1;
+    const arrows = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+    if (arrows[e.key]) { e.preventDefault(); nudge(...arrows[e.key]); }
+    else if (e.key === '+' || e.key === '=') resizeSel(0.05);
+    else if (e.key === '-') resizeSel(-0.05);
+    else if (e.key === 'Escape') closeLayout();
   });
 
   // ---------- export
@@ -397,7 +506,7 @@
     $('#offerName').value = state.name = name;
     btn.disabled = true;
     try {
-      const r = await api('/api/hotel-offers/offers', { method: 'POST', body: { id: state.offerId, title: name, data: { data: state.data, photos: state.photos } } });
+      const r = await api('/api/hotel-offers/offers', { method: 'POST', body: { id: state.offerId, title: name, data: { data: state.data, photos: state.photos, layout: state.layout } } });
       state.offerId = r.offer.id; state.dirty = false;
       btn.textContent = 'Saved';
     } catch (err) { btn.textContent = 'Not saved'; alert(err.message); }
@@ -434,7 +543,7 @@
         nameEl.addEventListener('keydown', e => { if (e.key === 'Enter') nameEl.blur(); });
         $('[data-o]', row).addEventListener('click', async () => {
           const r = await api('/api/hotel-offers/offers/' + o.id);
-          state.data = Object.assign(blank(), r.offer.data.data); state.photos = r.offer.data.photos || {};
+          state.data = Object.assign(blank(), r.offer.data.data); state.photos = r.offer.data.photos || {}; state.layout = r.offer.data.layout || {};
           state.offerId = o.id; state.name = o.title; $('#offerName').value = o.title;
           fillForm(); refresh(); state.dirty = false;
           closeModal($('#savedModal')); setStage('studio');
