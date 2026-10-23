@@ -14,10 +14,10 @@
     gemini: ['gemini-2.0-flash', 'gemini-2.5-flash'],
   };
 
-  const state = { data: blank(), photos: {}, selected: new Set(), offerId: null, settings: null, picker: null };
+  const state = { data: blank(), photos: {}, selected: new Set(), offerId: null, name: '', dirty: false, settings: null, picker: null };
 
   function blank() {
-    return { brand_line: '', place_line: '', tagline: '', offer_headline: '', currency: 'INR', online_rate: 0, our_deal: 0, perks: [],
+    return { brand_line: '', place_line: '', tagline: '', offer_headline: '', headline_scale: 100, currency: 'INR', online_rate: 0, our_deal: 0, perks: [],
       hotel_name: '', room: '', check_in: '', check_out: '', nights: 0, adults: 0, rooms: 0, net_total: 0, free_nights: 0, cancellation: '', photo_query: '', city: '' };
   }
 
@@ -71,7 +71,16 @@
     renderPerks();
     renderSlots();
     updatePriceHint();
+    updateHlVal();
   }
+  function updateHlVal() { $('#hlVal').textContent = (state.data.headline_scale || 100) + '%'; }
+  function bumpHl(delta) {
+    const v = delta === 0 ? 100 : Math.min(160, Math.max(40, (state.data.headline_scale || 100) + delta));
+    state.data.headline_scale = v; updateHlVal(); refresh();
+  }
+  $('#hlMinus').addEventListener('click', () => bumpHl(-10));
+  $('#hlPlus').addEventListener('click', () => bumpHl(10));
+  $('#hlReset').addEventListener('click', () => bumpHl(0));
   function updatePriceHint() {
     const d = state.data, el = $('#priceHint');
     if (d.net_total) {
@@ -133,7 +142,7 @@
       const [res] = await Promise.all([api('/api/hotel-offers/parse', { method: 'POST', body: { text } }), sleep(900)]);
       step(1);
       state.data = Object.assign(blank(), res.data);
-      state.photos = {}; state.offerId = null;
+      state.photos = {}; state.offerId = null; state.name = defaultName(); $('#offerName').value = state.name;
       fillForm();
       await sleep(800);
       step(2);
@@ -280,23 +289,15 @@
     });
   }
   function refresh() {
+    if (app.dataset.stage === 'studio') state.dirty = true;
     const has = !!(state.data.brand_line || state.data.place_line || state.data.hotel_name);
-    $('#studioTitle').textContent = [state.data.brand_line, state.data.place_line].filter(Boolean).join(' ') || state.data.hotel_name || '';
     $('#galleryEmpty').hidden = has;
     $('#gallery').hidden = !has;
     if (!has) return;
     const d = posterData();
     TEMPLATES.forEach(t => { $('.ho-tpl-scale', cards.get(t.id)).innerHTML = t.render(d); });
     layoutScale();
-    saveDraft();
   }
-  const saveDraft = debounce(() => {
-    const photos = {};
-    Object.keys(state.photos).forEach(k => { if (!state.photos[k].startsWith('data:')) photos[k] = state.photos[k]; });
-    store.set('ho_draft', { data: state.data, photos, raw: $('#rawText').value });
-  }, 400);
-  $('#rawText').addEventListener('input', saveDraft);
-
   $('#selAll').addEventListener('change', e => {
     state.selected.clear();
     $$('.ho-tpl').forEach((c, i) => {
@@ -385,26 +386,59 @@
     setTimeout(() => { btn.textContent = 'Copy caption'; }, 1500);
   });
 
-  // ---------- saved offers
-  $('#btnSaved').addEventListener('click', () => { openModal('savedModal'); loadSaved(); });
+  // ---------- naming + saving
+  const defaultName = () => [state.data.brand_line, state.data.place_line].filter(Boolean).join(' ') || state.data.hotel_name || 'Untitled offer';
+  $('#offerName').addEventListener('input', e => { state.name = e.target.value; state.dirty = true; });
+  $('#btnSave').addEventListener('click', async e => {
+    const btn = e.currentTarget, label = btn.textContent;
+    const name = ($('#offerName').value || '').trim() || defaultName();
+    $('#offerName').value = state.name = name;
+    btn.disabled = true;
+    try {
+      const r = await api('/api/hotel-offers/offers', { method: 'POST', body: { id: state.offerId, title: name, data: { data: state.data, photos: state.photos } } });
+      state.offerId = r.offer.id; state.dirty = false;
+      btn.textContent = 'Saved';
+    } catch (err) { btn.textContent = 'Not saved'; alert(err.message); }
+    btn.disabled = false;
+    setTimeout(() => { btn.textContent = label; }, 1600);
+  });
+  window.addEventListener('beforeunload', e => { if (state.dirty && app.dataset.stage === 'studio') { e.preventDefault(); e.returnValue = ''; } });
+
+  // ---------- saved offers drawer
+  $$('.js-open-saved').forEach(b => b.addEventListener('click', () => { openModal('savedModal'); loadSaved(); }));
   async function loadSaved() {
     const list = $('#savedList');
     list.textContent = 'Loading…';
     try {
       const { offers } = await api('/api/hotel-offers/offers');
-      list.innerHTML = offers.length ? '' : '<div class="ho-hint">Nothing saved yet.</div>';
+      list.innerHTML = offers.length ? '' : '<div class="ho-hint">Nothing saved yet. Generate an offer, name it and press Save.</div>';
       offers.forEach(o => {
         const row = document.createElement('div');
         row.className = 'ho-saved-item';
-        row.innerHTML = `<b></b><small>${new Date(o.updated_at).toLocaleDateString('en-GB')}</small><button class="pill ghost sm" data-o>Open</button><button class="pill ghost sm" data-d>Delete</button>`;
-        $('b', row).textContent = o.title;
+        row.innerHTML = `<div class="si-main"><input class="si-name" maxlength="120" aria-label="Offer name"><small>${new Date(o.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</small></div>
+          <button class="pill primary sm" data-o>Open</button><button class="pill ghost sm" data-d>Delete</button>`;
+        const nameEl = $('.si-name', row);
+        nameEl.value = o.title;
+        const rename = async () => {
+          const v = nameEl.value.trim();
+          if (!v || v === o.title) { nameEl.value = o.title; return; }
+          try {
+            await api('/api/hotel-offers/offers/' + o.id, { method: 'PATCH', body: { title: v } });
+            o.title = v;
+            if (state.offerId === o.id) { state.name = v; $('#offerName').value = v; }
+          } catch (err) { alert(err.message); nameEl.value = o.title; }
+        };
+        nameEl.addEventListener('blur', rename);
+        nameEl.addEventListener('keydown', e => { if (e.key === 'Enter') nameEl.blur(); });
         $('[data-o]', row).addEventListener('click', async () => {
           const r = await api('/api/hotel-offers/offers/' + o.id);
-          state.data = Object.assign(blank(), r.offer.data.data); state.photos = r.offer.data.photos || {}; state.offerId = o.id;
-          fillForm(); refresh(); closeModal($('#savedModal'));
+          state.data = Object.assign(blank(), r.offer.data.data); state.photos = r.offer.data.photos || {};
+          state.offerId = o.id; state.name = o.title; $('#offerName').value = o.title;
+          fillForm(); refresh(); state.dirty = false;
+          closeModal($('#savedModal')); setStage('studio');
         });
         $('[data-d]', row).addEventListener('click', async () => {
-          if (!confirm('Delete this saved offer?')) return;
+          if (!confirm('Delete "' + o.title + '"?')) return;
           await api('/api/hotel-offers/offers/' + o.id, { method: 'DELETE' });
           if (state.offerId === o.id) state.offerId = null;
           loadSaved();
@@ -413,14 +447,6 @@
       });
     } catch (e) { say(list, e.message, 'err'); }
   }
-  $('#btnSaveCurrent').addEventListener('click', async () => {
-    const msg = $('#saveMsg');
-    if (!state.data.hotel_name && !state.data.brand_line) { say(msg, 'Nothing to save yet.', 'err'); return; }
-    try {
-      const r = await api('/api/hotel-offers/offers', { method: 'POST', body: { id: state.offerId, data: { data: state.data, photos: state.photos } } });
-      state.offerId = r.offer.id; say(msg, 'Saved.', 'ok'); loadSaved();
-    } catch (e) { say(msg, e.message, 'err'); }
-  });
 
   // ---------- settings
   async function loadSettings() {
@@ -488,12 +514,7 @@
   buildGallery();
   (async function init() {
     try { await loadSettings(); } catch (e) { state.settings = {}; }
-    const draft = store.get('ho_draft');
-    if (draft && draft.data) {
-      state.data = Object.assign(blank(), draft.data); state.photos = draft.photos || {};
-      $('#rawText').value = draft.raw || '';
-    }
+    try { localStorage.removeItem('ho_draft'); } catch (e) { /* old drafts are no longer used */ }
     fillForm(); refresh();
-    if (draft && draft.data && (draft.data.brand_line || draft.data.hotel_name)) setStage('studio');
   })();
 })();

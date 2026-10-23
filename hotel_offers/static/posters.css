@@ -17,8 +17,8 @@
 .po .t-brand{font-family:'Newsreader',serif;font-weight:500;line-height:1;letter-spacing:-.02em;white-space:nowrap}
 .po .t-place{font-weight:400;letter-spacing:.22em;text-transform:uppercase;white-space:nowrap}
 .po .t-tag{font-size:23px;line-height:1.5;letter-spacing:.22em;text-transform:uppercase;font-weight:300}
-.po .badge{background:#a67c37;color:#fff;font-size:22px;letter-spacing:.3em;text-transform:uppercase;text-align:center;height:50px;line-height:50px;font-weight:300}
-.po .headline{font-family:'Newsreader',serif;font-weight:500;line-height:.9;color:#a2762f;letter-spacing:-.02em}
+.po .po-badge{background:#a67c37;color:#fff;font-size:22px;letter-spacing:.3em;text-transform:uppercase;text-align:center;height:50px;line-height:50px;font-weight:300}
+.po .headline{overflow-wrap:break-word;font-family:'Newsreader',serif;font-weight:500;line-height:.9;color:#a2762f;letter-spacing:-.02em}
 
 /* perks */
 .po .perk{display:flex;align-items:center}

@@ -48,7 +48,22 @@
   const curated = (d, style) => A(style, 'curated', `<i></i><div><div class="cur-t">${esc(d.brand.footer)}</div><div class="cur-e">${esc(d.brand.est)}</div></div>`);
   const curInline = (d, style) => A(style, 'cur-inline', `${esc(d.brand.footer)} <i></i>`);
   const note = (d, style) => A(style, 'note', esc(d.brand.loyalty));
-  const headlineHtml = d => esc(d.offer_headline).replace(/\s+(Pay\b)/i, '<br>$1');
+  const headlineHtml = d => /^stay\s+\d+\s+pay\s+\d+$/i.test(d.offer_headline.trim()) ? esc(d.offer_headline).replace(/\s+(Pay\b)/i, '<br>$1') : esc(d.offer_headline);
+  // Largest size (<= base) at which the text wraps into the given width in at most 3 lines; the user's scale applies on top.
+  function headlineFs(text, base, width, scale) {
+    const words = String(text).trim().split(/\s+/);
+    for (let fs = base; fs >= 28; fs -= 2) {
+      const cap = Math.floor(width / (fs * 0.5));
+      let lines = 1, cur = 0, ok = true;
+      for (const w of words) {
+        if (w.length > cap) { ok = false; break; }
+        if (cur && cur + 1 + w.length > cap) { lines++; cur = w.length; } else { cur += (cur ? 1 : 0) + w.length; }
+      }
+      if (ok && lines <= 3 && lines * fs * 0.92 <= base * 2.3) return Math.round(fs * (scale || 100) / 100);
+    }
+    return Math.round(28 * (scale || 100) / 100);
+  }
+  const headlineBlock = (d, left, top, width, base) => A(`left:${left}px;top:${top}px;width:${width}px;font-size:${headlineFs(d.offer_headline, base, width, d.headline_scale)}px`, 'headline', headlineHtml(d));
   const root = (cls, w, h, inner, style) => `<div class="po ${cls}" style="width:${w}px;height:${h}px;${style || ''}">${inner}</div>`;
   const brandBig = (d, left, top, base, max, color) => A(`left:${left}px;top:${top}px;font-size:${fs(d.brand_line, base, max)}px;color:${color || '#0f2420'}`, 't-brand', esc(d.brand_line));
   const placeSmall = (d, left, top, size, max, color) => A(`left:${left}px;top:${top}px;font-size:${fs(d.place_line, size, max)}px;${color ? 'color:' + color : ''}`, 't-place', esc(d.place_line));
@@ -71,7 +86,7 @@
   T.push({
     id: 'arch-offer', name: 'Arch · Offer headline', w: 902, h: 1743, slots: [{ key: 'hero', label: 'Arch photo', orient: 'portrait' }],
     render(d) {
-      const head = d.offer_headline ? A('left:76px;top:567px;width:310px', 'badge', 'Special offer') + A('left:76px;top:626px;font-size:128px', 'headline', headlineHtml(d)) : '';
+      const head = d.offer_headline ? A('left:76px;top:567px;width:310px', 'po-badge', 'Special offer') + headlineBlock(d, 76, 626, 400, 128) : '';
       return root('t1', 902, 1743,
         A('left:490px;top:118px;width:412px;height:1366px;border-radius:206px 206px 0 0;background:linear-gradient(90deg,#eadfcb,#f6efe2);box-shadow:inset 0 0 40px rgba(120,90,40,.18)') +
         PH(d, 'hero', 'left:524px;top:150px;width:378px;height:1334px;border-radius:174px 174px 0 0') +
@@ -214,7 +229,7 @@
       const per = d.perks.slice(0, 4).map((p, i) => A(`left:${cols[i] - 120}px;top:1268px;width:240px;display:flex;flex-direction:column;align-items:center;text-align:center`, '',
         `${perk(d, p, { plain: true, ico: 54, swap: true })}${perkLabel(p, 'margin-top:14px;font-size:17px;color:#f1e9da;letter-spacing:.16em')}`)).join('');
       const divs = [268, 515, 748].map(x => A(`left:${x}px;top:1290px;width:2px;height:86px;background:#b98f45;opacity:.55`)).join('');
-      const head = d.offer_headline ? A('left:66px;top:474px;width:236px', 'badge', 'Special offer') + A('left:66px;top:530px;font-size:112px', 'headline', headlineHtml(d)) : '';
+      const head = d.offer_headline ? A('left:66px;top:474px;width:236px', 'po-badge', 'Special offer') + headlineBlock(d, 66, 530, 560, 112) : '';
       return root('t7', 1024, 1536,
         PH(d, 'hero', 'left:0;top:0;width:1024px;height:1160px') +
         A('left:0;top:0;width:1024px;height:900px;background:linear-gradient(90deg,rgba(244,238,228,.93) 0%,rgba(244,238,228,.8) 38%,rgba(244,238,228,0) 72%)') +

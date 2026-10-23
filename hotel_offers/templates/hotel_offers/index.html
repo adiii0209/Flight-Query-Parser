@@ -21,7 +21,7 @@
     </button>
     <div class="header-brand">Hotel Offers</div>
     <div class="header-actions">
-      <button class="pill ghost sm" id="btnSaved">Saved</button>
+      <button class="pill ghost sm js-open-saved" id="btnSaved">Saved offers</button>
       <button class="pill ghost sm" id="btnSettings">Settings</button>
     </div>
   </div>
@@ -41,6 +41,7 @@
         <button class="pill primary lg" id="btnParse">Generate templates</button>
       </div>
     </div>
+    <button class="linkbtn js-open-saved" type="button">Open a saved offer</button>
   </section>
 
   <!-- 2 · Working -->
@@ -59,7 +60,8 @@
   <section class="stage stage-studio">
     <div class="studio-bar">
       <button class="pill ghost sm" id="btnNew">&lsaquo; New offer</button>
-      <div class="studio-title" id="studioTitle"></div>
+      <input class="offer-name" id="offerName" placeholder="Name this offer" maxlength="120" aria-label="Offer name">
+      <button class="pill ghost sm" id="btnSave">Save</button>
       <div class="export">
         <label class="check"><input type="checkbox" id="selAll"><span>Select all</span></label>
         <select id="outSize" aria-label="Size">
@@ -86,6 +88,9 @@
         </div>
         <label>Hotel tagline<input data-f="tagline" placeholder="A timeless icon on Lake Pichola"></label>
         <label>Offer <small>(e.g. Stay 3 Pay 2 &middot; shown on Offer templates, empty = hidden)</small><input data-f="offer_headline" placeholder="Stay 3 Pay 2"></label>
+        <div class="size-ctl"><span>Offer text size</span>
+          <button type="button" id="hlMinus" aria-label="Smaller">&minus;</button><output id="hlVal">100%</output><button type="button" id="hlPlus" aria-label="Larger">+</button>
+          <button type="button" id="hlReset" class="linkbtn">Reset</button></div>
         <div class="ho-grid3">
           <label>Currency<input data-f="currency" placeholder="INR"></label>
           <label>Online rate <small>(struck)</small><input data-f="online_rate" type="number" min="0" step="any"></label>
@@ -148,11 +153,11 @@
   </div>
 </div>
 
-<!-- Saved offers -->
-<div class="ho-modal" id="savedModal" hidden>
+<!-- Saved offers drawer -->
+<div class="ho-modal drawer" id="savedModal" hidden>
   <div class="ho-dialog">
-    <div class="ho-dialog-head"><h3>Saved offers</h3><button class="ho-x" data-close>✕</button></div>
-    <div class="ho-row"><button class="pill primary sm" id="btnSaveCurrent">Save current offer</button><span class="ho-hint" id="saveMsg"></span></div>
+    <div class="ho-dialog-head"><h3>Saved offers</h3><button class="ho-x" data-close>&#10005;</button></div>
+    <div class="ho-hint">Rename an offer by editing its name. Changes save when you click away.</div>
     <div id="savedList" class="ho-saved"></div>
   </div>
 </div>

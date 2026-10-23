@@ -211,3 +211,17 @@ def delete_offer(offer_id):
     db.session.delete(row)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+@hotel_offers_bp.route("/api/hotel-offers/offers/<int:offer_id>", methods=["PATCH"])
+@login_required
+def rename_offer(offer_id):
+    title = ((request.get_json(silent=True) or {}).get("title") or "").strip()
+    if not title:
+        return _err("Name cannot be empty.")
+    row = HotelOffer.query.filter_by(id=offer_id, organization_id=_org()).first()
+    if not row:
+        return _err("Not found", 404)
+    row.title = title[:255]
+    db.session.commit()
+    return jsonify({"offer": row.to_dict(with_data=False)})
