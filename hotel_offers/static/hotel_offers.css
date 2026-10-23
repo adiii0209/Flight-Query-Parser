@@ -391,3 +391,36 @@ button,input,select,textarea{font-family:inherit}
   .ho-tpl-actions [data-act=edit]{background:var(--text);color:#fff;border-color:var(--text)}
   .ho-tpl-actions [data-act=edit]:hover{background:#000}
 }
+
+/* "Details" jump button: only needed when the editor sits below the posters (single-column layout) */
+#btnDetails svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+@media(min-width:1001px){#btnDetails{display:none}}
+
+/* The app's global CSS pins html and body to 100% height, which makes <body> the scroller instead of the window.
+   On this page the window scrolls, so scroll-to-top, jump buttons and sticky bars behave. */
+html{height:auto!important;min-height:100%!important}
+body{height:auto!important;min-height:100vh!important;overflow:visible!important}
+
+/* collapsible toolbar */
+.studio-bar{max-height:700px;transition:max-height .45s var(--ease),opacity .3s var(--out),padding .45s var(--ease),margin .45s var(--ease),border-width .3s}
+.studio-bar.collapsed{max-height:0;opacity:0;padding-top:0;padding-bottom:0;margin-top:0;margin-bottom:.4rem;border-width:0;overflow:hidden;pointer-events:none}
+.bar-toggle{width:30px;height:30px;border-radius:50%;border:0;background:#f2f2f5;color:var(--mute);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex:none;order:99;margin-left:auto;transition:background .2s,transform .2s var(--ease)}
+.bar-toggle:hover{background:#e5e5ea;color:var(--text)}
+.bar-toggle svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.bar-fab{position:fixed;right:16px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:900;height:48px;padding:0 18px 0 14px;border:0;border-radius:99px;background:#1d1d1f;color:#fff;display:flex;align-items:center;gap:8px;font:inherit;font-size:.88rem;font-weight:600;cursor:pointer;box-shadow:0 10px 30px rgba(0,0,0,.28);animation:fabIn .45s var(--ease) both;transition:transform .2s var(--ease)}
+.bar-fab[hidden]{display:none}
+.bar-fab:active{transform:scale(.94)}
+.bar-fab svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+@keyframes fabIn{from{opacity:0;transform:translateY(16px) scale(.9)}to{opacity:1;transform:none}}
+
+/* header buttons: icons on phones so nothing is cut off */
+.hbtn .ic{display:none;width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+@media(max-width:700px){
+  .hbtn{width:40px;height:40px;padding:0;border-radius:50%;position:relative;flex:none}
+  .hbtn .ic{display:block}
+  .hbtn .tx{display:none}
+  .hbtn .lead-dot{position:absolute;top:-3px;right:-3px;margin:0;box-shadow:0 0 0 2px var(--bg)}
+  .header-actions{gap:.45rem}
+}
+/* collapse button sits at the end of the name row on phones */
+@media(max-width:600px){.bar-toggle{order:-1}.offer-name{flex-basis:calc(100% - 44px)!important}}

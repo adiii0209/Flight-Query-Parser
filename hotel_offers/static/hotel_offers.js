@@ -112,15 +112,22 @@
       $('button', row).addEventListener('click', () => { state.data.perks.splice(i, 1); renderPerks(); refresh(); });
       box.appendChild(row);
     });
-    $('#btnAddPerk').disabled = state.data.perks.length >= 4;
+    const full = state.data.perks.length >= 4, addBtn = $('#btnAddPerk');
+    addBtn.disabled = full;
+    addBtn.textContent = full ? 'Maximum of 4 perks reached' : `Add perk (${state.data.perks.length}/4)`;
+    addBtn.title = full ? 'The posters have room for 4 perks. Remove one to add another.' : '';
   }
   $('#btnAddPerk').addEventListener('click', () => {
-    if (state.data.perks.length < 4) { state.data.perks.push({ icon: 'gift', label: '' }); renderPerks(); }
+    if (state.data.perks.length < 4) {
+      state.data.perks.push({ icon: 'gift', label: '' }); renderPerks();
+      const rows = $$('#perkRows .perk-row'), ta = $('textarea', rows[rows.length - 1]);
+      ta.scrollIntoView({ block: 'center', behavior: 'smooth' }); ta.focus({ preventScroll: true });  // so the new row is visible and ready to type in
+    }
   });
 
   // ---------- stages
   const app = $('#app');
-  const setStage = name => { app.dataset.stage = name; window.scrollTo({ top: 0 }); if (name === 'studio') requestAnimationFrame(() => { layoutScale(); }); };
+  const setStage = name => { app.dataset.stage = name; window.scrollTo({ top: 0 }); syncBarFab(); if (name === 'studio') requestAnimationFrame(() => { layoutScale(); }); };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   function stepper() {
     const items = $$('.steps li'), title = $('#procTitle');
@@ -569,10 +576,34 @@
     lines.push('', ...tail, ...(tail.length ? [''] : []), '🙌 Know someone heading there? Forward this to them');
     return lines.join('\n');
   }
+  // Same text as Share: caption first, the live link at the very end (no link until the offer is live)
   $('#btnCopyCaption').addEventListener('click', async e => {
     const btn = e.currentTarget;
-    try { await navigator.clipboard.writeText(caption()); btn.textContent = 'Copied'; } catch (err) { alert('Could not copy. ' + err.message); }
+    try {
+      if (liveOn()) await copyShare(state.live.url, Promise.resolve(state.data));
+      else { await navigator.clipboard.writeText(caption()); toast('Caption copied'); }
+      btn.textContent = 'Copied';
+    } catch (err) { alert('Could not copy. ' + err.message); }
     setTimeout(() => { btn.textContent = 'Copy caption'; }, 1500);
+  });
+
+  // The sticky toolbar takes a lot of a phone screen: it can be hidden, and a floating button brings it back
+  let barCollapsed = false;
+  function syncBarFab() { const f = $('#barExpand'); if (f) f.hidden = !(barCollapsed && app.dataset.stage === 'studio'); }
+  function setBarCollapsed(c) {
+    barCollapsed = c;
+    $('.studio-bar').classList.toggle('collapsed', c);
+    if (c && typeof closeLiveMenu === 'function') closeLiveMenu();
+    syncBarFab();
+  }
+  $('#barCollapse').addEventListener('click', () => setBarCollapsed(true));
+  $('#barExpand').addEventListener('click', () => setBarCollapsed(false));
+
+  // On phones the editable fields sit below the posters; this jumps straight to them
+  $('#btnDetails').addEventListener('click', () => {
+    const ed = $('.editor'), bar = $('.studio-bar');
+    const y = ed.getBoundingClientRect().top + window.scrollY - bar.getBoundingClientRect().bottom - 12;
+    window.scrollTo({ top: Math.max(0, y), behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   });
 
   // ---------- naming + saving

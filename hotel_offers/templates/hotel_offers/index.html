@@ -21,9 +21,9 @@
     </button>
     <div class="header-brand">Hotel Offers</div>
     <div class="header-actions">
-      <button class="pill ghost sm" id="btnLeads">Leads<span class="lead-dot" id="leadBadge" hidden></span></button>
-      <button class="pill ghost sm js-open-saved" id="btnSaved">Saved</button>
-      <button class="pill ghost sm" id="btnSettings">Settings</button>
+      <button class="pill ghost sm hbtn" id="btnLeads" aria-label="Leads" title="Leads"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 19c.6-3.2 3-5 6-5s5.4 1.8 6 5"/><path d="M16 5.2a3.2 3.2 0 0 1 0 5.6M18 14.4c1.7.7 2.7 2.2 3 4.6"/></svg><span class="tx">Leads</span><span class="lead-dot" id="leadBadge" hidden></span></button>
+      <button class="pill ghost sm hbtn js-open-saved" id="btnSaved" aria-label="Saved offers" title="Saved offers"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10a1 1 0 0 1 1 1v15l-6-3.6L6 20V5a1 1 0 0 1 1-1z"/></svg><span class="tx">Saved</span></button>
+      <button class="pill ghost sm hbtn" id="btnSettings" aria-label="Settings" title="Settings"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg><span class="tx">Settings</span></button>
     </div>
   </div>
 </header>
@@ -62,8 +62,10 @@
     <div class="studio-bar">
       <button class="pill ghost sm" id="btnNew">&lsaquo; New offer</button>
       <input class="offer-name" id="offerName" placeholder="Name this offer" maxlength="120" aria-label="Offer name">
+      <button class="bar-toggle" id="barCollapse" type="button" aria-label="Hide toolbar" title="Hide toolbar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
       <button class="pill ghost sm" id="btnSave">Save</button>
       <button class="pill ghost sm" id="btnLive"><i class="live-dot off"></i>Go live</button>
+      <button class="pill ghost sm" id="btnDetails" type="button">Details <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg></button>
       <div class="export">
         <label class="check"><input type="checkbox" id="selAll"><span>Select all</span></label>
         <select id="outSize" aria-label="Size">
@@ -153,6 +155,8 @@
     <div id="leadList" class="lead-list"></div>
   </section>
 </main>
+
+<button class="bar-fab" id="barExpand" type="button" aria-label="Show toolbar" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg><span>Tools</span></button>
 
 <!-- Layout editor -->
 <div class="ho-modal layout-modal" id="layoutModal" hidden>
