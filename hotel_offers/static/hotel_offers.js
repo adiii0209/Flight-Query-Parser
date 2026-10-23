@@ -112,13 +112,13 @@
       $('button', row).addEventListener('click', () => { state.data.perks.splice(i, 1); renderPerks(); refresh(); });
       box.appendChild(row);
     });
-    const full = state.data.perks.length >= 4, addBtn = $('#btnAddPerk');
+    const full = state.data.perks.length >= 5, addBtn = $('#btnAddPerk');
     addBtn.disabled = full;
-    addBtn.textContent = full ? 'Maximum of 4 perks reached' : `Add perk (${state.data.perks.length}/4)`;
-    addBtn.title = full ? 'The posters have room for 4 perks. Remove one to add another.' : '';
+    addBtn.textContent = full ? 'Maximum of 5 perks reached' : `Add perk (${state.data.perks.length}/5)`;
+    addBtn.title = full ? 'The posters have room for 5 perks. Remove one to add another.' : '';
   }
   $('#btnAddPerk').addEventListener('click', () => {
-    if (state.data.perks.length < 4) {
+    if (state.data.perks.length < 5) {
       state.data.perks.push({ icon: 'gift', label: '' }); renderPerks();
       const rows = $$('#perkRows .perk-row'), ta = $('textarea', rows[rows.length - 1]);
       ta.scrollIntoView({ block: 'center', behavior: 'smooth' }); ta.focus({ preventScroll: true });  // so the new row is visible and ready to type in

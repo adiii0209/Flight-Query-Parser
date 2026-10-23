@@ -95,10 +95,13 @@
 
   /* ---------- perk rows (vertical list) ---------- */
   function perkList(d, o) {
-    return d.perks.slice(0, 4).map((p, i) => {
-      const y = o.top + i * o.step;
-      return A(`left:${o.left}px;top:${y}px;width:${o.w}px;height:${o.ico}px`, 'perk',
-        `${perk(d, p, { ico: o.ico })}<i class="vr" style="height:${o.ico * .72}px;margin-left:${o.gap}px;${o.vr || ''}"></i>${perkLabel(p, `margin-left:${o.gap2 || o.gap}px;font-size:${o.fs || 21}px;${o.color ? 'color:' + o.color : ''}`)}`);
+    const list = d.perks.slice(0, 5), n = list.length, five = n > 4;
+    const ico = five ? Math.round(o.ico * 0.8) : o.ico, fsz = five ? (o.fs || 21) - 2 : (o.fs || 21);
+    const step = five ? Math.min(o.step, Math.floor((o.maxBottom - o.top - ico) / (n - 1))) : o.step;  // four or fewer keep the original spacing
+    return list.map((p, i) => {
+      const y = o.top + i * step;
+      return A(`left:${o.left}px;top:${y}px;width:${o.w}px;height:${ico}px`, 'perk',
+        `${perk(d, p, { ico })}<i class="vr" style="height:${ico * .72}px;margin-left:${o.gap}px;${o.vr || ''}"></i>${perkLabel(p, `margin-left:${o.gap2 || o.gap}px;font-size:${fsz}px;${o.color ? 'color:' + o.color : ''}`)}`);
     }).join('');
   }
 
@@ -114,7 +117,7 @@
         PH(d, 'hero', 'left:524px;top:150px;width:378px;height:1334px;border-radius:174px 174px 0 0') +
         logo(d, 'left:72px;top:60px') +
         brandBig(d, 70, 250, 126, 7) + placeSmall(d, 78, 388, 46, 9) + rule(78, 452, 56) + tagline(d, 'left:78px;top:482px;font-size:21px') + head +
-        perkList(d, { left: 76, top: head ? 925 : 640, step: 102, w: 400, ico: 78, gap: 38, gap2: 36, fs: 21 }) +
+        perkList(d, { left: 76, top: head ? 925 : 640, step: 102, w: 400, ico: 78, gap: 38, gap2: 36, fs: 21, maxBottom: 1335 }) +
         rule(78, 1346, 90, '#c9b79a') + note(d, 'left:78px;top:1370px;width:330px;font-size:25px') +
         pricebar(d, 'left:56px;top:1482px;width:792px;height:142px', { old: 'font-size:40px', nw: 'font-size:48px' }) +
         avail(d, 'left:58px;top:1660px') + curInline(d, 'right:58px;top:1664px'), 'background:#f2ebe0');
@@ -130,7 +133,7 @@
         A('left:0;top:0;width:902px;height:1743px;background:linear-gradient(100deg,rgba(244,238,228,.94) 0%,rgba(244,238,228,.82) 38%,rgba(244,238,228,0) 62%)') +
         logo(d, 'left:80px;top:94px', 'style="font-size:56px"') +
         brandBig(d, 78, 296, 152, 7) + placeSmall(d, 86, 448, 48, 9) + rule(86, 520, 66) + tagline(d, 'left:86px;top:552px;font-size:21px') +
-        perkList(d, { left: 80, top: 650, step: 102, w: 420, ico: 78, gap: 38, gap2: 36, fs: 21 }) +
+        perkList(d, { left: 80, top: 650, step: 102, w: 420, ico: 78, gap: 38, gap2: 36, fs: 21, maxBottom: 1085 }) +
         rule(86, 1100, 90, '#7a6a52') + note(d, 'left:86px;top:1130px;width:360px;font-size:25px') +
         pricebar(d, 'left:58px;top:1432px;width:786px;height:136px', { old: 'font-size:40px', nw: 'font-size:48px' }) +
         avail(d, 'left:58px;top:1655px;color:#f4eee4') + curInline(d, 'right:58px;top:1658px;color:#f4eee4'), 'background:#2c3b3a');
@@ -153,8 +156,11 @@
         hdrNote(d, 'right:50px;top:46px;text-align:right;font-size:15px', rule(920, 124, 54)) +
         brandSmall(d, 648, 252, 34, 9) + A(`left:640px;top:296px;font-size:${fs(d.place_line || d.brand_line, 112, 5.8)}px`, 't-brand', esc(d.place_line || d.brand_line)) +
         rule(648, 450, 64) + tagline(d, 'left:648px;top:480px;font-size:22px') +
-        d.perks.slice(0, 4).map((p, i) => A(`left:648px;top:${586 + i * 114}px;width:360px;height:88px`, 'perk', `${perk(d, p, { ico: 88 })}${perkLabel(p, 'margin-left:34px;font-size:20px')}`) +
-          (i < 3 ? rule(768, 586 + i * 114 + 102, 80, '#c9b79a').replace('height:3px', 'height:2px') : '')).join('') +
+        d.perks.slice(0, 5).map((p, i, arr) => {
+          const five = arr.length > 4, ico = five ? 72 : 88, step = five ? 104 : 114;
+          return A(`left:648px;top:${586 + i * step}px;width:360px;height:${ico}px`, 'perk', `${perk(d, p, { ico })}${perkLabel(p, `margin-left:${five ? 28 : 34}px;font-size:${five ? 18 : 20}px`)}`) +
+            (i < arr.length - 1 ? rule(648 + ico + (five ? 28 : 32), 586 + i * step + ico + 14, 80, '#c9b79a').replace('height:3px', 'height:2px') : '');
+        }).join('') +
         rule(648, 1092, 88) + note(d, 'left:648px;top:1128px;width:340px;font-size:24px') +
         pricebar(d, 'left:52px;top:1264px;width:922px;height:108px;background:#dcddd0;border-radius:0', { old: 'font-size:36px', nw: 'font-size:44px' }) +
         cta(d, 'left:273px;top:1405px;width:308px;height:74px;font-size:21px') +
@@ -176,7 +182,7 @@
         logo(d, 'left:140px;top:140px', 'style="font-size:46px"') +
         brandSmall(d, 144, 330, 30, 9) + A(`left:140px;top:362px;font-size:${fs(d.place_line || d.brand_line, 108, 6.6)}px`, 't-brand', esc(d.place_line || d.brand_line)) +
         rule(144, 482, 62) + tagline(d, 'left:144px;top:508px;font-size:20px') +
-        perkList(d, { left: 142, top: 585, step: 96, w: 400, ico: 76, gap: 26, gap2: 26, fs: 19 }) +
+        perkList(d, { left: 142, top: 585, step: 96, w: 400, ico: 76, gap: 26, gap2: 26, fs: 19, maxBottom: 965 }) +
         rule(144, 983, 62) + note(d, 'left:146px;top:1006px;width:380px;font-size:21px') +
         pricebar(d, 'left:88px;top:1093px;width:478px;height:112px;border-radius:0 0 0 0', { old: 'font-size:26px', nw: 'font-size:32px' }) +
         cta(d, 'left:128px;top:1220px;width:300px;height:58px;font-size:19px') +
@@ -189,9 +195,10 @@
   T.push({
     id: 'hero-top', name: 'Hero top · 2×2 perks', w: 1122, h: 1402, slots: [{ key: 'hero', label: 'Top photo', orient: 'landscape' }],
     render(d) {
-      const cells = d.perks.slice(0, 4).map((p, i) => {
-        const x = i % 2 ? 802 : 496, y = i < 2 ? 760 : 890;
-        return A(`left:${x}px;top:${y}px;width:320px;height:88px`, 'perk', `${perk(d, p, { ico: 88 })}${perkLabel(p, 'margin-left:24px;font-size:15px;letter-spacing:.14em')}`) + rule(x + 114, y + 92, 48, '#c9a56a').replace('height:3px', 'height:2px');
+      const five = d.perks.length > 4, ico5 = five ? 72 : 88, rowsY = five ? [744, 840, 936] : [760, 890];
+      const cells = d.perks.slice(0, 5).map((p, i) => {
+        const x = i % 2 ? 802 : 496, y = rowsY[Math.floor(i / 2)];
+        return A(`left:${x}px;top:${y}px;width:320px;height:${ico5}px`, 'perk', `${perk(d, p, { ico: ico5 })}${perkLabel(p, 'margin-left:24px;font-size:15px;letter-spacing:.14em')}`) + rule(x + ico5 + 26, y + ico5 + 4, 48, '#c9a56a').replace('height:3px', 'height:2px');
       }).join('');
       return root('t5', 1122, 1402,
         PH(d, 'hero', 'left:0;top:0;width:1122px;height:696px') +
@@ -200,7 +207,7 @@
         hdrBlock(d, 'left:810px;top:48px;width:2px;height:98px;background:#c9a56a', 'left:852px;top:62px;font-size:15px;line-height:1.7;letter-spacing:.2em;text-transform:uppercase') +
         brandSmall(d, 76, 738, 33, 9) + A(`left:68px;top:784px;font-size:${fs(d.place_line || d.brand_line, 112, 6.2)}px`, 't-brand', esc(d.place_line || d.brand_line)) +
         rule(76, 900, 64) + tagline(d, 'left:76px;top:928px;font-size:21px') +
-        A('left:458px;top:748px;width:2px;height:258px;background:#c9a56a') + cells +
+        A(`left:458px;top:748px;width:2px;height:${five ? 272 : 258}px;background:#c9a56a`) + cells +
         A('left:65px;top:1043px;width:992px;height:2px;background:#d3b98a') +
         pricebar(d, 'left:65px;top:1070px;width:992px;height:140px;border-radius:30px;background:linear-gradient(90deg,#ece4d6 50%,#dfe0d2 50%)', { old: 'font-size:40px', nw: 'font-size:56px' }) +
         cta(d, 'left:71px;top:1240px;width:428px;height:78px;font-size:21px') + avail(d, 'left:74px;top:1334px') +
@@ -216,10 +223,10 @@
       { key: 'g2', label: 'Gallery 2 · dining', orient: 'landscape', hint: 'fine dining terrace dinner' },
       { key: 'g3', label: 'Gallery 3 · pool', orient: 'landscape', hint: 'resort infinity pool' }],
     render(d) {
-      const cols = [170, 405, 640, 872];
-      const per = d.perks.slice(0, 4).map((p, i) => A(`left:${cols[i] - 150}px;top:828px;width:300px;display:flex;flex-direction:column;align-items:center;text-align:center`, '',
-        `${perk(d, p, { ico: 80 })}${perkLabel(p, 'margin-top:14px;font-size:18px')}`)).join('');
-      const divs = [296, 526, 752].map(x => A(`left:${x}px;top:840px;width:2px;height:116px;background:#c9a56a;opacity:.7`)).join('');
+      const five = d.perks.length > 4, cols = five ? [102, 307, 512, 717, 922] : [170, 405, 640, 872], cw = five ? 190 : 300;
+      const per = d.perks.slice(0, 5).map((p, i) => A(`left:${cols[i] - cw / 2}px;top:828px;width:${cw}px;display:flex;flex-direction:column;align-items:center;text-align:center`, '',
+        `${perk(d, p, { ico: five ? 68 : 80 })}${perkLabel(p, `margin-top:14px;font-size:${five ? 14 : 18}px${five ? ';letter-spacing:.1em' : ''}`)}`)).join('');
+      const divs = (five ? [205, 410, 615, 820] : [296, 526, 752]).map(x => A(`left:${x}px;top:840px;width:2px;height:116px;background:#c9a56a;opacity:.7`)).join('');
       return root('t6', 1024, 1536,
         PH(d, 'hero', 'left:0;top:0;width:1024px;height:762px') +
         A('left:0;top:0;width:1024px;height:470px;background:linear-gradient(180deg,rgba(246,239,227,.94) 0%,rgba(246,239,227,.82) 50%,rgba(246,239,227,0) 100%)') +
@@ -241,10 +248,10 @@
   T.push({
     id: 'green-offer', name: 'Green base · Offer', w: 1024, h: 1536, slots: [{ key: 'hero', label: 'Hero photo', orient: 'portrait' }],
     render(d) {
-      const cols = [150, 390, 631, 868];
-      const per = d.perks.slice(0, 4).map((p, i) => A(`left:${cols[i] - 120}px;top:1268px;width:240px;display:flex;flex-direction:column;align-items:center;text-align:center`, '',
-        `${perk(d, p, { plain: true, ico: 54, swap: true })}${perkLabel(p, 'margin-top:14px;font-size:17px;color:#f1e9da;letter-spacing:.16em')}`)).join('');
-      const divs = [268, 515, 748].map(x => A(`left:${x}px;top:1290px;width:2px;height:86px;background:#b98f45;opacity:.55`)).join('');
+      const five = d.perks.length > 4, cols = five ? [142, 327, 512, 697, 882] : [150, 390, 631, 868], cw = five ? 180 : 240;
+      const per = d.perks.slice(0, 5).map((p, i) => A(`left:${cols[i] - cw / 2}px;top:1268px;width:${cw}px;display:flex;flex-direction:column;align-items:center;text-align:center`, '',
+        `${perk(d, p, { plain: true, ico: five ? 46 : 54, swap: true })}${perkLabel(p, `margin-top:14px;font-size:${five ? 14 : 17}px;color:#f1e9da;letter-spacing:${five ? '.1em' : '.16em'}`)}`)).join('');
+      const divs = (five ? [235, 420, 605, 790] : [268, 515, 748]).map(x => A(`left:${x}px;top:1290px;width:2px;height:86px;background:#b98f45;opacity:.55`)).join('');
       const head = d.offer_headline ? A('left:66px;top:474px;width:236px', 'po-badge', 'Special offer') + headlineBlock(d, 66, 556, 560, 112) : '';
       return root('t7', 1024, 1536,
         PH(d, 'hero', 'left:0;top:0;width:1024px;height:1160px') +
@@ -271,7 +278,7 @@
         hdrBlock(d, 'left:848px;top:52px;width:2px;height:76px;background:#b98f45', 'left:882px;top:58px;font-size:14px;line-height:1.7;letter-spacing:.2em;text-transform:uppercase;color:#f4eee4') +
         brandSmall(d, 74, 270, 38, 9, '#d3a95f') + A(`left:70px;top:316px;font-size:${fs(d.place_line || d.brand_line, 120, 6.7)}px;color:#f6efe2`, 't-brand', esc(d.place_line || d.brand_line)) +
         rule(76, 444, 72, '#b98f45') + tagline(d, 'left:80px;top:470px;font-size:23px;color:#f4eee4') +
-        perkList(d, { left: 76, top: 575, step: 102, w: 440, ico: 86, gap: 40, gap2: 42, fs: 20, color: '#f4eee4' }) +
+        perkList(d, { left: 76, top: 575, step: 102, w: 440, ico: 86, gap: 40, gap2: 42, fs: 20, color: '#f4eee4', maxBottom: 985 }) +
         rule(76, 996, 86, '#b98f45') + note(d, 'left:76px;top:1018px;width:420px;font-size:25px;color:#f4eee4') +
         pricebar(d, 'left:68px;top:1103px;width:987px;height:120px;background:rgba(14,14,14,.94);border:1.5px solid #b98f45;border-radius:22px', { old: 'font-size:38px', nw: 'font-size:48px' }) +
         cta(d, 'left:68px;top:1242px;width:428px;height:72px;font-size:21px') + avail(d, 'left:74px;top:1332px;color:#f4eee4') +

@@ -15,7 +15,7 @@ city (string), tagline (string, max 8 words, evocative, e.g. "A timeless icon on
 room (string), check_in (YYYY-MM-DD), check_out (YYYY-MM-DD), nights (int), adults (int), rooms (int),
 free_nights (int: nights priced at zero or advertised as free), offer_headline (string like "Stay 3 Pay 2" when a free-night deal exists, else ""),
 currency (3-letter code), net_total (number: final total incl. taxes), cancellation (short string),
-perks (array of up to 4 objects {{"icon": one of {ICONS}, "label": "UPPERCASE TEXT"}}).
+perks (array of up to 5 objects {{"icon": one of {ICONS}, "label": "UPPERCASE TEXT"}}).
 Perk labels: at most 2 lines separated by \\n, each line max 18 characters, e.g. "USD 100\\nRESORT CREDITS", "DAILY\\nBREAKFAST".
 Append * to labels that are subject to availability (upgrades, early check-in / late check-out).
 Prefer the most attractive perks: credit, breakfast, upgrade, early check-in/late check-out, welcome, transfers.
@@ -120,7 +120,7 @@ def regex_parse(text):
                 break
     order = [p[1] for p in _PERK_RULES]
     perks.sort(key=lambda p: order.index(p["icon"]))
-    out["perks"] = perks[:4]
+    out["perks"] = perks[:5]
     return out
 
 
@@ -201,7 +201,7 @@ def normalise(data, regex_data, cfg):
         label = str(p.get("label", "")).strip()
         if label:
             perks.append({"icon": icon, "label": label})
-    merged["perks"] = perks[:4]
+    merged["perks"] = perks[:5]
     if not merged.get("tagline") and merged.get("city"):
         merged["tagline"] = f"A signature stay in {merged['city']}"
     if merged.get("free_nights") and merged.get("nights") and not merged.get("offer_headline"):
