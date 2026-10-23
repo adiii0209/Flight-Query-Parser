@@ -27,6 +27,7 @@ DEFAULTS = {
     "wa_message": "Hi Time Tours, I'm interested in {offer}. My name is {name} ({phone}).",
     "lead_notify": True,
     "lead_email": "mail@timetours.in",
+    "public_base_url": "",               # e.g. https://elevate.timetours.in (domain used in share links)
     "client_title": "Time Elevate",
     "client_subtitle": "Hand-picked luxury stays, curated by Time Tours.",
     # Fixed brand text printed on every template

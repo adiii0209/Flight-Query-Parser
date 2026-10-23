@@ -1,7 +1,6 @@
 import json
 
 import requests
-from sqlalchemy import Integer, inspect
 from flask import Blueprint, Response, jsonify, render_template, request, session
 
 from extensions import db
@@ -9,7 +8,8 @@ from models_rbac import Role
 from routes.auth import login_required
 
 from . import photos, settings
-from .models import HotelOffer, HotelOfferConfig, HotelOfferLead, HotelOfferLive
+from .common import ensure_tables
+from .models import HotelOffer, HotelOfferLive
 from .parser import call_llm, parse_offer
 
 hotel_offers_bp = Blueprint(
@@ -19,27 +19,9 @@ hotel_offers_bp = Blueprint(
     static_url_path="/hotel-offers/static",
 )
 
-_tables_ready = False
-
-
-def _ensure_tables():
-    global _tables_ready
-    if not _tables_ready:
-        insp = inspect(db.engine)
-        for model in (HotelOfferConfig, HotelOffer, HotelOfferLive, HotelOfferLead):
-            name = model.__tablename__
-            if insp.has_table(name):
-                col = next((c for c in insp.get_columns(name) if c["name"] == "organization_id"), None)
-                if col is not None and isinstance(col["type"], Integer):
-                    # first release used an integer org id; org ids are UUID strings. Table was unusable, so rebuild.
-                    model.__table__.drop(db.engine)
-            model.__table__.create(db.engine, checkfirst=True)
-        _tables_ready = True
-
-
 @hotel_offers_bp.before_request
 def _before():
-    _ensure_tables()
+    ensure_tables()
 
 
 def _org():
@@ -238,3 +220,5 @@ def rename_offer(offer_id):
 
 # register the remaining routes on the same blueprint (imported last: they import names defined above)
 from . import routes_live, public  # noqa: E402,F401
+
+hotel_offers_bp.register_blueprint(public.public_bp)

@@ -10,28 +10,15 @@ from datetime import date, datetime
 from flask import Response, jsonify, request
 
 from extensions import db
-from models_rbac import Organization
 from routes.auth import login_required
 
 from . import settings
 from .models import HotelOffer, HotelOfferLead, HotelOfferLive
+from .common import base_url, org_slug, public_base  # noqa: F401
 from .routes import _err, _org, hotel_offers_bp as bp
 
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 LEAD_STATUSES = ("new", "contacted", "won", "lost")
-
-
-def base_url():
-    proto = request.headers.get("X-Forwarded-Proto", request.scheme).split(",")[0].strip()
-    host = request.headers.get("X-Forwarded-Host", request.host).split(",")[0].strip()
-    return f"{proto}://{host}"
-
-
-def org_slug(org_id):
-    if not org_id:
-        return "_"
-    org = db.session.get(Organization, org_id)
-    return org.slug if org else "_"
 
 
 def _slugify(text):
@@ -42,7 +29,7 @@ def live_info(row):
     return {
         "is_live": bool(row.is_live), "slug": row.slug, "template_id": row.template_id,
         "valid_till": row.valid_till.isoformat() if row.valid_till else None,
-        "views": row.views, "url": f"{base_url()}/o/{row.slug}",
+        "views": row.views, "url": f"{public_base(row.organization_id)}/o/{row.slug}",
         "expired": bool(row.valid_till and row.valid_till < date.today()),
     }
 
@@ -144,7 +131,7 @@ def go_online_again(offer_id):
 @bp.route("/api/hotel-offers/dashboard-link")
 @login_required
 def dashboard_link():
-    return jsonify({"url": f"{base_url()}/offers/{org_slug(_org())}"})
+    return jsonify({"url": f"{public_base(_org())}/offers/{org_slug(_org())}"})
 
 
 # ------------------------------------------------------------------ leads

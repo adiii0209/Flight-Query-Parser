@@ -19,7 +19,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{{ url_for('hotel_offers.static', filename='client.css') }}">
+<link rel="stylesheet" href="{{ url_for('.static', filename='client.css') }}">
 </head>
 <body data-org="{{ org_slug }}" data-focus="{{ focus }}">
 <script id="boot" type="application/json">{{ cfg|tojson }}</script>
@@ -139,6 +139,6 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <noscript><p style="padding:2rem;text-align:center">Please enable JavaScript to see our current offers.</p></noscript>
-<script src="{{ url_for('hotel_offers.static', filename='client.js') }}"></script>
+<script src="{{ url_for('.static', filename='client.js') }}"></script>
 </body>
 </html>

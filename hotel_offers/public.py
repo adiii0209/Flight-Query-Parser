@@ -5,15 +5,22 @@ from collections import defaultdict, deque
 from datetime import date, datetime, timedelta
 from urllib.parse import quote
 
-from flask import Response, abort, jsonify, redirect, render_template, request
+from flask import Blueprint, Response, abort, jsonify, redirect, render_template, request
 
 from extensions import db
 from models_rbac import Organization
 
 from . import notify, settings
 from .models import HotelOfferLead, HotelOfferLive
-from .routes import hotel_offers_bp as bp
-from .routes_live import base_url, org_slug
+from .common import ensure_tables, org_slug, public_base
+
+public_bp = bp = Blueprint("hotel_offers_public", __name__, template_folder="templates", static_folder="static", static_url_path="/offers-static")
+
+
+@bp.before_request
+def _before():
+    ensure_tables()
+
 
 _hits = defaultdict(deque)  # ip -> recent lead timestamps (per worker; enough to blunt casual abuse)
 
@@ -44,6 +51,15 @@ def _public(row):
     return s
 
 
+def _to_public_domain(org_id, path):
+    """Links shared before a public domain was set keep working: they redirect to the configured domain."""
+    target = public_base(org_id)
+    here = f"{request.scheme}://{request.host}"
+    if target and target.split("://", 1)[-1] != request.host and not target.startswith(here):
+        return redirect(target + path, code=302)
+    return None
+
+
 def _client_cfg(cfg):
     return {k: cfg[k] for k in ("client_title", "client_subtitle", "whatsapp_number")}
 
@@ -61,6 +77,9 @@ def client_dashboard(org_slug_):
     org_id = _org_id_for_slug(org_slug_)
     if org_id is None:
         abort(404)
+    moved = _to_public_domain(org_id, request.path)
+    if moved:
+        return moved
     cfg = settings.get_config(org_id, include_env=False)
     return render_template("hotel_offers/client.html", org_slug=org_slug_, focus="", cfg=_client_cfg(cfg), og=None)
 
@@ -70,6 +89,9 @@ def client_offer(slug):
     row = HotelOfferLive.query.filter_by(slug=slug).first()
     if row is None:
         abort(404)
+    moved = _to_public_domain(row.organization_id, request.path)
+    if moved:
+        return moved
     cfg = settings.get_config(row.organization_id, include_env=False)
     live = row.is_live and (not row.valid_till or row.valid_till >= _today())
     og = None
@@ -77,7 +99,7 @@ def client_offer(slug):
         s = row.snap()
         price = f"{s.get('currency', '')} {int(s.get('our_deal') or 0):,}".strip() if s.get("our_deal") else ""
         og = {"title": s.get("title") or s.get("hotel_name") or "Offer", "desc": " · ".join(x for x in (s.get("offer_headline"), price and f"from {price}") if x) or cfg["client_subtitle"],
-              "image": f"{base_url()}/offers/img/{row.slug}?v={int(row.updated_at.timestamp()) if row.updated_at else 0}", "url": f"{base_url()}/o/{row.slug}"}
+              "image": f"{public_base(row.organization_id)}/offers/img/{row.slug}?v={int(row.updated_at.timestamp()) if row.updated_at else 0}", "url": f"{public_base(row.organization_id)}/o/{row.slug}"}
     return render_template("hotel_offers/client.html", org_slug=org_slug(row.organization_id), focus=slug, cfg=_client_cfg(cfg), og=og)
 
 
