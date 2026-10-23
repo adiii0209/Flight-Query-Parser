@@ -207,11 +207,17 @@
     lines.push('', boot.availability_note || '*Subject to availability.', boot.brand_footer || 'Curated by Time Tours', '', '\u{1F64C} Know someone heading there? Forward this to them');
     return lines.join('\n');
   }
+  // Share does both: opens the phone's share sheet and copies the caption + link to the clipboard
   $('#sShare').addEventListener('click', async () => {
     if (!current) return;
-    const text = captionFor(current) + '\n\n' + location.origin + '/o/' + current.slug;
-    try { await navigator.clipboard.writeText(text); toast('Link and caption copied'); }
-    catch (e) { window.prompt('Copy this text', text); }
+    const url = location.origin + '/o/' + current.slug, caption = captionFor(current), title = current.title || current.hotel_name;
+    const copied = navigator.clipboard ? navigator.clipboard.writeText(caption + '\n\n' + url).then(() => true, () => false) : Promise.resolve(false); // started now, inside the tap
+    let sheetShown = false;
+    if (navigator.share) {
+      try { await navigator.share({ title, text: caption, url }); sheetShown = true; } catch (e) { sheetShown = e.name === 'AbortError'; }
+    }
+    if (await copied) toast('Link and caption copied');
+    else if (!sheetShown) window.prompt('Copy this text', caption + '\n\n' + url);
   });
 
   // ---------- booking steps
