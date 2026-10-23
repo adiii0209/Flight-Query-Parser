@@ -5,11 +5,11 @@ from extensions import db
 
 
 class HotelOfferConfig(db.Model):
-    """One JSON settings blob per organization (0 = no organization)."""
+    """One JSON settings blob per organization ("" = no organization)."""
     __tablename__ = "hotel_offer_config"
 
     id = db.Column(db.Integer, primary_key=True)
-    organization_id = db.Column(db.Integer, nullable=False, unique=True, index=True, default=0)
+    organization_id = db.Column(db.String(36), nullable=False, unique=True, index=True, default="")
     data = db.Column(db.Text, nullable=False, default="{}")
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -25,8 +25,8 @@ class HotelOffer(db.Model):
     __tablename__ = "hotel_offer"
 
     id = db.Column(db.Integer, primary_key=True)
-    organization_id = db.Column(db.Integer, nullable=False, index=True, default=0)
-    user_id = db.Column(db.Integer, nullable=True)
+    organization_id = db.Column(db.String(36), nullable=False, index=True, default="")
+    user_id = db.Column(db.String(36), nullable=True)
     title = db.Column(db.String(255), nullable=False, default="")
     data = db.Column(db.Text, nullable=False, default="{}")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

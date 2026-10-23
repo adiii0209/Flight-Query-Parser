@@ -1,6 +1,7 @@
 import json
 
 import requests
+from sqlalchemy import Integer, inspect
 from flask import Blueprint, Response, jsonify, render_template, request, session
 
 from extensions import db
@@ -24,7 +25,14 @@ _tables_ready = False
 def _ensure_tables():
     global _tables_ready
     if not _tables_ready:
+        insp = inspect(db.engine)
         for model in (HotelOfferConfig, HotelOffer):
+            name = model.__tablename__
+            if insp.has_table(name):
+                col = next(c for c in insp.get_columns(name) if c["name"] == "organization_id")
+                if isinstance(col["type"], Integer):
+                    # first release used an integer org id; org ids are UUID strings. Table was unusable, so rebuild.
+                    model.__table__.drop(db.engine)
             model.__table__.create(db.engine, checkfirst=True)
         _tables_ready = True
 
@@ -35,7 +43,7 @@ def _before():
 
 
 def _org():
-    return session.get("organization_id") or 0
+    return str(session.get("organization_id") or "")
 
 
 def _is_admin():

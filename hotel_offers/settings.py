@@ -42,7 +42,7 @@ AI_ENV = {"openrouter": "OPENROUTER_API_KEY", "anthropic": "ANTHROPIC_API_KEY", 
 
 
 def _row(org_id):
-    row = HotelOfferConfig.query.filter_by(organization_id=org_id or 0).first()
+    row = HotelOfferConfig.query.filter_by(organization_id=org_id or "").first()
     return row
 
 
@@ -99,7 +99,7 @@ def save_config(org_id, incoming):
             continue
     import json
     if row is None:
-        row = HotelOfferConfig(organization_id=org_id or 0)
+        row = HotelOfferConfig(organization_id=org_id or "")
         db.session.add(row)
     row.data = json.dumps(current)
     db.session.commit()
