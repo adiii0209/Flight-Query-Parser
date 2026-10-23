@@ -107,7 +107,6 @@
     img.classList.remove('ready'); img.alt = (o.title || o.hotel_name) + ' offer poster';
     img.onload = () => img.classList.add('ready'); img.src = o.image;
     if (img.complete) img.classList.add('ready');
-    $('.s-poster').classList.remove('full');
     $('#sPlace').textContent = place(o);
     $('#sTitle').textContent = o.title || o.hotel_name;
     $('#sTag').textContent = o.tagline || ''; $('#sTag').hidden = !o.tagline;
@@ -145,15 +144,28 @@
     if (push) { history.pushState({ o: slug }, '', '/o/' + slug); pushed = true; }
     try { if (!sessionStorage.getItem('ho_v_' + slug)) { sessionStorage.setItem('ho_v_' + slug, '1'); fetch(`/api/public/offers/${encodeURIComponent(slug)}/view`, { method: 'POST', keepalive: true }); } } catch (e) { /* analytics only */ }
   }
+  // After closing, the page shows the offer you were looking at (a shared link opens over the top of the list,
+  // so without this you'd land at the top instead of at that offer). "Done" goes to the top of the list instead.
+  let closeDest = 'card';
+  function scrollToCard(slug) {
+    const card = $$('.card').find(c => c.dataset.slug === slug);
+    if (!card) return;
+    const r = card.getBoundingClientRect();
+    if (r.top < 70 || r.bottom > window.innerHeight - 20) card.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+  }
   function hideSheet() {
+    const slug = current && current.slug, dest = closeDest;
+    closeDest = 'card';
     root.classList.remove('open');
     document.documentElement.classList.remove('lock');
     setTimeout(() => { root.hidden = true; sheet.style.transform = ''; }, reduced ? 0 : 560);
     if (lastFocus && lastFocus.focus) lastFocus.focus({ preventScroll: true });
     current = null;
+    setTimeout(() => { if (dest === 'top') window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' }); else if (slug) scrollToCard(slug); }, 120);
   }
-  function closeSheet() {
+  function closeSheet(dest) {
     if (root.hidden) return;
+    closeDest = dest === 'top' ? 'top' : 'card';
     if (pushed) { pushed = false; history.back(); } else { history.replaceState(null, '', HOME); hideSheet(); }
   }
   window.addEventListener('popstate', e => {
@@ -172,7 +184,6 @@
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     }
   });
-  $('.s-poster').addEventListener('click', e => { if (!desktop()) e.currentTarget.classList.toggle('full'); });
 
   // swipe down to dismiss (phones)
   (function () {
@@ -345,10 +356,7 @@
       btn.classList.remove('busy'); btn.disabled = false;
     }
   });
-  $('#dDone').addEventListener('click', () => {
-    closeSheet();
-    setTimeout(() => window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' }), 120); // back to the top of the offers
-  });
+  $('#dDone').addEventListener('click', () => closeSheet('top'));
 
   // ---------- load
   async function load() {
