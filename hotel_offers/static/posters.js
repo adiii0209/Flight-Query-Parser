@@ -76,7 +76,7 @@
         A('left:490px;top:118px;width:412px;height:1366px;border-radius:206px 206px 0 0;background:linear-gradient(90deg,#eadfcb,#f6efe2);box-shadow:inset 0 0 40px rgba(120,90,40,.18)') +
         PH(d, 'hero', 'left:524px;top:150px;width:378px;height:1334px;border-radius:174px 174px 0 0') +
         logo(d, 'left:72px;top:60px') +
-        brandBig(d, 70, 238, 152, 7) + placeSmall(d, 78, 388, 46, 9) + rule(78, 452, 56) + tagline(d, 'left:78px;top:482px;font-size:21px') + head +
+        brandBig(d, 70, 250, 126, 7) + placeSmall(d, 78, 388, 46, 9) + rule(78, 452, 56) + tagline(d, 'left:78px;top:482px;font-size:21px') + head +
         perkList(d, { left: 76, top: head ? 925 : 640, step: 102, w: 400, ico: 78, gap: 38, gap2: 36, fs: 21 }) +
         rule(78, 1346, 90, '#c9b79a') + note(d, 'left:78px;top:1370px;width:330px;font-size:25px') +
         pricebar(d, 'left:56px;top:1482px;width:792px;height:142px', { old: 'font-size:40px', nw: 'font-size:48px' }) +
@@ -114,7 +114,7 @@
         lotus +
         logo(d, 'left:125px;top:52px') +
         hdrNote(d, 'right:50px;top:46px;text-align:right;font-size:15px', rule(920, 124, 54)) +
-        brandSmall(d, 648, 252, 34, 9) + A(`left:640px;top:296px;font-size:${fs(d.place_line || d.brand_line, 112, 6.1)}px`, 't-brand', esc(d.place_line || d.brand_line)) +
+        brandSmall(d, 648, 252, 34, 9) + A(`left:640px;top:296px;font-size:${fs(d.place_line || d.brand_line, 112, 5.8)}px`, 't-brand', esc(d.place_line || d.brand_line)) +
         rule(648, 450, 64) + tagline(d, 'left:648px;top:480px;font-size:22px') +
         d.perks.slice(0, 4).map((p, i) => A(`left:648px;top:${586 + i * 114}px;width:360px;height:88px`, 'perk', `${perk(d, p, { ico: 88 })}${perkLabel(p, 'margin-left:34px;font-size:20px')}`) +
           (i < 3 ? rule(768, 586 + i * 114 + 102, 80, '#c9b79a').replace('height:3px', 'height:2px') : '')).join('') +
@@ -190,12 +190,12 @@
       const divs = [296, 526, 752].map(x => A(`left:${x}px;top:840px;width:2px;height:116px;background:#c9a56a;opacity:.7`)).join('');
       return root('t6', 1024, 1536,
         PH(d, 'hero', 'left:0;top:0;width:1024px;height:762px') +
-        A('left:0;top:0;width:1024px;height:300px;background:linear-gradient(180deg,rgba(255,238,220,.55),transparent)') +
+        A('left:0;top:0;width:1024px;height:470px;background:linear-gradient(180deg,rgba(246,239,227,.94) 0%,rgba(246,239,227,.82) 50%,rgba(246,239,227,0) 100%)') +
         logo(d, 'left:80px;top:46px', 'style="font-size:56px"', true) +
         hdrNote(d, 'right:52px;top:48px;text-align:right;font-size:14px', rule(920, 124, 52)) +
         A(`left:84px;top:196px;font-size:${fs(d.brand_line, 30, 10)}px;letter-spacing:.3em;text-transform:uppercase;color:#10241f`, '', esc(d.brand_line)) +
-        A(`left:80px;top:226px;font-size:${fs(d.place_line || d.brand_line, 146, 8)}px;color:#8c6a27`, 't-brand', esc(d.place_line || d.brand_line)) +
-        tagline(d, 'left:86px;top:358px;font-size:19px;color:#10241f') +
+        A(`left:80px;top:240px;font-size:${fs(d.place_line || d.brand_line, 128, 7.5)}px;color:#8c6a27`, 't-brand', esc(d.place_line || d.brand_line)) +
+        tagline(d, 'left:86px;top:384px;font-size:19px;color:#10241f') +
         A('left:84px;top:790px;font-size:18px;letter-spacing:.3em;text-transform:uppercase', '', 'Your stay includes') + A('left:358px;top:800px;width:582px;height:2px;background:#8f8776') +
         divs + per + note(d, 'left:0;top:1000px;width:1024px;text-align:center;font-size:24px') +
         PH(d, 'g1', 'left:0;top:1052px;width:355px;height:232px') + PH(d, 'g2', 'left:363px;top:1052px;width:312px;height:232px') + PH(d, 'g3', 'left:683px;top:1052px;width:341px;height:232px') +
@@ -214,10 +214,10 @@
       const per = d.perks.slice(0, 4).map((p, i) => A(`left:${cols[i] - 120}px;top:1268px;width:240px;display:flex;flex-direction:column;align-items:center;text-align:center`, '',
         `${perk(d, p, { plain: true, ico: 54, swap: true })}${perkLabel(p, 'margin-top:14px;font-size:17px;color:#f1e9da;letter-spacing:.16em')}`)).join('');
       const divs = [268, 515, 748].map(x => A(`left:${x}px;top:1290px;width:2px;height:86px;background:#b98f45;opacity:.55`)).join('');
-      const head = d.offer_headline ? A('left:66px;top:456px;width:236px', 'badge', 'Special offer') + A('left:66px;top:508px;font-size:112px', 'headline', headlineHtml(d)) : '';
+      const head = d.offer_headline ? A('left:66px;top:474px;width:236px', 'badge', 'Special offer') + A('left:66px;top:530px;font-size:112px', 'headline', headlineHtml(d)) : '';
       return root('t7', 1024, 1536,
         PH(d, 'hero', 'left:0;top:0;width:1024px;height:1160px') +
-        A('left:0;top:0;width:1024px;height:760px;background:linear-gradient(180deg,rgba(255,226,196,.55),rgba(255,226,196,.08) 60%,transparent)') +
+        A('left:0;top:0;width:1024px;height:900px;background:linear-gradient(90deg,rgba(244,238,228,.93) 0%,rgba(244,238,228,.8) 38%,rgba(244,238,228,0) 72%)') +
         A('left:0;top:1138px;width:1024px;height:398px;background:#14281f') +
         logo(d, 'left:62px;top:44px', 'style="font-size:50px"', true) +
         A('right:58px;top:50px;font-size:15px;line-height:1.7;letter-spacing:.2em;text-transform:uppercase;text-align:right;width:130px', '', 'Curated by<br>Time Tours') + rule(906, 100, 52) +
