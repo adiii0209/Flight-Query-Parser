@@ -358,3 +358,19 @@ button,input,select,textarea{font-family:inherit}
 .live-menu button,.live-menu a{display:block;width:100%;text-align:left;border:0;background:none;border-radius:11px;padding:.55rem .7rem;font:inherit;font-size:.88rem;color:var(--text);text-decoration:none;cursor:pointer}
 .live-menu button:hover,.live-menu a:hover{background:#f2f2f5}
 .live-menu .danger{color:#d70015}
+
+/* go live: valid-till controls */
+.gl-foot{display:block}
+.gl-when{max-width:420px;margin-bottom:1rem}
+.gl-when-head{display:flex;align-items:baseline;justify-content:space-between;font-size:.75rem;font-weight:600;color:#4b5563}
+.gl-when-head .linkbtn[hidden]{display:none}
+.gl-when input[type=date]{margin-top:.3rem}
+.gl-chips{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.55rem}
+.gl-chips button{border:0;border-radius:99px;background:#f2f2f5;padding:.32rem .8rem;font:inherit;font-size:.78rem;font-weight:500;color:var(--text);cursor:pointer;transition:background .2s}
+.gl-chips button:hover{background:#e5e5ea}
+.gl-chips button[hidden]{display:none}
+.gl-when .ho-hint{margin-top:.5rem}
+.gl-actions{justify-content:flex-end}
+.gl-actions .ho-hint{margin-right:auto}
+.gl-actions .danger{margin-right:auto}
+.si-actions{flex-wrap:wrap}

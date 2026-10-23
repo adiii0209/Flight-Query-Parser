@@ -213,14 +213,19 @@
 <!-- Go live -->
 <div class="ho-modal" id="liveModal" hidden>
   <div class="ho-dialog wide gl">
-    <div class="ho-dialog-head"><h3>Go live</h3><button class="ho-x" data-close>&#10005;</button></div>
+    <div class="ho-dialog-head"><h3 id="glTitle">Go live</h3><button class="ho-x" data-close>&#10005;</button></div>
     <div id="glPick">
       <p class="gl-sub" id="glSub"></p>
       <div class="ho-sub first">Which template should clients see?</div>
       <div class="gl-grid" id="glGrid"></div>
       <div class="gl-foot">
-        <label class="gl-date">Valid till <small>(hides itself after this date)</small><input type="date" id="glValid"></label>
-        <div class="gl-actions"><span class="ho-hint" id="glMsg"></span><button class="pill ghost" data-close>Cancel</button><button class="pill primary" id="glGo">Go live</button></div>
+        <div class="gl-when">
+          <div class="gl-when-head"><span>Valid till</span><button type="button" class="linkbtn" id="glClear">Clear date</button></div>
+          <input type="date" id="glValid">
+          <div class="gl-chips"><button type="button" data-checkin id="glChipCheckin">Check-in date</button><button type="button" data-days="7">1 week</button><button type="button" data-days="14">2 weeks</button><button type="button" data-days="30">1 month</button></div>
+          <p class="ho-hint" id="glValidHint"></p>
+        </div>
+        <div class="gl-actions"><button class="pill ghost danger" id="glOff" hidden>Switch off</button><span class="ho-hint" id="glMsg"></span><button class="pill ghost" data-close>Cancel</button><button class="pill primary" id="glGo">Go live</button></div>
       </div>
     </div>
     <div id="glDone" hidden>

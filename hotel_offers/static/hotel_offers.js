@@ -629,7 +629,7 @@
         row.innerHTML = `<div class="si-top"><input class="si-name" maxlength="120" aria-label="Offer name">
             <label class="switch" title="Show on the client page"><input type="checkbox" data-live ${on ? 'checked' : ''} aria-label="Live on client page"><i></i></label></div>
           <div class="si-meta"><span class="dot"></span>${status}</div>
-          <div class="si-actions"><button class="pill ghost sm" data-o>Open</button>${on ? '<button class="pill ghost sm" data-share>Share</button>' : ''}<button class="pill ghost sm danger" data-d>Delete</button></div>`;
+          <div class="si-actions"><button class="pill ghost sm" data-o>Open</button>${on ? '<button class="pill ghost sm" data-edit>Live settings</button><button class="pill ghost sm" data-share>Share</button>' : ''}<button class="pill ghost sm danger" data-d>Delete</button></div>`;
         const nameEl = $('.si-name', row);
         nameEl.value = o.title;
         const rename = async () => {
@@ -644,6 +644,8 @@
         nameEl.addEventListener('blur', rename);
         nameEl.addEventListener('keydown', e => { if (e.key === 'Enter') nameEl.blur(); });
         $('[data-o]', row).addEventListener('click', () => openOffer(o));
+        const ed = $('[data-edit]', row);
+        if (ed) ed.addEventListener('click', () => openGoLive({ id: o.id, title: o.title, live: lv }));
         const sh = $('[data-share]', row);
         if (sh) sh.addEventListener('click', () => copyShare(lv.url, offerData(o.id)));
         $('[data-live]', row).addEventListener('change', async e => {
@@ -667,6 +669,12 @@
   const gl = { offer: null, data: null, pick: null, busy: false };
   async function openGoLive(o) {
     gl.offer = o; gl.pick = null;
+    // an offer that was published before opens as "Live settings" with its previous choices
+    gl.editing = !!(o.live && o.live.slug);
+    gl.running = !!(gl.editing && o.live.is_live && !o.live.expired);
+    $('#glTitle').textContent = gl.editing ? 'Live settings' : 'Go live';
+    $('#glGo').textContent = gl.running ? 'Update live page' : 'Go live';
+    $('#glOff').hidden = !gl.running;
     $('#glPick').hidden = false; $('#glDone').hidden = true; say($('#glMsg'), '');
     $('#glSub').textContent = o.title;
     $('#glGrid').innerHTML = '<div class="ho-hint">Preparing previews…</div>';
@@ -675,7 +683,9 @@
       const r = await api('/api/hotel-offers/offers/' + o.id);
       const sv = r.offer.data;
       gl.data = Object.assign({}, Object.assign(blank(), sv.data), { photos: sv.photos || {}, brand: brand(), layout: sv.layout || {} });
-      $('#glValid').value = (o.live && o.live.valid_till) || gl.data.check_in || '';
+      $('#glValid').value = gl.editing ? (o.live.valid_till || '') : (gl.data.check_in || '');  // editing keeps a cleared date cleared
+      $('#glChipCheckin').hidden = !gl.data.check_in;
+      glValidUi();
       gl.pick = (o.live && o.live.template_id) || TEMPLATES[0].id;
       const grid = $('#glGrid'); grid.innerHTML = '';
       TEMPLATES.forEach((t, i) => {
@@ -702,7 +712,7 @@
   }
   $('#glGo').addEventListener('click', async e => {
     if (gl.busy || !gl.pick) return;
-    const btn = e.currentTarget, msg = $('#glMsg');
+    const btn = e.currentTarget, msg = $('#glMsg'), label = btn.textContent;
     const t = TEMPLATES.find(x => x.id === gl.pick);
     gl.busy = true; btn.disabled = true; btn.textContent = 'Publishing…'; say(msg, 'Preparing the poster…');
     try {
@@ -713,11 +723,40 @@
       $('#glLink').value = r.live.url;
       api('/api/hotel-offers/dashboard-link').then(d => { $('#glOpen').href = d.url; });
       $('#glPick').hidden = true; $('#glDone').hidden = false;
+      $('#glDone h4').textContent = gl.running ? 'Live page updated' : "It's live";
       gl.live = r.live;
       if (state.offerId === gl.offer.id) { state.live = r.live; state.liveStale = false; renderLiveBtn(); }
       if (!$('#savedModal').hidden) loadSaved();
     } catch (err) { say(msg, err.message, 'err'); }
-    gl.busy = false; btn.disabled = false; btn.textContent = 'Go live';
+    gl.busy = false; btn.disabled = false; btn.textContent = label;
+  });
+  const pad2 = n => String(n).padStart(2, '0');
+  const isoDay = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  function glValidUi() {
+    const v = $('#glValid').value;
+    $('#glClear').hidden = !v;
+    $('#glValidHint').textContent = v
+      ? 'Hides itself after ' + new Date(v + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) + '.'
+      : 'No end date. It stays live until you switch it off.';
+  }
+  $('#glValid').addEventListener('input', glValidUi);
+  $('#glClear').addEventListener('click', () => { $('#glValid').value = ''; glValidUi(); });
+  $('#glChipCheckin').addEventListener('click', () => { $('#glValid').value = (gl.data && gl.data.check_in) || ''; glValidUi(); });
+  $$('.gl-chips [data-days]').forEach(b => b.addEventListener('click', () => {
+    const d = new Date(); d.setDate(d.getDate() + Number(b.dataset.days));
+    $('#glValid').value = isoDay(d); glValidUi();
+  }));
+  $('#glOff').addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await api(`/api/hotel-offers/offers/${gl.offer.id}/live/off`, { method: 'POST' });
+      closeModal($('#liveModal'));
+      if (state.offerId === gl.offer.id) { state.live = Object.assign({}, state.live, { is_live: false }); state.liveStale = false; renderLiveBtn(); }
+      if (!$('#savedModal').hidden) loadSaved();
+      toast('Taken off the client page');
+    } catch (err) { say($('#glMsg'), err.message, 'err'); }
+    btn.disabled = false;
   });
   $('#glCopy').addEventListener('click', async e => { if (await copyText($('#glLink').value)) { e.currentTarget.textContent = 'Copied'; setTimeout(() => { e.currentTarget.textContent = 'Copy'; }, 1500); } });
   $('#glShare').addEventListener('click', () => copyShare($('#glLink').value, Promise.resolve(gl.data)));
