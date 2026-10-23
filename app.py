@@ -385,6 +385,8 @@ app.register_blueprint(api_v2)
 app.register_blueprint(ocr_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(rbac_bp)
+from hotel_offers import hotel_offers_bp
+app.register_blueprint(hotel_offers_bp)
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):

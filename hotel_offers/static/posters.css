@@ -1,0 +1,60 @@
+/* Time Elevate offer posters. Everything is scoped under .po and sized in px at native poster size. */
+.po{position:relative;overflow:hidden;font-family:'Jost','Outfit',sans-serif;color:#10241f;background:#f4eee4;-webkit-font-smoothing:antialiased}
+.po *{box-sizing:border-box;margin:0;padding:0}
+.po .a{position:absolute}
+.po .serif{font-family:'Newsreader','Georgia',serif}
+.po .caps{text-transform:uppercase;letter-spacing:.22em;font-weight:400}
+.po .ph{background:linear-gradient(180deg,#f4cfa4 0%,#e9a889 38%,#8e7ba3 72%,#4c5b73 100%) center/cover no-repeat}
+.po .gr{display:block;height:3px;background:#a67c37}
+
+/* logo block */
+.po .logo-name{font-family:'Newsreader',serif;font-weight:500;font-size:52px;line-height:1;letter-spacing:-.01em;white-space:nowrap}
+.po .logo .gr{width:70px;margin:16px 0 22px}
+.po .logo-tag{font-size:20px;line-height:1.45;letter-spacing:.24em;text-transform:uppercase;font-weight:300}
+.po .hdr-note{font-size:17px;line-height:1.6;letter-spacing:.2em;text-transform:uppercase;font-weight:400}
+
+/* hotel title */
+.po .t-brand{font-family:'Newsreader',serif;font-weight:500;line-height:1;letter-spacing:-.02em;white-space:nowrap}
+.po .t-place{font-weight:400;letter-spacing:.22em;text-transform:uppercase;white-space:nowrap}
+.po .t-tag{font-size:23px;line-height:1.5;letter-spacing:.22em;text-transform:uppercase;font-weight:300}
+.po .badge{background:#a67c37;color:#fff;font-size:22px;letter-spacing:.3em;text-transform:uppercase;text-align:center;height:50px;line-height:50px;font-weight:300}
+.po .headline{font-family:'Newsreader',serif;font-weight:500;line-height:.9;color:#a2762f;letter-spacing:-.02em}
+
+/* perks */
+.po .perk{display:flex;align-items:center}
+.po .ico{flex:none;border-radius:50%;background:#eadcc8;color:#9a6f2c;display:flex;align-items:center;justify-content:center}
+.po .ico svg{width:46%;height:46%;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.po .pl{white-space:nowrap;font-size:21px;line-height:1.5;letter-spacing:.2em;text-transform:uppercase;font-weight:400}
+.po .pl::first-line{font-weight:500}
+.po .vr{flex:none;width:2px;background:#c9a56a;opacity:.7}
+.po .note{font-family:'Newsreader',serif;font-size:25px;line-height:1.4}
+
+/* price bar */
+.po .pricebar{display:flex;align-items:center;background:rgba(236,225,208,.96)}
+.po .pb-col{flex:1;text-align:center}
+.po .pb-l{font-size:20px;letter-spacing:.3em;text-transform:uppercase;font-weight:400}
+.po .pb-old,.po .pb-new{font-family:'Newsreader',serif;font-weight:500;white-space:nowrap}
+.po .pb-old{position:relative;display:inline-block;font-size:42px;margin-top:8px}
+.po .pb-old::after{content:'';position:absolute;left:-3%;right:-3%;top:54%;height:3px;background:#c0392b;transform:rotate(-1.2deg)}
+.po .pb-new{font-size:50px;color:#a2762f;margin-top:4px}
+.po .pb-sep{flex:none;width:2px;height:62%;background:#c9a56a}
+
+/* footer bits */
+.po .cta{display:flex;align-items:center;justify-content:center;gap:18px;border-radius:999px;background:#1d3a31;color:#f4eee4;font-size:23px;letter-spacing:.3em;text-transform:uppercase;font-weight:400}
+.po .cta svg{width:46px;height:20px;fill:none;stroke:#d3a95f;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.po .avail{font-family:'Newsreader',serif;font-size:20px}
+.po .curated{display:flex;align-items:center;gap:26px}
+.po .curated i{display:block;width:2px;height:74px;background:#c9a56a}
+.po .cur-t{font-family:'Newsreader',serif;font-size:26px}
+.po .cur-e{font-size:15px;letter-spacing:.3em;margin-top:8px;font-weight:300}
+.po .cur-inline{font-size:17px;letter-spacing:.28em;text-transform:uppercase;display:flex;align-items:center;gap:22px;font-weight:400}
+.po .cur-inline i{display:block;width:52px;height:3px;background:#a67c37}
+
+/* dark variants */
+.po.dark{background:#111;color:#f4eee4}
+.po.dark .ico{background:transparent;border:1.5px solid #b98f45;color:#d3a95f}
+.po.dark .vr,.po.dark .curated i{background:#b98f45}
+.po.dark .pb-new{color:#d9ae5f}
+.po.dark .pb-l{color:#f4eee4}
+.po.dark .cta{background:#d3a95f;color:#16231f}
+.po.dark .cta svg{stroke:#16231f}

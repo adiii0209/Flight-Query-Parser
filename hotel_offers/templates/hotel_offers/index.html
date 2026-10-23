@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Hotel Offers | Time Tours</title>
+<link rel="icon" type="image/png" href="/static/ticket-flight.png">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Syne:wght@700;800&family=Jost:wght@300;400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/dashboard.css">
+<link rel="stylesheet" href="/static/sidebar.css">
+<link rel="stylesheet" href="{{ url_for('hotel_offers.static', filename='hotel_offers.css') }}">
+<link rel="stylesheet" href="{{ url_for('hotel_offers.static', filename='posters.css') }}">
+</head>
+<body>
+{% include 'components/sidebar.html' %}
+
+<header class="app-header">
+  <div class="header-content">
+    <button class="menu-toggle" id="menuToggle" aria-label="Open Menu">
+      <span class="menu-bar"></span><span class="menu-bar"></span><span class="menu-bar"></span>
+    </button>
+    <div class="header-brand">
+      <div class="brand-name">Time <span>Tours</span></div>
+      <div class="brand-sub">Hotel offers</div>
+    </div>
+    <div class="header-actions"></div>
+  </div>
+</header>
+
+<main class="ho-main">
+  <div class="ho-titlebar">
+    <h1 class="ho-title">Hotel <span>Offers</span></h1>
+    <div class="ho-title-actions">
+      <button class="ho-btn ghost" id="btnSaved">Saved offers</button>
+      <button class="ho-btn ghost" id="btnSettings">⚙ Settings</button>
+    </div>
+  </div>
+
+  <div class="ho-layout">
+    <!-- LEFT: input + edit -->
+    <section class="ho-panel">
+      <div class="ho-card">
+        <h2><span class="ho-step">1</span> Paste the offer</h2>
+        <textarea id="rawText" rows="9" placeholder="Paste the hotel name, rate details, price and perks here…"></textarea>
+        <div class="ho-row">
+          <button class="ho-btn primary" id="btnParse">Generate templates</button>
+          <span class="ho-hint" id="parseStatus"></span>
+        </div>
+      </div>
+
+      <div class="ho-card" id="editCard">
+        <h2><span class="ho-step">2</span> Review &amp; edit</h2>
+        <div class="ho-sub first">On the poster</div>
+        <div class="ho-grid2">
+          <label>Brand line<input data-f="brand_line" placeholder="Raffles"></label>
+          <label>Place line<input data-f="place_line" placeholder="Udaipur"></label>
+        </div>
+        <label>Hotel tagline<input data-f="tagline" placeholder="A timeless icon on Lake Pichola"></label>
+        <label>Offer <small>(e.g. Stay 3 Pay 2 &middot; shown on Offer templates, empty = hidden)</small><input data-f="offer_headline" placeholder="Stay 3 Pay 2"></label>
+        <div class="ho-grid3">
+          <label>Currency<input data-f="currency" placeholder="INR"></label>
+          <label>Online rate <small>(struck)</small><input data-f="online_rate" type="number" min="0" step="any"></label>
+          <label>Our deal<input data-f="our_deal" type="number" min="0" step="any"></label>
+        </div>
+        <div class="ho-hint" id="priceHint"></div>
+
+        <div class="ho-sub">Perks <small>(max 4, top to bottom)</small></div>
+        <div id="perkRows"></div>
+        <button class="ho-btn ghost small" id="btnAddPerk">Add perk</button>
+
+        <div class="ho-sub">Photos</div>
+        <div id="photoSlots"></div>
+
+        <details class="ho-details" open>
+          <summary>Extracted stay details <small>(used in the caption)</small></summary>
+          <label>Hotel name<input data-f="hotel_name"></label>
+          <label>Room<input data-f="room"></label>
+          <div class="ho-grid2">
+            <label>Check-in<input data-f="check_in" type="date"></label>
+            <label>Check-out<input data-f="check_out" type="date"></label>
+          </div>
+          <div class="ho-grid3">
+            <label>Nights<input data-f="nights" type="number" min="0"></label>
+            <label>Adults<input data-f="adults" type="number" min="0"></label>
+            <label>Rooms<input data-f="rooms" type="number" min="0"></label>
+          </div>
+          <div class="ho-grid2">
+            <label>Net total from paste<input data-f="net_total" type="number" min="0" step="any"></label>
+            <label>Free nights<input data-f="free_nights" type="number" min="0"></label>
+          </div>
+          <label>Cancellation<input data-f="cancellation"></label>
+          <label>Photo search text<input data-f="photo_query"></label>
+        </details>
+      </div>
+    </section>
+
+    <!-- RIGHT: templates -->
+    <section class="ho-gallery-wrap">
+      <div class="ho-gallery-bar">
+        <label class="ho-check"><input type="checkbox" id="selAll"> Select all</label>
+        <label>Size
+          <select id="outSize">
+            <option value="native">Original (2&times; sharp)</option>
+            <option value="1080x1920">Story 1080&times;1920</option>
+            <option value="1080x1350">Feed 1080&times;1350</option>
+            <option value="1080x1080">Square 1080&times;1080</option>
+          </select>
+        </label>
+        <label>Format
+          <select id="outFmt"><option value="png">PNG</option><option value="jpeg">JPG</option></select>
+        </label>
+        <button class="ho-btn ghost small" id="btnCopyCaption">Copy caption</button>
+        <button class="ho-btn primary small" id="btnDownloadSel">Download selected</button>
+      </div>
+      <div class="ho-empty" id="galleryEmpty">Paste an offer and click <b>Generate templates</b> to see all designs here.</div>
+      <div class="ho-gallery" id="gallery"></div>
+    </section>
+  </div>
+</main>
+
+<!-- Photo picker -->
+<div class="ho-modal" id="photoModal" hidden>
+  <div class="ho-dialog wide">
+    <div class="ho-dialog-head"><h3 id="photoTitle">Choose photo</h3><button class="ho-x" data-close>✕</button></div>
+    <div class="ho-search">
+      <input id="photoQuery" placeholder="Search photos…">
+      <select id="photoOrient"><option value="landscape">Landscape</option><option value="portrait">Portrait</option><option value="squarish">Square</option></select>
+      <select id="photoSource"><option value="unsplash">Unsplash</option><option value="google">Google Places</option></select>
+      <button class="ho-btn primary small" id="photoGo">Search</button>
+      <label class="ho-btn ghost small ho-upload">Upload<input type="file" id="photoUpload" accept="image/*" hidden></label>
+    </div>
+    <div class="ho-hint" id="photoMsg"></div>
+    <div class="ho-photos" id="photoGrid"></div>
+    <div class="ho-row"><button class="ho-btn ghost small" id="photoMore" hidden>Load more</button></div>
+  </div>
+</div>
+
+<!-- Saved offers -->
+<div class="ho-modal" id="savedModal" hidden>
+  <div class="ho-dialog">
+    <div class="ho-dialog-head"><h3>Saved offers</h3><button class="ho-x" data-close>✕</button></div>
+    <div class="ho-row"><button class="ho-btn primary small" id="btnSaveCurrent">Save current offer</button><span class="ho-hint" id="saveMsg"></span></div>
+    <div id="savedList" class="ho-saved"></div>
+  </div>
+</div>
+
+<!-- Settings -->
+<div class="ho-modal" id="settingsModal" hidden>
+  <div class="ho-dialog wide">
+    <div class="ho-dialog-head"><h3>Hotel Offers · Settings</h3><button class="ho-x" data-close>✕</button></div>
+    <div class="ho-hint" id="settingsRO" hidden>Only admins can change settings. You can see what is configured.</div>
+    <div class="ho-tabs"><button class="on" data-tab="ai">AI parsing</button><button data-tab="photos">Photos</button><button data-tab="pricing">Pricing</button><button data-tab="brand">Brand text</button></div>
+
+    <div class="ho-tabpane" data-pane="ai">
+      <div class="ho-grid2">
+        <label>Provider
+          <select data-s="ai_provider"><option value="openrouter">OpenRouter</option><option value="anthropic">Anthropic (Claude)</option><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option></select>
+        </label>
+        <label>Model<input data-s="ai_model" list="modelList"></label>
+      </div>
+      <datalist id="modelList"></datalist>
+      <label>API key <small data-keystate="ai_api_key"></small><input data-s="ai_api_key" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved key"></label>
+      <div class="ho-grid3">
+        <label>Temperature<input data-s="ai_temperature" type="number" min="0" max="1" step="0.1"></label>
+        <label>Max tokens<input data-s="ai_max_tokens" type="number" min="200" step="50"></label>
+        <label>Timeout (s)<input data-s="ai_timeout" type="number" min="5" step="5"></label>
+      </div>
+      <label class="ho-check"><input type="checkbox" data-s="ai_use_fallback"> If the AI call fails, fall back to the basic text parser</label>
+      <label>Custom system prompt <small>(optional, empty = built-in prompt)</small><textarea data-s="ai_system_prompt" rows="4"></textarea></label>
+      <div class="ho-row"><button class="ho-btn ghost small" data-test="ai">Test AI connection</button><span class="ho-hint" data-testmsg="ai"></span></div>
+    </div>
+
+    <div class="ho-tabpane" data-pane="photos" hidden>
+      <label>Default photo source
+        <select data-s="photo_default_source"><option value="unsplash">Unsplash</option><option value="google">Google Places</option></select>
+      </label>
+      <label>Unsplash Access Key <small data-keystate="unsplash_access_key"></small><input data-s="unsplash_access_key" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved key"></label>
+      <div class="ho-row"><button class="ho-btn ghost small" data-test="unsplash">Test Unsplash</button><span class="ho-hint" data-testmsg="unsplash"></span></div>
+      <label>Google Places API key <small data-keystate="google_places_key"></small><input data-s="google_places_key" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved key"></label>
+      <div class="ho-row"><button class="ho-btn ghost small" data-test="google">Test Google</button><span class="ho-hint" data-testmsg="google"></span></div>
+      <label>Results per search<input data-s="photo_per_page" type="number" min="3" max="30"></label>
+      <div class="ho-hint">Unsplash: create an app at unsplash.com/developers and paste its Access Key. Google Places photos have usage limits, so check the licence before using them in marketing.</div>
+    </div>
+
+    <div class="ho-tabpane" data-pane="pricing" hidden>
+      <div class="ho-hint">These only pre-fill the prices after parsing. You can edit both numbers for every offer.</div>
+      <div class="ho-grid3">
+        <label>Markup on net total (%)<input data-s="markup_percent" type="number" step="0.5"></label>
+        <label>Online rate = net × <input data-s="online_rate_multiplier" type="number" step="0.01" min="1"></label>
+        <label>Round to nearest<input data-s="price_rounding" type="number" step="100" min="1"></label>
+      </div>
+    </div>
+
+    <div class="ho-tabpane" data-pane="brand" hidden>
+      <div class="ho-hint">Printed on every template. Use a new line for line breaks.</div>
+      <div class="ho-grid2">
+        <label>Brand name<input data-s="brand_name"></label>
+        <label>Brand tagline<textarea data-s="brand_tagline" rows="2"></textarea></label>
+        <label>Header note<textarea data-s="brand_header_note" rows="3"></textarea></label>
+        <label>Footer line<input data-s="brand_footer"></label>
+        <label>Established<input data-s="brand_est"></label>
+        <label>Button label<input data-s="enquire_label"></label>
+      </div>
+      <label>Loyalty note<textarea data-s="loyalty_note" rows="2"></textarea></label>
+      <label>Availability note<input data-s="availability_note"></label>
+    </div>
+
+    <div class="ho-row end"><span class="ho-hint" id="settingsMsg"></span><button class="ho-btn primary" id="btnSaveSettings">Save settings</button></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="{{ url_for('hotel_offers.static', filename='posters.js') }}"></script>
+<script>window.HO_CAN_CONFIGURE = {{ 'true' if can_configure else 'false' }};</script>
+<script src="{{ url_for('hotel_offers.static', filename='hotel_offers.js') }}"></script>
+</body>
+</html>
