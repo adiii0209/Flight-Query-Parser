@@ -22,6 +22,13 @@ DEFAULTS = {
     "markup_percent": 0,                 # our deal = net total + markup
     "online_rate_multiplier": 1.35,      # struck-through "online rate" = net total x this
     "price_rounding": 1000,
+    # Client page (public) and leads
+    "whatsapp_number": "919831020008",    # digits only, with country code
+    "wa_message": "Hi Time Tours, I'm interested in {offer}. My name is {name} ({phone}).",
+    "lead_notify": True,
+    "lead_email": "mail@timetours.in",
+    "client_title": "Time Elevate",
+    "client_subtitle": "Hand-picked luxury stays, curated by Time Tours.",
     # Fixed brand text printed on every template
     "brand_name": "Time Elevate",
     "brand_tagline": "Luxury stays.\nMore to enjoy.",

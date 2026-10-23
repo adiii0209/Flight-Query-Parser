@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#fbfaf7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0e0d" media="(prefers-color-scheme: dark)">
+<title>{% if og %}{{ og.title }} · {% endif %}{{ cfg.client_title }}</title>
+<meta name="description" content="{{ og.desc if og else cfg.client_subtitle }}">
+{% if og %}
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{ og.title }}">
+<meta property="og:description" content="{{ og.desc }}">
+<meta property="og:image" content="{{ og.image }}">
+<meta property="og:url" content="{{ og.url }}">
+<meta name="twitter:card" content="summary_large_image">
+{% endif %}
+<link rel="icon" type="image/png" href="/static/ticket-flight.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('hotel_offers.static', filename='client.css') }}">
+</head>
+<body data-org="{{ org_slug }}" data-focus="{{ focus }}">
+<script id="boot" type="application/json">{{ cfg|tojson }}</script>
+
+<header class="nav" id="nav">
+  <div class="nav-in">
+    <a class="brand" href="/offers/{{ org_slug }}" aria-label="{{ cfg.client_title }}">{{ cfg.client_title }}</a>
+    <a class="nav-wa" id="navWa" href="#" target="_blank" rel="noopener" aria-label="Chat on WhatsApp">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12Z"/></svg>
+      <span>WhatsApp</span>
+    </a>
+  </div>
+</header>
+
+<main class="page" id="page">
+  <section class="hero">
+    <p class="eyebrow">Curated by Time Tours</p>
+    <h1>{{ cfg.client_title }}</h1>
+    <p class="lede">{{ cfg.client_subtitle }}</p>
+  </section>
+
+  <div class="notice" id="notice" hidden></div>
+
+  <div class="chips-wrap" id="chipsWrap" hidden><div class="chips" id="chips" role="tablist" aria-label="Destinations"></div></div>
+
+  <section class="grid" id="grid" aria-live="polite">
+    <div class="skel"><i></i><b></b><b></b></div>
+    <div class="skel"><i></i><b></b><b></b></div>
+    <div class="skel"><i></i><b></b><b></b></div>
+  </section>
+
+  <section class="empty" id="empty" hidden>
+    <svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="44" /><path d="M16 84c14-8 28-8 44 0s30 8 44 0"/><path d="M16 98c14-8 28-8 44 0s30 8 44 0"/><path d="M60 16v10M96 60h10M14 60h10M85 35l7-7M35 35l-7-7"/></svg>
+    <h2>No live offers right now</h2>
+    <p>New hand-picked stays arrive often. Message us and we'll find the right one for your dates.</p>
+    <a class="btn btn-primary" id="emptyWa" href="#" target="_blank" rel="noopener">Message us on WhatsApp</a>
+  </section>
+
+  <footer class="foot">
+    <span>Time Tours &middot; Est. 1978</span>
+    <span>Offers are subject to availability.</span>
+  </footer>
+</main>
+
+<!-- Offer sheet -->
+<div class="sheet-root" id="sheetRoot" hidden>
+  <div class="scrim" id="scrim"></div>
+  <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sTitle" tabindex="-1">
+    <div class="grab" id="grab"><i></i></div>
+    <button class="icon-btn close" id="sClose" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+
+    <div class="sheet-body" id="sheetBody">
+      <figure class="s-poster"><img id="sImg" alt=""></figure>
+
+      <div class="s-info">
+        <div class="s-scroll" id="sScroll">
+          <div class="panels" id="panels" data-step="details">
+            <!-- step 1: details -->
+            <div class="panel p-details" id="pDetails">
+              <p class="s-place" id="sPlace"></p>
+              <h2 class="s-title" id="sTitle"></h2>
+              <p class="s-tag" id="sTag"></p>
+              <span class="chip-offer" id="sOffer" hidden></span>
+
+              <dl class="facts" id="sFacts"></dl>
+
+              <h3 class="s-h">Included</h3>
+              <ul class="incl" id="sIncl"></ul>
+
+              <div class="price-card">
+                <div>
+                  <span class="pc-l">Our price</span>
+                  <b class="pc-new" id="pcNew"></b>
+                </div>
+                <div class="pc-r">
+                  <s id="pcOld"></s>
+                  <em id="pcSave"></em>
+                </div>
+              </div>
+              <p class="fine" id="sValid"></p>
+              <p class="fine">Final price and availability are confirmed with you on WhatsApp.</p>
+            </div>
+
+            <!-- step 2: your details -->
+            <form class="panel p-book" id="pBook" novalidate autocomplete="on">
+              <button type="button" class="back" id="bBack"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Back</button>
+              <h2 class="b-title">Let's plan your stay</h2>
+              <p class="b-sub" id="bSub">Share your details and we'll continue on WhatsApp.</p>
+
+              <label class="field" id="fName"><input id="inName" name="name" type="text" autocomplete="name" placeholder=" " maxlength="80" required><span>Your name</span><small></small></label>
+              <label class="field" id="fPhone"><input id="inPhone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder=" " maxlength="20" required><span>Phone number</span><small></small></label>
+              <input class="hp" type="text" id="inHp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+
+              <button class="btn btn-primary btn-lg" id="bSubmit" type="submit"><span class="lbl">Continue to WhatsApp</span><i class="spin"></i></button>
+              <p class="fine center">We only use this to reply about this offer.</p>
+            </form>
+
+            <!-- step 3: done -->
+            <div class="panel p-done" id="pDone">
+              <svg class="tick" viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24"/><path d="M15 27l8 8 14-16"/></svg>
+              <h2 class="b-title">Opening WhatsApp</h2>
+              <p class="b-sub">Your request is with our team. If WhatsApp doesn't open, tap below.</p>
+              <a class="btn btn-primary" id="dLink" href="#">Open WhatsApp</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="s-bar" id="sBar">
+          <button class="icon-btn share" id="sShare" aria-label="Share this offer"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button>
+          <button class="btn btn-primary btn-lg" id="sBook">Book now</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<noscript><p style="padding:2rem;text-align:center">Please enable JavaScript to see our current offers.</p></noscript>
+<script src="{{ url_for('hotel_offers.static', filename='client.js') }}"></script>
+</body>
+</html>

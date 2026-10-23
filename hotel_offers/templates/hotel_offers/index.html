@@ -21,7 +21,8 @@
     </button>
     <div class="header-brand">Hotel Offers</div>
     <div class="header-actions">
-      <button class="pill ghost sm js-open-saved" id="btnSaved">Saved offers</button>
+      <button class="pill ghost sm" id="btnLeads">Leads<span class="lead-dot" id="leadBadge" hidden></span></button>
+      <button class="pill ghost sm js-open-saved" id="btnSaved">Saved</button>
       <button class="pill ghost sm" id="btnSettings">Settings</button>
     </div>
   </div>
@@ -62,6 +63,7 @@
       <button class="pill ghost sm" id="btnNew">&lsaquo; New offer</button>
       <input class="offer-name" id="offerName" placeholder="Name this offer" maxlength="120" aria-label="Offer name">
       <button class="pill ghost sm" id="btnSave">Save</button>
+      <button class="pill ghost sm" id="btnLive"><i class="live-dot"></i>Go live</button>
       <div class="export">
         <label class="check"><input type="checkbox" id="selAll"><span>Select all</span></label>
         <select id="outSize" aria-label="Size">
@@ -135,6 +137,21 @@
       </div>
     </div>
   </section>
+  <!-- 4 · Leads -->
+  <section class="stage stage-leads">
+    <div class="leads-head">
+      <button class="pill ghost sm" id="btnLeadsBack">&lsaquo; Offers</button>
+      <div class="leads-title"><h2>Leads</h2><p>Clients who tapped Book now on the client page.</p></div>
+      <a class="pill ghost sm" id="btnCsv" href="/api/hotel-offers/leads.csv">Export CSV</a>
+    </div>
+    <div class="lead-tools">
+      <div class="seg" id="leadTabs" role="tablist">
+        <button data-st="all" class="on">All <b>0</b></button><button data-st="new">New <b>0</b></button><button data-st="contacted">Contacted <b>0</b></button><button data-st="won">Won <b>0</b></button><button data-st="lost">Lost <b>0</b></button>
+      </div>
+      <input id="leadSearch" type="search" placeholder="Search name, phone or offer" autocomplete="off">
+    </div>
+    <div id="leadList" class="lead-list"></div>
+  </section>
 </main>
 
 <!-- Layout editor -->
@@ -193,12 +210,33 @@
   </div>
 </div>
 
+<!-- Go live -->
+<div class="ho-modal" id="liveModal" hidden>
+  <div class="ho-dialog wide gl">
+    <div class="ho-dialog-head"><h3>Go live</h3><button class="ho-x" data-close>&#10005;</button></div>
+    <div id="glPick">
+      <p class="gl-sub" id="glSub"></p>
+      <div class="ho-sub first">Which template should clients see?</div>
+      <div class="gl-grid" id="glGrid"></div>
+      <div class="gl-foot">
+        <label class="gl-date">Valid till <small>(hides itself after this date)</small><input type="date" id="glValid"></label>
+        <div class="gl-actions"><span class="ho-hint" id="glMsg"></span><button class="pill ghost" data-close>Cancel</button><button class="pill primary" id="glGo">Go live</button></div>
+      </div>
+    </div>
+    <div id="glDone" hidden>
+      <div class="gl-ok"><svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="24"/><path d="M15 27l8 8 14-16"/></svg><h4>It's live</h4><p>Clients can now see this offer on your client page.</p></div>
+      <label class="gl-link">Share link<div><input id="glLink" readonly><button class="pill ghost sm" id="glCopy">Copy</button></div></label>
+      <div class="gl-actions end"><a class="pill ghost" id="glOpen" target="_blank" rel="noopener">View client page</a><button class="pill primary" id="glShare">Share</button></div>
+    </div>
+  </div>
+</div>
+
 <!-- Settings -->
 <div class="ho-modal" id="settingsModal" hidden>
   <div class="ho-dialog wide">
     <div class="ho-dialog-head"><h3>Hotel Offers · Settings</h3><button class="ho-x" data-close>✕</button></div>
     <div class="ho-hint" id="settingsRO" hidden>Only admins can change settings. You can see what is configured.</div>
-    <div class="ho-tabs"><button class="on" data-tab="ai">AI parsing</button><button data-tab="photos">Photos</button><button data-tab="pricing">Pricing</button><button data-tab="brand">Brand text</button></div>
+    <div class="ho-tabs"><button class="on" data-tab="ai">AI parsing</button><button data-tab="photos">Photos</button><button data-tab="pricing">Pricing</button><button data-tab="brand">Brand text</button><button data-tab="client">Client page</button></div>
 
     <div class="ho-tabpane" data-pane="ai">
       <div class="ho-grid2">
@@ -252,6 +290,20 @@
       </div>
       <label>Loyalty note<textarea data-s="loyalty_note" rows="2"></textarea></label>
       <label>Availability note<input data-s="availability_note"></label>
+    </div>
+
+    <div class="ho-tabpane" data-pane="client" hidden>
+      <label>Client page link <small>(share this with anyone)</small>
+        <div class="ho-inline"><input id="clientLink" readonly><button class="pill ghost sm" type="button" id="clientLinkCopy">Copy</button><a class="pill ghost sm" id="clientLinkOpen" target="_blank" rel="noopener">Open</a></div>
+      </label>
+      <div class="ho-grid2">
+        <label>Page title<input data-s="client_title"></label>
+        <label>Subtitle<input data-s="client_subtitle"></label>
+        <label>WhatsApp number <small>(country code, digits only)</small><input data-s="whatsapp_number" inputmode="numeric" placeholder="919831020008"></label>
+        <label>Lead alert email <small>(comma separated)</small><input data-s="lead_email" type="text"></label>
+      </div>
+      <label class="ho-check"><input type="checkbox" data-s="lead_notify"> Email me when a new lead arrives <small id="smtpNote"></small></label>
+      <label>WhatsApp message <small>(use {offer}, {name} and {phone})</small><textarea data-s="wa_message" rows="3"></textarea></label>
     </div>
 
     <div class="ho-row end"><span class="ho-hint" id="settingsMsg"></span><button class="pill primary" id="btnSaveSettings">Save settings</button></div>

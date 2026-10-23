@@ -9,7 +9,7 @@ from models_rbac import Role
 from routes.auth import login_required
 
 from . import photos, settings
-from .models import HotelOffer, HotelOfferConfig
+from .models import HotelOffer, HotelOfferConfig, HotelOfferLead, HotelOfferLive
 from .parser import call_llm, parse_offer
 
 hotel_offers_bp = Blueprint(
@@ -26,11 +26,11 @@ def _ensure_tables():
     global _tables_ready
     if not _tables_ready:
         insp = inspect(db.engine)
-        for model in (HotelOfferConfig, HotelOffer):
+        for model in (HotelOfferConfig, HotelOffer, HotelOfferLive, HotelOfferLead):
             name = model.__tablename__
             if insp.has_table(name):
-                col = next(c for c in insp.get_columns(name) if c["name"] == "organization_id")
-                if isinstance(col["type"], Integer):
+                col = next((c for c in insp.get_columns(name) if c["name"] == "organization_id"), None)
+                if col is not None and isinstance(col["type"], Integer):
                     # first release used an integer org id; org ids are UUID strings. Table was unusable, so rebuild.
                     model.__table__.drop(db.engine)
             model.__table__.create(db.engine, checkfirst=True)
@@ -125,7 +125,8 @@ def photo_proxy():
 @hotel_offers_bp.route("/api/hotel-offers/settings", methods=["GET"])
 @login_required
 def get_settings():
-    return jsonify({"settings": settings.public_config(_org()), "can_configure": _is_admin()})
+    from . import notify
+    return jsonify({"settings": settings.public_config(_org()), "can_configure": _is_admin(), "smtp_ready": notify.smtp_configured()})
 
 
 @hotel_offers_bp.route("/api/hotel-offers/settings", methods=["PUT"])
@@ -169,8 +170,15 @@ def test_settings():
 @hotel_offers_bp.route("/api/hotel-offers/offers", methods=["GET"])
 @login_required
 def list_offers():
+    from .routes_live import live_info
     rows = HotelOffer.query.filter_by(organization_id=_org()).order_by(HotelOffer.updated_at.desc()).limit(100).all()
-    return jsonify({"offers": [r.to_dict(with_data=False) for r in rows]})
+    live = {l.offer_id: l for l in HotelOfferLive.query.filter(HotelOfferLive.offer_id.in_([r.id for r in rows] or [0])).all()}
+    out = []
+    for r in rows:
+        d = r.to_dict(with_data=False)
+        d["live"] = live_info(live[r.id]) if r.id in live else None
+        out.append(d)
+    return jsonify({"offers": out})
 
 
 @hotel_offers_bp.route("/api/hotel-offers/offers", methods=["POST"])
@@ -208,6 +216,7 @@ def delete_offer(offer_id):
     row = HotelOffer.query.filter_by(id=offer_id, organization_id=_org()).first()
     if not row:
         return _err("Not found", 404)
+    HotelOfferLive.query.filter_by(offer_id=row.id).delete()
     db.session.delete(row)
     db.session.commit()
     return jsonify({"ok": True})
@@ -225,3 +234,7 @@ def rename_offer(offer_id):
     row.title = title[:255]
     db.session.commit()
     return jsonify({"offer": row.to_dict(with_data=False)})
+
+
+# register the remaining routes on the same blueprint (imported last: they import names defined above)
+from . import routes_live, public  # noqa: E402,F401

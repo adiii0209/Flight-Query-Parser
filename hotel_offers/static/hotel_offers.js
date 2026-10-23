@@ -494,8 +494,7 @@
     try { await fn(); } catch (e) { alert(e.message || 'Export failed'); }
     btn.disabled = false; btn.textContent = label;
   }
-  async function renderCanvas(t) {
-    const d = posterData();
+  async function renderCanvas(t, d = posterData(), opts = {}) {
     const host = document.createElement('div');
     // Attach outside <body> (apps may zoom body on phones) and behind the page; layout is sized by the poster itself.
     host.style.cssText = `position:fixed;left:0;top:0;width:${t.w}px;height:${t.h}px;z-index:-1;pointer-events:none`;
@@ -504,8 +503,8 @@
     try {
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
       const el = host.firstElementChild;
-      const size = $('#outSize').value;
-      let W = t.w * 2, H = t.h * 2, k = 2;
+      const size = opts.size || $('#outSize').value, sc = opts.scale || 2;
+      let W = Math.round(t.w * sc), H = Math.round(t.h * sc), k = sc;
       if (size !== 'native') {
         [W, H] = size.split('x').map(Number);
         k = Math.min(W / t.w, H / t.h);
@@ -571,23 +570,44 @@
   // ---------- naming + saving
   const defaultName = () => [state.data.brand_line, state.data.place_line].filter(Boolean).join(' ') || state.data.hotel_name || 'Untitled offer';
   $('#offerName').addEventListener('input', e => { state.name = e.target.value; state.dirty = true; });
-  $('#btnSave').addEventListener('click', async e => {
-    const btn = e.currentTarget, label = btn.textContent;
+  async function saveCurrent() {
     const name = ($('#offerName').value || '').trim() || defaultName();
     $('#offerName').value = state.name = name;
+    const r = await api('/api/hotel-offers/offers', { method: 'POST', body: { id: state.offerId, title: name, data: { data: state.data, photos: state.photos, layout: state.layout } } });
+    state.offerId = r.offer.id; state.dirty = false;
+    return r.offer.id;
+  }
+  $('#btnSave').addEventListener('click', async e => {
+    const btn = e.currentTarget, label = btn.textContent;
     btn.disabled = true;
-    try {
-      const r = await api('/api/hotel-offers/offers', { method: 'POST', body: { id: state.offerId, title: name, data: { data: state.data, photos: state.photos, layout: state.layout } } });
-      state.offerId = r.offer.id; state.dirty = false;
-      btn.textContent = 'Saved';
-    } catch (err) { btn.textContent = 'Not saved'; alert(err.message); }
+    try { await saveCurrent(); btn.textContent = 'Saved'; } catch (err) { btn.textContent = 'Not saved'; alert(err.message); }
     btn.disabled = false;
     setTimeout(() => { btn.textContent = label; }, 1600);
   });
   window.addEventListener('beforeunload', e => { if (state.dirty && app.dataset.stage === 'studio') { e.preventDefault(); e.returnValue = ''; } });
 
   // ---------- saved offers drawer
+  const dayLabel = iso => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const copyText = async text => { try { await navigator.clipboard.writeText(text); return true; } catch (e) { window.prompt('Copy this link', text); return false; } };
+  async function shareLink(url, title) {
+    if (navigator.share) { try { await navigator.share({ title, url }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+    if (await copyText(url)) toast('Link copied');
+  }
+  let toastT;
+  function toast(msg) {
+    let t = $('#hoToast');
+    if (!t) { t = document.createElement('div'); t.id = 'hoToast'; t.className = 'ho-toast'; document.body.appendChild(t); }
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2000);
+  }
   $$('.js-open-saved').forEach(b => b.addEventListener('click', () => { openModal('savedModal'); loadSaved(); }));
+  async function openOffer(o) {
+    const r = await api('/api/hotel-offers/offers/' + o.id);
+    state.data = Object.assign(blank(), r.offer.data.data); state.photos = r.offer.data.photos || {}; state.layout = r.offer.data.layout || {};
+    state.offerId = o.id; state.name = o.title; $('#offerName').value = o.title;
+    fillForm(); refresh(); state.dirty = false;
+    closeModal($('#savedModal')); setStage('studio');
+  }
   async function loadSaved() {
     const list = $('#savedList');
     list.textContent = 'Loading…';
@@ -595,10 +615,15 @@
       const { offers } = await api('/api/hotel-offers/offers');
       list.innerHTML = offers.length ? '' : '<div class="ho-hint">Nothing saved yet. Generate an offer, name it and press Save.</div>';
       offers.forEach(o => {
+        const lv = o.live, on = !!(lv && lv.is_live && !lv.expired);
         const row = document.createElement('div');
-        row.className = 'ho-saved-item';
-        row.innerHTML = `<div class="si-main"><input class="si-name" maxlength="120" aria-label="Offer name"><small>${new Date(o.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</small></div>
-          <button class="pill primary sm" data-o>Open</button><button class="pill ghost sm" data-d>Delete</button>`;
+        row.className = 'ho-saved-item' + (on ? ' is-live' : '');
+        const status = on ? `Live${lv.valid_till ? ' · till ' + dayLabel(lv.valid_till) : ''} · ${lv.views} view${lv.views === 1 ? '' : 's'}`
+          : lv && lv.is_live && lv.expired ? 'Expired · switch on to renew' : 'Saved · ' + dayLabel(o.updated_at);
+        row.innerHTML = `<div class="si-top"><input class="si-name" maxlength="120" aria-label="Offer name">
+            <label class="switch" title="Show on the client page"><input type="checkbox" data-live ${on ? 'checked' : ''} aria-label="Live on client page"><i></i></label></div>
+          <div class="si-meta"><span class="dot"></span>${status}</div>
+          <div class="si-actions"><button class="pill ghost sm" data-o>Open</button>${on ? '<button class="pill ghost sm" data-share>Share</button>' : ''}<button class="pill ghost sm danger" data-d>Delete</button></div>`;
         const nameEl = $('.si-name', row);
         nameEl.value = o.title;
         const rename = async () => {
@@ -612,15 +637,17 @@
         };
         nameEl.addEventListener('blur', rename);
         nameEl.addEventListener('keydown', e => { if (e.key === 'Enter') nameEl.blur(); });
-        $('[data-o]', row).addEventListener('click', async () => {
-          const r = await api('/api/hotel-offers/offers/' + o.id);
-          state.data = Object.assign(blank(), r.offer.data.data); state.photos = r.offer.data.photos || {}; state.layout = r.offer.data.layout || {};
-          state.offerId = o.id; state.name = o.title; $('#offerName').value = o.title;
-          fillForm(); refresh(); state.dirty = false;
-          closeModal($('#savedModal')); setStage('studio');
+        $('[data-o]', row).addEventListener('click', () => openOffer(o));
+        const sh = $('[data-share]', row);
+        if (sh) sh.addEventListener('click', () => shareLink(lv.url, o.title));
+        $('[data-live]', row).addEventListener('change', async e => {
+          const box = e.target;
+          if (box.checked) { box.checked = false; openGoLive({ id: o.id, title: o.title, live: lv }); return; }
+          try { await api(`/api/hotel-offers/offers/${o.id}/live/off`, { method: 'POST' }); toast('Taken off the client page'); loadSaved(); }
+          catch (err) { box.checked = true; alert(err.message); }
         });
         $('[data-d]', row).addEventListener('click', async () => {
-          if (!confirm('Delete "' + o.title + '"?')) return;
+          if (!confirm('Delete "' + o.title + '"?' + (on ? ' It will also disappear from the client page.' : ''))) return;
           await api('/api/hotel-offers/offers/' + o.id, { method: 'DELETE' });
           if (state.offerId === o.id) state.offerId = null;
           loadSaved();
@@ -630,10 +657,148 @@
     } catch (e) { say(list, e.message, 'err'); }
   }
 
+  // ---------- go live: pick the template clients will see, then publish its picture
+  const gl = { offer: null, data: null, pick: null, busy: false };
+  async function openGoLive(o) {
+    gl.offer = o; gl.pick = null;
+    $('#glPick').hidden = false; $('#glDone').hidden = true; say($('#glMsg'), '');
+    $('#glSub').textContent = o.title;
+    $('#glGrid').innerHTML = '<div class="ho-hint">Preparing previews…</div>';
+    openModal('liveModal');
+    try {
+      const r = await api('/api/hotel-offers/offers/' + o.id);
+      const sv = r.offer.data;
+      gl.data = Object.assign({}, Object.assign(blank(), sv.data), { photos: sv.photos || {}, brand: brand(), layout: sv.layout || {} });
+      $('#glValid').value = (o.live && o.live.valid_till) || gl.data.check_in || '';
+      gl.pick = (o.live && o.live.template_id) || TEMPLATES[0].id;
+      const grid = $('#glGrid'); grid.innerHTML = '';
+      TEMPLATES.forEach((t, i) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'gl-opt'; b.dataset.id = t.id; b.style.setProperty('--i', i);
+        b.innerHTML = `<span class="gl-thumb"><span class="gl-scale"></span></span><span class="gl-name">${t.name}</span><i class="gl-check"></i>`;
+        const box = $('.gl-scale', b), k = 150 / t.w;
+        box.style.cssText = `width:150px;height:${t.h * k}px`;
+        box.innerHTML = t.render(gl.data);
+        box.firstElementChild.style.transform = `scale(${k})`;
+        b.addEventListener('click', () => { gl.pick = t.id; markPick(); });
+        grid.appendChild(b);
+      });
+      markPick();
+    } catch (e) { say($('#glMsg'), e.message, 'err'); }
+  }
+  const markPick = () => $$('.gl-opt').forEach(b => { b.classList.toggle('on', b.dataset.id === gl.pick); b.setAttribute('aria-pressed', b.dataset.id === gl.pick); });
+  async function toJpegDataUrl(canvas) {
+    for (const q of [0.9, 0.82, 0.72]) {
+      const url = canvas.toDataURL('image/jpeg', q);
+      if (url.length < 3.6e6) return url;
+    }
+    throw new Error('The poster picture is too large to publish.');
+  }
+  $('#glGo').addEventListener('click', async e => {
+    if (gl.busy || !gl.pick) return;
+    const btn = e.currentTarget, msg = $('#glMsg');
+    const t = TEMPLATES.find(x => x.id === gl.pick);
+    gl.busy = true; btn.disabled = true; btn.textContent = 'Publishing…'; say(msg, 'Preparing the poster…');
+    try {
+      const canvas = await renderCanvas(t, gl.data, { size: 'native', scale: 1.5 });
+      const image = await toJpegDataUrl(canvas);
+      say(msg, 'Publishing…');
+      const r = await api(`/api/hotel-offers/offers/${gl.offer.id}/live`, { method: 'POST', body: { template_id: t.id, image, width: canvas.width, height: canvas.height, valid_till: $('#glValid').value || null } });
+      $('#glLink').value = r.live.url;
+      api('/api/hotel-offers/dashboard-link').then(d => { $('#glOpen').href = d.url; });
+      $('#glPick').hidden = true; $('#glDone').hidden = false;
+      gl.live = r.live;
+      if (!$('#savedModal').hidden) loadSaved();
+    } catch (err) { say(msg, err.message, 'err'); }
+    gl.busy = false; btn.disabled = false; btn.textContent = 'Go live';
+  });
+  $('#glCopy').addEventListener('click', async e => { if (await copyText($('#glLink').value)) { e.currentTarget.textContent = 'Copied'; setTimeout(() => { e.currentTarget.textContent = 'Copy'; }, 1500); } });
+  $('#glShare').addEventListener('click', () => shareLink($('#glLink').value, gl.offer.title));
+  $('#btnLive').addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    if (!state.data.brand_line && !state.data.hotel_name) return;
+    btn.disabled = true;
+    try {
+      const id = await saveCurrent();
+      let live = null;
+      try { live = ((await api('/api/hotel-offers/offers')).offers.find(x => x.id === id) || {}).live; } catch (err) { /* no previous publish info */ }
+      openGoLive({ id, title: state.name, live });
+    } catch (err) { alert(err.message); }
+    btn.disabled = false;
+  });
+
+  // ---------- leads
+  const LEAD_LABEL = { new: 'New', contacted: 'Contacted', won: 'Won', lost: 'Lost' };
+  const ls = { st: 'all', q: '' };
+  const initials = n => n.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+  const hue = n => Array.from(n).reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
+  function ago(iso) {
+    const m = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000));
+    if (m < 1) return 'just now'; if (m < 60) return m + 'm ago';
+    if (m < 1440) return Math.round(m / 60) + 'h ago';
+    if (m < 10080) return Math.round(m / 1440) + 'd ago';
+    return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  }
+  function setBadge(n) { const b = $('#leadBadge'); b.hidden = !n; b.textContent = n > 99 ? '99+' : n; }
+  async function pollLeads() { try { setBadge((await api('/api/hotel-offers/leads/summary')).new); } catch (e) { /* not signed in or offline */ } }
+  async function loadLeads() {
+    const list = $('#leadList');
+    const qs = `status=${ls.st === 'all' ? '' : ls.st}&q=${encodeURIComponent(ls.q)}`;
+    $('#btnCsv').href = '/api/hotel-offers/leads.csv?' + qs;
+    try {
+      const r = await api('/api/hotel-offers/leads?' + qs);
+      const total = r.total;
+      $$('#leadTabs button').forEach(b => { $('b', b).textContent = b.dataset.st === 'all' ? total : r.counts[b.dataset.st] || 0; });
+      setBadge(r.counts.new || 0);
+      list.innerHTML = '';
+      if (!r.leads.length) {
+        list.innerHTML = `<div class="lead-empty"><b>${total ? 'No leads match' : 'No leads yet'}</b><span>${total ? 'Try another filter or search.' : 'When a client taps Book now on the client page, they appear here.'}</span></div>`;
+        return;
+      }
+      r.leads.forEach((l, i) => {
+        const wa = 'https://wa.me/' + l.phone.replace(/\D/g, '');
+        const el = document.createElement('article');
+        el.className = 'lead' + (l.status === 'new' ? ' is-new' : '');
+        el.style.setProperty('--i', Math.min(i, 8));
+        el.innerHTML = `<div class="av" style="background:hsl(${hue(l.name)} 45% 90%);color:hsl(${hue(l.name)} 40% 28%)">${initials(l.name)}</div>
+          <div class="lead-main">
+            <div class="lead-top"><b></b><span class="ago">${ago(l.created_at)}</span></div>
+            <div class="lead-offer"></div>
+            <div class="lead-contact"><a href="tel:${l.phone}">${l.phone}</a><a href="${wa}" target="_blank" rel="noopener">WhatsApp</a></div>
+            <textarea class="lead-note" rows="1" placeholder="Add a note…" maxlength="2000"></textarea>
+          </div>
+          <div class="lead-side"><select class="st st-${l.status}" aria-label="Status">${Object.keys(LEAD_LABEL).map(k => `<option value="${k}" ${k === l.status ? 'selected' : ''}>${LEAD_LABEL[k]}</option>`).join('')}</select>
+            <button class="lead-del" aria-label="Delete lead" title="Delete">&times;</button></div>`;
+        $('b', el).textContent = l.name; $('.lead-offer', el).textContent = l.offer_title;
+        const note = $('.lead-note', el); note.value = l.note;
+        const grow = () => { note.style.height = 'auto'; note.style.height = Math.min(note.scrollHeight, 140) + 'px'; };
+        note.addEventListener('input', grow); requestAnimationFrame(grow);
+        note.addEventListener('blur', async () => { if (note.value !== l.note) { try { await api('/api/hotel-offers/leads/' + l.id, { method: 'PATCH', body: { note: note.value } }); l.note = note.value; } catch (e) { alert(e.message); } } });
+        $('select', el).addEventListener('change', async e => {
+          const sel = e.target;
+          try { await api('/api/hotel-offers/leads/' + l.id, { method: 'PATCH', body: { status: sel.value } }); l.status = sel.value; loadLeads(); } catch (err) { alert(err.message); sel.value = l.status; }
+        });
+        $('.lead-del', el).addEventListener('click', async () => {
+          if (!confirm('Delete the lead from ' + l.name + '?')) return;
+          await api('/api/hotel-offers/leads/' + l.id, { method: 'DELETE' }); loadLeads();
+        });
+        list.appendChild(el);
+      });
+    } catch (e) { list.innerHTML = ''; say(list, e.message, 'err'); }
+  }
+  $('#btnLeads').addEventListener('click', () => { setStage('leads'); loadLeads(); });
+  $('#btnLeadsBack').addEventListener('click', () => setStage(state.data.brand_line || state.data.hotel_name ? 'studio' : 'paste'));
+  $('#leadTabs').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    ls.st = b.dataset.st; $$('#leadTabs button').forEach(x => x.classList.toggle('on', x === b)); loadLeads();
+  });
+  $('#leadSearch').addEventListener('input', debounce(e => { ls.q = e.target.value.trim(); loadLeads(); }, 250));
+  setTimeout(pollLeads, 1500); setInterval(() => { if (!document.hidden) pollLeads(); }, 60000);
+
   // ---------- settings
   async function loadSettings() {
     const r = await api('/api/hotel-offers/settings');
-    state.settings = r.settings;
+    state.settings = r.settings; state.smtpReady = r.smtp_ready;
     return r.settings;
   }
   function fillSettings() {
@@ -647,6 +812,7 @@
       const k = el.dataset.keystate;
       el.textContent = s[k + '_set'] ? `(saved ${s[k + '_hint']})` : '(not set)';
     });
+    $('#smtpNote').textContent = state.smtpReady ? '' : '(email is not set up on the server yet)';
     $('#settingsRO').hidden = CAN_CONFIGURE;
     $('#btnSaveSettings').hidden = !CAN_CONFIGURE;
     $$('[data-test]').forEach(b => { b.disabled = !CAN_CONFIGURE; });
@@ -666,8 +832,12 @@
     $$('.ho-tabpane').forEach(p => { p.hidden = p.dataset.pane !== b.dataset.tab; });
   }));
   $('#btnSettings').addEventListener('click', async () => {
-    try { await loadSettings(); fillSettings(); openModal('settingsModal'); } catch (e) { alert(e.message); }
+    try {
+      await loadSettings(); fillSettings(); openModal('settingsModal');
+      api('/api/hotel-offers/dashboard-link').then(d => { $('#clientLink').value = d.url; $('#clientLinkOpen').href = d.url; }).catch(() => {});
+    } catch (e) { alert(e.message); }
   });
+  $('#clientLinkCopy').addEventListener('click', async e => { if (await copyText($('#clientLink').value)) { e.currentTarget.textContent = 'Copied'; setTimeout(() => { e.currentTarget.textContent = 'Copy'; }, 1500); } });
   function collectSettings() {
     const out = {};
     $$('[data-s]').forEach(el => { out[el.dataset.s] = el.type === 'checkbox' ? el.checked : el.value; });
