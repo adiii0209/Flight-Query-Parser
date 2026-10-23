@@ -98,6 +98,29 @@
     refresh();
   }));
 
+  // Suggested text for each perk category, offered when the category is changed
+  const PERK_TEXT = { credit: 'RESORT\nCREDITS', breakfast: 'DAILY\nBREAKFAST', upgrade: 'ROOM\nUPGRADES*', checkin: 'EARLY CHECK-IN /\nLATE CHECK-OUT*',
+    welcome: 'VIP\nWELCOME', spa: 'SPA\nTREATMENT', transfer: 'AIRPORT\nTRANSFERS', dining: 'DINING\nCREDIT', gift: 'WELCOME\nGIFT', wifi: 'COMPLIMENTARY\nWI-FI' };
+  function suggestPerkText(row, p) {
+    const old = $('.perk-suggest', row);
+    if (old) old.remove();
+    const def = PERK_TEXT[p.icon], ta = $('textarea', row);
+    if (!def) return;
+    if (!p.label.trim()) { p.label = def; ta.value = def; autosize(ta); refresh(); return; }  // nothing typed yet: just fill it in
+    if (p.label.trim() === def) return;
+    const box = document.createElement('div');
+    box.className = 'perk-suggest';
+    box.innerHTML = '<span>Change the text to <b></b> too?</span><span class="ps-btns"><button type="button" data-a="yes">Update text</button><button type="button" data-a="no">Keep mine</button></span>';
+    $('b', box).textContent = def.replace(/\n/g, ' ');
+    box.addEventListener('click', e => {
+      const a = e.target.dataset && e.target.dataset.a;
+      if (!a) return;
+      if (a === 'yes') { p.label = def; ta.value = def; autosize(ta); refresh(); }
+      box.remove();
+    });
+    row.appendChild(box);
+  }
+
   // Perk label boxes grow to fit their text (no manual resize handle, no inner scrolling that fights page scrolling)
   function autosize(el) {
     if (!el.offsetParent) { el.style.height = ''; return; }  // hidden: measure later
@@ -113,8 +136,8 @@
       row.innerHTML = `<select>${ICON_OPTIONS.map(([v, l]) => `<option value="${v}" ${v === p.icon ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <textarea rows="2" placeholder="TWO LINE\nLABEL"></textarea><button type="button" title="Remove" aria-label="Remove perk">&times;</button>`;
       $('textarea', row).value = p.label;
-      $('select', row).addEventListener('change', e => { p.icon = e.target.value; refresh(); });
-      $('textarea', row).addEventListener('input', e => { p.label = e.target.value; autosize(e.target); refresh(); });
+      $('select', row).addEventListener('change', e => { p.icon = e.target.value; refresh(); suggestPerkText(row, p); });
+      $('textarea', row).addEventListener('input', e => { p.label = e.target.value; autosize(e.target); const sg = $('.perk-suggest', row); if (sg) sg.remove(); refresh(); });
       $('button', row).addEventListener('click', () => { state.data.perks.splice(i, 1); renderPerks(); refresh(); });
       box.appendChild(row);
       autosize($('textarea', row));

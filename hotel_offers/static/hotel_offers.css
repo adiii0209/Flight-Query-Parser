@@ -103,8 +103,8 @@ button,input,select,textarea{font-family:inherit}
 .ho-details[open] summary::before{transform:rotate(90deg)}
 .perk-row{display:grid;grid-template-columns:108px 1fr 30px;gap:.4rem;align-items:start;margin-bottom:.5rem}
 .perk-row select,.perk-row textarea{margin-top:0!important}
-.perk-row button{border:0;background:#f2f2f5;color:var(--mute);border-radius:50%;cursor:pointer;width:30px;height:30px;font-size:1rem;line-height:1;transition:all .2s}
-.perk-row button:hover{background:#fde7ea;color:var(--red)}
+.perk-row > button{border:0;background:#f2f2f5;color:var(--mute);border-radius:50%;cursor:pointer;width:30px;height:30px;font-size:1rem;line-height:1;transition:all .2s}
+.perk-row > button:hover{background:#fde7ea;color:var(--red)}
 .slot{display:flex;align-items:center;gap:.7rem;padding:.45rem;border-radius:14px;background:#f7f7f9;margin-bottom:.5rem}
 .slot-thumb{width:58px;height:44px;border-radius:9px;background:#e5e5ea center/cover no-repeat;flex:none}
 .slot-info{flex:1;min-width:0;font-size:.82rem;font-weight:500}
@@ -431,7 +431,7 @@ body{height:auto!important;min-height:100vh!important;overflow:visible!important
   .perk-row{grid-template-columns:minmax(0,1fr) 34px;grid-template-areas:"sel del" "txt txt";gap:.35rem .5rem;padding-bottom:.35rem;border-bottom:1px solid var(--line-soft,rgba(0,0,0,.06))}
   .perk-row select{grid-area:sel}
   .perk-row textarea{grid-area:txt}
-  .perk-row button{grid-area:del;width:34px;height:34px}
+  .perk-row > button{grid-area:del;width:34px;height:34px}
 }
 
 /* toolbar: on desktop the action buttons stay inline with everything else; on phones it is a tidy four-row grid */
@@ -447,4 +447,15 @@ body{height:auto!important;min-height:100vh!important;overflow:visible!important
   .export .check{grid-column:1/-1;padding:.1rem .2rem}
   .export select{width:100%;min-width:0}
   .export .pill{width:100%;justify-content:center;margin:0}
+}
+
+/* prompt shown under a perk when its category changes */
+.perk-suggest{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:.5rem .8rem;flex-wrap:wrap;background:#fff7e6;color:#7a4a00;border-radius:12px;padding:.55rem .75rem;font-size:.8rem;line-height:1.35;animation:rise .35s var(--ease) both}
+.perk-suggest b{font-weight:600;letter-spacing:.02em}
+.ps-btns{display:flex;gap:.4rem}
+.ps-btns button{border:0;border-radius:99px;padding:.3rem .75rem;font:inherit;font-size:.78rem;font-weight:600;cursor:pointer;background:#fff;color:#7a4a00}
+.ps-btns button[data-a=yes]{background:#7a4a00;color:#fff}
+@media(max-width:600px){
+  .perk-row{grid-template-areas:"sel del" "txt txt" "sug sug"}
+  .perk-suggest{grid-area:sug}
 }
