@@ -106,22 +106,42 @@
             <form class="panel p-book" id="pBook" novalidate autocomplete="on">
               <button type="button" class="back" id="bBack"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Back</button>
               <h2 class="b-title">Let's plan your stay</h2>
-              <p class="b-sub" id="bSub">Share your details and we'll continue on WhatsApp.</p>
+              <p class="b-sub" id="bSub">Share your details and our team will contact you shortly.</p>
 
               <label class="field" id="fName"><input id="inName" name="name" type="text" autocomplete="name" placeholder=" " maxlength="80" required><span>Your name</span><small></small></label>
               <label class="field" id="fPhone"><input id="inPhone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder=" " maxlength="20" required><span>Phone number</span><small></small></label>
+              <div class="field-dates" id="fDates">
+                <button type="button" class="dates-btn" id="datesBtn" aria-expanded="false" aria-controls="cal">
+                  <span class="dtxt"><span class="dl">Stay dates</span><span class="dv" id="datesVal">Add your dates</span></span>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div class="cal" id="cal" aria-hidden="true">
+                  <div class="cal-in">
+                    <div class="cal-head">
+                      <button type="button" class="cal-nav" id="calPrev" aria-label="Previous month"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+                      <b id="calTitle"></b>
+                      <button type="button" class="cal-nav" id="calNext" aria-label="Next month"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+                    </div>
+                    <div class="cal-dow" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+                    <div class="cal-grid" id="calGrid"></div>
+                    <div class="cal-foot"><span id="calHint">Choose your check-in date</span><span class="cal-acts"><button type="button" class="linkish" id="calOffer">Offer dates</button><button type="button" class="linkish" id="calClear">Clear</button></span></div>
+                  </div>
+                </div>
+                <small></small>
+              </div>
               <input class="hp" type="text" id="inHp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
 
-              <button class="btn btn-primary btn-lg" id="bSubmit" type="submit"><span class="lbl">Continue to WhatsApp</span><i class="spin"></i></button>
+              <button class="btn btn-primary btn-lg" id="bSubmit" type="submit"><span class="lbl">Request this offer</span><i class="spin"></i></button>
               <p class="fine center">We only use this to reply about this offer.</p>
             </form>
 
             <!-- step 3: done -->
             <div class="panel p-done" id="pDone">
               <svg class="tick" viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24"/><path d="M15 27l8 8 14-16"/></svg>
-              <h2 class="b-title">Opening WhatsApp</h2>
-              <p class="b-sub">Your request is with our team. If WhatsApp doesn't open, tap below.</p>
-              <a class="btn btn-primary" id="dLink" href="#">Open WhatsApp</a>
+              <h2 class="b-title">Request received</h2>
+              <p class="b-sub" id="dMsg">Thank you. Our team will contact you shortly.</p>
+              <p class="d-stay" id="dStay" hidden></p>
+              <button type="button" class="btn btn-primary" id="dDone">Done</button>
             </div>
           </div>
         </div>

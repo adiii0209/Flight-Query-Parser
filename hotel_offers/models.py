@@ -87,10 +87,14 @@ class HotelOfferLead(db.Model):
     phone = db.Column(db.String(32), nullable=False, default="")
     status = db.Column(db.String(16), nullable=False, default="new")  # new | contacted | won | lost
     note = db.Column(db.Text, nullable=False, default="")
+    stay_from = db.Column(db.Date, nullable=True)
+    stay_to = db.Column(db.Date, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
     def to_dict(self):
         return {
             "id": self.id, "offer_id": self.offer_id, "offer_title": self.offer_title, "name": self.name, "phone": self.phone,
-            "status": self.status, "note": self.note, "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
+            "status": self.status, "note": self.note,
+            "stay_from": self.stay_from.isoformat() if self.stay_from else None, "stay_to": self.stay_to.isoformat() if self.stay_to else None,
+            "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
         }

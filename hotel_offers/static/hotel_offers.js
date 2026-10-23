@@ -543,8 +543,7 @@
     for (const t of list) { await download(t); await new Promise(r => setTimeout(r, 350)); }
   }));
 
-  function caption() {
-    const d = state.data, b = brand();
+  function caption(d = state.data, b = brand()) {
     const dt = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
     const lines = [`*${[d.brand_line, d.place_line].filter(Boolean).join(' ') || d.hotel_name}*`];
     if (d.offer_headline) lines.push(`*${d.offer_headline}*`);
@@ -558,7 +557,7 @@
       if (d.online_rate) lines.push(`Online rate: ~${d.currency} ${fmtMoney(d.online_rate)}/-~`);
       lines.push(`*Our deal: ${d.currency} ${fmtMoney(d.our_deal)}/-*`);
     }
-    lines.push('', b.availability, b.footer);
+    lines.push('', b.availability, b.footer, '', '🙌 Know someone heading there? Forward this to them');
     return lines.join('\n');
   }
   $('#btnCopyCaption').addEventListener('click', async e => {
@@ -589,10 +588,16 @@
   // ---------- saved offers drawer
   const dayLabel = iso => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   const copyText = async text => { try { await navigator.clipboard.writeText(text); return true; } catch (e) { window.prompt('Copy this link', text); return false; } };
-  async function shareLink(url, title) {
-    if (navigator.share) { try { await navigator.share({ title, url }); return; } catch (e) { if (e.name === 'AbortError') return; } }
-    if (await copyText(url)) toast('Link copied');
+  // Share = copy the link with the caption below it, ready to paste into WhatsApp
+  async function copyShare(url, dataPromise) {
+    const build = async () => url + '\n\n' + caption(await dataPromise, brand());
+    try {
+      if (navigator.clipboard && window.ClipboardItem) await navigator.clipboard.write([new ClipboardItem({ 'text/plain': build().then(t => new Blob([t], { type: 'text/plain' })) })]);
+      else await navigator.clipboard.writeText(await build());
+      toast('Link and caption copied');
+    } catch (e) { window.prompt('Copy this text', await build()); }
   }
+  const offerData = id => api('/api/hotel-offers/offers/' + id).then(r => Object.assign(blank(), r.offer.data.data));
   let toastT;
   function toast(msg) {
     let t = $('#hoToast');
@@ -639,7 +644,7 @@
         nameEl.addEventListener('keydown', e => { if (e.key === 'Enter') nameEl.blur(); });
         $('[data-o]', row).addEventListener('click', () => openOffer(o));
         const sh = $('[data-share]', row);
-        if (sh) sh.addEventListener('click', () => shareLink(lv.url, o.title));
+        if (sh) sh.addEventListener('click', () => copyShare(lv.url, offerData(o.id)));
         $('[data-live]', row).addEventListener('change', async e => {
           const box = e.target;
           if (box.checked) { box.checked = false; openGoLive({ id: o.id, title: o.title, live: lv }); return; }
@@ -713,7 +718,7 @@
     gl.busy = false; btn.disabled = false; btn.textContent = 'Go live';
   });
   $('#glCopy').addEventListener('click', async e => { if (await copyText($('#glLink').value)) { e.currentTarget.textContent = 'Copied'; setTimeout(() => { e.currentTarget.textContent = 'Copy'; }, 1500); } });
-  $('#glShare').addEventListener('click', () => shareLink($('#glLink').value, gl.offer.title));
+  $('#glShare').addEventListener('click', () => copyShare($('#glLink').value, Promise.resolve(gl.data)));
   $('#btnLive').addEventListener('click', async e => {
     const btn = e.currentTarget;
     if (!state.data.brand_line && !state.data.hotel_name) return;
@@ -764,6 +769,7 @@
           <div class="lead-main">
             <div class="lead-top"><b></b><span class="ago">${ago(l.created_at)}</span></div>
             <div class="lead-offer"></div>
+            ${l.stay_from ? `<div class="lead-stay">Stay ${dayLabel(l.stay_from)} – ${dayLabel(l.stay_to)} · ${Math.round((new Date(l.stay_to) - new Date(l.stay_from)) / 864e5)} nights</div>` : ''}
             <div class="lead-contact"><a href="tel:${l.phone}">${l.phone}</a><a href="${wa}" target="_blank" rel="noopener">WhatsApp</a></div>
             <textarea class="lead-note" rows="1" placeholder="Add a note…" maxlength="2000"></textarea>
           </div>

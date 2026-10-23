@@ -196,9 +196,9 @@ def delete_lead(lead_id):
 def export_leads():
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow(["Received (UTC)", "Name", "Phone", "Offer", "Status", "Note"])
+    w.writerow(["Received (UTC)", "Name", "Phone", "Offer", "Stay from", "Stay to", "Status", "Note"])
     for l in _lead_query().all():
         # a leading = + - @ would be run as a formula by spreadsheets
         safe = lambda v: ("'" + v) if v[:1] in ("=", "+", "-", "@") else v
-        w.writerow([l.created_at.strftime("%Y-%m-%d %H:%M"), safe(l.name), safe(l.phone), safe(l.offer_title), l.status, safe(l.note)])
+        w.writerow([l.created_at.strftime("%Y-%m-%d %H:%M"), safe(l.name), safe(l.phone), safe(l.offer_title), l.stay_from or "", l.stay_to or "", l.status, safe(l.note)])
     return Response(out.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=hotel-offer-leads.csv"})

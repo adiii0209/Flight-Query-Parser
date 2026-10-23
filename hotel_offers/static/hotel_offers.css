@@ -319,6 +319,7 @@ button,input,select,textarea{font-family:inherit}
 .lead-top b{font-size:1rem;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ago{color:var(--faint);font-size:.76rem;white-space:nowrap}
 .lead-offer{color:var(--mute);font-size:.86rem;margin-top:1px}
+.lead-stay{display:inline-block;margin-top:.45rem;padding:.2rem .65rem;border-radius:99px;background:#fff1d6;color:#8a5200;font-size:.78rem;font-weight:600}
 .lead-contact{display:flex;gap:.5rem;margin:.55rem 0;flex-wrap:wrap}
 .lead-contact a{display:inline-flex;align-items:center;height:30px;padding:0 .8rem;border-radius:99px;background:#f2f2f5;font-size:.82rem;font-weight:500;color:var(--text);text-decoration:none;transition:background .2s}
 .lead-contact a:hover{background:#e5e5ea}

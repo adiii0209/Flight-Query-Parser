@@ -3,7 +3,6 @@ import re
 import time
 from collections import defaultdict, deque
 from datetime import date, datetime, timedelta
-from urllib.parse import quote
 
 from flask import Blueprint, Response, abort, jsonify, redirect, render_template, request
 
@@ -165,15 +164,26 @@ def public_lead(slug):
         return jsonify({"error": "Too many requests. Please try again in a few minutes."}), 429
     q.append(now)
 
+    stay_from = stay_to = None
+    raw_from, raw_to = body.get("stay_from"), body.get("stay_to")
+    if raw_from or raw_to:
+        try:
+            stay_from, stay_to = date.fromisoformat(str(raw_from)[:10]), date.fromisoformat(str(raw_to)[:10])
+        except ValueError:
+            return jsonify({"error": "Please choose both your check-in and check-out dates.", "field": "dates"}), 400
+        if stay_from < _today() - timedelta(days=1):
+            return jsonify({"error": "Check-in can't be in the past.", "field": "dates"}), 400
+        if not 1 <= (stay_to - stay_from).days <= 60:
+            return jsonify({"error": "Please choose a stay of 1 to 60 nights.", "field": "dates"}), 400
+
     cfg = settings.get_config(row.organization_id, include_env=False)
     title = row.snap().get("title") or "an offer"
     recent = HotelOfferLead.query.filter_by(live_id=row.id, phone=phone).order_by(HotelOfferLead.created_at.desc()).first()
     if not (recent and recent.created_at and datetime.utcnow() - recent.created_at < timedelta(minutes=10)):
-        db.session.add(HotelOfferLead(live_id=row.id, offer_id=row.offer_id, organization_id=row.organization_id, offer_title=title, name=name, phone=phone))
+        db.session.add(HotelOfferLead(live_id=row.id, offer_id=row.offer_id, organization_id=row.organization_id, offer_title=title,
+                                      name=name, phone=phone, stay_from=stay_from, stay_to=stay_to))
         db.session.commit()
         if cfg.get("lead_notify"):
-            notify.notify_lead(cfg.get("lead_email"), title, name, phone)
-
-    message = (cfg["wa_message"] or "").format_map(defaultdict(str, offer=title, name=name, phone=phone))
-    number = re.sub(r"\D", "", cfg["whatsapp_number"] or "")
-    return jsonify({"ok": True, "wa_url": f"https://wa.me/{number}?text={quote(message)}"})
+            stay = f"{stay_from:%d %b %Y} to {stay_to:%d %b %Y} ({(stay_to - stay_from).days} nights)" if stay_from else None
+            notify.notify_lead(cfg.get("lead_email"), title, name, phone, stay)
+    return jsonify({"ok": True})

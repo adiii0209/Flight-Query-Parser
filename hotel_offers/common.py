@@ -2,7 +2,7 @@
 import os
 
 from flask import request
-from sqlalchemy import Integer, inspect
+from sqlalchemy import Integer, inspect, text
 
 from extensions import db
 from models_rbac import Organization
@@ -26,6 +26,12 @@ def ensure_tables():
                 # first release used an integer org id; org ids are UUID strings. Table was unusable, so rebuild.
                 model.__table__.drop(db.engine)
         model.__table__.create(db.engine, checkfirst=True)
+    # columns added after the first release (create_all never alters an existing table)
+    have = {c["name"] for c in inspect(db.engine).get_columns("hotel_offer_lead")}
+    for col in ("stay_from", "stay_to"):
+        if col not in have:
+            with db.engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE hotel_offer_lead ADD COLUMN {col} DATE"))
     _tables_ready = True
 
 

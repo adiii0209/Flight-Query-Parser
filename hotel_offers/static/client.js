@@ -125,10 +125,11 @@
     $('#pcOld').textContent = o.online_rate > o.our_deal ? money(o, o.online_rate) : '';
     $('#pcSave').textContent = saving(o) ? `Save ${saving(o)}%` : '';
     $('#sValid').textContent = validTill(o);
-    $('#bSub').textContent = `Share your details and we'll continue on WhatsApp about ${o.title || o.hotel_name}.`;
+    $('#bSub').textContent = `Share your details and our team will contact you about ${o.title || o.hotel_name}.`;
     const mem = store.get('ho_client') || {};
     $('#inName').value = mem.name || ''; $('#inPhone').value = mem.phone || '';
-    $$('.field').forEach(f => f.classList.remove('bad'));
+    $$('.field,.field-dates').forEach(f => f.classList.remove('bad'));
+    calInit(o);
     $('#bSubmit').classList.remove('busy'); $('#bSubmit').disabled = false;
     setStep('details');
   }
@@ -204,35 +205,122 @@
     if (msg) { f.classList.add('bad'); $('small', f).textContent = msg; }
   }
   $$('#pBook input').forEach(i => i.addEventListener('input', () => i.closest('.field') && i.closest('.field').classList.remove('bad')));
+  // ---------- stay-date calendar
+  const pad = n => String(n).padStart(2, '0');
+  const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const parseISO = v => { const [y, m, d] = v.split('-').map(Number); return new Date(y, m - 1, d); };
+  const todayD = () => { const t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); };
+  const nightsBetween = (a, b) => Math.round((parseISO(b) - parseISO(a)) / 864e5);
+  const cal = { from: null, to: null, hover: null, view: null, open: false };
+  const shortDay = v => parseISO(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const stayText = () => !cal.from ? '' : cal.to ? `${shortDay(cal.from)} – ${shortDay(cal.to)} · ${nightsBetween(cal.from, cal.to)} night${nightsBetween(cal.from, cal.to) > 1 ? 's' : ''}` : `${shortDay(cal.from)} · choose check-out`;
+
+  function setOpen(open) {
+    cal.open = open;
+    $('#cal').classList.toggle('open', open);
+    $('#cal').setAttribute('aria-hidden', String(!open));
+    $('#datesBtn').setAttribute('aria-expanded', String(open));
+    $('#fDates').classList.toggle('is-open', open);
+  }
+  function updateDatesBtn() {
+    const v = $('#datesVal');
+    v.textContent = stayText() || 'Add your dates';
+    v.classList.toggle('empty', !cal.from);
+    $('#calHint').textContent = !cal.from ? 'Choose your check-in date' : !cal.to ? 'Now choose your check-out date' : stayText();
+    $('#fDates').classList.remove('bad');
+  }
+  function renderCal() {
+    const v = cal.view, first = new Date(v.getFullYear(), v.getMonth(), 1), total = new Date(v.getFullYear(), v.getMonth() + 1, 0).getDate();
+    $('#calTitle').textContent = first.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    const t = iso(todayD()), end = cal.to || cal.hover, lo = cal.from, hi = end && lo && end > lo ? end : null;
+    let html = '<span></span>'.repeat(first.getDay());
+    for (let d = 1; d <= total; d++) {
+      const k = iso(new Date(v.getFullYear(), v.getMonth(), d)), past = k < t;
+      const cls = ['day'];
+      if (past) cls.push('past');
+      if (k === t) cls.push('today');
+      if (lo === k) cls.push('start', hi ? 'has-range' : 'solo');
+      if (hi && k === hi) cls.push('end', 'has-range', cal.to ? '' : 'preview');
+      if (hi && k > lo && k < hi) cls.push('mid');
+      const label = parseISO(k).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      html += `<button type="button" class="${cls.join(' ')}" data-d="${k}" ${past ? 'disabled' : ''} aria-label="${label}" aria-pressed="${k === lo || k === cal.to}"><span>${d}</span></button>`;
+    }
+    $('#calGrid').innerHTML = html;
+    const cur = todayD();
+    $('#calPrev').disabled = v.getFullYear() === cur.getFullYear() && v.getMonth() <= cur.getMonth();
+    $('#calNext').disabled = (v.getFullYear() - cur.getFullYear()) * 12 + v.getMonth() - cur.getMonth() >= 18;
+  }
+  function calInit(o) {
+    const t = iso(todayD());
+    cal.from = cal.to = cal.hover = null;
+    if (o.check_in && o.check_out && o.check_in >= t) { cal.from = o.check_in; cal.to = o.check_out; }
+    const anchor = cal.from ? parseISO(cal.from) : todayD();
+    cal.view = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+    setOpen(false); renderCal(); updateDatesBtn();
+    $('#calOffer').hidden = !cal.from;
+  }
+  function pickDay(k) {
+    if (!cal.from || cal.to) { cal.from = k; cal.to = null; }
+    else if (k <= cal.from) { cal.from = k; }
+    else if (nightsBetween(cal.from, k) > 60) { toast('Stays are limited to 60 nights'); return; }
+    else cal.to = k;
+    cal.hover = null; renderCal(); updateDatesBtn();
+    if (cal.to) setTimeout(() => setOpen(false), reduced ? 0 : 650);
+  }
+  const monthShift = n => { cal.view = new Date(cal.view.getFullYear(), cal.view.getMonth() + n, 1); renderCal(); };
+  $('#datesBtn').addEventListener('click', () => setOpen(!cal.open));
+  $('#calPrev').addEventListener('click', () => monthShift(-1));
+  $('#calNext').addEventListener('click', () => monthShift(1));
+  $('#calGrid').addEventListener('click', e => { const b = e.target.closest('.day'); if (b && !b.disabled) pickDay(b.dataset.d); });
+  $('#calGrid').addEventListener('pointerover', e => {
+    const b = e.target.closest('.day');
+    if (e.pointerType !== 'mouse' || !b || b.disabled || !cal.from || cal.to || cal.hover === b.dataset.d) return;
+    cal.hover = b.dataset.d; renderCal();
+  });
+  $('#calGrid').addEventListener('pointerleave', () => { if (cal.hover) { cal.hover = null; renderCal(); } });
+  $('#calClear').addEventListener('click', () => { cal.from = cal.to = cal.hover = null; renderCal(); updateDatesBtn(); });
+  $('#calOffer').addEventListener('click', () => {
+    if (!current || !current.check_in) return;
+    cal.from = current.check_in; cal.to = current.check_out; cal.view = new Date(parseISO(cal.from).getFullYear(), parseISO(cal.from).getMonth(), 1);
+    renderCal(); updateDatesBtn(); setOpen(false);
+  });
+
+  // ---------- booking: the lead goes straight to the team (no WhatsApp hand-off)
   $('#pBook').addEventListener('submit', async e => {
     e.preventDefault();
     if (!current) return;
     const name = $('#inName').value.trim().replace(/\s+/g, ' '), phone = $('#inPhone').value.trim();
     const digits = phone.replace(/\D/g, '');
-    flag('#fName'); flag('#fPhone');
+    flag('#fName'); flag('#fPhone'); flag('#fDates');
     let bad = false;
     if (name.length < 2) { flag('#fName', 'Please enter your name'); bad = true; }
     if (digits.length < 8 || digits.length > 15) { flag('#fPhone', 'Please enter a valid phone number'); bad = true; }
-    if (bad) { ($('.bad input') || {}).focus && $('.bad input').focus(); return; }
+    if (cal.from && !cal.to) { flag('#fDates', 'Please choose your check-out date'); setOpen(true); bad = true; }
+    if (bad) { const f = $('.field.bad input'); if (f) f.focus(); return; }
     const btn = $('#bSubmit');
     btn.classList.add('busy'); btn.disabled = true;
     try {
-      const res = await fetch(`/api/public/offers/${encodeURIComponent(current.slug)}/lead`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, phone, website: $('#inHp').value }) });
+      const res = await fetch(`/api/public/offers/${encodeURIComponent(current.slug)}/lead`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, phone, stay_from: cal.from, stay_to: cal.to, website: $('#inHp').value }),
+      });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (body.field === 'name') flag('#fName', body.error); else if (body.field === 'phone') flag('#fPhone', body.error); else toast(body.error || 'Something went wrong. Please try again.');
+        if (body.field === 'name') flag('#fName', body.error); else if (body.field === 'phone') flag('#fPhone', body.error);
+        else if (body.field === 'dates') { flag('#fDates', body.error); setOpen(true); } else toast(body.error || 'Something went wrong. Please try again.');
         btn.classList.remove('busy'); btn.disabled = false; return;
       }
       store.set('ho_client', { name, phone });
-      const url = body.wa_url || waBase();
-      $('#dLink').href = url;
+      $('#dMsg').textContent = `Thank you, ${name.split(' ')[0]}. Our team will contact you shortly on ${phone}.`;
+      const st = $('#dStay'); st.textContent = cal.to ? 'Stay: ' + stayText() : ''; st.hidden = !cal.to;
+      btn.classList.remove('busy'); btn.disabled = false;
       setStep('done');
-      setTimeout(() => { window.location.href = url; }, reduced ? 200 : 1300);
     } catch (err) {
       toast('No connection. Please try again.');
       btn.classList.remove('busy'); btn.disabled = false;
     }
   });
+  $('#dDone').addEventListener('click', closeSheet);
 
   // ---------- load
   async function load() {

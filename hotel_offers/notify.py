@@ -43,11 +43,11 @@ def _send(recipients, subject, body):
                 pass
 
 
-def notify_lead(recipients, offer_title, name, phone):
+def notify_lead(recipients, offer_title, name, phone, stay=None):
     """Fire and forget so a slow mail server never delays the client's WhatsApp redirect."""
     recipients = [r.strip() for r in (recipients or "").split(",") if r.strip()]
     if not recipients or not smtp_configured():
         return False
-    body = f"New lead from the Hotel Offers client page\n\nOffer: {offer_title}\nName: {name}\nPhone: {phone}\n"
+    body = f"New lead from the Hotel Offers client page\n\nOffer: {offer_title}\nName: {name}\nPhone: {phone}\n" + (f"Stay: {stay}\n" if stay else "")
     threading.Thread(target=_send, args=(recipients, f"New lead: {name} - {offer_title}", body), daemon=True).start()
     return True
