@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Hotel Offers | Time Tours</title>
 <link rel="icon" type="image/png" href="/static/ticket-flight.png">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Syne:wght@700;800&family=Jost:wght@300;400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Syne:wght@700;800&family=Jost:wght@300;400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/dashboard.css">
 <link rel="stylesheet" href="/static/sidebar.css">
 <link rel="stylesheet" href="{{ url_for('hotel_offers.static', filename='hotel_offers.css') }}">
@@ -16,41 +16,70 @@
 
 <header class="app-header">
   <div class="header-content">
-    <button class="menu-toggle" id="menuToggle" aria-label="Open Menu">
+    <button class="menu-toggle" id="menuToggle" aria-label="Open menu">
       <span class="menu-bar"></span><span class="menu-bar"></span><span class="menu-bar"></span>
     </button>
-    <div class="header-brand">
-      <div class="brand-name">Time <span>Tours</span></div>
-      <div class="brand-sub">Hotel offers</div>
+    <div class="header-brand">Hotel Offers</div>
+    <div class="header-actions">
+      <button class="pill ghost sm" id="btnSaved">Saved</button>
+      <button class="pill ghost sm" id="btnSettings">Settings</button>
     </div>
-    <div class="header-actions"></div>
   </div>
 </header>
 
-<main class="ho-main">
-  <div class="ho-titlebar">
-    <h1 class="ho-title">Hotel <span>Offers</span></h1>
-    <div class="ho-title-actions">
-      <button class="ho-btn ghost" id="btnSaved">Saved offers</button>
-      <button class="ho-btn ghost" id="btnSettings">⚙ Settings</button>
-    </div>
-  </div>
+<main id="app" data-stage="paste">
 
-  <div class="ho-layout">
-    <!-- LEFT: input + edit -->
-    <section class="ho-panel">
-      <div class="ho-card">
-        <h2><span class="ho-step">1</span> Paste the offer</h2>
-        <textarea id="rawText" rows="9" placeholder="Paste the hotel name, rate details, price and perks here…"></textarea>
-        <div class="ho-row">
-          <button class="ho-btn primary" id="btnParse">Generate templates</button>
-          <span class="ho-hint" id="parseStatus"></span>
-        </div>
+  <!-- 1 · Paste -->
+  <section class="stage stage-paste">
+    <p class="eyebrow">Time Elevate</p>
+    <h1 class="hero">Turn any hotel offer<br>into a poster.</h1>
+    <p class="lede">Paste the rate details. We read them, find the photos and design eight templates for you.</p>
+    <div class="paste-card">
+      <textarea id="rawText" rows="9" placeholder="Paste the hotel name, rate details, price and perks…" spellcheck="false"></textarea>
+      <div class="paste-bar">
+        <span class="ho-hint" id="parseStatus"></span>
+        <button class="pill primary lg" id="btnParse">Generate templates</button>
       </div>
+    </div>
+  </section>
 
-      <div class="ho-card" id="editCard">
-        <h2><span class="ho-step">2</span> Review &amp; edit</h2>
-        <div class="ho-sub first">On the poster</div>
+  <!-- 2 · Working -->
+  <section class="stage stage-process" aria-live="polite">
+    <div class="orb"><i></i><i></i><i></i></div>
+    <h2 id="procTitle">Reading your offer</h2>
+    <ol class="steps">
+      <li><span class="tick"></span>Reading the offer</li>
+      <li><span class="tick"></span>Extracting stay and price details</li>
+      <li><span class="tick"></span>Finding photos</li>
+      <li><span class="tick"></span>Designing templates</li>
+    </ol>
+  </section>
+
+  <!-- 3 · Studio -->
+  <section class="stage stage-studio">
+    <div class="studio-bar">
+      <button class="pill ghost sm" id="btnNew">&lsaquo; New offer</button>
+      <div class="studio-title" id="studioTitle"></div>
+      <div class="export">
+        <label class="check"><input type="checkbox" id="selAll"><span>Select all</span></label>
+        <select id="outSize" aria-label="Size">
+          <option value="native">Original (2&times;)</option>
+          <option value="1080x1920">Story 1080&times;1920</option>
+          <option value="1080x1350">Feed 1080&times;1350</option>
+          <option value="1080x1080">Square 1080&times;1080</option>
+        </select>
+        <select id="outFmt" aria-label="Format"><option value="png">PNG</option><option value="jpeg">JPG</option></select>
+        <button class="pill ghost sm" id="btnCopyCaption">Copy caption</button>
+        <button class="pill primary sm" id="btnDownloadSel">Download selected</button>
+      </div>
+    </div>
+
+    <div class="studio-layout">
+      <aside class="editor">
+        <h3 class="editor-h">Details</h3>
+        <p class="editor-sub">Everything below is editable. The templates update as you type.</p>
+        <div class="group">
+          <div class="ho-sub first">On the poster</div>
         <div class="ho-grid2">
           <label>Brand line<input data-f="brand_line" placeholder="Raffles"></label>
           <label>Place line<input data-f="place_line" placeholder="Udaipur"></label>
@@ -66,7 +95,7 @@
 
         <div class="ho-sub">Perks <small>(max 4, top to bottom)</small></div>
         <div id="perkRows"></div>
-        <button class="ho-btn ghost small" id="btnAddPerk">Add perk</button>
+        <button class="pill ghost sm" id="btnAddPerk">Add perk</button>
 
         <div class="ho-sub">Photos</div>
         <div id="photoSlots"></div>
@@ -91,31 +120,15 @@
           <label>Cancellation<input data-f="cancellation"></label>
           <label>Photo search text<input data-f="photo_query"></label>
         </details>
+      
+        </div>
+      </aside>
+      <div class="gallery-wrap">
+        <div class="ho-empty" id="galleryEmpty" hidden></div>
+        <div class="ho-gallery" id="gallery"></div>
       </div>
-    </section>
-
-    <!-- RIGHT: templates -->
-    <section class="ho-gallery-wrap">
-      <div class="ho-gallery-bar">
-        <label class="ho-check"><input type="checkbox" id="selAll"> Select all</label>
-        <label>Size
-          <select id="outSize">
-            <option value="native">Original (2&times; sharp)</option>
-            <option value="1080x1920">Story 1080&times;1920</option>
-            <option value="1080x1350">Feed 1080&times;1350</option>
-            <option value="1080x1080">Square 1080&times;1080</option>
-          </select>
-        </label>
-        <label>Format
-          <select id="outFmt"><option value="png">PNG</option><option value="jpeg">JPG</option></select>
-        </label>
-        <button class="ho-btn ghost small" id="btnCopyCaption">Copy caption</button>
-        <button class="ho-btn primary small" id="btnDownloadSel">Download selected</button>
-      </div>
-      <div class="ho-empty" id="galleryEmpty">Paste an offer and click <b>Generate templates</b> to see all designs here.</div>
-      <div class="ho-gallery" id="gallery"></div>
-    </section>
-  </div>
+    </div>
+  </section>
 </main>
 
 <!-- Photo picker -->
@@ -126,12 +139,12 @@
       <input id="photoQuery" placeholder="Search photos…">
       <select id="photoOrient"><option value="landscape">Landscape</option><option value="portrait">Portrait</option><option value="squarish">Square</option></select>
       <select id="photoSource"><option value="unsplash">Unsplash</option><option value="google">Google Places</option></select>
-      <button class="ho-btn primary small" id="photoGo">Search</button>
-      <label class="ho-btn ghost small ho-upload">Upload<input type="file" id="photoUpload" accept="image/*" hidden></label>
+      <button class="pill primary sm" id="photoGo">Search</button>
+      <label class="pill ghost sm ho-upload">Upload<input type="file" id="photoUpload" accept="image/*" hidden></label>
     </div>
     <div class="ho-hint" id="photoMsg"></div>
     <div class="ho-photos" id="photoGrid"></div>
-    <div class="ho-row"><button class="ho-btn ghost small" id="photoMore" hidden>Load more</button></div>
+    <div class="ho-row"><button class="pill ghost sm" id="photoMore" hidden>Load more</button></div>
   </div>
 </div>
 
@@ -139,7 +152,7 @@
 <div class="ho-modal" id="savedModal" hidden>
   <div class="ho-dialog">
     <div class="ho-dialog-head"><h3>Saved offers</h3><button class="ho-x" data-close>✕</button></div>
-    <div class="ho-row"><button class="ho-btn primary small" id="btnSaveCurrent">Save current offer</button><span class="ho-hint" id="saveMsg"></span></div>
+    <div class="ho-row"><button class="pill primary sm" id="btnSaveCurrent">Save current offer</button><span class="ho-hint" id="saveMsg"></span></div>
     <div id="savedList" class="ho-saved"></div>
   </div>
 </div>
@@ -167,7 +180,7 @@
       </div>
       <label class="ho-check"><input type="checkbox" data-s="ai_use_fallback"> If the AI call fails, fall back to the basic text parser</label>
       <label>Custom system prompt <small>(optional, empty = built-in prompt)</small><textarea data-s="ai_system_prompt" rows="4"></textarea></label>
-      <div class="ho-row"><button class="ho-btn ghost small" data-test="ai">Test AI connection</button><span class="ho-hint" data-testmsg="ai"></span></div>
+      <div class="ho-row"><button class="pill ghost sm" data-test="ai">Test AI connection</button><span class="ho-hint" data-testmsg="ai"></span></div>
     </div>
 
     <div class="ho-tabpane" data-pane="photos" hidden>
@@ -175,9 +188,9 @@
         <select data-s="photo_default_source"><option value="unsplash">Unsplash</option><option value="google">Google Places</option></select>
       </label>
       <label>Unsplash Access Key <small data-keystate="unsplash_access_key"></small><input data-s="unsplash_access_key" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved key"></label>
-      <div class="ho-row"><button class="ho-btn ghost small" data-test="unsplash">Test Unsplash</button><span class="ho-hint" data-testmsg="unsplash"></span></div>
+      <div class="ho-row"><button class="pill ghost sm" data-test="unsplash">Test Unsplash</button><span class="ho-hint" data-testmsg="unsplash"></span></div>
       <label>Google Places API key <small data-keystate="google_places_key"></small><input data-s="google_places_key" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved key"></label>
-      <div class="ho-row"><button class="ho-btn ghost small" data-test="google">Test Google</button><span class="ho-hint" data-testmsg="google"></span></div>
+      <div class="ho-row"><button class="pill ghost sm" data-test="google">Test Google</button><span class="ho-hint" data-testmsg="google"></span></div>
       <label>Results per search<input data-s="photo_per_page" type="number" min="3" max="30"></label>
       <div class="ho-hint">Unsplash: create an app at unsplash.com/developers and paste its Access Key. Google Places photos have usage limits, so check the licence before using them in marketing.</div>
     </div>
@@ -205,7 +218,7 @@
       <label>Availability note<input data-s="availability_note"></label>
     </div>
 
-    <div class="ho-row end"><span class="ho-hint" id="settingsMsg"></span><button class="ho-btn primary" id="btnSaveSettings">Save settings</button></div>
+    <div class="ho-row end"><span class="ho-hint" id="settingsMsg"></span><button class="pill primary" id="btnSaveSettings">Save settings</button></div>
   </div>
 </div>
 

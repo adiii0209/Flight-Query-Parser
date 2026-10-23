@@ -106,20 +106,49 @@
     if (state.data.perks.length < 4) { state.data.perks.push({ icon: 'gift', label: '' }); renderPerks(); }
   });
 
+  // ---------- stages
+  const app = $('#app');
+  const setStage = name => { app.dataset.stage = name; window.scrollTo({ top: 0 }); if (name === 'studio') requestAnimationFrame(() => { layoutScale(); }); };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  function stepper() {
+    const items = $$('.steps li'), title = $('#procTitle');
+    const names = ['Reading your offer', 'Extracting the details', 'Finding photos', 'Designing templates'];
+    return n => {
+      items.forEach((li, i) => { li.classList.toggle('done', i < n); li.classList.toggle('active', i === n); });
+      if (names[n]) title.textContent = names[n];
+    };
+  }
+  $('#btnNew').addEventListener('click', () => setStage('paste'));
+
   // ---------- parse
   $('#btnParse').addEventListener('click', async () => {
     const btn = $('#btnParse'), status = $('#parseStatus');
     const text = $('#rawText').value.trim();
     if (text.length < 20) { say(status, 'Paste the offer text first.', 'err'); return; }
-    btn.disabled = true; say(status, 'Reading the offer…');
+    btn.disabled = true; say(status, '');
+    const step = stepper();
+    setStage('process'); step(0);
+    const started = Date.now();
     try {
-      const res = await api('/api/hotel-offers/parse', { method: 'POST', body: { text } });
+      const [res] = await Promise.all([api('/api/hotel-offers/parse', { method: 'POST', body: { text } }), sleep(900)]);
+      step(1);
       state.data = Object.assign(blank(), res.data);
       state.photos = {}; state.offerId = null;
-      fillForm(); refresh();
-      say(status, (res.source === 'ai' ? 'Parsed with AI. ' : 'Parsed with the basic parser. ') + (res.warning || 'Check the fields below.'), res.warning ? 'err' : 'ok');
-      autoPhotos();
-    } catch (e) { say(status, e.message, 'err'); }
+      fillForm();
+      await sleep(800);
+      step(2);
+      await Promise.race([autoPhotos(), sleep(9000)]);
+      step(3);
+      refresh();
+      await sleep(Math.max(700, 3600 - (Date.now() - started)));
+      step(4);
+      await sleep(350);
+      setStage('studio');
+      if (res.warning) say($('#parseStatus'), res.warning, 'err');
+    } catch (e) {
+      setStage('paste');
+      say(status, e.message, 'err');
+    }
     btn.disabled = false;
   });
 
@@ -137,7 +166,7 @@
       const row = document.createElement('div');
       row.className = 'slot';
       row.innerHTML = `<div class="slot-thumb"></div><div class="slot-info">${s.key === 'hero' ? 'Main photo' : s.label}<small>${s.key === 'hero' ? 'Used by every template' : 'Gallery template only'}</small></div>
-        <button class="ho-btn ghost small" type="button">${url ? 'Change' : 'Choose'}</button>${url ? '<button class="ho-btn ghost small" type="button" data-clear>Clear</button>' : ''}`;
+        <button class="pill ghost sm" type="button">${url ? 'Change' : 'Choose'}</button>${url ? '<button class="pill ghost sm" type="button" data-clear>Clear</button>' : ''}`;
       if (url) $('.slot-thumb', row).style.backgroundImage = `url("${url}")`;
       $('button', row).addEventListener('click', () => openPicker(s));
       const clear = $('[data-clear]', row);
@@ -153,13 +182,17 @@
     const s = state.settings || {};
     const src = s.photo_default_source;
     if (!(src === 'google' ? s.google_places_key_set : s.unsplash_access_key_set)) return;
-    for (const slot of slotDefs()) {
+    await Promise.all(slotDefs().map(async slot => {
       try {
         const orient = slot.orient === 'portrait' ? 'portrait' : 'landscape';
         const r = await api(`/api/hotel-offers/photos?q=${encodeURIComponent(photoQuery(slot))}&source=${src}&orientation=${orient}`);
-        if (r.results[0] && !state.photos[slot.key]) { state.photos[slot.key] = r.results[0].full; renderSlots(); refresh(); }
-      } catch (e) { return; }
-    }
+        if (r.results[0] && !state.photos[slot.key]) state.photos[slot.key] = r.results[0].full;
+      } catch (e) { /* no photo for this slot; user can pick one */ }
+    }));
+    // Gallery slots shouldn't repeat the same picture
+    const used = new Set();
+    for (const k of Object.keys(state.photos)) { if (used.has(state.photos[k]) && k !== 'hero') delete state.photos[k]; used.add(state.photos[k]); }
+    renderSlots();
   }
   let pickerPage = 1;
   function openPicker(slot) {
@@ -215,12 +248,13 @@
   const cards = new Map();
   function buildGallery() {
     const gal = $('#gallery');
-    TEMPLATES.forEach(t => {
+    TEMPLATES.forEach((t, idx) => {
       const card = document.createElement('article');
       card.className = 'ho-tpl';
+      card.style.setProperty('--i', idx);
       card.innerHTML = `<div class="ho-tpl-head"><label class="ho-check"><input type="checkbox"> ${t.name}</label><span class="ho-dim">${t.w}&times;${t.h}</span></div>
         <div class="ho-tpl-view"><div class="ho-tpl-scale"></div></div>
-        <div class="ho-tpl-actions"><button class="ho-btn ghost small" data-act="dl">Download</button><button class="ho-btn ghost small" data-act="copy">Copy image</button></div>`;
+        <div class="ho-tpl-actions"><button class="pill ghost sm" data-act="dl">Download</button><button class="pill ghost sm" data-act="copy">Copy image</button></div>`;
       $('input', card).addEventListener('change', e => {
         e.target.checked ? state.selected.add(t.id) : state.selected.delete(t.id);
         card.classList.toggle('sel', e.target.checked);
@@ -247,6 +281,7 @@
   }
   function refresh() {
     const has = !!(state.data.brand_line || state.data.place_line || state.data.hotel_name);
+    $('#studioTitle').textContent = [state.data.brand_line, state.data.place_line].filter(Boolean).join(' ') || state.data.hotel_name || '';
     $('#galleryEmpty').hidden = has;
     $('#gallery').hidden = !has;
     if (!has) return;
@@ -361,7 +396,7 @@
       offers.forEach(o => {
         const row = document.createElement('div');
         row.className = 'ho-saved-item';
-        row.innerHTML = `<b></b><small>${new Date(o.updated_at).toLocaleDateString('en-GB')}</small><button class="ho-btn ghost small" data-o>Open</button><button class="ho-btn ghost small" data-d>Delete</button>`;
+        row.innerHTML = `<b></b><small>${new Date(o.updated_at).toLocaleDateString('en-GB')}</small><button class="pill ghost sm" data-o>Open</button><button class="pill ghost sm" data-d>Delete</button>`;
         $('b', row).textContent = o.title;
         $('[data-o]', row).addEventListener('click', async () => {
           const r = await api('/api/hotel-offers/offers/' + o.id);
@@ -459,5 +494,6 @@
       $('#rawText').value = draft.raw || '';
     }
     fillForm(); refresh();
+    if (draft && draft.data && (draft.data.brand_line || draft.data.hotel_name)) setStage('studio');
   })();
 })();
