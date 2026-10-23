@@ -153,7 +153,8 @@ def test_settings():
 @login_required
 def list_offers():
     from .routes_live import live_info
-    rows = HotelOffer.query.filter_by(organization_id=_org()).order_by(HotelOffer.updated_at.desc()).limit(100).all()
+    rows = (HotelOffer.query.options(db.defer(HotelOffer.data))  # the list never needs the (possibly large) photo data
+            .filter_by(organization_id=_org()).order_by(HotelOffer.updated_at.desc()).limit(100).all())
     live = {l.offer_id: l for l in HotelOfferLive.query.filter(HotelOfferLive.offer_id.in_([r.id for r in rows] or [0])).all()}
     out = []
     for r in rows:
@@ -170,9 +171,7 @@ def save_offer():
     data = body.get("data")
     if not isinstance(data, dict):
         return _err("Nothing to save.")
-    blob = json.dumps(data)
-    if len(blob) > 500_000:
-        return _err("Offer is too large to save (remove uploaded photos).")
+    blob = json.dumps(data)  # uploaded photos live inside the offer, so these can be several MB; no small cap here
     title = (body.get("title") or data.get("hotel_name") or "Untitled offer")[:255]
     row = None
     if body.get("id"):
