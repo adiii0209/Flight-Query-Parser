@@ -320,7 +320,10 @@
       btn.classList.remove('busy'); btn.disabled = false;
     }
   });
-  $('#dDone').addEventListener('click', closeSheet);
+  $('#dDone').addEventListener('click', () => {
+    closeSheet();
+    setTimeout(() => window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' }), 120); // back to the top of the offers
+  });
 
   // ---------- load
   async function load() {
