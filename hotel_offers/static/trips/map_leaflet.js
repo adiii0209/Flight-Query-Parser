@@ -8,7 +8,8 @@
     opts = opts || {};
     el.innerHTML = '';
     if (!window.L) { el.innerHTML = '<p class="tt-nomap">The map could not be loaded.</p>'; return { render() {}, focus() {} }; }
-    const map = L.map(el, { scrollWheelZoom: false, zoomControl: true }).setView([20, 0], 2);
+    const map = L.map(el, { scrollWheelZoom: false, zoomControl: false }).setView([20, 0], 2);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);  // top of the map is used by the hotel chips
     const tiles = TT.tileLayerOptions();
     L.tileLayer(tiles.url, tiles.options).addTo(map);
     const layer = L.layerGroup().addTo(map);
@@ -44,7 +45,7 @@
     function focus(id) {
       const m = pins[id];
       if (!m) return;
-      map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 14), { duration: .6 });
+      map.flyTo(m.getLatLng(), Math.min(Math.max(map.getZoom(), 14), 16), { duration: .6 });
       m.openPopup();
     }
     return { render, focus, resize() { map.invalidateSize(); if (pinsBounds) map.fitBounds(pinsBounds, { maxZoom: 15 }); } };

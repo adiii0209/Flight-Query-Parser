@@ -6,15 +6,11 @@
 /* map section: sits at the bottom of the page; the floating button expands it to fullscreen */
 .tc-mapsec{margin-top:34px}
 .tc-maphead h2{font-family:var(--serif);font-weight:500;font-size:1.5rem;margin-bottom:12px}
-.tc-chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px;scrollbar-width:none}
 .tc-chips::-webkit-scrollbar{display:none}
 .tc-chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px 0 6px;border-radius:99px;background:var(--surface);border:1px solid var(--line);font-size:.86rem;font-weight:500;white-space:nowrap;transition:background .2s,border-color .2s}
 .tc-chip i{font-style:normal;width:26px;height:26px;border-radius:50%;background:var(--cta);color:var(--cta-fg);display:grid;place-items:center;font-size:.75rem}
 .tc-chip.on{border-color:var(--cta);background:var(--surface-2)}
-.tc-map{height:min(60vh,480px);border-radius:20px;overflow:hidden;border:1px solid var(--line);z-index:0;background:var(--surface-2)}
-.tc-mapsec.full{position:fixed;inset:0;z-index:60;background:var(--bg);margin:0;padding:calc(14px + env(safe-area-inset-top)) 14px 0;display:flex;flex-direction:column}
 .tc-mapsec.full .tc-maphead{display:none}
-.tc-mapsec.full .tc-map{flex:1;height:auto;border-radius:18px 18px 0 0;border-bottom:0}
 .tc-fab{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:70;display:inline-flex;align-items:center;gap:8px;height:46px;padding:0 20px;border-radius:99px;background:var(--cta);color:var(--cta-fg);font-size:.9rem;font-weight:500;box-shadow:0 8px 28px rgba(0,0,0,.28);transition:transform .25s var(--out),background .2s}
 .tc-fab:hover{background:var(--cta-hover)}
 .tc-fab:active{transform:translateX(-50%) scale(.96)}
@@ -51,3 +47,21 @@
 .tt-pin span{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#1d3a31;color:#fff;font:600 13px Inter,sans-serif;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)}
 .tt-pin.tt-land span{width:16px;height:16px;border-radius:4px;background:#a67c37;transform:rotate(45deg)}
 .leaflet-container{font-family:var(--sans)}
+
+/* map: chips float inside the map, top; a full screen button sits in the corner */
+.tc-mapbox{position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--line);background:var(--surface-2)}
+.tc-map{height:min(62vh,500px);z-index:0}
+.tc-chips{position:absolute;z-index:500;top:0;left:0;right:0;display:flex;gap:8px;overflow-x:auto;padding:12px 56px 22px 12px;scrollbar-width:none;
+  background:linear-gradient(to bottom,rgba(0,0,0,.28),rgba(0,0,0,0));pointer-events:none}
+.tc-chips::-webkit-scrollbar{display:none}
+.tc-chips .tc-chip{pointer-events:auto;background:var(--surface);box-shadow:0 2px 10px rgba(0,0,0,.2);border-color:transparent}
+.tc-chips .tc-chip.on{background:var(--cta);color:var(--cta-fg)}
+.tc-chips .tc-chip.on i{background:var(--cta-fg);color:var(--cta)}
+.tc-fs{position:absolute;z-index:501;top:10px;right:10px;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--surface);box-shadow:0 2px 10px rgba(0,0,0,.25)}
+.tc-fs:hover{background:var(--surface-2)}
+.tc-mapsec.full{position:fixed;inset:0;z-index:60;background:var(--bg);margin:0;padding:0;display:block}
+.tc-mapsec.full .tc-maphead{display:none}
+.tc-mapsec.full .tc-mapbox{position:absolute;inset:0;border-radius:0;border:0}
+.tc-mapsec.full .tc-map{height:100%}
+.tc-mapsec.full .tc-chips{padding-top:calc(12px + env(safe-area-inset-top))}
+.tc-mapsec.full .tc-fs{top:calc(10px + env(safe-area-inset-top))}

@@ -28,12 +28,15 @@
   const PIN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.2A7 7 0 0 1 19 9.8C19 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.5"/></svg>';
   const CLOSE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
+  const EXPAND = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+
   function mapSection(qs) {
     const pinned = qs.filter(q => q.lat != null);
     if (!pinned.length) return '';
-    return '<section class="tc-mapsec" id="tcMapSec"><div class="tc-maphead"><h2>Hotels on the map</h2></div>' +
+    return '<section class="tc-mapsec" id="tcMapSec"><div class="tc-maphead"><h2>Hotels on the map</h2></div><div class="tc-mapbox">' +
+      '<div class="tc-map" id="tcMap"></div>' +
       '<div class="tc-chips" id="tcChips">' + pinned.map(q => '<button type="button" class="tc-chip" data-id="' + q.id + '"><i>' + (qs.indexOf(q) + 1) + '</i>' + TT.esc(q.hotel_name) + '</button>').join('') + '</div>' +
-      '<div class="tc-map" id="tcMap"></div></section>';
+      '<button type="button" class="tc-fs" id="tcFs" aria-label="Full screen">' + EXPAND + '</button></div></section>';
   }
 
   function selectChip(id) {
@@ -48,6 +51,8 @@
     fab.innerHTML = (full ? CLOSE + '<span>Close map</span>' : PIN + '<span>Map</span>');
     fab.setAttribute('aria-label', full ? 'Close map' : 'Open map');
     fab.classList.toggle('over', full);
+    TT.$('#tcFs').innerHTML = full ? CLOSE : EXPAND;
+    TT.$('#tcFs').setAttribute('aria-label', full ? 'Exit full screen' : 'Full screen');
     setTimeout(() => map.resize(), 60);
     if (!full) sec.scrollIntoView({ block: 'center' });
   }
@@ -64,7 +69,9 @@
       map = TT.createMap(TT.$('#tcMap'), { onSelect: id => selectChip(id) });
       map.render(qs);
       document.body.insertAdjacentHTML('beforeend', '<button class="tc-fab" id="tcFab" type="button" aria-label="Open map">' + PIN + '<span>Map</span></button>');
-      TT.$('#tcFab').addEventListener('click', () => setFull(!TT.$('#tcMapSec').classList.contains('full')));
+      const toggle = () => setFull(!TT.$('#tcMapSec').classList.contains('full'));
+      TT.$('#tcFab').addEventListener('click', toggle);
+      TT.$('#tcFs').addEventListener('click', toggle);
     }
     const a = TT.$('#navWa');
     if (wa) a.href = 'https://wa.me/' + wa + '?text=' + encodeURIComponent('Hi, about my trip: ' + t.title); else a.hidden = true;

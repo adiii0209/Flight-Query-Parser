@@ -76,8 +76,6 @@
 .t-form input,.t-form select,.q-f input,.q-f textarea,.q-search input,.d-paste textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:.55rem .7rem;font-size:.9rem;background:#fff;color:var(--text)}
 .t-form input:focus,.q-f input:focus,.q-f textarea:focus,.q-search input:focus,.d-paste textarea:focus{outline:2px solid var(--blue);outline-offset:-1px}
 
-@media(max-width:960px){.d-cols{grid-template-columns:1fr}.d-right{position:static;order:-1}.tt-map{height:300px}.d-stats{grid-template-columns:repeat(2,1fr)}.qc-view{grid-template-columns:150px minmax(0,1fr)}.qc-side{grid-column:1/-1;flex-direction:row;align-items:center;justify-content:space-between;text-align:left;padding:0}.qc-btns{margin:0;padding:0}}
-@media(max-width:560px){.qc-view{grid-template-columns:1fr}.qc-media{min-height:170px}.t-fields{grid-template-columns:1fr}.t-find{width:100%}.t-hero .pill{width:100%}}
 
 /* trip detail */
 .d-back{display:inline-flex;align-items:center;gap:.3rem;border:0;background:none;color:var(--mute);font-size:.88rem;font-weight:500;cursor:pointer;padding:.3rem .2rem;margin-bottom:.6rem}
@@ -107,7 +105,8 @@
 .d-chip.on{border-color:var(--text);background:#f5f5f7}
 
 /* hotel quote cards */
-.qc{background:#fff;border:1px solid var(--line);border-radius:20px;margin-bottom:1rem;box-shadow:var(--shadow);overflow:hidden;transition:box-shadow .25s}
+.qc{position:relative;background:#fff;border:1px solid var(--line);border-radius:20px;margin-bottom:1rem;box-shadow:var(--shadow);transition:box-shadow .25s}
+.qc.open{z-index:5}  /* lets the search results drop out of the card instead of being clipped */
 .qc.open{box-shadow:0 2px 4px rgba(0,0,0,.05),0 18px 44px rgba(0,0,0,.1);border-color:rgba(0,0,0,.14)}
 .qc-view{display:grid;grid-template-columns:200px minmax(0,1fr) auto;gap:1.1rem;padding:.9rem}
 .qc-media{position:relative;border-radius:14px;overflow:hidden;background:#e8e8ed;min-height:140px}
@@ -131,7 +130,7 @@
 .ib{display:inline-flex;align-items:center;gap:.3rem;border:1px solid var(--line);background:#fff;border-radius:99px;height:32px;padding:0 .7rem;font-size:.8rem;font-weight:500;cursor:pointer;color:var(--text);transition:background .2s}
 .ib:hover{background:#f0f0f3}
 .ib.danger:hover{background:#fdeaea;color:var(--red)}
-.qc-edit{border-top:1px solid var(--line);padding:.4rem 1.1rem 1.1rem;background:#fbfbfd}
+.qc-edit{border-top:1px solid var(--line);padding:.4rem 1.1rem 1.1rem;background:#fbfbfd;border-radius:0 0 19px 19px}
 .q-sec{padding-top:.9rem}
 .q-sec h4{margin:0 0 .55rem;font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--mute);display:flex;gap:.6rem;align-items:center}
 .q-sec h4 em,.q-f em{font-style:normal;text-transform:none;letter-spacing:0;font-weight:400;color:var(--faint)}
@@ -148,7 +147,7 @@
 .q-ph img{height:76px;width:110px;object-fit:cover;border-radius:10px;background:#eee}
 .q-ph button{position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;border:0;background:rgba(0,0,0,.62);color:#fff;font-size:13px;line-height:1;cursor:pointer}
 .q-search{position:relative;margin-bottom:.4rem}
-.q-res{position:absolute;left:0;right:0;top:100%;z-index:20;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.16);max-height:260px;overflow:auto;margin-top:4px}
+.q-res{position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.16);max-height:260px;overflow:auto;margin-top:4px}
 .q-res button{display:block;width:100%;text-align:left;border:0;background:none;padding:.55rem .8rem;cursor:pointer}
 .q-res button:hover{background:#f5f5f7}
 .q-res small{display:block;color:var(--mute);font-size:.75rem}
@@ -190,3 +189,7 @@
 .q-addph{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-top:.6rem}
 .q-addph input[type=url]{flex:1;min-width:180px;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;font-size:.85rem;background:#fff}
 .q-addph .ib{cursor:pointer}
+
+/* responsive (kept last so it overrides the rules above) */
+@media(max-width:960px){.d-cols{grid-template-columns:1fr}.d-right{position:static;order:-1}.tt-map{height:300px}.d-stats{grid-template-columns:repeat(2,1fr)}.qc-view{grid-template-columns:150px minmax(0,1fr)}.qc-side{grid-column:1/-1;flex-direction:row;align-items:center;justify-content:space-between;text-align:left;padding:0}.qc-btns{margin:0;padding:0}}
+@media(max-width:560px){.qc-view{grid-template-columns:1fr}.qc-media{min-height:170px}.t-fields{grid-template-columns:1fr}.t-find{width:100%}.t-hero .pill{width:100%}}
