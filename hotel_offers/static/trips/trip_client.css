@@ -23,7 +23,7 @@
 .tc-strip img{flex:0 0 100%;width:100%;height:100%;object-fit:cover;scroll-snap-align:center}
 .tc-count{position:absolute;right:12px;bottom:12px;background:rgba(0,0,0,.55);color:#fff;font-size:.74rem;padding:3px 10px;border-radius:99px;backdrop-filter:blur(6px)}
 .tc-ph-none{display:grid;place-items:center}
-.tc-ph-none span{font-family:var(--serif);font-size:4rem;color:var(--faint)}
+.tc-ph-l{font-family:var(--serif);font-size:4rem;color:var(--faint)}
 .tc-body{padding:18px 20px 20px;display:flex;flex-direction:column;gap:12px;flex:1}
 .tc-top{display:flex;gap:12px;align-items:flex-start}
 .tc-n{flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:var(--cta);color:var(--cta-fg);display:grid;place-items:center;font-size:.82rem;font-weight:600;margin-top:3px}
@@ -119,30 +119,46 @@
 .cc-hotel{margin-top:6px;font-size:.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cc-hotel i{font-style:normal;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--gold);margin-right:7px}
 .cc-price{padding:18px 22px;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:2px;text-align:right}
-.cc-price small{color:var(--mute);font-size:.76rem}
 .cc-price b{font-family:var(--serif);font-weight:500;font-size:1.7rem;line-height:1.1}
-.cc-go{display:inline-flex;align-items:center;gap:4px;margin-top:8px;font-size:.84rem;font-weight:500;color:var(--gold)}
 .cc-chev{transform:rotate(-90deg);width:16px;height:16px}
 
 /* a city's page */
-.cp-bar{padding:14px 0 4px}
-.cp-back{display:inline-flex;align-items:center;gap:4px;height:38px;padding:0 14px 0 8px;border-radius:99px;background:var(--surface-2);font-size:.88rem;font-weight:500}
-.cp-head{display:flex;align-items:center;gap:14px;padding:14px 0 18px}
-.cp-title{flex:1;min-width:0}
-.cp-title h1{font-family:var(--serif);font-weight:500;font-size:clamp(1.8rem,5.5vw,2.6rem);line-height:1.1;letter-spacing:-.02em}
-.cp-title p{color:var(--mute);font-size:.92rem;margin-top:2px}
-.cp-total{text-align:right;flex:0 0 auto}
-.cp-total small{display:block;color:var(--mute);font-size:.76rem;text-transform:uppercase;letter-spacing:.07em}
-.cp-total b{font-family:var(--serif);font-weight:500;font-size:clamp(1.5rem,5vw,2.1rem);line-height:1.1}
 .cp-opts{display:grid;gap:20px;grid-template-columns:repeat(auto-fill,minmax(min(100%,400px),1fr));margin-top:16px}
-.cp-done{display:flex;justify-content:center;align-items:center;height:48px;margin:26px auto 8px;max-width:340px;border-radius:99px;background:var(--cta);color:var(--cta-fg);font-weight:500}
-body.in-city .tc-mapsec:not(.full),body.in-city .tc-fab:not(.over),body.in-city #tcNote{display:none}
+body.in-city .tc-mapsec:not(.full),body.in-city .tc-fab:not(.over),body.in-city #tcNote,body.in-city .nav{display:none}
 @media(max-width:620px){
   .cc{grid-template-columns:1fr auto}
   .cc-media{grid-column:1/-1;min-height:160px}
   .cc-body{padding:14px 0 16px 18px}
   .cc-price{padding:14px 18px 16px 8px}
-  .cc-go span,.cc-go{font-size:.8rem}
-}
+  .cc-go span,}
 
 .cp-opts .tc-card.is-sel{border-color:var(--cta);box-shadow:0 0 0 1px var(--cta)}
+
+/* the trip total rows must shrink instead of widening the page */
+.tc-sum li{min-width:0}
+.tc-sum li span{flex:1 1 auto;min-width:0}
+.tc-sum li em{font-style:normal;flex:0 0 auto}
+.tc-sum li small{flex:1 1 auto;min-width:0}
+.tc-sum li b{flex:0 0 auto}
+
+/* city page: a compact bar replaces the site navigation */
+.cp-bar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:12px;margin:0 -20px;padding:calc(10px + env(safe-area-inset-top)) 20px 10px;background:var(--bg-glass);-webkit-backdrop-filter:saturate(180%) blur(22px);backdrop-filter:saturate(180%) blur(22px);border-bottom:1px solid var(--line)}
+.cp-back{flex:0 0 auto;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2)}
+.cp-mid{flex:1;min-width:0}
+.cp-mid h1{font-family:var(--serif);font-weight:500;font-size:1.25rem;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cp-mid p{color:var(--mute);font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cp-amt{flex:0 0 auto;font-size:1.05rem;font-weight:600}
+.cp-opts{margin-top:18px}
+.cc-price{flex-direction:row;align-items:center;gap:6px}
+.cc-chev{transform:rotate(-90deg);color:var(--faint)}
+
+/* badges on a hotel photo */
+.tc-ph-none{position:relative}
+.co-rec{position:absolute;z-index:2;top:12px;left:12px;background:var(--gold);color:#fff;font-size:.72rem;font-weight:600;letter-spacing:.02em;padding:4px 10px;border-radius:99px;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.co-sel{position:absolute;z-index:2;top:10px;right:10px;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--cta);color:var(--cta-fg);box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.co-sel svg{width:16px;height:16px}
+
+.tc-pin{flex:0 0 auto;white-space:nowrap}
+.tc-price{min-width:0}
+
+@media(max-width:520px){.co-room .tc-facts{grid-template-columns:1fr}.co-room .tc-facts div:nth-child(n+5){grid-column:auto}}
