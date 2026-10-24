@@ -20,7 +20,7 @@
     const timers = {};
 
     // ---- summary row (re-rendered on every keystroke; the editor below it is left alone so focus is kept)
-    function summary(q, n) {
+    function summary(q, n) {  // n: the number of the city card this quote belongs to
       const cur = opts.currency();
       const out = q.date && q.nights ? TT.addDays(q.date, q.nights) : '';
       const media = q.photos && q.photos.length
@@ -69,15 +69,41 @@
         '<div class="qc-edit"' + (open.has(q.id) ? '' : ' hidden') + '>' + (open.has(q.id) ? editor(q) : '') + '</div></article>';
     }
 
+    const numById = {};
+    const sel = () => (opts.selection ? opts.selection() : {});
+    const nightsLabel = n => n + ' night' + (n === 1 ? '' : 's');
+
     function render() {
-      root.innerHTML = quotes.length ? quotes.map((q, i) => card(q, i + 1)).join('') :
+      const groups = TT.groupQuotes(quotes, sel());
+      Object.keys(numById).forEach(k => delete numById[k]);
+      groups.forEach((g, gi) => g.options.forEach(o => o.lines.forEach(l => { numById[l.id] = gi + 1; })));
+      root.innerHTML = groups.length ? groups.map((g, gi) => groupHtml(g, gi)).join('') :
         '<div class="t-empty"><b>No hotel quotes yet</b><p>Use <em>Add quotes</em> to paste a quotation, or add a blank one and fill it in.</p></div>';
+    }
+
+    function groupHtml(g, gi) {
+      const dates = g.date ? TT.date(g.date) + (g.checkout ? ' → ' + TT.date(g.checkout) : '') : 'No dates';
+      const multi = g.options.length > 1;
+      return '<section class="qg" data-g="' + TT.esc(g.key) + '"><header class="qg-head"><span class="qg-n">' + (gi + 1) + '</span>' +
+        '<div><h2>' + TT.esc(g.city || 'No city') + '</h2><p>' + TT.esc(dates) + (g.nights ? ' · ' + nightsLabel(g.nights) : '') + ' · ' + g.options.length + (multi ? ' options' : ' option') + '</p></div>' +
+        '<div class="qg-total"><small>' + (multi ? 'Selected' : 'Total') + '</small><b>' + TT.money(g.selectedOption.total, opts.currency()) + '</b></div></header>' +
+        g.options.map((o, oi) => optionHtml(g, o, oi, multi)).join('') + '</section>';
+    }
+
+    function optionHtml(g, o, oi, multi) {
+      const isSel = o.key === g.selected;
+      const badge = !multi ? '' : isSel ? '<span class="badge">' + (g.explicit ? 'Guest picked' : 'Default') + '</span>' : '';
+      const head = multi ? '<div class="qo-head"><span class="qo-tag">Option ' + (oi + 1) + '</span><b>' + TT.esc(o.hotel_name || 'Hotel') + '</b>' + badge +
+        (o.lines.length > 1 ? '<span class="qo-rooms">' + o.lines.length + ' rooms</span>' : '') + '<span class="spacer"></span>' +
+        '<span class="qo-total">' + TT.money(o.total, opts.currency()) + '</span>' +
+        (oi > 0 ? '<button type="button" class="ib" data-act="make-default" data-opt="' + TT.esc(o.key) + '">Make first</button>' : '') + '</div>' : '';
+      return '<div class="qo' + (multi ? ' multi' : '') + (isSel && multi ? ' is-sel' : '') + '">' + head + o.lines.map(l => card(l, numById[l.id])).join('') + '</div>';
     }
 
     const byId = id => quotes.find(q => q.id === +id);
     const cardOf = el => el.closest('.qc');
     const idOf = el => +cardOf(el).dataset.id;
-    const refreshSummary = q => { const c = root.querySelector('.qc[data-id="' + q.id + '"] .qc-view'); if (c) c.innerHTML = summary(q, quotes.indexOf(q) + 1); };
+    const refreshSummary = q => { const c = root.querySelector('.qc[data-id="' + q.id + '"] .qc-view'); if (c) c.innerHTML = summary(q, numById[q.id]); };
 
     function save(q) {
       clearTimeout(timers[q.id]);
@@ -97,12 +123,16 @@
       if (k === 'nights' || k === 'rooms' || k === 'items' || k === 'cost_per_item') set('total', Math.round((q.items || 0) * (q.cost_per_item || 0)));
       if (k === 'date' && q.date) q.day = new Date(q.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' });
       refreshSummary(q); save(q);
+      if (['city', 'date', 'nights', 'hotel_name'].includes(k)) regroup = true;
     });
+    let regroup = false;
+    root.addEventListener('change', e => { if (regroup && e.target.dataset.k) { regroup = false; render(); } });
 
     root.addEventListener('click', async e => {
       const btn = e.target.closest('[data-act]');
       if (btn) {
         e.stopPropagation();  // the page-level handler also listens for data-act clicks
+        if (btn.dataset.act === 'make-default') { await makeFirst(btn.closest('.qg').dataset.g, btn.dataset.opt); return; }  // lives in the option header, outside any quote card
         const q = byId(idOf(btn)), act = btn.dataset.act;
         if (act === 'edit') {
           open.has(q.id) ? open.delete(q.id) : open.add(q.id);
@@ -130,6 +160,19 @@
         rerenderEditor(q); save(q); opts.onFocus(q.id);
       }
     });
+
+    // put an option (all its room lines) first in its city: the first option is the one guests see selected
+    async function makeFirst(groupKey, optKey) {
+      const g = TT.groupQuotes(quotes, sel()).find(x => x.key === groupKey);
+      if (!g) return;
+      const lines = g.options.find(o => o.key === optKey).lines, inGroup = new Set(g.options.flatMap(o => o.lines));
+      const at = quotes.findIndex(q => inGroup.has(q));
+      const rest = quotes.filter(q => !lines.includes(q));
+      rest.splice(rest.findIndex(q => inGroup.has(q)) < 0 ? at : rest.findIndex(q => inGroup.has(q)), 0, ...lines);
+      quotes = rest; quotes.forEach((q, i) => { q.position = i; });
+      render(); opts.onChange(quotes);
+      try { await TT.api('/api/hotel-offers/trips/' + opts.tripId() + '/order', { method: 'POST', json: { ids: quotes.map(q => q.id) } }); } catch (err) { TT.toast(err.message, 'err'); }
+    }
 
     // ---- hand-added photos: device upload, clipboard paste, drag-and-drop, or an image link
     async function addPhoto(q, source) {

@@ -10,7 +10,7 @@ from flask import Response, jsonify, render_template, request, session
 from extensions import db
 from routes.auth import login_required
 
-from . import settings, trip_photos, trip_places
+from . import settings, trip_groups, trip_photos, trip_places
 from .common import public_base
 from .models import HotelOfferLead, HotelQuote, HotelTrip, HotelTripPhoto
 from .routes import _err, _org, hotel_offers_bp as bp
@@ -98,7 +98,8 @@ def trip_url(trip):
 
 def _trip_payload(trip):
     quotes = [q.to_dict() for q in _quotes(trip.id)]
-    out = trip.to_dict(quote_count=len(quotes), total=sum(q.get("total") or 0 for q in quotes))
+    groups = trip_groups.group_quotes(quotes, trip.selection_map())
+    out = trip.to_dict(quote_count=len(groups), total=trip_groups.selected_total(groups))  # the total counts the selected option per city
     out["share_url"], out["quotes"] = trip_url(trip), quotes
     return out
 
@@ -196,26 +197,22 @@ def lead_to_trip(lead_id):
 @login_required
 def list_trips():
     rows = HotelTrip.query.filter_by(organization_id=_org()).order_by(HotelTrip.updated_at.desc()).limit(200).all()
-    stats = {}
-    for tid, data in (db.session.query(HotelQuote.trip_id, HotelQuote.data).filter(HotelQuote.organization_id == _org())
-                      .order_by(HotelQuote.position, HotelQuote.id).all()):
+    by_trip = {}
+    for tid, data, qid in (db.session.query(HotelQuote.trip_id, HotelQuote.data, HotelQuote.id).filter(HotelQuote.organization_id == _org())
+                           .order_by(HotelQuote.position, HotelQuote.id).all()):
         try:
-            d = json.loads(data)
+            q = json.loads(data)
         except ValueError:
-            d = {}
-        st = stats.setdefault(tid, {"n": 0, "total": 0, "cities": [], "cover": ""})
-        st["n"] += 1
-        st["total"] += d.get("total") or 0
-        city = (d.get("city") or "").strip()
-        if city and city not in st["cities"]:
-            st["cities"].append(city)
-        if not st["cover"] and d.get("photos"):
-            st["cover"] = d["photos"][0]
+            q = {}
+        q["id"] = qid
+        by_trip.setdefault(tid, []).append(q)
     out = []
     for r in rows:
-        st = stats.get(r.id, {"n": 0, "total": 0, "cities": [], "cover": ""})
-        item = r.to_dict(st["n"], st["total"])
-        item["cities"], item["cover"] = st["cities"][:6], st["cover"]
+        quotes = by_trip.get(r.id, [])
+        groups = trip_groups.group_quotes(quotes, r.selection_map())
+        item = r.to_dict(len(groups), trip_groups.selected_total(groups))
+        item["cities"] = list(dict.fromkeys((q.get("city") or "").strip() for q in quotes if (q.get("city") or "").strip()))[:6]
+        item["cover"] = next((q["photos"][0] for q in quotes if q.get("photos")), "")
         out.append(item)
     return jsonify({"trips": out})
 
@@ -328,6 +325,22 @@ def add_quote(trip_id):
 
 def _quote(quote_id):
     return HotelQuote.query.filter_by(id=quote_id, organization_id=_org()).first()
+
+
+@bp.route("/api/hotel-offers/trips/<int:trip_id>/order", methods=["POST"])
+@login_required
+def reorder_quotes(trip_id):
+    """Sets the order of a trip's quotes. The first option in a city is the default the guest sees selected."""
+    trip = _trip(trip_id)
+    if not trip:
+        return _err("Not found", 404)
+    ids = [i for i in ((request.get_json(silent=True) or {}).get("ids") or []) if isinstance(i, int)]
+    rows = {r.id: r for r in HotelQuote.query.filter(HotelQuote.trip_id == trip.id, HotelQuote.id.in_(ids or [0])).all()}
+    for pos, qid in enumerate(i for i in ids if i in rows):
+        rows[qid].position = pos
+    trip.updated_at = db.func.now()
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 @bp.route("/api/hotel-offers/quotes/<int:quote_id>", methods=["PUT"])

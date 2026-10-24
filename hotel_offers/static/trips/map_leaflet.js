@@ -24,7 +24,7 @@
         if (q.lat == null || q.lng == null) return;
         const p = [q.lat, q.lng];
         pts.push(p);
-        const m = L.marker(p, { icon: hotelIcon(i + 1), title: q.hotel_name }).addTo(layer);
+        const m = L.marker(p, { icon: hotelIcon(q.num || i + 1), title: q.hotel_name }).addTo(layer);
         m.bindPopup('<b>' + TT.esc(q.hotel_name) + '</b><br>' + TT.esc(q.city || ''));
         m.on('click', () => opts.onSelect && opts.onSelect(q.id));
         pins[q.id] = m;

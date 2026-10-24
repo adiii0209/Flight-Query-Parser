@@ -21,7 +21,7 @@
         '<section class="d-stats" id="dStats"></section>' +
         '<div class="d-cols"><div class="d-left" id="qList"></div><aside class="d-right"><div class="d-mapcard"><div id="tripMap" class="tt-map"></div><div class="d-chips" id="dChips"></div></div></aside></div>';
       qm = TT.quotes.mount($('#qList', root), {
-        currency: () => trip.currency, onChange: onQuotes,
+        currency: () => trip.currency, onChange: onQuotes, selection: () => trip.selection || {}, tripId: () => trip.id,
         onFocus: id => { map.focus(id); selectChip(id); if (matchMedia('(max-width:960px)').matches) $('#tripMap', root).scrollIntoView({ block: 'center', behavior: 'smooth' }); },
       });
       map = TT.createMap($('#tripMap', root), { onSelect: id => { selectChip(id); const c = $('.qc[data-id="' + id + '"]', root); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'center' }); } });
@@ -30,14 +30,15 @@
     function selectChip(id) { TT.$$('.d-chip', root).forEach(c => c.classList.toggle('on', +c.dataset.id === id)); }
 
     function onQuotes(list) {
-      const nights = list.reduce((s, q) => s + (q.nights || 0), 0), total = list.reduce((s, q) => s + (q.total || 0), 0);
-      const cities = new Set(list.map(q => (q.city || '').trim()).filter(Boolean));
+      const groups = TT.groupQuotes(list, trip.selection), total = TT.groupsTotal(groups), nights = groups.reduce((s, g) => s + g.nights, 0);
+      const cities = new Set(groups.map(g => (g.city || '').trim().toLowerCase()).filter(Boolean));
       const stat = (v, l) => '<div class="stat"><b>' + v + '</b><span>' + l + '</span></div>';
-      $('#dStats', root).innerHTML = stat(list.length, list.length === 1 ? 'Hotel' : 'Hotels') + stat(cities.size, cities.size === 1 ? 'City' : 'Cities') +
-        stat(nights, nights === 1 ? 'Night' : 'Nights') + stat(TT.money(total, trip.currency), 'Total');
-      $('#dChips', root).innerHTML = list.filter(q => q.lat != null).map(q =>
-        '<button type="button" class="d-chip" data-id="' + q.id + '"><i>' + (list.indexOf(q) + 1) + '</i>' + TT.esc(q.hotel_name || 'Hotel') + '</button>').join('');
-      map.render(list);
+      $('#dStats', root).innerHTML = stat(groups.length, groups.length === 1 ? 'Stay' : 'Stays') + stat(cities.size, cities.size === 1 ? 'City' : 'Cities') +
+        stat(nights, nights === 1 ? 'Night' : 'Nights') + stat(TT.money(total, trip.currency), 'Total (selected)');
+      const pins = TT.groupPins(groups);
+      $('#dChips', root).innerHTML = pins.map(q =>
+        '<button type="button" class="d-chip" data-id="' + q.id + '"><i>' + q.num + '</i>' + TT.esc(q.hotel_name || 'Hotel') + '</button>').join('');
+      map.render(pins);
     }
 
     function fillHead() {

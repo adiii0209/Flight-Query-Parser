@@ -65,3 +65,50 @@
 .tc-mapsec.full .tc-map{height:100%}
 .tc-mapsec.full .tc-chips{padding-top:calc(12px + env(safe-area-inset-top))}
 .tc-mapsec.full .tc-fs{top:calc(10px + env(safe-area-inset-top))}
+
+/* city cards: one per city and dates, opening to the hotel options */
+.tc-help{margin-top:14px;color:var(--mute);font-size:.92rem;background:var(--surface-2);border-radius:14px;padding:10px 14px;max-width:640px}
+.tc-help b{color:var(--text)}
+.cg-list{display:grid;gap:14px}
+.cg{background:var(--surface);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 1px 2px rgba(20,20,10,.04),0 14px 40px rgba(20,20,10,.07)}
+.cg-head{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:18px 20px}
+.cg-n{flex:0 0 auto;width:34px;height:34px;border-radius:50%;background:var(--cta);color:var(--cta-fg);display:grid;place-items:center;font-size:.9rem;font-weight:600}
+.cg-title{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cg-title h2{font-family:var(--serif);font-weight:500;font-size:1.5rem;line-height:1.15;letter-spacing:-.01em}
+.cg-sub{color:var(--mute);font-size:.88rem}
+.cg-pick{font-size:.9rem;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cg-pick i{font-style:normal;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--gold);margin-right:7px}
+.cg-right{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:1px}
+.cg-right small{color:var(--mute);font-size:.76rem}
+.cg-right b{font-family:var(--serif);font-weight:500;font-size:1.5rem;line-height:1.1}
+.cg-chev{flex:0 0 auto;color:var(--faint);transition:transform .3s var(--out)}
+.cg.open .cg-chev{transform:rotate(180deg)}
+.cg-body{display:none;padding:0 14px 16px}
+.cg.open .cg-body{display:block}
+.cg-opts{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(min(100%,400px),1fr))}
+.co{border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--surface);display:flex;flex-direction:column;transition:border-color .2s,box-shadow .2s}
+.co.is-sel{border-color:var(--cta);box-shadow:0 0 0 1px var(--cta)}
+.co-body{padding:16px 18px 18px;display:flex;flex-direction:column;gap:12px;flex:1}
+.co-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.co-top h3{font-family:var(--serif);font-weight:500;font-size:1.3rem;line-height:1.2}
+.co-pick{flex:0 0 auto;height:38px;padding:0 16px;border-radius:99px;border:1.5px solid var(--cta);color:var(--cta);font-weight:500;font-size:.86rem;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;transition:background .2s,color .2s}
+.co-pick:hover{background:var(--surface-2)}
+.co-pick.on{background:var(--cta);color:var(--cta-fg)}
+.co-lines{display:grid;gap:8px}
+.co-line{display:flex;justify-content:space-between;gap:12px;background:var(--surface-2);border-radius:12px;padding:10px 12px}
+.co-lmain{display:flex;flex-direction:column;gap:2px;font-size:.88rem;min-width:0}
+.co-lmain span{color:var(--mute)}
+.co-lmain em{font-style:normal;color:var(--ok);font-size:.78rem}
+.co-lprice{text-align:right;flex-shrink:0}
+.co-lprice b{display:block;font-size:1rem}
+.co-lprice small{color:var(--mute);font-size:.74rem}
+.tc-sum{display:block;padding:20px 22px}
+.tc-sum-head{display:flex;justify-content:space-between;align-items:baseline}
+.tc-sum ul{list-style:none;margin:14px 0 0;padding:14px 0 0;border-top:1px solid rgba(255,255,255,.18);display:grid;gap:8px}
+.tc-sum li{display:flex;justify-content:space-between;gap:12px;font-size:.92rem}
+.tc-sum li span{display:flex;align-items:baseline;gap:8px;min-width:0}
+.tc-sum li i{font-style:normal;opacity:.7;font-size:.8rem}
+.tc-sum li small{opacity:.65;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tc-sum li b{font-family:var(--sans);font-weight:500;font-size:.95rem;font-size:.95rem}
+.tc-sum p{margin:14px 0 0;opacity:.65;font-size:.8rem}
+@media(max-width:520px){.cg-head{padding:16px 14px;gap:10px}.cg-title h2{font-size:1.3rem}.cg-right b{font-size:1.25rem}.cg-body{padding:0 10px 12px}}

@@ -4,14 +4,22 @@ import hashlib
 from flask import Blueprint, Response, abort, jsonify, render_template
 import requests
 
-from . import photos, settings
+import json
+import time
+from collections import defaultdict, deque
+
+from flask import request
+
+from extensions import db
+
+from . import photos, settings, trip_groups
 from .common import ensure_tables, org_slug, public_base
 from .models import HotelQuote, HotelTrip, HotelTripPhoto
 
 trips_public_bp = bp = Blueprint("hotel_trips_public", __name__, template_folder="templates", static_folder="static", static_url_path="/trips-static")
 
 # fields the client may see; internal notes, place ids and the agent's remarks stay private
-PUBLIC_FIELDS = ("date", "day", "nights", "city", "hotel_name", "guests", "cancellation", "meal_plan", "room", "room_size",
+PUBLIC_FIELDS = ("date", "day", "nights", "city", "hotel_name", "guests", "guest_name", "cancellation", "meal_plan", "room", "room_size",
                  "rooms", "items", "cost_per_item", "total", "nutshell", "address", "lat", "lng", "landmarks")
 
 
@@ -54,7 +62,8 @@ def trip_data(slug):
         "title": trip.title, "client_name": trip.client_name, "destination": trip.destination, "currency": trip.currency,
         "start_date": trip.start_date.isoformat() if trip.start_date else None,
         "end_date": trip.end_date.isoformat() if trip.end_date else None,
-        "total": sum(q["total"] or 0 for q in quotes)}, "quotes": quotes})
+        "total": trip_groups.selected_total(trip_groups.group_quotes([r.to_dict() for r in rows], trip.selection_map()))},
+        "quotes": quotes, "selection": trip.selection_map()})
     resp.headers["Cache-Control"] = "no-cache"
     return resp
 
@@ -78,3 +87,31 @@ def trip_photo(quote_id, index):
     except (ValueError, requests.RequestException):
         abort(404)
     return Response(body, content_type=ctype, headers={"Cache-Control": "public, max-age=86400"})
+
+
+_hits = defaultdict(deque)  # ip -> recent selection timestamps (per worker; enough to blunt casual abuse)
+
+
+@bp.route("/api/public/trips/<slug>/select", methods=["POST"])
+def trip_select(slug):
+    """The guest picks one option for a city. Saved on the trip so the agent sees it; anyone with the link shares it."""
+    trip = _shared_trip(slug)
+    ip = (request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0]).strip()
+    now, q = time.time(), _hits[ip]
+    while q and now - q[0] > 600:
+        q.popleft()
+    if len(q) >= 60:
+        return jsonify({"error": "Too many changes. Please try again in a few minutes."}), 429
+    q.append(now)
+    body = request.get_json(silent=True) or {}
+    rows = HotelQuote.query.filter_by(trip_id=trip.id).order_by(HotelQuote.position, HotelQuote.id).all()
+    groups = trip_groups.group_quotes([r.to_dict() for r in rows], trip.selection_map())
+    group = next((g for g in groups if g["key"] == body.get("group")), None)
+    if group is None or not any(o["key"] == body.get("option") for o in group["options"]):
+        return jsonify({"error": "That option is no longer available. Please refresh the page."}), 409
+    selection = trip.selection_map()
+    selection[group["key"]] = body["option"]
+    trip.selection = json.dumps({g["key"]: selection[g["key"]] for g in groups if g["key"] in selection})
+    db.session.commit()
+    groups = trip_groups.group_quotes([r.to_dict() for r in rows], json.loads(trip.selection))
+    return jsonify({"selection": json.loads(trip.selection), "total": trip_groups.selected_total(groups)})

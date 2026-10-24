@@ -32,6 +32,9 @@ def ensure_tables():
         if col not in have:
             with db.engine.begin() as conn:
                 conn.execute(text(f"ALTER TABLE hotel_offer_lead ADD COLUMN {col} DATE"))
+    if "selection" not in {c["name"] for c in inspect(db.engine).get_columns("hotel_trip")}:
+        with db.engine.begin() as conn:
+            conn.execute(text("ALTER TABLE hotel_trip ADD COLUMN selection TEXT"))
     _tables_ready = True
 
 

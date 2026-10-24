@@ -118,8 +118,16 @@ class HotelTrip(db.Model):
     currency = db.Column(db.String(8), nullable=False, default="INR")
     share_slug = db.Column(db.String(40), nullable=True, unique=True, index=True)
     is_shared = db.Column(db.Boolean, nullable=False, default=False)
+    selection = db.Column(db.Text, nullable=True)  # JSON {group key: option key} chosen by the guest on the shared page
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def selection_map(self):
+        try:
+            data = json.loads(self.selection or "{}")
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
 
     def to_dict(self, quote_count=None, total=None):
         out = {
@@ -127,7 +135,7 @@ class HotelTrip(db.Model):
             "client_phone": self.client_phone, "destination": self.destination,
             "start_date": self.start_date.isoformat() if self.start_date else None,
             "end_date": self.end_date.isoformat() if self.end_date else None,
-            "notes": self.notes, "currency": self.currency, "is_shared": bool(self.is_shared), "share_slug": self.share_slug,
+            "notes": self.notes, "currency": self.currency, "is_shared": bool(self.is_shared), "share_slug": self.share_slug, "selection": self.selection_map(),
             "updated_at": self.updated_at.isoformat() + "Z" if self.updated_at else None,
         }
         if quote_count is not None:
