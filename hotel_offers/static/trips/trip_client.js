@@ -29,11 +29,29 @@
   const lineFacts = l => [['Guests', [l.guests, l.guest_name].filter(Boolean).join(' · ')], ['Meal plan', l.meal_plan], ['Room', [l.room, l.room_size].filter(Boolean).join(' · ')], ['Cancellation', l.cancellation]];
   const rateText = l => plural(TT.roomsOf(l), 'room') + ' × ' + plural(l.nights || 0, 'night') + ' × ' + TT.money(l.cost_per_item, cur());
 
+  const PINICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.2A7 7 0 0 1 19 9.8C19 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.5"/></svg>';
+  const roomDesc = l => (l.room_desc ? '<p class="tc-roomdesc">' + TT.esc(l.room_desc) + '</p>' : '');
+
+  // star class, style and age: small chips under the hotel name; nothing is drawn for what is empty
+  function factsRow(stars, style, age) {
+    const parts = [];
+    if (stars) parts.push('<span class="tc-chipx tc-starsrow" aria-label="' + stars + '-star hotel"><span aria-hidden="true">' + '★'.repeat(stars) + '</span></span>');
+    if (style) parts.push('<span class="tc-chipx">' + TT.esc(style) + '</span>');
+    if (age) parts.push('<span class="tc-chipx">' + TT.esc(age) + '</span>');
+    return parts.length ? '<div class="tc-chiprow">' + parts.join('') + '</div>' : '';
+  }
+
+  // perks look like the ones on the offer posters: a line icon and a short upper-case label
+  function perksHtml(perks) {
+    if (!perks.length) return '';
+    return '<ul class="tc-perks">' + perks.map(p => '<li><span class="pk-ic">' + TT.perkIcon(p.icon) + '</span><span class="pk-tx">' + TT.esc(p.label) + '</span></li>').join('') + '</ul>';
+  }
+
   // Google rating (opens the reviews on Google Maps) and the hotel's own website
   const safeUrl = u => (/^https?:\/\/[^\s<>"']+$/.test(u || '') ? u : '');
   function linksHtml(i) {
     const maps = safeUrl(i.maps_url), site = safeUrl(i.website);
-    const rate = i.rating ? '<b>' + i.rating.toFixed(1) + '</b><span class="tc-stars" aria-hidden="true">★</span>' + (i.rating_count ? '<small>' + i.rating_count.toLocaleString('en-IN') + ' reviews</small>' : '') : '';
+    const rate = (i.rating ? '<b>' + i.rating.toFixed(1) + '</b><span class="tc-stars" aria-hidden="true">★</span>' : '') + (i.rating_count ? '<small>' + i.rating_count.toLocaleString('en-IN') + ' reviews</small>' : '');
     const parts = [];
     if (rate) parts.push(maps ? '<a class="tc-link" href="' + TT.esc(maps) + '" target="_blank" rel="noopener noreferrer" aria-label="Google reviews">' + rate + '<em>Google</em></a>' : '<span class="tc-link">' + rate + '<em>Google</em></span>');
     if (site) parts.push('<a class="tc-link" href="' + TT.esc(site) + '" target="_blank" rel="noopener noreferrer">Hotel website<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></a>');
@@ -46,16 +64,19 @@
     const first = o.lines[0], located = o.lines.find(l => l.lat != null), many = o.lines.length > 1;
     const nut = (o.lines.find(l => l.nutshell) || {}).nutshell;
     const near = (o.lines.find(l => (l.landmarks || []).length) || { landmarks: [] }).landmarks;
-    const info = o.lines.find(l => l.rating || l.website) || {};
+    const info = o.lines.find(l => l.rating || l.rating_count || l.website) || {};
+    const hv = key => (o.lines.find(l => l[key]) || {})[key] || '';  // hotel-level details come from the first room that has them
+    const perks = (o.lines.find(l => (l.perks || []).length) || { perks: [] }).perks;
     const stay = [['Check-in', g.date ? (first.day ? first.day + ', ' : '') + TT.date(g.date) : ''], ['Check-out', g.checkout ? TT.date(g.checkout) : '']];
     const pick = multi && !isSel ? '<button type="button" class="co-pick" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">Select</button>' : '';
     const badges = multi ? (g.options[0] === o ? '<span class="co-rec">Recommended</span>' : '') + (isSel ? '<span class="co-sel" title="Selected" role="img" aria-label="Selected">' + CHECK + '</span>' : '') : '';
     const details = many
-      ? factsHtml(stay) + o.lines.map((l, i) => '<div class="co-room"><div class="co-room-h"><b>Room ' + (i + 1) + '</b><span>' + TT.money(l.total, cur()) + '</span></div>' + factsHtml(lineFacts(l)) + '<small>' + rateText(l) + '</small></div>').join('')
-      : factsHtml(stay.concat(lineFacts(first)));
+      ? factsHtml(stay) + o.lines.map((l, i) => '<div class="co-room"><div class="co-room-h"><b>Room ' + (i + 1) + '</b><span>' + TT.money(l.total, cur()) + '</span></div>' + factsHtml(lineFacts(l)) + roomDesc(l) + '<small>' + rateText(l) + '</small></div>').join('')
+      : factsHtml(stay.concat(lineFacts(first))) + roomDesc(first);
     return '<article class="tc-card co' + (isSel && multi ? ' is-sel' : '') + '">' + gallery(o, badges) + '<div class="tc-body"><div class="tc-top"><div><h2>' + TT.esc(o.hotel_name || first.hotel_name) + '</h2>' +
-      (first.address ? '<p class="tc-sub">' + TT.esc(first.address) + '</p>' : '') + '</div>' + pick + '</div>' +
-      (nut ? '<p class="tc-nut">' + TT.esc(nut).replace(/\n/g, '<br>') + '</p>' : '') + details +
+      (first.address ? '<p class="tc-sub">' + TT.esc(first.address) + '</p>' : '') + '</div>' + pick + '</div>' + factsRow(hv('stars'), hv('style'), hv('age_info')) +
+      (hv('location_info') ? '<p class="tc-loc">' + PINICON + '<span>' + TT.esc(hv('location_info')) + '</span></p>' : '') +
+      (nut ? '<p class="tc-nut">' + TT.esc(nut).replace(/\n/g, '<br>') + '</p>' : '') + perksHtml(perks) + details +
       linksHtml(info) +
       (near.length ? '<p class="tc-near"><b>Nearby:</b> ' + near.map(l => TT.esc(l.name)).join(' · ') + '</p>' : '') +
       '<div class="tc-foot"><div class="tc-price"><small>' + (many ? 'Total for ' + plural(o.lines.length, 'room') : first.items > 1 ? rateText(first) : 'Stay total') + '</small><b>' + TT.money(o.total, cur()) + '</b></div>' +

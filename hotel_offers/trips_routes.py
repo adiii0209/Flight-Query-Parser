@@ -14,6 +14,7 @@ from . import settings, trip_groups, trip_photos, trip_places
 from .common import public_base
 from .models import HotelOfferLead, HotelQuote, HotelTrip, HotelTripPhoto
 from .routes import _err, _org, hotel_offers_bp as bp
+from .parser import ICONS as PERK_ICONS
 from .trip_parser import parse_quotes
 
 PHOTO_RE = re.compile(r"^(places/[\w-]+/photos/[\w-]+|u:\d+)$")  # Google Places photo, or a stored picture
@@ -81,6 +82,15 @@ def clean_quote(raw):
         marks.append({"name": _s(m.get("name"), 120), "address": _s(m.get("address"), 300),
                       "place_id": _s(m.get("place_id"), 200), "lat": lat, "lng": lng})
     q["landmarks"] = marks
+    try:
+        q["stars"] = max(0, min(int(float(raw.get("stars") or 0)), 5))
+    except (TypeError, ValueError):
+        q["stars"] = 0
+    q["style"], q["age_info"] = _s(raw.get("style"), 60), _s(raw.get("age_info"), 120)
+    q["location_info"], q["room_desc"] = _s(raw.get("location_info"), 300), _s(raw.get("room_desc"), 600)
+    q["hide_rating"], q["hide_reviews"] = bool(raw.get("hide_rating")), bool(raw.get("hide_reviews"))
+    q["perks"] = [{"icon": p.get("icon") if p.get("icon") in PERK_ICONS else "gift", "label": _s(p.get("label"), 60)}
+                  for p in (raw.get("perks") or [])[:6] if isinstance(p, dict) and _s(p.get("label"), 60)]
     q["website"], q["maps_url"] = _url(raw.get("website")), _url(raw.get("maps_url"))
     try:
         rating = round(float(raw.get("rating") or 0), 1)
@@ -188,6 +198,31 @@ def get_photo(photo_id):
     if not row:
         return _err("Not found", 404)
     return Response(row.data, mimetype=row.mime, headers={"Cache-Control": "private, max-age=86400"})
+
+
+@bp.route("/api/hotel-offers/places/distance")
+@login_required
+def place_distance():
+    """"2.4 km from Pattaya centre": distance from a pinned hotel to the city centre or to a spot the agent names."""
+    key = settings.get_config(_org())["google_places_key"]
+    if not key:
+        return _err("Google Places key is not configured (Hotel Offers settings).")
+    lat, lng = _coord(request.args.get("lat"), -90, 90), _coord(request.args.get("lng"), -180, 180)
+    if lat is None or lng is None:
+        return _err("Pin the hotel on the map first.")
+    ref, city = _s(request.args.get("ref"), 120), _s(request.args.get("city"), 120)
+    if not ref and not city:
+        return _err("Add the city, or type a place to measure from.")
+    try:
+        point = trip_places.centre(ref or city, key, {"lat": lat, "lng": lng})
+    except requests.HTTPError as exc:
+        return _err(f"Google Places rejected the request ({exc.response.status_code}).", 502)
+    except requests.RequestException as exc:
+        return _err(f"Could not reach Google Places: {exc}", 502)
+    if not point:
+        return _err("Could not find that place.")
+    label = ref or f"{city} centre"
+    return jsonify({"text": trip_places.distance_text(trip_places.km_between(lat, lng, point["lat"], point["lng"]), label)})
 
 
 @bp.route("/api/hotel-offers/places/details")
@@ -323,6 +358,7 @@ def parse_trip_quotes(trip_id):
         return _err("No hotel stays found in that text.")
     quotes = quotes[:60]
     warning = None
+    centres = {}  # city -> coordinates, so a city is looked up once
     if cfg["google_places_key"]:
         for q in quotes:
             try:
@@ -334,6 +370,12 @@ def parse_trip_quotes(trip_id):
                 h = hits[0]
                 q.update(place_id=h["place_id"], address=h["address"], photos=h["photos"], lat=h["lat"], lng=h["lng"], rating=h["rating"],
                          rating_count=h["rating_count"], website=h["website"], maps_url=h["maps_url"], google_at=date.today().isoformat())
+                if not q.get("location_info") and q.get("city"):  # "2.4 km from Pattaya centre", if the agent has not written something
+                    ck = q["city"].strip().lower()
+                    if ck not in centres:
+                        centres[ck] = trip_places.centre(q["city"], cfg["google_places_key"], {"lat": h["lat"], "lng": h["lng"]})
+                    if centres[ck]:
+                        q["location_info"] = trip_places.distance_text(trip_places.km_between(h["lat"], h["lng"], centres[ck]["lat"], centres[ck]["lng"]), f"{q['city'].strip()} centre")
     else:
         warning = "No Google Places key is set, so hotels were not placed on the map."
     pos = (db.session.query(db.func.max(HotelQuote.position)).filter_by(trip_id=trip.id).scalar() or 0) + 1

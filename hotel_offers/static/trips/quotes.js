@@ -4,7 +4,7 @@
   const SECTIONS = [
     ['Stay', [['hotel_name', 'Hotel', 'wide'], ['city', 'City'], ['date', 'Check-in', '', 'date'], ['nights', 'Nights', '', 'number'], ['rooms', 'Rooms', '', 'number'],
       ['guests', 'Guests'], ['guest_name', 'Guest name'], ['meal_plan', 'Meal plan'], ['website', 'Hotel website', 'wide', 'url']]],
-    ['Room & price', [['room', 'Room', 'wide'], ['room_size', 'Room size'], ['items', 'Room nights', '', 'number'],
+    ['Room & price', [['room', 'Room', 'wide'], ['room_desc', 'Room description', 'wide', 'textarea'], ['room_size', 'Room size'], ['items', 'Room nights', '', 'number'],
       ['cost_per_item', 'Rate per room night', '', 'number'], ['total', 'Total', '', 'number'], ['cancellation', 'Cancellation policy', 'wide']]],
   ];
   const AREAS = [['nutshell', 'In a nutshell', 'Shown to the client'], ['notes', 'Internal notes', 'Never shown to the client']];
@@ -44,7 +44,8 @@
       || '<span class="ho-hint">No photos yet. Search the hotel under Location to pull its photos from Google, or add your own.</span>';
     const landList = q => (q.landmarks || []).map((l, i) =>
       '<span class="q-chip">' + TT.esc(l.name) + '<button type="button" data-act="rm-land" data-i="' + i + '" aria-label="Remove landmark">×</button></span>').join('');
-    const field = ([k, label, cls, type], q) =>
+    const field = ([k, label, cls, type], q) => type === 'textarea' ?
+      '<label class="q-f ' + (cls || '') + '"><span>' + label + '</span><textarea data-k="' + k + '" rows="2" maxlength="600" placeholder="e.g. King bed, balcony with sea view, walk-in shower">' + TT.esc(q[k] || '') + '</textarea></label>' :
       '<label class="q-f ' + (cls || '') + '"><span>' + label + '</span><input data-k="' + k + '" type="' + (type || 'text') + '" ' +
       (type === 'number' ? 'min="0" step="any" inputmode="decimal"' : '') + ' value="' + TT.esc(q[k] == null ? '' : q[k]) + '"></label>';
 
@@ -59,6 +60,7 @@
     function editor(q) {
       if (!q.rooms) q.rooms = TT.roomsOf(q);
       return SECTIONS.map(([title, fields]) => '<div class="q-sec"><h4>' + title + '</h4><div class="q-grid">' + fields.map(f => field(f, q)).join('') + '</div></div>').join('') +
+        TT.hotelInfo.html(q) +
         '<div class="q-sec"><h4>Notes</h4><div class="q-grid">' + AREAS.map(([k, label, hint]) =>
           '<label class="q-f wide"><span>' + label + ' <em>' + hint + '</em></span><textarea data-k="' + k + '" rows="2">' + TT.esc(q[k] || '') + '</textarea></label>').join('') + '</div></div>' +
         '<div class="q-sec q-drop"><h4>Photos <em>Up to 10. Drag to reorder. Drop pictures here, or press Ctrl+V to paste a copied image</em></h4><div class="q-photos">' + photoStrip(q) + '</div>' +
@@ -125,7 +127,7 @@
       const k = e.target.dataset.k;
       if (!k) return;
       const q = byId(idOf(e.target));
-      q[k] = e.target.type === 'number' ? TT.num(e.target.value) : e.target.value;
+      q[k] = e.target.type === 'number' || k === 'stars' ? TT.num(e.target.value) : e.target.value;
       const set = (key, v) => { q[key] = v; const f = cardOf(e.target).querySelector('[data-k="' + key + '"]'); if (f) f.value = v; };
       if (k === 'nights' || k === 'rooms') set('items', (q.rooms || 1) * (q.nights || 0));  // room nights = rooms x nights
       if (k === 'nights' || k === 'rooms' || k === 'items' || k === 'cost_per_item') set('total', Math.round((q.items || 0) * (q.cost_per_item || 0)));
@@ -190,6 +192,8 @@
       render(); opts.onChange(quotes);
       try { await TT.api('/api/hotel-offers/trips/' + opts.tripId() + '/order', { method: 'POST', json: { ids: quotes.map(q => q.id) } }); } catch (err) { TT.toast(err.message, 'err'); }
     }
+
+    TT.hotelInfo.bind(root, { quoteOf: el => byId(idOf(el)), save, rerender: q => rerenderEditor(q) });
 
     // ---- hand-added photos: device upload, clipboard paste, drag-and-drop, or an image link
     async function addPhoto(q, source) {

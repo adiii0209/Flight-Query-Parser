@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 DATE_FORMATS = ("%d-%B-%Y", "%d-%b-%Y", "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d %B %Y", "%d %b %Y")
 DATE_RE = re.compile(r"\d{1,2}[-/ ][A-Za-z]{3,9}[-/ ]\d{4}|\d{1,2}[-/]\d{1,2}[-/]\d{4}|\d{4}-\d{2}-\d{2}")
+STAR_RE = re.compile(r"\b([1-5])\s*(?:[- ]?star|\*)", re.I)
 PAX_RE = re.compile(r"\b(adult|child|children|infant|kid)s?\b", re.I)
 SQM_RE = re.compile(r"^\s*\d+(\.\d+)?\s*(sq\.?\s*m|sqm|m2|m²|sq\.?\s*ft|sqft)\b", re.I)
 HEADER_KEYS = (("date", "date"), ("day", "day"), ("night", "nights"), ("city", "city"), ("partic", "particulars"),
@@ -43,6 +44,7 @@ def _lines(cell):
 def _blank():
     return {"date": None, "day": "", "nights": 0, "city": "", "hotel_name": "", "guests": "", "guest_name": "",
             "cancellation": "", "cancel_by": None, "meal_plan": "", "room": "", "room_size": "", "rooms": 0, "items": 1,
+            "stars": 0, "style": "", "age_info": "", "location_info": "", "room_desc": "", "perks": [], "hide_rating": False, "hide_reviews": False,
             "cost_per_item": 0, "total": 0, "nutshell": "", "notes": "",
             "place_id": "", "address": "", "photos": [], "lat": None, "lng": None, "landmarks": []}
 
@@ -72,6 +74,8 @@ def _particulars(q, cell):
             q["cancellation"] = line
             cd = parse_date(line)
             q["cancel_by"] = cd.isoformat() if cd else None
+        elif STAR_RE.search(line) and len(line) < 40:
+            q["stars"] = int(STAR_RE.search(line).group(1))
         elif PAX_RE.search(line):
             q["guests"] = line
         elif not q["guest_name"]:
@@ -129,6 +133,9 @@ Return ONLY {"quotes":[...]}. One object per hotel stay, with keys:
 date (YYYY-MM-DD check-in), nights (int), city, hotel_name, guests (e.g. "2 adults + 1 child"), guest_name,
 cancellation (e.g. "Free Cancellation till 25-Nov-2026"), meal_plan, room, room_size, rooms (int),
 items (room nights = rooms x nights, int), cost_per_item (number, per room per night), total (number), nutshell (short remarks, optional).
+Only when the text says so, also fill: stars (hotel star class 1-5, int), style (e.g. "Boutique hotel", "Standalone building", "Resort"),
+age_info (when built or renovated, e.g. "Renovated 2022"), location_info (where it is, e.g. "2 km from the old town"),
+room_desc (a sentence about the room: bed, view, features), perks (array of up to 6 {"icon": one of breakfast, credit, upgrade, checkin, welcome, spa, transfer, dining, gift, wifi, "label": short text}).
 Use "" or 0 when unknown. Never invent hotels or prices."""
 
 

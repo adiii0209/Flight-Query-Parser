@@ -21,7 +21,7 @@ trips_public_bp = bp = Blueprint("hotel_trips_public", __name__, template_folder
 # fields the client may see; internal notes, place ids and the agent's remarks stay private
 PUBLIC_FIELDS = ("date", "day", "nights", "city", "hotel_name", "guests", "guest_name", "cancellation", "meal_plan", "room", "room_size",
                  "rooms", "items", "cost_per_item", "total", "nutshell", "address", "lat", "lng", "landmarks",
-                 "rating", "rating_count", "website", "maps_url")
+                 "rating", "rating_count", "website", "maps_url", "stars", "style", "age_info", "location_info", "room_desc", "perks")
 
 
 @bp.before_request
@@ -39,6 +39,10 @@ def _shared_trip(slug):
 def _public_quote(row):
     d = row.load()
     out = {k: d.get(k) for k in PUBLIC_FIELDS}
+    if d.get("hide_rating"):  # switched off by the agent: not sent at all
+        out["rating"] = 0
+    if d.get("hide_reviews"):
+        out["rating_count"], out["maps_url"] = 0, ""
     out["landmarks"] = [{k: m.get(k) for k in ("name", "lat", "lng")} for m in d.get("landmarks") or []]
     out["id"] = row.id
     out["photos"] = [f"/api/public/trips/photo/{row.id}/{i}?v={hashlib.sha1(ref.encode()).hexdigest()[:10]}" for i, ref in enumerate(d.get("photos") or [])]

@@ -219,6 +219,15 @@
 .q-google{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;justify-content:space-between;margin:.2rem 0 .4rem;font-size:.84rem;color:var(--mute)}
 .q-google b{color:var(--text)}
 
+/* hotel details editor */
+.q-dist{display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap}
+.q-dist input{flex:1;min-width:200px;border:1px solid var(--line);border-radius:10px;padding:.5rem .7rem;font-size:.85rem;background:#fff}
+.q-perks{display:grid;gap:.45rem;margin-bottom:.5rem}
+.q-perk{display:grid;grid-template-columns:150px minmax(0,1fr) auto;gap:.45rem;align-items:center}
+.q-perk select,.q-perk input,.q-f select{border:1px solid var(--line);border-radius:10px;padding:.5rem .6rem;font-size:.88rem;background:#fff;width:100%}
+.q-checks{display:flex;gap:1.2rem;flex-wrap:wrap}
+.q-check{display:inline-flex;align-items:center;gap:.45rem;font-size:.88rem;cursor:pointer}
+
 /* responsive (kept last so it overrides the rules above) */
 @media(max-width:960px){.d-cols{grid-template-columns:minmax(0,1fr)}.d-right{position:static;order:-1}.tt-map{height:300px}.d-stats{grid-template-columns:repeat(2,1fr)}.qc-view{grid-template-columns:150px minmax(0,1fr)}.qc-side{grid-column:1/-1;flex-direction:row;align-items:center;justify-content:space-between;text-align:left;padding:0}.qc-btns{margin:0;padding:0}}
 @media(max-width:560px){.qc-view{grid-template-columns:1fr}.qc-media{min-height:170px}.t-fields{grid-template-columns:1fr}.t-find{width:100%}.t-hero .pill{width:100%}}
