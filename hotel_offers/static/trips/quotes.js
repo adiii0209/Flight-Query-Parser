@@ -40,7 +40,7 @@
 
     // ---- editor
     const photoStrip = q => (q.photos || []).map((ref, i) =>
-      '<span class="q-ph"><img loading="lazy" src="' + TT.esc(TT.photoUrl(ref, 300)) + '" alt=""><button type="button" data-act="rm-photo" data-i="' + i + '" aria-label="Remove photo">×</button></span>').join('')
+      '<span class="q-ph" draggable="true" data-i="' + i + '" title="Drag to reorder"><img draggable="false" loading="lazy" src="' + TT.esc(TT.photoUrl(ref, 300)) + '" alt=""><button type="button" data-act="rm-photo" data-i="' + i + '" aria-label="Remove photo">×</button></span>').join('')
       || '<span class="ho-hint">No photos yet. Search the hotel under Location to pull its photos from Google, or add your own.</span>';
     const landList = q => (q.landmarks || []).map((l, i) =>
       '<span class="q-chip">' + TT.esc(l.name) + '<button type="button" data-act="rm-land" data-i="' + i + '" aria-label="Remove landmark">×</button></span>').join('');
@@ -52,7 +52,7 @@
       return SECTIONS.map(([title, fields]) => '<div class="q-sec"><h4>' + title + '</h4><div class="q-grid">' + fields.map(f => field(f, q)).join('') + '</div></div>').join('') +
         '<div class="q-sec"><h4>Notes</h4><div class="q-grid">' + AREAS.map(([k, label, hint]) =>
           '<label class="q-f wide"><span>' + label + ' <em>' + hint + '</em></span><textarea data-k="' + k + '" rows="2">' + TT.esc(q[k] || '') + '</textarea></label>').join('') + '</div></div>' +
-        '<div class="q-sec q-drop"><h4>Photos <em>Up to 10. Drag pictures here, or press Ctrl+V to paste a copied image</em></h4><div class="q-photos">' + photoStrip(q) + '</div>' +
+        '<div class="q-sec q-drop"><h4>Photos <em>Up to 10. Drag to reorder. Drop pictures here, or press Ctrl+V to paste a copied image</em></h4><div class="q-photos">' + photoStrip(q) + '</div>' +
         '<div class="q-addph"><label class="ib"><input type="file" accept="image/*" multiple hidden data-upload>Upload from device</label>' +
         '<input data-photourl type="url" placeholder="…or paste an image link"><button type="button" class="ib" data-act="add-url">Add link</button></div>' +
         '<span class="ho-hint" data-phstatus></span></div>' +
@@ -160,13 +160,54 @@
       if (!files.length) return;  // plain text pastes behave normally
       e.preventDefault(); addFiles(byId(idOf(e.target)), files);
     });
-    root.addEventListener('dragover', e => { const z = e.target.closest && e.target.closest('.q-drop'); if (z) { e.preventDefault(); z.classList.add('over'); } });
-    root.addEventListener('dragleave', e => { const z = e.target.closest && e.target.closest('.q-drop'); if (z) z.classList.remove('over'); });
-    root.addEventListener('drop', e => {
+    // drag: thumbnails reorder; files / pictures from other pages are added
+    let dragIdx = null, overDepth = 0;
+    const clearMarks = () => root.querySelectorAll('.q-ph.before,.q-ph.after,.q-ph.dragging,.q-drop.over').forEach(el => el.classList.remove('before', 'after', 'dragging', 'over'));
+    const hasFiles = e => Array.from((e.dataTransfer && e.dataTransfer.types) || []).includes('Files');
+    root.addEventListener('dragstart', e => {
+      const th = e.target.closest && e.target.closest('.q-ph');
+      if (!th) return;
+      dragIdx = +th.dataset.i; th.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-photo-index', String(dragIdx));
+    });
+    root.addEventListener('dragend', () => { dragIdx = null; overDepth = 0; clearMarks(); });
+    root.addEventListener('dragenter', e => { const z = e.target.closest && e.target.closest('.q-drop'); if (z) { overDepth++; if (dragIdx === null) z.classList.add('over'); } });
+    root.addEventListener('dragleave', e => {
+      const z = e.target.closest && e.target.closest('.q-drop');
+      if (z && --overDepth <= 0) { overDepth = 0; z.classList.remove('over'); }
+    });
+    root.addEventListener('dragover', e => {
       const z = e.target.closest && e.target.closest('.q-drop');
       if (!z) return;
-      e.preventDefault(); z.classList.remove('over'); addFiles(byId(idOf(z)), Array.from(e.dataTransfer.files));
+      e.preventDefault();
+      e.dataTransfer.dropEffect = dragIdx !== null ? 'move' : 'copy';
+      if (dragIdx === null) return;
+      root.querySelectorAll('.q-ph.before,.q-ph.after').forEach(el => el.classList.remove('before', 'after'));
+      const th = e.target.closest('.q-ph');
+      if (th && +th.dataset.i !== dragIdx) th.classList.add(e.clientX < th.getBoundingClientRect().left + th.offsetWidth / 2 ? 'before' : 'after');
     });
+    root.addEventListener('drop', async e => {
+      const z = e.target.closest && e.target.closest('.q-drop');
+      if (!z) return;
+      e.preventDefault(); overDepth = 0;
+      const q = byId(idOf(z));
+      if (dragIdx !== null) {  // reorder
+        const th = e.target.closest('.q-ph');
+        let to = q.photos.length - 1;
+        if (th) { to = +th.dataset.i; if (e.clientX >= th.getBoundingClientRect().left + th.offsetWidth / 2) to += 1; if (dragIdx < to) to -= 1; }
+        const from = dragIdx; dragIdx = null; clearMarks();
+        if (to !== from) { q.photos.splice(to, 0, q.photos.splice(from, 1)[0]); rerenderEditor(q); save(q); }
+        return;
+      }
+      clearMarks();
+      const files = Array.from(e.dataTransfer.files || []);
+      if (files.length) { await addFiles(q, files); return; }
+      const link = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '').split('\n')[0].trim();
+      if (/^https:\/\//.test(link)) await addPhoto(q, { url: link });
+    });
+    // a picture dropped just outside the zone must not make the browser leave the page
+    window.addEventListener('dragover', e => { if (hasFiles(e) && !(e.target.closest && e.target.closest('.q-drop'))) e.preventDefault(); });
+    window.addEventListener('drop', e => { if (hasFiles(e) && !(e.target.closest && e.target.closest('.q-drop'))) e.preventDefault(); });
 
     function rerenderEditor(q) {
       const c = root.querySelector('.qc[data-id="' + q.id + '"]');

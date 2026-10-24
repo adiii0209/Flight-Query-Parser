@@ -190,6 +190,12 @@
 .q-addph input[type=url]{flex:1;min-width:180px;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;font-size:.85rem;background:#fff}
 .q-addph .ib{cursor:pointer}
 
+.q-ph{cursor:grab}
+.q-ph.dragging{opacity:.4}
+.q-ph.before::before,.q-ph.after::after{content:"";position:absolute;top:0;bottom:0;width:3px;border-radius:2px;background:var(--blue)}
+.q-ph.before::before{left:-5px}
+.q-ph.after::after{right:-5px}
+
 /* responsive (kept last so it overrides the rules above) */
 @media(max-width:960px){.d-cols{grid-template-columns:1fr}.d-right{position:static;order:-1}.tt-map{height:300px}.d-stats{grid-template-columns:repeat(2,1fr)}.qc-view{grid-template-columns:150px minmax(0,1fr)}.qc-side{grid-column:1/-1;flex-direction:row;align-items:center;justify-content:space-between;text-align:left;padding:0}.qc-btns{margin:0;padding:0}}
 @media(max-width:560px){.qc-view{grid-template-columns:1fr}.qc-media{min-height:170px}.t-fields{grid-template-columns:1fr}.t-find{width:100%}.t-hero .pill{width:100%}}

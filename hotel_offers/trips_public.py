@@ -1,4 +1,6 @@
 """Public trip page (no login): the client sees one shared trip, its hotel quotes with photos, and the map."""
+import hashlib
+
 from flask import Blueprint, Response, abort, jsonify, render_template
 import requests
 
@@ -30,7 +32,7 @@ def _public_quote(row):
     out = {k: d.get(k) for k in PUBLIC_FIELDS}
     out["landmarks"] = [{k: m.get(k) for k in ("name", "lat", "lng")} for m in d.get("landmarks") or []]
     out["id"] = row.id
-    out["photos"] = [f"/api/public/trips/photo/{row.id}/{i}" for i in range(len(d.get("photos") or []))]
+    out["photos"] = [f"/api/public/trips/photo/{row.id}/{i}?v={hashlib.sha1(ref.encode()).hexdigest()[:10]}" for i, ref in enumerate(d.get("photos") or [])]
     return out
 
 
