@@ -112,3 +112,12 @@
 .tc-sum li b{font-family:var(--sans);font-weight:500;font-size:.95rem;font-size:.95rem}
 .tc-sum p{margin:14px 0 0;opacity:.65;font-size:.8rem}
 @media(max-width:520px){.cg-head{padding:16px 14px;gap:10px}.cg-title h2{font-size:1.3rem}.cg-right b{font-size:1.25rem}.cg-body{padding:0 10px 12px}}
+
+/* hotel cards inside a city card */
+.cg-opts .tc-card{box-shadow:none}
+.cg-opts .tc-card.is-sel{border-color:var(--cta);box-shadow:0 0 0 1px var(--cta)}
+.tc-top{justify-content:space-between}
+.co-room{background:var(--surface-2);border-radius:14px;padding:12px 14px;display:grid;gap:8px}
+.co-room-h{display:flex;justify-content:space-between;align-items:baseline}
+.co-room-h span{font-weight:600}
+.co-room small{color:var(--mute);font-size:.78rem}

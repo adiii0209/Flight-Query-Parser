@@ -25,27 +25,27 @@
       (line.photos.length > 1 ? '<span class="tc-count">' + line.photos.length + ' photos · swipe</span>' : '') + '</div>';
   }
 
-  function lineHtml(l) {
-    const meta = [l.meal_plan, l.guests, l.guest_name].filter(Boolean).map(TT.esc).join(' · ');
-    const rooms = TT.roomsOf(l);
-    return '<div class="co-line"><div class="co-lmain"><b>' + TT.esc([l.room, l.room_size].filter(Boolean).join(' · ') || 'Room') + '</b>' + (meta ? '<span>' + meta + '</span>' : '') +
-      (l.cancellation ? '<em>' + TT.esc(l.cancellation) + '</em>' : '') + '</div>' +
-      '<div class="co-lprice"><b>' + TT.money(l.total, cur()) + '</b><small>' + plural(rooms, 'room') + ' × ' + plural(l.nights || 0, 'night') + ' × ' + TT.money(l.cost_per_item, cur()) + '</small></div></div>';
-  }
+  const factsHtml = list => '<dl class="tc-facts">' + list.filter(f => f[1]).map(f => '<div><dt>' + f[0] + '</dt><dd>' + TT.esc(f[1]) + '</dd></div>').join('') + '</dl>';
+  const lineFacts = l => [['Guests', [l.guests, l.guest_name].filter(Boolean).join(' · ')], ['Meal plan', l.meal_plan], ['Room', [l.room, l.room_size].filter(Boolean).join(' · ')], ['Cancellation', l.cancellation]];
+  const rateText = l => plural(TT.roomsOf(l), 'room') + ' × ' + plural(l.nights || 0, 'night') + ' × ' + TT.money(l.cost_per_item, cur());
 
+  // the hotel card: the same card as before, now shown inside its city card
   function optionHtml(g, o, multi) {
     const isSel = o.key === g.selected;
-    const first = o.lines[0], located = o.lines.find(l => l.lat != null);
+    const first = o.lines[0], located = o.lines.find(l => l.lat != null), many = o.lines.length > 1;
     const nut = (o.lines.find(l => l.nutshell) || {}).nutshell;
     const near = (o.lines.find(l => (l.landmarks || []).length) || { landmarks: [] }).landmarks;
+    const stay = [['Check-in', g.date ? (first.day ? first.day + ', ' : '') + TT.date(g.date) : ''], ['Check-out', g.checkout ? TT.date(g.checkout) : '']];
     const pick = multi ? '<button type="button" class="co-pick' + (isSel ? ' on' : '') + '" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '" aria-pressed="' + isSel + '">' + (isSel ? CHECK + 'Selected' : 'Select') + '</button>' : '';
-    return '<div class="co' + (isSel && multi ? ' is-sel' : '') + '">' + gallery(o) + '<div class="co-body"><div class="co-top"><div><h3>' + TT.esc(o.hotel_name || first.hotel_name) + '</h3>' +
-      '<p class="tc-sub">' + TT.esc([first.city, first.address].filter(Boolean).join(' · ')) + '</p></div>' + pick + '</div>' +
-      (nut ? '<p class="tc-nut">' + TT.esc(nut).replace(/\n/g, '<br>') + '</p>' : '') +
+    const details = many
+      ? factsHtml(stay) + o.lines.map((l, i) => '<div class="co-room"><div class="co-room-h"><b>Room ' + (i + 1) + '</b><span>' + TT.money(l.total, cur()) + '</span></div>' + factsHtml(lineFacts(l)) + '<small>' + rateText(l) + '</small></div>').join('')
+      : factsHtml(stay.concat(lineFacts(first)));
+    return '<article class="tc-card co' + (isSel && multi ? ' is-sel' : '') + '">' + gallery(o) + '<div class="tc-body"><div class="tc-top"><div><h2>' + TT.esc(o.hotel_name || first.hotel_name) + '</h2>' +
+      '<p class="tc-sub">' + TT.esc([first.city, first.nights ? plural(first.nights, 'night') : ''].filter(Boolean).join(' · ')) + '</p></div>' + pick + '</div>' +
+      (nut ? '<p class="tc-nut">' + TT.esc(nut).replace(/\n/g, '<br>') + '</p>' : '') + details +
       (near.length ? '<p class="tc-near"><b>Nearby:</b> ' + near.map(l => TT.esc(l.name)).join(' · ') + '</p>' : '') +
-      '<div class="co-lines">' + o.lines.map(lineHtml).join('') + '</div>' +
-      '<div class="tc-foot"><div class="tc-price"><small>' + (o.lines.length > 1 ? 'Total for ' + plural(o.lines.length, 'room') : 'Stay total') + '</small><b>' + TT.money(o.total, cur()) + '</b></div>' +
-      (located ? '<button class="tc-pin" data-id="' + located.id + '">View on map</button>' : '') + '</div></div></div>';
+      '<div class="tc-foot"><div class="tc-price"><small>' + (many ? 'Total for ' + plural(o.lines.length, 'room') : first.items > 1 ? rateText(first) : 'Stay total') + '</small><b>' + TT.money(o.total, cur()) + '</b></div>' +
+      (located ? '<button class="tc-pin" data-id="' + located.id + '">View on map</button>' : '') + '</div></div></article>';
   }
 
   // ---- one city card
@@ -97,7 +97,7 @@
   function render() {
     const t = data.trip, dates = t.start_date ? TT.date(t.start_date) + (t.end_date ? ' – ' + TT.date(t.end_date) : '') : '';
     groups = TT.groupQuotes(data.quotes, selection);
-    if (!openGroups.size && groups.length) openGroups.add(groups[0].key);
+    if (groups.length === 1) openGroups.add(groups[0].key);
     const pins = TT.groupPins(groups);
     root.innerHTML = '<section class="tc-hero"><p class="eyebrow">Your trip</p><h1>' + TT.esc(t.title) + '</h1><p class="tc-meta">' +
       [t.client_name && 'Prepared for ' + t.client_name, t.destination, dates].filter(Boolean).map(TT.esc).join(' · ') + '</p>' +
