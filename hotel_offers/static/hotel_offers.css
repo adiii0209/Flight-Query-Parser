@@ -459,3 +459,5 @@ body{height:auto!important;min-height:100vh!important;overflow:visible!important
   .perk-row{grid-template-areas:"sel del" "txt txt" "sug sug"}
   .perk-suggest{grid-area:sug}
 }
+
+.ho-sep{border:0;border-top:1px solid var(--line);margin:1rem 0}

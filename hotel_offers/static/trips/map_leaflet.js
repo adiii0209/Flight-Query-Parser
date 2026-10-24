@@ -1,4 +1,4 @@
-/* Trips: Leaflet + OpenStreetMap map provider (fallback when Google Maps is unavailable). */
+/* Trips: Leaflet map provider. Tiles come from TT.tileLayerOptions() (map.js). */
 (function (TT) {
   const hotelIcon = n => L.divIcon({ className: 'tt-pin', html: '<span>' + n + '</span>', iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -14] });
   const landIcon = () => L.divIcon({ className: 'tt-pin tt-land', html: '<span></span>', iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -8] });
@@ -9,7 +9,8 @@
     el.innerHTML = '';
     if (!window.L) { el.innerHTML = '<p class="tt-nomap">The map could not be loaded.</p>'; return { render() {}, focus() {} }; }
     const map = L.map(el, { scrollWheelZoom: false, zoomControl: true }).setView([20, 0], 2);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+    const tiles = TT.tileLayerOptions();
+    L.tileLayer(tiles.url, tiles.options).addTo(map);
     const layer = L.layerGroup().addTo(map);
     const pins = {};
     let fitted = false, pinsBounds = null;

@@ -18,6 +18,8 @@ DEFAULTS = {
     "unsplash_access_key": "",
     "google_places_key": "",
     "photo_per_page": 12,
+    # Trip maps (Leaflet raster tile template)
+    "map_tile_url": "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&scale=2",
     # Pricing suggestions (all editable per offer)
     "markup_percent": 0,                 # our deal = net total + markup
     "online_rate_multiplier": 1.35,      # struck-through "online rate" = net total x this
@@ -101,6 +103,8 @@ def save_config(org_id, incoming):
         if key in SECRET_KEYS and value == "__clear__":
             current.pop(key, None)
             continue
+        if key == "map_tile_url" and value and not str(value).strip().startswith("https://"):
+            continue  # tile templates must be https URLs
         try:
             current[key] = _coerce(key, value)
         except (TypeError, ValueError):

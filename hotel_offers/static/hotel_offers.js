@@ -987,8 +987,19 @@
     $('#settingsRO').hidden = CAN_CONFIGURE;
     $('#btnSaveSettings').hidden = !CAN_CONFIGURE;
     $$('[data-test]').forEach(b => { b.disabled = !CAN_CONFIGURE; });
+    syncMapTemplate();
     modelList();
   }
+  function syncMapTemplate() {
+    const sel = $('#mapTemplate'), url = $('#mapTileUrl').value;
+    sel.value = [...sel.options].some(o => o.value === url) ? url : '';
+    sel.disabled = !CAN_CONFIGURE;
+  }
+  $('#mapTemplate').addEventListener('change', e => {
+    if (!e.target.value) { $('#mapTileUrl').focus(); return; }
+    $('#mapTileUrl').value = e.target.value;
+    $('#mapTileUrl').dispatchEvent(new Event('input', { bubbles: true }));
+  });
   function modelList() {
     const p = $('[data-s=ai_provider]').value;
     $('#modelList').innerHTML = (MODELS[p] || []).map(m => `<option value="${m}">`).join('');

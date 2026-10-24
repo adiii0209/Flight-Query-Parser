@@ -278,6 +278,21 @@
       <div class="ho-row"><button class="pill ghost sm" data-test="google">Test Google</button><span class="ho-hint" data-testmsg="google"></span></div>
       <label>Results per search<input data-s="photo_per_page" type="number" min="3" max="30"></label>
       <div class="ho-hint">Unsplash: create an app at unsplash.com/developers and paste its Access Key. Google Places photos have usage limits, so check the licence before using them in marketing.</div>
+      <hr class="ho-sep">
+      <label>Trip map style
+        <select id="mapTemplate">
+          <option value="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&scale=2">Google Maps (Roadmap)</option>
+          <option value="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&scale=2">Google Maps (Hybrid)</option>
+          <option value="https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}&scale=2">Google Maps (Terrain)</option>
+          <option value="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png">Light, minimal (CARTO)</option>
+          <option value="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png">Dark (CARTO)</option>
+          <option value="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}">Satellite (Esri)</option>
+          <option value="https://tile.openstreetmap.org/{z}/{x}/{y}.png">OpenStreetMap</option>
+          <option value="">Custom URL</option>
+        </select>
+      </label>
+      <label>Tile URL template<input id="mapTileUrl" data-s="map_tile_url" placeholder="https://tile.openstreetmap.org/{z}/{x}/{y}.png"></label>
+      <div class="ho-hint">Applies to every trip map, for you and for clients. Google's tile addresses are not part of Google's official Maps API, so they can stop working or be blocked, and their terms do not allow it for commercial use. Use a CARTO or OpenStreetMap style if you want something safe long term.</div>
     </div>
 
     <div class="ho-tabpane" data-pane="pricing" hidden>

@@ -114,7 +114,7 @@ def _apply_trip_fields(trip, body):
 @bp.route("/hotel-offers/trips")
 @login_required
 def trips_page():
-    return render_template("hotel_offers/trips.html", maps_key=settings.get_config(_org())["google_places_key"])
+    return render_template("hotel_offers/trips.html", map_tiles=settings.get_config(_org())["map_tile_url"])
 
 
 # ------------------------------------------------------------------ places

@@ -39,7 +39,7 @@ def trip_page(slug):
     trip = _shared_trip(slug)
     cfg = settings.get_config(trip.organization_id, include_env=False)
     og = {"title": trip.title, "url": f"{public_base(trip.organization_id)}/t/{trip.share_slug}"}
-    return render_template("hotel_offers/trip_client.html", slug=slug, og=og, brand=cfg["client_title"], maps_key=settings.get_config(trip.organization_id)["google_places_key"], whatsapp=cfg["whatsapp_number"],
+    return render_template("hotel_offers/trip_client.html", slug=slug, og=og, brand=cfg["client_title"], map_tiles=cfg["map_tile_url"], whatsapp=cfg["whatsapp_number"],
                            org_slug=org_slug(trip.organization_id))
 
 

@@ -15,16 +15,14 @@
 <link rel="stylesheet" href="{{ url_for('.static', filename='client.css') }}">
 <link rel="stylesheet" href="{{ url_for('.static', filename='trips/trip_client.css') }}">
 </head>
-<body data-slug="{{ slug }}" data-wa="{{ whatsapp }}">
+<body data-tiles="{{ map_tiles }}" data-slug="{{ slug }}" data-wa="{{ whatsapp }}">
 <header class="nav"><div class="nav-in"><span class="brand">{{ brand }}</span>
   <a class="nav-wa" id="navWa" href="#" target="_blank" rel="noopener">Chat with us</a></div></header>
 <main class="page" id="trip"><p class="tc-load">Loading your trip…</p></main>
 
-{% if maps_key %}<script src="https://maps.googleapis.com/maps/api/js?key={{ maps_key }}"></script>{% endif %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="{{ url_for('.static', filename='trips/tt.js') }}"></script>
 <script src="{{ url_for('.static', filename='trips/map_leaflet.js') }}"></script>
-<script src="{{ url_for('.static', filename='trips/map_google.js') }}"></script>
 <script src="{{ url_for('.static', filename='trips/map.js') }}"></script>
 <script src="{{ url_for('.static', filename='trips/trip_client.js') }}"></script>
 </body>
