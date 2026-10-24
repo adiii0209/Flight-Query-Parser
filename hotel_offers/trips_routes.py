@@ -114,7 +114,7 @@ def _apply_trip_fields(trip, body):
 @bp.route("/hotel-offers/trips")
 @login_required
 def trips_page():
-    return render_template("hotel_offers/trips.html")
+    return render_template("hotel_offers/trips.html", maps_key=settings.get_config(_org())["google_places_key"])
 
 
 # ------------------------------------------------------------------ places
@@ -218,14 +218,27 @@ def convert_trip_lead(lead_id):
 def list_trips():
     rows = HotelTrip.query.filter_by(organization_id=_org()).order_by(HotelTrip.updated_at.desc()).limit(200).all()
     stats = {}
-    for tid, data in db.session.query(HotelQuote.trip_id, HotelQuote.data).filter(HotelQuote.organization_id == _org()).all():
+    for tid, data in (db.session.query(HotelQuote.trip_id, HotelQuote.data).filter(HotelQuote.organization_id == _org())
+                      .order_by(HotelQuote.position, HotelQuote.id).all()):
         try:
-            amount = json.loads(data).get("total") or 0
+            d = json.loads(data)
         except ValueError:
-            amount = 0
-        n, t = stats.get(tid, (0, 0))
-        stats[tid] = (n + 1, t + amount)
-    return jsonify({"trips": [r.to_dict(*stats.get(r.id, (0, 0))) for r in rows]})
+            d = {}
+        st = stats.setdefault(tid, {"n": 0, "total": 0, "cities": [], "cover": ""})
+        st["n"] += 1
+        st["total"] += d.get("total") or 0
+        city = (d.get("city") or "").strip()
+        if city and city not in st["cities"]:
+            st["cities"].append(city)
+        if not st["cover"] and d.get("photos"):
+            st["cover"] = d["photos"][0]
+    out = []
+    for r in rows:
+        st = stats.get(r.id, {"n": 0, "total": 0, "cities": [], "cover": ""})
+        item = r.to_dict(st["n"], st["total"])
+        item["cities"], item["cover"] = st["cities"][:6], st["cover"]
+        out.append(item)
+    return jsonify({"trips": out})
 
 
 @bp.route("/api/hotel-offers/trips", methods=["POST"])

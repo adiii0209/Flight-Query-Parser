@@ -3,7 +3,22 @@
 .tc-hero{padding:34px 0 18px}
 .tc-hero h1{font-family:var(--serif);font-weight:500;font-size:clamp(1.9rem,6vw,3rem);line-height:1.1;letter-spacing:-.02em}
 .tc-meta{color:var(--mute);margin-top:8px}
-.tc-map{height:min(52vh,420px);border-radius:20px;overflow:hidden;border:1px solid var(--line);margin:8px 0 22px;z-index:0}
+/* map section: sits at the bottom of the page; the floating button expands it to fullscreen */
+.tc-mapsec{margin-top:34px}
+.tc-maphead h2{font-family:var(--serif);font-weight:500;font-size:1.5rem;margin-bottom:12px}
+.tc-chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px;scrollbar-width:none}
+.tc-chips::-webkit-scrollbar{display:none}
+.tc-chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px 0 6px;border-radius:99px;background:var(--surface);border:1px solid var(--line);font-size:.86rem;font-weight:500;white-space:nowrap;transition:background .2s,border-color .2s}
+.tc-chip i{font-style:normal;width:26px;height:26px;border-radius:50%;background:var(--cta);color:var(--cta-fg);display:grid;place-items:center;font-size:.75rem}
+.tc-chip.on{border-color:var(--cta);background:var(--surface-2)}
+.tc-map{height:min(60vh,480px);border-radius:20px;overflow:hidden;border:1px solid var(--line);z-index:0;background:var(--surface-2)}
+.tc-mapsec.full{position:fixed;inset:0;z-index:60;background:var(--bg);margin:0;padding:calc(14px + env(safe-area-inset-top)) 14px 0;display:flex;flex-direction:column}
+.tc-mapsec.full .tc-maphead{display:none}
+.tc-mapsec.full .tc-map{flex:1;height:auto;border-radius:18px 18px 0 0;border-bottom:0}
+.tc-fab{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:70;display:inline-flex;align-items:center;gap:8px;height:46px;padding:0 20px;border-radius:99px;background:var(--cta);color:var(--cta-fg);font-size:.9rem;font-weight:500;box-shadow:0 8px 28px rgba(0,0,0,.28);transition:transform .25s var(--out),background .2s}
+.tc-fab:hover{background:var(--cta-hover)}
+.tc-fab:active{transform:translateX(-50%) scale(.96)}
+.tc-note{padding-bottom:70px}
 .tc-list{display:grid;gap:22px;grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr))}
 .tc-card{background:var(--surface);border:1px solid var(--line);border-radius:22px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(20,20,10,.04),0 14px 40px rgba(20,20,10,.07)}
 .tc-ph{position:relative;aspect-ratio:16/10;background:var(--surface-2)}

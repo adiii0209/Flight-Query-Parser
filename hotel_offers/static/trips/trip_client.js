@@ -25,28 +25,59 @@
       (q.lat != null ? '<button class="tc-pin" data-id="' + q.id + '">View on map</button>' : '') + '</div></div></article>';
   }
 
+  const PIN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.2A7 7 0 0 1 19 9.8C19 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.5"/></svg>';
+  const CLOSE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+
+  function mapSection(qs) {
+    const pinned = qs.filter(q => q.lat != null);
+    if (!pinned.length) return '';
+    return '<section class="tc-mapsec" id="tcMapSec"><div class="tc-maphead"><h2>Hotels on the map</h2></div>' +
+      '<div class="tc-chips" id="tcChips">' + pinned.map(q => '<button type="button" class="tc-chip" data-id="' + q.id + '"><i>' + (qs.indexOf(q) + 1) + '</i>' + TT.esc(q.hotel_name) + '</button>').join('') + '</div>' +
+      '<div class="tc-map" id="tcMap"></div></section>';
+  }
+
+  function selectChip(id) {
+    TT.$$('.tc-chip').forEach(c => c.classList.toggle('on', +c.dataset.id === id));
+    const on = TT.$('.tc-chip.on');
+    if (on) on.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  }
+
+  function setFull(full) {
+    const sec = TT.$('#tcMapSec'), fab = TT.$('#tcFab');
+    if (full) { sec.classList.add('full'); document.documentElement.classList.add('lock'); } else { sec.classList.remove('full'); document.documentElement.classList.remove('lock'); }
+    fab.innerHTML = (full ? CLOSE + '<span>Close map</span>' : PIN + '<span>Map</span>');
+    fab.setAttribute('aria-label', full ? 'Close map' : 'Open map');
+    fab.classList.toggle('over', full);
+    setTimeout(() => map.resize(), 60);
+    if (!full) sec.scrollIntoView({ block: 'center' });
+  }
+
   function render() {
     const t = data.trip, qs = data.quotes, dates = t.start_date ? TT.date(t.start_date) + (t.end_date ? ' – ' + TT.date(t.end_date) : '') : '';
     root.innerHTML = '<section class="tc-hero"><p class="eyebrow">Your trip</p><h1>' + TT.esc(t.title) + '</h1><p class="tc-meta">' +
       [t.client_name && 'Prepared for ' + t.client_name, t.destination, dates].filter(Boolean).map(TT.esc).join(' · ') + '</p></section>' +
-      (qs.some(q => q.lat != null) ? '<div class="tc-map" id="tcMap"></div>' : '') +
       '<div class="tc-list">' + qs.map((q, i) => card(q, i, t.currency)).join('') + '</div>' +
       '<section class="tc-sum"><span>Total for ' + qs.length + ' hotel' + (qs.length === 1 ? '' : 's') + '</span><b>' + TT.money(t.total, t.currency) + '</b></section>' +
+      mapSection(qs) +
       '<p class="tc-note">Prices are indicative and subject to availability until confirmed.</p>';
     if (TT.$('#tcMap')) {
-      map = TT.createMap(TT.$('#tcMap'), { onSelect: id => { const c = TT.$('#q' + id); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'center' }); } });
+      map = TT.createMap(TT.$('#tcMap'), { onSelect: id => selectChip(id) });
       map.render(qs);
+      document.body.insertAdjacentHTML('beforeend', '<button class="tc-fab" id="tcFab" type="button" aria-label="Open map">' + PIN + '<span>Map</span></button>');
+      TT.$('#tcFab').addEventListener('click', () => setFull(!TT.$('#tcMapSec').classList.contains('full')));
     }
     const a = TT.$('#navWa');
     if (wa) a.href = 'https://wa.me/' + wa + '?text=' + encodeURIComponent('Hi, about my trip: ' + t.title); else a.hidden = true;
   }
 
   root.addEventListener('click', e => {
-    const b = e.target.closest('.tc-pin');
+    const b = e.target.closest('.tc-pin, .tc-chip');
     if (!b || !map) return;
-    TT.$('#tcMap').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    map.focus(+b.dataset.id);
+    const id = +b.dataset.id;
+    if (b.classList.contains('tc-pin')) TT.$('#tcMapSec').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    selectChip(id); map.focus(id);
   });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && TT.$('#tcMapSec.full')) setFull(false); });
 
   TT.api('/api/public/trips/' + encodeURIComponent(slug)).then(d => { data = d; render(); })
     .catch(() => { root.innerHTML = '<p class="tc-load">This trip link is no longer available.</p>'; });
