@@ -39,7 +39,7 @@
       '<button type="button" class="tc-fs" id="tcFs" aria-label="Full screen">' + EXPAND + '</button></div></section>';
   }
 
-  let selected = null;
+  let selected = null, savedY = 0;
 
   function selectChip(id) {
     selected = id;
@@ -50,6 +50,7 @@
 
   function setFull(full) {
     const sec = TT.$('#tcMapSec'), fab = TT.$('#tcFab');
+    if (full && !sec.classList.contains('full')) savedY = window.scrollY;
     if (full) { sec.classList.add('full'); document.documentElement.classList.add('lock'); } else { sec.classList.remove('full'); document.documentElement.classList.remove('lock'); }
     fab.innerHTML = (full ? CLOSE + '<span>Close map</span>' : PIN + '<span>Map</span>');
     fab.setAttribute('aria-label', full ? 'Close map' : 'Open map');
@@ -57,7 +58,7 @@
     TT.$('#tcFs').innerHTML = full ? CLOSE : EXPAND;
     TT.$('#tcFs').setAttribute('aria-label', full ? 'Exit full screen' : 'Full screen');
     setTimeout(() => map.resize(), 60);
-    if (!full) sec.scrollIntoView({ block: 'center' });
+    if (!full) window.scrollTo({ top: savedY, behavior: 'instant' });  // back to exactly where you were, not down to the map
   }
 
   function render() {
