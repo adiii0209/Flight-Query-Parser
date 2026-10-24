@@ -21,7 +21,7 @@
       (q.nutshell ? '<p class="tc-nut">' + TT.esc(q.nutshell).replace(/\n/g, '<br>') + '</p>' : '') +
       '<dl class="tc-facts">' + facts.map(f => '<div><dt>' + f[0] + '</dt><dd>' + TT.esc(f[1]) + '</dd></div>').join('') + '</dl>' +
       ((q.landmarks || []).length ? '<p class="tc-near"><b>Nearby:</b> ' + q.landmarks.map(l => TT.esc(l.name)).join(' · ') + '</p>' : '') +
-      '<div class="tc-foot"><div class="tc-price"><small>' + (q.items > 1 ? q.items + ' rooms × ' + TT.money(q.cost_per_item, cur) : 'Stay total') + '</small><b>' + TT.money(q.total, cur) + '</b></div>' +
+      '<div class="tc-foot"><div class="tc-price"><small>' + (q.items > 1 ? TT.rateLine(q, cur) : 'Stay total') + '</small><b>' + TT.money(q.total, cur) + '</b></div>' +
       (q.lat != null ? '<button class="tc-pin" data-id="' + q.id + '">View on map</button>' : '') + '</div></div></article>';
   }
 

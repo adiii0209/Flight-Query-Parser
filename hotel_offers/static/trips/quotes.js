@@ -2,10 +2,10 @@
    TT.quotes.mount(listEl, { currency(), onChange(quotes), onFocus(id) }) -> { set(list), add(list), all() } */
 (function (TT) {
   const SECTIONS = [
-    ['Stay', [['hotel_name', 'Hotel', 'wide'], ['city', 'City'], ['date', 'Check-in', '', 'date'], ['nights', 'Nights', '', 'number'],
+    ['Stay', [['hotel_name', 'Hotel', 'wide'], ['city', 'City'], ['date', 'Check-in', '', 'date'], ['nights', 'Nights', '', 'number'], ['rooms', 'Rooms', '', 'number'],
       ['guests', 'Guests'], ['guest_name', 'Guest name'], ['meal_plan', 'Meal plan']]],
-    ['Room & price', [['room', 'Room', 'wide'], ['room_size', 'Room size'], ['items', 'Rooms', '', 'number'],
-      ['cost_per_item', 'Cost per room', '', 'number'], ['total', 'Total', '', 'number'], ['cancellation', 'Cancellation policy', 'wide']]],
+    ['Room & price', [['room', 'Room', 'wide'], ['room_size', 'Room size'], ['items', 'Room nights', '', 'number'],
+      ['cost_per_item', 'Rate per room night', '', 'number'], ['total', 'Total', '', 'number'], ['cancellation', 'Cancellation policy', 'wide']]],
   ];
   const AREAS = [['nutshell', 'In a nutshell', 'Shown to the client'], ['notes', 'Internal notes', 'Never shown to the client']];
   const ICON = {
@@ -32,7 +32,7 @@
         '<p class="qc-dates">' + (q.date ? TT.esc((q.day ? q.day + ', ' : '') + TT.date(q.date)) + (out ? ' → ' + TT.esc(TT.date(out)) : '') : 'No dates') +
         (q.nights ? ' <i>' + q.nights + ' night' + (q.nights === 1 ? '' : 's') + '</i>' : '') + '</p>' +
         '<div class="qc-tags">' + tags + '</div>' + (q.cancellation ? '<p class="qc-cx">' + TT.esc(q.cancellation) + '</p>' : '') + '</div>' +
-        '<div class="qc-side"><b>' + TT.money(q.total, cur) + '</b><small>' + (q.items > 1 ? q.items + ' × ' + TT.money(q.cost_per_item, cur) : 'Stay total') + '</small>' +
+        '<div class="qc-side"><b>' + TT.money(q.total, cur) + '</b><small>' + (q.items > 1 ? TT.rateLine(q, cur) : 'Stay total') + '</small>' +
         '<div class="qc-btns"><button type="button" class="ib" data-act="edit" title="Edit">' + ICON.edit + '<span>' + (open.has(q.id) ? 'Close' : 'Edit') + '</span></button>' +
         '<button type="button" class="ib" data-act="focus" title="Show on map">' + ICON.pin + '</button>' +
         '<button type="button" class="ib danger" data-act="delete" title="Delete">' + ICON.trash + '</button></div></div>';
@@ -49,6 +49,7 @@
       (type === 'number' ? 'min="0" step="any" inputmode="decimal"' : '') + ' value="' + TT.esc(q[k] == null ? '' : q[k]) + '"></label>';
 
     function editor(q) {
+      if (!q.rooms) q.rooms = TT.roomsOf(q);
       return SECTIONS.map(([title, fields]) => '<div class="q-sec"><h4>' + title + '</h4><div class="q-grid">' + fields.map(f => field(f, q)).join('') + '</div></div>').join('') +
         '<div class="q-sec"><h4>Notes</h4><div class="q-grid">' + AREAS.map(([k, label, hint]) =>
           '<label class="q-f wide"><span>' + label + ' <em>' + hint + '</em></span><textarea data-k="' + k + '" rows="2">' + TT.esc(q[k] || '') + '</textarea></label>').join('') + '</div></div>' +
@@ -91,10 +92,9 @@
       if (!k) return;
       const q = byId(idOf(e.target));
       q[k] = e.target.type === 'number' ? TT.num(e.target.value) : e.target.value;
-      if (k === 'items' || k === 'cost_per_item') {
-        q.total = Math.round((q.items || 0) * (q.cost_per_item || 0));
-        cardOf(e.target).querySelector('[data-k="total"]').value = q.total;
-      }
+      const set = (key, v) => { q[key] = v; const f = cardOf(e.target).querySelector('[data-k="' + key + '"]'); if (f) f.value = v; };
+      if (k === 'nights' || k === 'rooms') set('items', (q.rooms || 1) * (q.nights || 0));  // room nights = rooms x nights
+      if (k === 'nights' || k === 'rooms' || k === 'items' || k === 'cost_per_item') set('total', Math.round((q.items || 0) * (q.cost_per_item || 0)));
       if (k === 'date' && q.date) q.day = new Date(q.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' });
       refreshSummary(q); save(q);
     });

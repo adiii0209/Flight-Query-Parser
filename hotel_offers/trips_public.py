@@ -12,7 +12,7 @@ trips_public_bp = bp = Blueprint("hotel_trips_public", __name__, template_folder
 
 # fields the client may see; internal notes, place ids and the agent's remarks stay private
 PUBLIC_FIELDS = ("date", "day", "nights", "city", "hotel_name", "guests", "cancellation", "meal_plan", "room", "room_size",
-                 "items", "cost_per_item", "total", "nutshell", "address", "lat", "lng", "landmarks")
+                 "rooms", "items", "cost_per_item", "total", "nutshell", "address", "lat", "lng", "landmarks")
 
 
 @bp.before_request

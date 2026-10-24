@@ -92,7 +92,7 @@
     });
     $('#btnBlank').addEventListener('click', async () => {
       try {
-        const r = await TT.api('/api/hotel-offers/trips/' + trip.id + '/quotes', { method: 'POST', json: { hotel_name: 'New hotel', items: 1, date: trip.start_date } });
+        const r = await TT.api('/api/hotel-offers/trips/' + trip.id + '/quotes', { method: 'POST', json: { hotel_name: 'New hotel', rooms: 1, items: 1, date: trip.start_date } });
         qm.add([r.quote], true); $('#pasteDialog').close();
       } catch (err) { status('err', err.message); }
     });

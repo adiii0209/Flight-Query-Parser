@@ -14,7 +14,15 @@ window.TT = window.TT || {};
     const d = new Date(iso + 'T00:00:00');
     return isNaN(d) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   };
-  TT.addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+  TT.addDays = (iso, n) => {
+    const d = new Date(iso + 'T00:00:00');
+    d.setDate(d.getDate() + n);
+    const z = v => String(v).padStart(2, '0');
+    return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate());  // local parts: toISOString() would shift the day in time zones ahead of UTC
+  };
+  // "No. of items" in the sheet counts room nights (rooms x nights), so the room count is items / nights
+  TT.roomsOf = q => q.rooms || (q.nights ? Math.max(1, Math.round((q.items || 0) / q.nights)) : Math.max(1, q.items || 1));
+  TT.rateLine = (q, cur) => TT.roomsOf(q) + ' room' + (TT.roomsOf(q) === 1 ? '' : 's') + ' × ' + (q.nights || 0) + ' night' + (q.nights === 1 ? '' : 's') + ' × ' + TT.money(q.cost_per_item, cur);
   TT.debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
   TT.api = async (url, opts) => {
     const o = Object.assign({ headers: {} }, opts || {});

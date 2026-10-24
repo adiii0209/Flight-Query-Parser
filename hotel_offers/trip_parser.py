@@ -42,7 +42,7 @@ def _lines(cell):
 
 def _blank():
     return {"date": None, "day": "", "nights": 0, "city": "", "hotel_name": "", "guests": "", "guest_name": "",
-            "cancellation": "", "cancel_by": None, "meal_plan": "", "room": "", "room_size": "", "items": 1,
+            "cancellation": "", "cancel_by": None, "meal_plan": "", "room": "", "room_size": "", "rooms": 0, "items": 1,
             "cost_per_item": 0, "total": 0, "nutshell": "", "notes": "",
             "place_id": "", "address": "", "photos": [], "lat": None, "lng": None, "landmarks": []}
 
@@ -52,7 +52,9 @@ def _finish(q):
     q["date"] = d.isoformat() if d else None
     q["day"] = d.strftime("%a") if d else q.get("day", "")
     q["nights"] = int(q["nights"] or 0)
-    q["items"] = int(q["items"] or 0) or 1
+    q["items"] = int(q["items"] or 0) or 1  # room nights (rooms x nights), as in the sheet
+    if not q.get("rooms"):
+        q["rooms"] = max(1, round(q["items"] / q["nights"])) if q["nights"] else max(1, q["items"])
     q["cost_per_item"] = round(float(q["cost_per_item"] or 0))
     q["total"] = round(float(q["total"] or 0)) or q["items"] * q["cost_per_item"]
     if not q["cost_per_item"] and q["total"]:
@@ -125,8 +127,8 @@ def parse_sheet(text):
 QUOTE_PROMPT = """You convert a pasted hotel quotation (any format) into JSON for a travel agent.
 Return ONLY {"quotes":[...]}. One object per hotel stay, with keys:
 date (YYYY-MM-DD check-in), nights (int), city, hotel_name, guests (e.g. "2 adults + 1 child"), guest_name,
-cancellation (e.g. "Free Cancellation till 25-Nov-2026"), meal_plan, room, room_size, items (rooms, int),
-cost_per_item (number, per room for the whole stay), total (number), nutshell (short remarks, optional).
+cancellation (e.g. "Free Cancellation till 25-Nov-2026"), meal_plan, room, room_size, rooms (int),
+items (room nights = rooms x nights, int), cost_per_item (number, per room per night), total (number), nutshell (short remarks, optional).
 Use "" or 0 when unknown. Never invent hotels or prices."""
 
 
@@ -141,7 +143,7 @@ def parse_with_ai(text, cfg):
         for k in q:
             if k in item and k not in ("landmarks", "lat", "lng"):
                 q[k] = item[k]
-        q["nights"], q["items"] = _num(item.get("nights")), _num(item.get("items"))
+        q["nights"], q["items"], q["rooms"] = _num(item.get("nights")), _num(item.get("items")), _num(item.get("rooms"))
         q["cost_per_item"], q["total"] = _num(item.get("cost_per_item")), _num(item.get("total"))
         cd = parse_date(q.get("cancellation"))
         q["cancel_by"] = cd.isoformat() if cd else None

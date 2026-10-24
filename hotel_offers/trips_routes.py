@@ -51,7 +51,7 @@ def clean_quote(raw):
         q["day"] = d.strftime("%a")
     cb = _d(raw.get("cancel_by"))
     q["cancel_by"] = cb.isoformat() if cb else None
-    for k, hi in (("nights", 365), ("items", 99)):
+    for k, hi in (("nights", 365), ("rooms", 99), ("items", 999)):
         try:
             q[k] = max(0, min(int(float(raw.get(k) or 0)), hi))
         except (TypeError, ValueError):
@@ -61,6 +61,8 @@ def clean_quote(raw):
             q[k] = max(0, min(round(float(raw.get(k) or 0)), 10 ** 9))
         except (TypeError, ValueError):
             q[k] = 0
+    if not q["rooms"]:
+        q["rooms"] = max(1, round(q["items"] / q["nights"])) if q["nights"] else max(1, q["items"])
     q["lat"], q["lng"] = _coord(raw.get("lat"), -90, 90), _coord(raw.get("lng"), -180, 180)
     if q["lat"] is None or q["lng"] is None:
         q["lat"] = q["lng"] = None
