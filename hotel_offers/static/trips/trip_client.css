@@ -1,0 +1,38 @@
+/* Trips: public client page. Builds on client.css (tokens, nav, .page, .eyebrow). */
+.tc-load{padding:60px 0;text-align:center;color:var(--mute)}
+.tc-hero{padding:34px 0 18px}
+.tc-hero h1{font-family:var(--serif);font-weight:500;font-size:clamp(1.9rem,6vw,3rem);line-height:1.1;letter-spacing:-.02em}
+.tc-meta{color:var(--mute);margin-top:8px}
+.tc-map{height:min(52vh,420px);border-radius:20px;overflow:hidden;border:1px solid var(--line);margin:8px 0 22px;z-index:0}
+.tc-list{display:grid;gap:22px;grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr))}
+.tc-card{background:var(--surface);border:1px solid var(--line);border-radius:22px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(20,20,10,.04),0 14px 40px rgba(20,20,10,.07)}
+.tc-ph{position:relative;aspect-ratio:16/10;background:var(--surface-2)}
+.tc-strip{display:flex;height:100%;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none}
+.tc-strip::-webkit-scrollbar{display:none}
+.tc-strip img{flex:0 0 100%;width:100%;height:100%;object-fit:cover;scroll-snap-align:center}
+.tc-count{position:absolute;right:12px;bottom:12px;background:rgba(0,0,0,.55);color:#fff;font-size:.74rem;padding:3px 10px;border-radius:99px;backdrop-filter:blur(6px)}
+.tc-ph-none{display:grid;place-items:center}
+.tc-ph-none span{font-family:var(--serif);font-size:4rem;color:var(--faint)}
+.tc-body{padding:18px 20px 20px;display:flex;flex-direction:column;gap:12px;flex:1}
+.tc-top{display:flex;gap:12px;align-items:flex-start}
+.tc-n{flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:var(--cta);color:var(--cta-fg);display:grid;place-items:center;font-size:.82rem;font-weight:600;margin-top:3px}
+.tc-top h2{font-family:var(--serif);font-weight:500;font-size:1.45rem;line-height:1.2}
+.tc-sub{color:var(--mute);font-size:.9rem}
+.tc-nut{font-size:.92rem;color:var(--text);background:var(--surface-2);border-radius:12px;padding:10px 12px}
+.tc-facts{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+.tc-facts div:nth-child(n+5){grid-column:1/-1}
+.tc-facts dt{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.tc-facts dd{font-size:.92rem}
+.tc-near{font-size:.88rem;color:var(--mute)}
+.tc-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-top:auto;padding-top:6px;border-top:1px solid var(--line)}
+.tc-price small{display:block;color:var(--mute);font-size:.78rem;padding-top:10px}
+.tc-price b{font-family:var(--serif);font-weight:500;font-size:1.6rem}
+.tc-pin{height:38px;padding:0 16px;border-radius:99px;background:var(--surface-2);font-size:.85rem;font-weight:500}
+.tc-pin:hover{background:var(--line)}
+.tc-sum{display:flex;justify-content:space-between;align-items:baseline;margin-top:26px;padding:20px 22px;border-radius:20px;background:var(--cta);color:var(--cta-fg)}
+.tc-sum b{font-family:var(--serif);font-weight:500;font-size:1.9rem}
+.tc-note{color:var(--faint);font-size:.8rem;margin-top:12px;text-align:center}
+
+.tt-pin span{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#1d3a31;color:#fff;font:600 13px Inter,sans-serif;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.tt-pin.tt-land span{width:16px;height:16px;border-radius:4px;background:#a67c37;transform:rotate(45deg)}
+.leaflet-container{font-family:var(--sans)}

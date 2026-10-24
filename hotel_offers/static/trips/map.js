@@ -1,0 +1,49 @@
+/* Trips: map component (Leaflet + OpenStreetMap tiles). Used by the agent page and the client page. */
+(function (TT) {
+  const hotelIcon = n => L.divIcon({ className: 'tt-pin', html: '<span>' + n + '</span>', iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -14] });
+  const landIcon = () => L.divIcon({ className: 'tt-pin tt-land', html: '<span></span>', iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -8] });
+
+  /** TT.createMap(element, { onSelect(quoteId) }) -> { render(quotes), focus(quoteId) } */
+  TT.createMap = function (el, opts) {
+    opts = opts || {};
+    if (!window.L) { el.innerHTML = '<p class="tt-nomap">The map could not be loaded.</p>'; return { render() {}, focus() {} }; }
+    const map = L.map(el, { scrollWheelZoom: false, zoomControl: true }).setView([20, 0], 2);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+    const layer = L.layerGroup().addTo(map);
+    const pins = {};
+    let fitted = false;
+
+    function render(quotes) {
+      layer.clearLayers();
+      Object.keys(pins).forEach(k => delete pins[k]);
+      const pts = [];
+      quotes.forEach((q, i) => {
+        if (q.lat == null || q.lng == null) return;
+        const p = [q.lat, q.lng];
+        pts.push(p);
+        const m = L.marker(p, { icon: hotelIcon(i + 1), title: q.hotel_name }).addTo(layer);
+        m.bindPopup('<b>' + TT.esc(q.hotel_name) + '</b><br>' + TT.esc(q.city || ''));
+        m.on('click', () => opts.onSelect && opts.onSelect(q.id));
+        pins[q.id] = m;
+        (q.landmarks || []).forEach(l => {
+          if (l.lat == null) return;
+          pts.push([l.lat, l.lng]);
+          L.polyline([p, [l.lat, l.lng]], { color: '#a67c37', weight: 1.5, dashArray: '4 5', opacity: .8 }).addTo(layer);
+          L.marker([l.lat, l.lng], { icon: landIcon(), title: l.name }).addTo(layer).bindPopup('<b>' + TT.esc(l.name) + '</b><br><small>Near ' + TT.esc(q.hotel_name) + '</small>');
+        });
+      });
+      if (pts.length) {
+        map.fitBounds(L.latLngBounds(pts).pad(0.25), { maxZoom: 15 });
+        fitted = true;
+      } else if (!fitted) map.setView([20, 0], 2);
+      setTimeout(() => map.invalidateSize(), 50);
+    }
+    function focus(id) {
+      const m = pins[id];
+      if (!m) return;
+      map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 14), { duration: .6 });
+      m.openPopup();
+    }
+    return { render, focus };
+  };
+})(window.TT);

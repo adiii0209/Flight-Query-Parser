@@ -218,6 +218,7 @@ def rename_offer(offer_id):
 
 
 # register the remaining routes on the same blueprint (imported last: they import names defined above)
-from . import routes_live, public  # noqa: E402,F401
+from . import routes_live, public, trips_public, trips_routes  # noqa: E402,F401
 
 hotel_offers_bp.register_blueprint(public.public_bp)
+hotel_offers_bp.register_blueprint(trips_public.trips_public_bp)

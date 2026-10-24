@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>{{ og.title }} · {{ brand }}</title>
+<meta name="description" content="Your hotel stays, curated by Time Tours.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{ og.title }}">
+<meta property="og:url" content="{{ og.url }}">
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="/static/ticket-flight.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="{{ url_for('.static', filename='client.css') }}">
+<link rel="stylesheet" href="{{ url_for('.static', filename='trips/trip_client.css') }}">
+</head>
+<body data-slug="{{ slug }}" data-wa="{{ whatsapp }}">
+<header class="nav"><div class="nav-in"><span class="brand">{{ brand }}</span>
+  <a class="nav-wa" id="navWa" href="#" target="_blank" rel="noopener">Chat with us</a></div></header>
+<main class="page" id="trip"><p class="tc-load">Loading your trip…</p></main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="{{ url_for('.static', filename='trips/tt.js') }}"></script>
+<script src="{{ url_for('.static', filename='trips/map.js') }}"></script>
+<script src="{{ url_for('.static', filename='trips/trip_client.js') }}"></script>
+</body>
+</html>

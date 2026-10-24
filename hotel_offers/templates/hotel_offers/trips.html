@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Trips | Hotel Offers | Time Tours</title>
+<link rel="icon" type="image/png" href="/static/ticket-flight.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="/static/dashboard.css">
+<link rel="stylesheet" href="/static/sidebar.css">
+<link rel="stylesheet" href="{{ url_for('hotel_offers.static', filename='hotel_offers.css') }}">
+<link rel="stylesheet" href="{{ url_for('hotel_offers.static', filename='trips/trips.css') }}">
+</head>
+<body>
+{% include 'components/sidebar.html' %}
+<header class="app-header">
+  <div class="header-content">
+    <button class="menu-toggle" id="menuToggle" aria-label="Open menu"><span class="menu-bar"></span><span class="menu-bar"></span><span class="menu-bar"></span></button>
+    <div class="header-brand">Trips</div>
+    <div class="header-actions"><a class="pill ghost sm" href="/hotel-offers">Offer posters</a></div>
+  </div>
+</header>
+
+<main class="t-main">
+  <nav class="t-tabs" id="tabs"><button class="t-tab on" data-tab="trips">Trips</button><button class="t-tab" data-tab="leads">Trip leads</button></nav>
+
+  <section id="viewTrips">
+    <form class="t-form" id="newTripForm">
+      <input name="client_name" placeholder="Client name" required><input name="destination" placeholder="Destination">
+      <input name="start_date" type="date" title="Start"><input name="end_date" type="date" title="End">
+      <button class="pill primary" type="submit">New trip</button>
+    </form>
+    <div id="tripList"></div>
+  </section>
+  <section id="viewLeads" hidden></section>
+  <section id="viewDetail" hidden></section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="{{ url_for('hotel_offers.static', filename='trips/tt.js') }}"></script>
+<script src="{{ url_for('hotel_offers.static', filename='trips/map.js') }}"></script>
+<script src="{{ url_for('hotel_offers.static', filename='trips/quotes.js') }}"></script>
+<script src="{{ url_for('hotel_offers.static', filename='trips/leads.js') }}"></script>
+<script src="{{ url_for('hotel_offers.static', filename='trips/detail.js') }}"></script>
+<script src="{{ url_for('hotel_offers.static', filename='trips/main.js') }}"></script>
+</body>
+</html>

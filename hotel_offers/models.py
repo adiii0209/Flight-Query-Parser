@@ -98,3 +98,88 @@ class HotelOfferLead(db.Model):
             "stay_from": self.stay_from.isoformat() if self.stay_from else None, "stay_to": self.stay_to.isoformat() if self.stay_to else None,
             "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
         }
+
+
+class HotelTripLead(db.Model):
+    """An enquiry that may become a trip."""
+    __tablename__ = "hotel_trip_lead"
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.String(36), nullable=False, index=True, default="")
+    name = db.Column(db.String(120), nullable=False, default="")
+    phone = db.Column(db.String(32), nullable=False, default="")
+    destination = db.Column(db.String(160), nullable=False, default="")
+    travel_from = db.Column(db.Date, nullable=True)
+    travel_to = db.Column(db.Date, nullable=True)
+    pax = db.Column(db.String(80), nullable=False, default="")
+    notes = db.Column(db.Text, nullable=False, default="")
+    status = db.Column(db.String(16), nullable=False, default="new")  # new | contacted | converted | lost
+    trip_id = db.Column(db.Integer, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id, "name": self.name, "phone": self.phone, "destination": self.destination,
+            "travel_from": self.travel_from.isoformat() if self.travel_from else None,
+            "travel_to": self.travel_to.isoformat() if self.travel_to else None,
+            "pax": self.pax, "notes": self.notes, "status": self.status, "trip_id": self.trip_id,
+            "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
+        }
+
+
+class HotelTrip(db.Model):
+    """A client trip: a container of hotel quotes, optionally shared by link."""
+    __tablename__ = "hotel_trip"
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.String(36), nullable=False, index=True, default="")
+    user_id = db.Column(db.String(36), nullable=True)
+    lead_id = db.Column(db.Integer, nullable=True)
+    title = db.Column(db.String(255), nullable=False, default="")
+    client_name = db.Column(db.String(120), nullable=False, default="")
+    client_phone = db.Column(db.String(32), nullable=False, default="")
+    destination = db.Column(db.String(160), nullable=False, default="")
+    start_date = db.Column(db.Date, nullable=True)
+    end_date = db.Column(db.Date, nullable=True)
+    notes = db.Column(db.Text, nullable=False, default="")
+    currency = db.Column(db.String(8), nullable=False, default="INR")
+    share_slug = db.Column(db.String(40), nullable=True, unique=True, index=True)
+    is_shared = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self, quote_count=None, total=None):
+        out = {
+            "id": self.id, "lead_id": self.lead_id, "title": self.title, "client_name": self.client_name,
+            "client_phone": self.client_phone, "destination": self.destination,
+            "start_date": self.start_date.isoformat() if self.start_date else None,
+            "end_date": self.end_date.isoformat() if self.end_date else None,
+            "notes": self.notes, "currency": self.currency, "is_shared": bool(self.is_shared), "share_slug": self.share_slug,
+            "updated_at": self.updated_at.isoformat() + "Z" if self.updated_at else None,
+        }
+        if quote_count is not None:
+            out["quote_count"], out["total"] = quote_count, total
+        return out
+
+
+class HotelQuote(db.Model):
+    """One hotel quote inside a trip (a row of the quotation sheet). Fields live in the JSON blob."""
+    __tablename__ = "hotel_quote"
+
+    id = db.Column(db.Integer, primary_key=True)
+    trip_id = db.Column(db.Integer, nullable=False, index=True)
+    organization_id = db.Column(db.String(36), nullable=False, index=True, default="")
+    position = db.Column(db.Integer, nullable=False, default=0)
+    data = db.Column(db.Text, nullable=False, default="{}")
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def load(self):
+        try:
+            return json.loads(self.data or "{}")
+        except ValueError:
+            return {}
+
+    def to_dict(self):
+        d = self.load()
+        d["id"], d["position"] = self.id, self.position
+        return d

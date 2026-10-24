@@ -1,0 +1,362 @@
+"""Authenticated routes for the quotation module: trip leads, trips and the hotel quotes inside them."""
+import json
+import re
+import secrets
+from datetime import date
+
+import requests
+from flask import jsonify, render_template, request, session
+
+from extensions import db
+from routes.auth import login_required
+
+from . import settings, trip_places
+from .common import public_base
+from .models import HotelQuote, HotelTrip, HotelTripLead
+from .routes import _err, _org, hotel_offers_bp as bp
+from .trip_parser import parse_quotes
+
+PHOTO_RE = re.compile(r"^places/[\w-]+/photos/[\w-]+$")
+MAX_PHOTOS = trip_places.MAX_PHOTOS
+LEAD_STATUSES = ("new", "contacted", "converted", "lost")
+TEXT_FIELDS = ("day", "city", "hotel_name", "guests", "guest_name", "cancellation", "meal_plan", "room", "room_size",
+               "nutshell", "notes", "place_id", "address")
+LONG_FIELDS = ("nutshell", "notes", "address", "cancellation", "room", "guests")
+
+
+def _d(value):
+    try:
+        return date.fromisoformat(str(value)[:10]) if value else None
+    except ValueError:
+        return None
+
+
+def _s(value, n=200):
+    return re.sub(r"[ \t]+", " ", str(value or "")).strip()[:n]
+
+
+def _coord(value, lo, hi):
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return v if lo <= v <= hi else None
+
+
+def clean_quote(raw):
+    """Whitelist and size-limit the fields of a quote coming from the browser."""
+    q = {k: _s(raw.get(k), 1200 if k in LONG_FIELDS else 200) for k in TEXT_FIELDS}
+    d = _d(raw.get("date"))
+    q["date"] = d.isoformat() if d else None
+    if d:
+        q["day"] = d.strftime("%a")
+    cb = _d(raw.get("cancel_by"))
+    q["cancel_by"] = cb.isoformat() if cb else None
+    for k, hi in (("nights", 365), ("items", 99)):
+        try:
+            q[k] = max(0, min(int(float(raw.get(k) or 0)), hi))
+        except (TypeError, ValueError):
+            q[k] = 0
+    for k in ("cost_per_item", "total"):
+        try:
+            q[k] = max(0, min(round(float(raw.get(k) or 0)), 10 ** 9))
+        except (TypeError, ValueError):
+            q[k] = 0
+    q["lat"], q["lng"] = _coord(raw.get("lat"), -90, 90), _coord(raw.get("lng"), -180, 180)
+    if q["lat"] is None or q["lng"] is None:
+        q["lat"] = q["lng"] = None
+    marks = []
+    for m in (raw.get("landmarks") or [])[:2]:  # an agent may pin at most two landmarks per hotel
+        if not isinstance(m, dict):
+            continue
+        lat, lng = _coord(m.get("lat"), -90, 90), _coord(m.get("lng"), -180, 180)
+        if lat is None or lng is None or not _s(m.get("name")):
+            continue
+        marks.append({"name": _s(m.get("name"), 120), "address": _s(m.get("address"), 300),
+                      "place_id": _s(m.get("place_id"), 200), "lat": lat, "lng": lng})
+    q["landmarks"] = marks
+    q["photos"] = [p for p in (raw.get("photos") or []) if isinstance(p, str) and PHOTO_RE.match(p)][:MAX_PHOTOS]
+    return q
+
+
+def _trip(trip_id):
+    return HotelTrip.query.filter_by(id=trip_id, organization_id=_org()).first()
+
+
+def _quotes(trip_id):
+    return HotelQuote.query.filter_by(trip_id=trip_id).order_by(HotelQuote.position, HotelQuote.id).all()
+
+
+def trip_url(trip):
+    return f"{public_base(trip.organization_id)}/t/{trip.share_slug}" if trip.share_slug else None
+
+
+def _trip_payload(trip):
+    quotes = [q.to_dict() for q in _quotes(trip.id)]
+    out = trip.to_dict(quote_count=len(quotes), total=sum(q.get("total") or 0 for q in quotes))
+    out["share_url"], out["quotes"] = trip_url(trip), quotes
+    return out
+
+
+def _apply_trip_fields(trip, body):
+    for k, n in (("title", 255), ("client_name", 120), ("client_phone", 32), ("destination", 160)):
+        if k in body:
+            setattr(trip, k, _s(body[k], n))
+    if "notes" in body:
+        trip.notes = str(body["notes"] or "")[:4000]
+    if "currency" in body:
+        trip.currency = re.sub(r"[^A-Z]", "", str(body["currency"]).upper())[:8] or "INR"
+    for k in ("start_date", "end_date"):
+        if k in body:
+            setattr(trip, k, _d(body[k]))
+
+
+@bp.route("/hotel-offers/trips")
+@login_required
+def trips_page():
+    return render_template("hotel_offers/trips.html")
+
+
+# ------------------------------------------------------------------ places
+@bp.route("/api/hotel-offers/places")
+@login_required
+def places_search():
+    query = _s(request.args.get("q"), 200)
+    if len(query) < 3:
+        return _err("Type at least 3 letters.")
+    key = settings.get_config(_org())["google_places_key"]
+    if not key:
+        return _err("Google Places key is not configured (Hotel Offers settings).")
+    near = {"lat": _coord(request.args.get("lat"), -90, 90), "lng": _coord(request.args.get("lng"), -180, 180)}
+    try:
+        return jsonify({"results": trip_places.search(query, key, 5, near)})
+    except requests.HTTPError as exc:
+        return _err(f"Google Places rejected the request ({exc.response.status_code}).", 502)
+    except requests.RequestException as exc:
+        return _err(f"Could not reach Google Places: {exc}", 502)
+
+
+# ------------------------------------------------------------------ leads
+@bp.route("/api/hotel-offers/trip-leads", methods=["GET"])
+@login_required
+def list_trip_leads():
+    rows = HotelTripLead.query.filter_by(organization_id=_org()).order_by(HotelTripLead.created_at.desc()).limit(300).all()
+    return jsonify({"leads": [r.to_dict() for r in rows]})
+
+
+def _apply_lead(row, body):
+    for k, n in (("name", 120), ("phone", 32), ("destination", 160), ("pax", 80)):
+        if k in body:
+            setattr(row, k, _s(body[k], n))
+    if "notes" in body:
+        row.notes = str(body["notes"] or "")[:4000]
+    for k in ("travel_from", "travel_to"):
+        if k in body:
+            setattr(row, k, _d(body[k]))
+    if body.get("status") in LEAD_STATUSES and row.status != "converted":
+        row.status = body["status"]
+
+
+@bp.route("/api/hotel-offers/trip-leads", methods=["POST"])
+@login_required
+def create_trip_lead():
+    body = request.get_json(silent=True) or {}
+    if not _s(body.get("name")):
+        return _err("Enter the client's name.")
+    row = HotelTripLead(organization_id=_org())
+    _apply_lead(row, body)
+    db.session.add(row)
+    db.session.commit()
+    return jsonify({"lead": row.to_dict()})
+
+
+@bp.route("/api/hotel-offers/trip-leads/<int:lead_id>", methods=["PATCH"])
+@login_required
+def update_trip_lead(lead_id):
+    row = HotelTripLead.query.filter_by(id=lead_id, organization_id=_org()).first()
+    if not row:
+        return _err("Not found", 404)
+    _apply_lead(row, request.get_json(silent=True) or {})
+    db.session.commit()
+    return jsonify({"lead": row.to_dict()})
+
+
+@bp.route("/api/hotel-offers/trip-leads/<int:lead_id>", methods=["DELETE"])
+@login_required
+def delete_trip_lead(lead_id):
+    row = HotelTripLead.query.filter_by(id=lead_id, organization_id=_org()).first()
+    if not row:
+        return _err("Not found", 404)
+    db.session.delete(row)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/hotel-offers/trip-leads/<int:lead_id>/convert", methods=["POST"])
+@login_required
+def convert_trip_lead(lead_id):
+    lead = HotelTripLead.query.filter_by(id=lead_id, organization_id=_org()).first()
+    if not lead:
+        return _err("Not found", 404)
+    existing = _trip(lead.trip_id) if lead.trip_id else None
+    if existing:
+        return jsonify({"trip": existing.to_dict(), "lead": lead.to_dict()})
+    trip = HotelTrip(organization_id=_org(), user_id=session.get("user_id"), lead_id=lead.id,
+                     title=(f"{lead.name} - {lead.destination}" if lead.destination else lead.name)[:255],
+                     client_name=lead.name, client_phone=lead.phone, destination=lead.destination,
+                     start_date=lead.travel_from, end_date=lead.travel_to, notes=lead.notes)
+    db.session.add(trip)
+    db.session.flush()
+    lead.status, lead.trip_id = "converted", trip.id
+    db.session.commit()
+    return jsonify({"trip": trip.to_dict(), "lead": lead.to_dict()})
+
+
+# ------------------------------------------------------------------ trips
+@bp.route("/api/hotel-offers/trips", methods=["GET"])
+@login_required
+def list_trips():
+    rows = HotelTrip.query.filter_by(organization_id=_org()).order_by(HotelTrip.updated_at.desc()).limit(200).all()
+    stats = {}
+    for tid, data in db.session.query(HotelQuote.trip_id, HotelQuote.data).filter(HotelQuote.organization_id == _org()).all():
+        try:
+            amount = json.loads(data).get("total") or 0
+        except ValueError:
+            amount = 0
+        n, t = stats.get(tid, (0, 0))
+        stats[tid] = (n + 1, t + amount)
+    return jsonify({"trips": [r.to_dict(*stats.get(r.id, (0, 0))) for r in rows]})
+
+
+@bp.route("/api/hotel-offers/trips", methods=["POST"])
+@login_required
+def create_trip():
+    body = request.get_json(silent=True) or {}
+    trip = HotelTrip(organization_id=_org(), user_id=session.get("user_id"))
+    _apply_trip_fields(trip, body)
+    if not trip.title:
+        trip.title = trip.client_name or "Untitled trip"
+    db.session.add(trip)
+    db.session.commit()
+    return jsonify({"trip": _trip_payload(trip)})
+
+
+@bp.route("/api/hotel-offers/trips/<int:trip_id>", methods=["GET"])
+@login_required
+def get_trip(trip_id):
+    trip = _trip(trip_id)
+    return jsonify({"trip": _trip_payload(trip)}) if trip else _err("Not found", 404)
+
+
+@bp.route("/api/hotel-offers/trips/<int:trip_id>", methods=["PATCH"])
+@login_required
+def update_trip(trip_id):
+    trip = _trip(trip_id)
+    if not trip:
+        return _err("Not found", 404)
+    body = request.get_json(silent=True) or {}
+    _apply_trip_fields(trip, body)
+    if "is_shared" in body:
+        trip.is_shared = bool(body["is_shared"])
+        if trip.is_shared and not trip.share_slug:
+            trip.share_slug = secrets.token_hex(8)
+    db.session.commit()
+    return jsonify({"trip": _trip_payload(trip)})
+
+
+@bp.route("/api/hotel-offers/trips/<int:trip_id>", methods=["DELETE"])
+@login_required
+def delete_trip(trip_id):
+    trip = _trip(trip_id)
+    if not trip:
+        return _err("Not found", 404)
+    HotelQuote.query.filter_by(trip_id=trip.id).delete()
+    HotelTripLead.query.filter_by(trip_id=trip.id).update({"trip_id": None, "status": "contacted"})
+    db.session.delete(trip)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+# ------------------------------------------------------------------ quotes
+@bp.route("/api/hotel-offers/trips/<int:trip_id>/parse", methods=["POST"])
+@login_required
+def parse_trip_quotes(trip_id):
+    """Parse pasted text into quotes, add them to the trip and pin each hotel on the map."""
+    trip = _trip(trip_id)
+    if not trip:
+        return _err("Not found", 404)
+    text = ((request.get_json(silent=True) or {}).get("text") or "").strip()
+    if len(text) < 20:
+        return _err("Paste the hotel quotation first.")
+    if len(text) > 60000:
+        return _err("Text is too long.")
+    cfg = settings.get_config(_org())
+    try:
+        quotes, source = parse_quotes(text, cfg)
+    except Exception as exc:
+        return _err(f"Parsing failed: {exc}", 502)
+    if not quotes:
+        return _err("No hotel stays found in that text.")
+    quotes = quotes[:60]
+    warning = None
+    if cfg["google_places_key"]:
+        for q in quotes:
+            try:
+                hits = trip_places.search(f"{q['hotel_name']} {q['city']}".strip(), cfg["google_places_key"], 1)
+            except requests.RequestException:
+                warning = "Some hotels could not be placed on the map; search for them on each card."
+                break
+            if hits:
+                q.update(place_id=hits[0]["place_id"], address=hits[0]["address"], photos=hits[0]["photos"], lat=hits[0]["lat"], lng=hits[0]["lng"])
+    else:
+        warning = "No Google Places key is set, so hotels were not placed on the map."
+    pos = (db.session.query(db.func.max(HotelQuote.position)).filter_by(trip_id=trip.id).scalar() or 0) + 1
+    rows = []
+    for i, q in enumerate(quotes):
+        row = HotelQuote(trip_id=trip.id, organization_id=_org(), position=pos + i, data=json.dumps(clean_quote(q)))
+        db.session.add(row)
+        rows.append(row)
+    trip.updated_at = db.func.now()
+    db.session.commit()
+    return jsonify({"quotes": [r.to_dict() for r in rows], "source": source, "warning": warning})
+
+
+@bp.route("/api/hotel-offers/trips/<int:trip_id>/quotes", methods=["POST"])
+@login_required
+def add_quote(trip_id):
+    trip = _trip(trip_id)
+    if not trip:
+        return _err("Not found", 404)
+    pos = (db.session.query(db.func.max(HotelQuote.position)).filter_by(trip_id=trip.id).scalar() or 0) + 1
+    row = HotelQuote(trip_id=trip.id, organization_id=_org(), position=pos, data=json.dumps(clean_quote(request.get_json(silent=True) or {})))
+    db.session.add(row)
+    trip.updated_at = db.func.now()
+    db.session.commit()
+    return jsonify({"quote": row.to_dict()})
+
+
+def _quote(quote_id):
+    return HotelQuote.query.filter_by(id=quote_id, organization_id=_org()).first()
+
+
+@bp.route("/api/hotel-offers/quotes/<int:quote_id>", methods=["PUT"])
+@login_required
+def save_quote(quote_id):
+    row = _quote(quote_id)
+    if not row:
+        return _err("Not found", 404)
+    row.data = json.dumps(clean_quote(request.get_json(silent=True) or {}))
+    HotelTrip.query.filter_by(id=row.trip_id).update({"updated_at": db.func.now()})
+    db.session.commit()
+    return jsonify({"quote": row.to_dict()})
+
+
+@bp.route("/api/hotel-offers/quotes/<int:quote_id>", methods=["DELETE"])
+@login_required
+def delete_quote(quote_id):
+    row = _quote(quote_id)
+    if not row:
+        return _err("Not found", 404)
+    db.session.delete(row)
+    db.session.commit()
+    return jsonify({"ok": True})

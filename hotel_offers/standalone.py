@@ -28,6 +28,7 @@ def create_public_app():
     import models_rbac  # noqa: F401
 
     from .public import public_bp
+    from .trips_public import trips_public_bp
 
     app = Flask(__name__)  # templates live in hotel_offers/templates
     app.config["SQLALCHEMY_DATABASE_URI"] = _database_uri()
@@ -35,6 +36,7 @@ def create_public_app():
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True, "pool_recycle": 300, "pool_size": 5, "max_overflow": 5, "pool_timeout": 30}
     db.init_app(app)
     app.register_blueprint(public_bp)
+    app.register_blueprint(trips_public_bp)
 
     @app.route("/")
     def home():
