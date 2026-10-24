@@ -32,7 +32,7 @@
   // the hotel card: the same card as before, now shown inside its city card
   function optionHtml(g, o, multi) {
     const isSel = o.key === g.selected;
-    const first = o.lines[0], located = o.lines.find(l => l.lat != null), many = o.lines.length > 1;
+    const first = o.lines[0], located = o.key === g.selected ? o.lines.find(l => l.lat != null) : null, many = o.lines.length > 1;
     const nut = (o.lines.find(l => l.nutshell) || {}).nutshell;
     const near = (o.lines.find(l => (l.landmarks || []).length) || { landmarks: [] }).landmarks;
     const stay = [['Check-in', g.date ? (first.day ? first.day + ', ' : '') + TT.date(g.date) : ''], ['Check-out', g.checkout ? TT.date(g.checkout) : '']];
@@ -115,7 +115,7 @@
   function render() {
     const t = data.trip, dates = t.start_date ? TT.date(t.start_date) + (t.end_date ? ' – ' + TT.date(t.end_date) : '') : '';
     groups = TT.groupQuotes(data.quotes, selection);
-    const pins = TT.groupPins(groups);
+    const pins = TT.groupPins(groups, true);
     root.innerHTML = '<div id="viewList"><section class="tc-hero"><p class="eyebrow">Your trip</p><h1>' + TT.esc(t.title) + '</h1><p class="tc-meta">' +
       [t.client_name && 'Prepared for ' + t.client_name, t.destination, dates].filter(Boolean).map(TT.esc).join(' · ') + '</p>' +
       '</section>' +
@@ -133,6 +133,15 @@
     const a = TT.$('#navWa');
     if (wa) a.href = 'https://wa.me/' + wa + '?text=' + encodeURIComponent('Hi, about my trip: ' + t.title); else a.hidden = true;
     route();
+  }
+
+  // the map and its chips show only the hotel selected in each city
+  function drawMap() {
+    if (!map) return;
+    const pins = TT.groupPins(groups, true);
+    if (chipSel !== null && !pins.some(p => p.id === chipSel)) chipSel = null;
+    TT.$('#tcChips').innerHTML = pins.map(q => '<button type="button" class="tc-chip' + (q.id === chipSel ? ' on' : '') + '" data-id="' + q.id + '"><i>' + q.num + '</i>' + TT.esc(q.hotel_name) + '</button>').join('');
+    map.render(pins);
   }
 
   const drawList = () => { TT.$('#ccList').innerHTML = groups.map(cityCard).join(''); TT.$('#sumHost').innerHTML = summaryHtml(); };
@@ -160,6 +169,7 @@
   function refresh() {
     groups = TT.groupQuotes(data.quotes, selection);
     drawList();
+    drawMap();
     if (current !== null) {
       const gi = groups.findIndex(g => g.key === current), y = window.scrollY;
       if (gi >= 0) { TT.$('#viewCity').innerHTML = cityPage(groups[gi], gi); window.scrollTo({ top: y, behavior: 'instant' }); }

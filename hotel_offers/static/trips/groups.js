@@ -31,10 +31,11 @@
 
   TT.groupsTotal = groups => groups.reduce((s, g) => s + g.selectedOption.total, 0);
 
-  /** One map pin per option (its first line that has a location), numbered by city card. */
-  TT.groupPins = function (groups) {
+  /** One map pin per option (its first line that has a location), numbered by city card. selectedOnly: just the chosen hotel of each city. */
+  TT.groupPins = function (groups, selectedOnly) {
     const pins = [];
     groups.forEach((g, gi) => g.options.forEach(o => {
+      if (selectedOnly && o.key !== g.selected) return;
       const line = o.lines.find(l => l.lat != null && l.lng != null);
       if (!line) return;
       pins.push(Object.assign({}, line, { num: gi + 1, hotel_name: o.hotel_name || line.hotel_name, landmarks: o.lines.reduce((a, l) => a.length ? a : (l.landmarks || []), []) }));
