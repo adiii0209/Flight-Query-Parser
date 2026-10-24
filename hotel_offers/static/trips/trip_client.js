@@ -43,7 +43,7 @@
   // the hotel card: the same card as before, now shown inside its city card
   function optionHtml(g, o, multi) {
     const isSel = o.key === g.selected;
-    const first = o.lines[0], located = o.key === g.selected ? o.lines.find(l => l.lat != null) : null, many = o.lines.length > 1;
+    const first = o.lines[0], located = o.lines.find(l => l.lat != null), many = o.lines.length > 1;
     const nut = (o.lines.find(l => l.nutshell) || {}).nutshell;
     const near = (o.lines.find(l => (l.landmarks || []).length) || { landmarks: [] }).landmarks;
     const info = o.lines.find(l => l.rating || l.website) || {};
@@ -88,7 +88,17 @@
     const multi = g.options.length > 1;
     return '<div class="cp-bar"><a class="cp-back" href="#" aria-label="Back to all cities">' + BACK + '</a><div class="cp-mid"><h1>' + TT.esc(g.city || 'Your stay') + '</h1><p>' + TT.esc(shortDates(g)) + '</p></div>' +
       '<b class="cp-amt">' + TT.money(g.selectedOption.total, cur()) + '</b></div>' +
-      '<div class="cp-opts">' + g.options.map(o => optionHtml(g, o, multi)).join('') + '</div>';
+      '<div class="cp-opts">' + g.options.map(o => optionHtml(g, o, multi)).join('') + '</div>' + mapSection(cityPins(g));
+  }
+
+  // one pin per hotel option of this city, numbered 1, 2, 3 in the order of the cards
+  function cityPins(g) {
+    const pins = [];
+    g.options.forEach((o, oi) => {
+      const line = o.lines.find(l => l.lat != null && l.lng != null);
+      if (line) pins.push(Object.assign({}, line, { num: oi + 1, hotel_name: o.hotel_name || line.hotel_name, landmarks: o.lines.reduce((a, l) => a.length ? a : (l.landmarks || []), []) }));
+    });
+    return pins;
   }
 
   function summaryHtml() {
@@ -99,7 +109,7 @@
   // ---- map
   function mapSection(pins) {
     if (!pins.length) return '';
-    return '<section class="tc-mapsec" id="tcMapSec"><div class="tc-maphead"><h2>Hotels on the map</h2></div><div class="tc-mapbox">' +
+    return '<section class="tc-mapsec" id="tcMapSec"><div class="tc-maphead"><h2>On the map</h2></div><div class="tc-mapbox">' +
       '<div class="tc-map" id="tcMap"></div>' +
       '<div class="tc-chips" id="tcChips">' + pins.map(q => '<button type="button" class="tc-chip" data-id="' + q.id + '"><i>' + q.num + '</i>' + TT.esc(q.hotel_name) + '</button>').join('') + '</div>' +
       '<button type="button" class="tc-fs" id="tcFs" aria-label="Full screen">' + EXPAND + '</button></div></section>';
@@ -128,33 +138,36 @@
   function render() {
     const t = data.trip, dates = t.start_date ? TT.date(t.start_date) + (t.end_date ? ' – ' + TT.date(t.end_date) : '') : '';
     groups = TT.groupQuotes(data.quotes, selection);
-    const pins = TT.groupPins(groups, true);
     root.innerHTML = '<div id="viewList"><section class="tc-hero"><p class="eyebrow">Your trip</p><h1>' + TT.esc(t.title) + '</h1><p class="tc-meta">' +
       [t.client_name && 'Prepared for ' + t.client_name, t.destination, dates].filter(Boolean).map(TT.esc).join(' · ') + '</p>' +
       '</section>' +
-      '<div class="cc-list" id="ccList"></div><div id="sumHost"></div></div><div id="viewCity" hidden></div>' + mapSection(pins) +
+      '<div class="cc-list" id="ccList"></div><div id="sumHost"></div></div><div id="viewCity" hidden></div>' +
       '<p class="tc-note" id="tcNote">Prices are subject to availability.</p>';
     drawList();
-    if (TT.$('#tcMap')) {
-      map = TT.createMap(TT.$('#tcMap'), { onSelect: id => selectChip(id) });
-      map.render(pins);
-      document.body.insertAdjacentHTML('beforeend', '<button class="tc-fab" id="tcFab" type="button" aria-label="Open map">' + PIN + '<span>Map</span></button>');
-      const toggle = () => setFull(!TT.$('#tcMapSec').classList.contains('full'));
-      TT.$('#tcFab').addEventListener('click', toggle);
-      TT.$('#tcFs').addEventListener('click', toggle);
-    }
     const a = TT.$('#navWa');
     if (wa) a.href = 'https://wa.me/' + wa + '?text=' + encodeURIComponent('Hi, about my trip: ' + t.title); else a.hidden = true;
     route();
   }
 
-  // the map and its chips show only the hotel selected in each city
-  function drawMap() {
-    if (!map) return;
-    const pins = TT.groupPins(groups, true);
-    if (chipSel !== null && !pins.some(p => p.id === chipSel)) chipSel = null;
-    TT.$('#tcChips').innerHTML = pins.map(q => '<button type="button" class="tc-chip' + (q.id === chipSel ? ' on' : '') + '" data-id="' + q.id + '"><i>' + q.num + '</i>' + TT.esc(q.hotel_name) + '</button>').join('');
+  // the map of the city page you are on (created when the page opens, dropped when you leave it)
+  function mountMap(g) {
+    const pins = cityPins(g);
+    chipSel = null;
+    if (!pins.length || !TT.$('#tcMap')) return;
+    map = TT.createMap(TT.$('#tcMap'), { onSelect: id => selectChip(id) });
     map.render(pins);
+    document.body.insertAdjacentHTML('beforeend', '<button class="tc-fab" id="tcFab" type="button" aria-label="Open map">' + PIN + '<span>Map</span></button>');
+    const toggle = () => setFull(!TT.$('#tcMapSec').classList.contains('full'));
+    TT.$('#tcFab').addEventListener('click', toggle);
+    TT.$('#tcFs').addEventListener('click', toggle);
+  }
+
+  function unmountMap() {
+    document.documentElement.classList.remove('lock');
+    const fab = TT.$('#tcFab');
+    if (fab) fab.remove();
+    if (map) { map.destroy(); map = null; }
+    chipSel = null;
   }
 
   const drawList = () => { TT.$('#ccList').innerHTML = groups.map(cityCard).join(''); TT.$('#sumHost').innerHTML = summaryHtml(); };
@@ -166,14 +179,15 @@
     const list = TT.$('#viewList'), city = TT.$('#viewCity');
     document.body.classList.toggle('in-city', gi >= 0);
     if (gi < 0) {
-      current = null; city.hidden = true; list.hidden = false;
-      if (TT.$('#tcMapSec.full')) setFull(false);
+      current = null; unmountMap(); city.hidden = true; city.innerHTML = ''; list.hidden = false;
       window.scrollTo({ top: listY, behavior: 'instant' });
       return;
     }
     if (current === null) listY = window.scrollY || listY;
+    else unmountMap();
     current = key; list.hidden = true; city.hidden = false;
     city.innerHTML = cityPage(groups[gi], gi);
+    mountMap(groups[gi]);
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
   window.addEventListener('hashchange', route);
@@ -182,10 +196,13 @@
   function refresh() {
     groups = TT.groupQuotes(data.quotes, selection);
     drawList();
-    drawMap();
     if (current !== null) {
-      const gi = groups.findIndex(g => g.key === current), y = window.scrollY;
-      if (gi >= 0) { TT.$('#viewCity').innerHTML = cityPage(groups[gi], gi); window.scrollTo({ top: y, behavior: 'instant' }); }
+      const g = groups.find(x => x.key === current), y = window.scrollY;
+      if (g) {
+        TT.$('.cp-amt').textContent = TT.money(g.selectedOption.total, cur());
+        TT.$('.cp-opts').innerHTML = g.options.map(o => optionHtml(g, o, g.options.length > 1)).join('');
+        window.scrollTo({ top: y, behavior: 'instant' });
+      }
     }
   }
 

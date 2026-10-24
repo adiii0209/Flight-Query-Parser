@@ -52,6 +52,6 @@
       map.closePopup();
       if (pinsBounds) map.flyToBounds(pinsBounds, { maxZoom: 15, duration: .6 });
     }
-    return { render, focus, showAll, resize() { map.invalidateSize(); if (pinsBounds) map.fitBounds(pinsBounds, { maxZoom: 15 }); } };
+    return { render, focus, showAll, destroy() { map.remove(); }, resize() { map.invalidateSize(); if (pinsBounds) map.fitBounds(pinsBounds, { maxZoom: 15 }); } };
   };
 })(window.TT);

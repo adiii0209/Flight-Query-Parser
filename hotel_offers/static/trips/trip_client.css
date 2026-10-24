@@ -124,7 +124,7 @@
 
 /* a city's page */
 .cp-opts{display:grid;gap:20px;grid-template-columns:repeat(auto-fill,minmax(min(100%,400px),1fr));margin-top:16px}
-body.in-city .tc-mapsec:not(.full),body.in-city .tc-fab:not(.over),body.in-city #tcNote,body.in-city .nav{display:none}
+body.in-city #tcNote,body.in-city .nav{display:none}
 @media(max-width:620px){
   .cc{grid-template-columns:1fr auto}
   .cc-media{grid-column:1/-1;min-height:160px}
