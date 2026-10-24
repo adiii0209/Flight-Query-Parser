@@ -926,6 +926,7 @@
             <textarea class="lead-note" rows="1" placeholder="Add a note…" maxlength="2000"></textarea>
           </div>
           <div class="lead-side"><select class="st st-${l.status}" aria-label="Status">${Object.keys(LEAD_LABEL).map(k => `<option value="${k}" ${k === l.status ? 'selected' : ''}>${LEAD_LABEL[k]}</option>`).join('')}</select>
+            <button class="lead-trip pill ghost sm">${l.trip_id ? 'Open trip' : 'Convert to trip'}</button>
             <button class="lead-del" aria-label="Delete lead" title="Delete">&times;</button></div>`;
         $('b', el).textContent = l.name; $('.lead-offer', el).textContent = l.offer_title;
         const note = $('.lead-note', el); note.value = l.note;
@@ -935,6 +936,13 @@
         $('select', el).addEventListener('change', async e => {
           const sel = e.target;
           try { await api('/api/hotel-offers/leads/' + l.id, { method: 'PATCH', body: { status: sel.value } }); l.status = sel.value; loadLeads(); } catch (err) { alert(err.message); sel.value = l.status; }
+        });
+        $('.lead-trip', el).addEventListener('click', async e => {
+          const btn = e.currentTarget; btn.disabled = true;
+          try {
+            const id = l.trip_id || (await api('/api/hotel-offers/leads/' + l.id + '/to-trip', { method: 'POST' })).trip.id;
+            location.href = '/hotel-offers/trips#trip/' + id;
+          } catch (err) { alert(err.message); btn.disabled = false; }
         });
         $('.lead-del', el).addEventListener('click', async () => {
           if (!confirm('Delete the lead from ' + l.name + '?')) return;

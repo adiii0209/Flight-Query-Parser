@@ -5,20 +5,19 @@ import secrets
 from datetime import date
 
 import requests
-from flask import jsonify, render_template, request, session
+from flask import Response, jsonify, render_template, request, session
 
 from extensions import db
 from routes.auth import login_required
 
-from . import settings, trip_places
+from . import settings, trip_photos, trip_places
 from .common import public_base
-from .models import HotelQuote, HotelTrip, HotelTripLead
+from .models import HotelOfferLead, HotelQuote, HotelTrip, HotelTripPhoto
 from .routes import _err, _org, hotel_offers_bp as bp
 from .trip_parser import parse_quotes
 
-PHOTO_RE = re.compile(r"^places/[\w-]+/photos/[\w-]+$")
-MAX_PHOTOS = trip_places.MAX_PHOTOS
-LEAD_STATUSES = ("new", "contacted", "converted", "lost")
+PHOTO_RE = re.compile(r"^(places/[\w-]+/photos/[\w-]+|u:\d+)$")  # Google Places photo, or a stored picture
+MAX_PHOTOS = 10
 TEXT_FIELDS = ("day", "city", "hotel_name", "guests", "guest_name", "cancellation", "meal_plan", "room", "room_size",
                "nutshell", "notes", "place_id", "address")
 LONG_FIELDS = ("nutshell", "notes", "address", "cancellation", "room", "guests")
@@ -76,6 +75,10 @@ def clean_quote(raw):
                       "place_id": _s(m.get("place_id"), 200), "lat": lat, "lng": lng})
     q["landmarks"] = marks
     q["photos"] = [p for p in (raw.get("photos") or []) if isinstance(p, str) and PHOTO_RE.match(p)][:MAX_PHOTOS]
+    stored = [int(p[2:]) for p in q["photos"] if p.startswith("u:")]
+    if stored:  # a quote may only point at pictures that belong to this workspace
+        ok = {r[0] for r in db.session.query(HotelTripPhoto.id).filter(HotelTripPhoto.id.in_(stored), HotelTripPhoto.organization_id == _org())}
+        q["photos"] = [p for p in q["photos"] if not p.startswith("u:") or int(p[2:]) in ok]
     return q
 
 
@@ -136,80 +139,54 @@ def places_search():
         return _err(f"Could not reach Google Places: {exc}", 502)
 
 
-# ------------------------------------------------------------------ leads
-@bp.route("/api/hotel-offers/trip-leads", methods=["GET"])
+# ------------------------------------------------------------------ hand-added photos
+@bp.route("/api/hotel-offers/trips/photos", methods=["POST"])
 @login_required
-def list_trip_leads():
-    rows = HotelTripLead.query.filter_by(organization_id=_org()).order_by(HotelTripLead.created_at.desc()).limit(300).all()
-    return jsonify({"leads": [r.to_dict() for r in rows]})
-
-
-def _apply_lead(row, body):
-    for k, n in (("name", 120), ("phone", 32), ("destination", 160), ("pax", 80)):
-        if k in body:
-            setattr(row, k, _s(body[k], n))
-    if "notes" in body:
-        row.notes = str(body["notes"] or "")[:4000]
-    for k in ("travel_from", "travel_to"):
-        if k in body:
-            setattr(row, k, _d(body[k]))
-    if body.get("status") in LEAD_STATUSES and row.status != "converted":
-        row.status = body["status"]
-
-
-@bp.route("/api/hotel-offers/trip-leads", methods=["POST"])
-@login_required
-def create_trip_lead():
-    body = request.get_json(silent=True) or {}
-    if not _s(body.get("name")):
-        return _err("Enter the client's name.")
-    row = HotelTripLead(organization_id=_org())
-    _apply_lead(row, body)
+def add_photo():
+    """Accepts an uploaded/pasted file (multipart 'file') or a pasted image link (JSON {url}); returns the ref to store on a quote."""
+    try:
+        if request.files.get("file"):
+            raw = request.files["file"].read(trip_photos.MAX_UPLOAD_BYTES + 1)
+        else:
+            url = str((request.get_json(silent=True) or {}).get("url") or "").strip()
+            if not url:
+                return _err("Choose a picture or paste an image link.")
+            raw = trip_photos.fetch_image_url(url)
+        data, mime = trip_photos.normalise(raw)
+    except ValueError as exc:
+        return _err(str(exc))
+    row = HotelTripPhoto(organization_id=_org(), mime=mime, data=data)
     db.session.add(row)
     db.session.commit()
-    return jsonify({"lead": row.to_dict()})
+    return jsonify({"ref": f"u:{row.id}"})
 
 
-@bp.route("/api/hotel-offers/trip-leads/<int:lead_id>", methods=["PATCH"])
+@bp.route("/api/hotel-offers/trips/photos/<int:photo_id>")
 @login_required
-def update_trip_lead(lead_id):
-    row = HotelTripLead.query.filter_by(id=lead_id, organization_id=_org()).first()
+def get_photo(photo_id):
+    row = HotelTripPhoto.query.filter_by(id=photo_id, organization_id=_org()).first()
     if not row:
         return _err("Not found", 404)
-    _apply_lead(row, request.get_json(silent=True) or {})
-    db.session.commit()
-    return jsonify({"lead": row.to_dict()})
+    return Response(row.data, mimetype=row.mime, headers={"Cache-Control": "private, max-age=86400"})
 
 
-@bp.route("/api/hotel-offers/trip-leads/<int:lead_id>", methods=["DELETE"])
+# ------------------------------------------------------------------ convert an offer lead into a trip
+@bp.route("/api/hotel-offers/leads/<int:lead_id>/to-trip", methods=["POST"])
 @login_required
-def delete_trip_lead(lead_id):
-    row = HotelTripLead.query.filter_by(id=lead_id, organization_id=_org()).first()
-    if not row:
-        return _err("Not found", 404)
-    db.session.delete(row)
-    db.session.commit()
-    return jsonify({"ok": True})
-
-
-@bp.route("/api/hotel-offers/trip-leads/<int:lead_id>/convert", methods=["POST"])
-@login_required
-def convert_trip_lead(lead_id):
-    lead = HotelTripLead.query.filter_by(id=lead_id, organization_id=_org()).first()
+def lead_to_trip(lead_id):
+    """Leads come from the Book now button on live offers; converting one is optional and creates (or returns) its trip."""
+    lead = HotelOfferLead.query.filter_by(id=lead_id, organization_id=_org()).first()
     if not lead:
         return _err("Not found", 404)
-    existing = _trip(lead.trip_id) if lead.trip_id else None
+    existing = HotelTrip.query.filter_by(lead_id=lead.id, organization_id=_org()).first()
     if existing:
-        return jsonify({"trip": existing.to_dict(), "lead": lead.to_dict()})
-    trip = HotelTrip(organization_id=_org(), user_id=session.get("user_id"), lead_id=lead.id,
-                     title=(f"{lead.name} - {lead.destination}" if lead.destination else lead.name)[:255],
-                     client_name=lead.name, client_phone=lead.phone, destination=lead.destination,
-                     start_date=lead.travel_from, end_date=lead.travel_to, notes=lead.notes)
+        return jsonify({"trip": existing.to_dict(), "created": False})
+    trip = HotelTrip(organization_id=_org(), user_id=session.get("user_id"), lead_id=lead.id, title=(lead.name or "Untitled trip")[:255],
+                     client_name=lead.name, client_phone=lead.phone, start_date=lead.stay_from, end_date=lead.stay_to,
+                     notes="\n".join(x for x in (f"From offer: {lead.offer_title}" if lead.offer_title else "", lead.note or "") if x))
     db.session.add(trip)
-    db.session.flush()
-    lead.status, lead.trip_id = "converted", trip.id
     db.session.commit()
-    return jsonify({"trip": trip.to_dict(), "lead": lead.to_dict()})
+    return jsonify({"trip": trip.to_dict(), "created": True})
 
 
 # ------------------------------------------------------------------ trips
@@ -284,7 +261,6 @@ def delete_trip(trip_id):
     if not trip:
         return _err("Not found", 404)
     HotelQuote.query.filter_by(trip_id=trip.id).delete()
-    HotelTripLead.query.filter_by(trip_id=trip.id).update({"trip_id": None, "status": "contacted"})
     db.session.delete(trip)
     db.session.commit()
     return jsonify({"ok": True})

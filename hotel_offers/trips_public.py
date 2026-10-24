@@ -4,7 +4,7 @@ import requests
 
 from . import photos, settings
 from .common import ensure_tables, org_slug, public_base
-from .models import HotelQuote, HotelTrip
+from .models import HotelQuote, HotelTrip, HotelTripPhoto
 
 trips_public_bp = bp = Blueprint("hotel_trips_public", __name__, template_folder="templates", static_folder="static", static_url_path="/trips-static")
 
@@ -65,6 +65,11 @@ def trip_photo(quote_id, index):
     refs = row.load().get("photos") or [] if trip else []
     if index >= len(refs):
         abort(404)
+    if refs[index].startswith("u:"):
+        pic = HotelTripPhoto.query.filter_by(id=int(refs[index][2:]), organization_id=row.organization_id).first()
+        if pic is None:
+            abort(404)
+        return Response(pic.data, mimetype=pic.mime, headers={"Cache-Control": "public, max-age=86400"})
     cfg = settings.get_config(row.organization_id)
     try:
         body, ctype = photos.fetch_proxied("google", refs[index], cfg, 1200)

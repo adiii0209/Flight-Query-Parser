@@ -31,5 +31,6 @@ window.TT = window.TT || {};
     el.textContent = msg; el.className = 'show ' + (kind || '');
     clearTimeout(TT._tt); TT._tt = setTimeout(() => { el.className = ''; }, 2600);
   };
-  TT.photoUrl = (ref, w) => '/api/hotel-offers/photo?src=google&w=' + (w || 400) + '&ref=' + encodeURIComponent(ref);
+  TT.photoUrl = (ref, w) => ref.indexOf('u:') === 0 ? '/api/hotel-offers/trips/photos/' + ref.slice(2) :
+    '/api/hotel-offers/photo?src=google&w=' + (w || 400) + '&ref=' + encodeURIComponent(ref);
 })(window.TT);

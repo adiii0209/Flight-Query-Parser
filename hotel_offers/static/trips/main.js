@@ -5,7 +5,7 @@
 
   const HERO = {
     trips: ['Trips', 'Hotel quotations for each client, ready to share.', 'New trip'],
-    leads: ['Trip leads', 'Enquiries waiting to become trips.', 'New lead'],
+    leads: ['Leads', 'Clients who tapped Book now on a live offer. Convert any of them into a trip.', ''],
   };
 
   function show(name) {
@@ -15,7 +15,7 @@
     if (name !== 'detail') {
       TT.$$('.t-tab').forEach(t => t.classList.toggle('on', t.dataset.tab === name));
       const h = HERO[name];
-      TT.$('#heroTitle').textContent = h[0]; TT.$('#heroSub').textContent = h[1]; TT.$('#btnNewLabel').textContent = h[2];
+      TT.$('#heroTitle').textContent = h[0]; TT.$('#heroSub').textContent = h[1]; TT.$('#btnNewLabel').textContent = h[2]; TT.$('#btnNew').hidden = !h[2];
       TT.$('#findBox').hidden = name !== 'trips';
     }
     window.scrollTo({ top: 0 });
@@ -65,7 +65,6 @@
   TT.$$('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));  // click on the backdrop closes it
 
   TT.$('#btnNew').addEventListener('click', () => {
-    if (current === 'leads') { leads.openForm(); return; }
     TT.$('#newTripForm').reset(); TT.$('#tripErr').textContent = '';
     dlg('#tripDialog').showModal(); TT.$('#newTripForm [name=client_name]').focus();
   });

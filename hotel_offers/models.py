@@ -100,33 +100,6 @@ class HotelOfferLead(db.Model):
         }
 
 
-class HotelTripLead(db.Model):
-    """An enquiry that may become a trip."""
-    __tablename__ = "hotel_trip_lead"
-
-    id = db.Column(db.Integer, primary_key=True)
-    organization_id = db.Column(db.String(36), nullable=False, index=True, default="")
-    name = db.Column(db.String(120), nullable=False, default="")
-    phone = db.Column(db.String(32), nullable=False, default="")
-    destination = db.Column(db.String(160), nullable=False, default="")
-    travel_from = db.Column(db.Date, nullable=True)
-    travel_to = db.Column(db.Date, nullable=True)
-    pax = db.Column(db.String(80), nullable=False, default="")
-    notes = db.Column(db.Text, nullable=False, default="")
-    status = db.Column(db.String(16), nullable=False, default="new")  # new | contacted | converted | lost
-    trip_id = db.Column(db.Integer, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-
-    def to_dict(self):
-        return {
-            "id": self.id, "name": self.name, "phone": self.phone, "destination": self.destination,
-            "travel_from": self.travel_from.isoformat() if self.travel_from else None,
-            "travel_to": self.travel_to.isoformat() if self.travel_to else None,
-            "pax": self.pax, "notes": self.notes, "status": self.status, "trip_id": self.trip_id,
-            "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
-        }
-
-
 class HotelTrip(db.Model):
     """A client trip: a container of hotel quotes, optionally shared by link."""
     __tablename__ = "hotel_trip"
@@ -134,7 +107,7 @@ class HotelTrip(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     organization_id = db.Column(db.String(36), nullable=False, index=True, default="")
     user_id = db.Column(db.String(36), nullable=True)
-    lead_id = db.Column(db.Integer, nullable=True)
+    lead_id = db.Column(db.Integer, nullable=True)  # HotelOfferLead this trip was converted from
     title = db.Column(db.String(255), nullable=False, default="")
     client_name = db.Column(db.String(120), nullable=False, default="")
     client_phone = db.Column(db.String(32), nullable=False, default="")
@@ -183,3 +156,14 @@ class HotelQuote(db.Model):
         d = self.load()
         d["id"], d["position"] = self.id, self.position
         return d
+
+
+class HotelTripPhoto(db.Model):
+    """A hotel picture added by hand (upload, clipboard or image link), stored shrunk as JPEG."""
+    __tablename__ = "hotel_trip_photo"
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(db.String(36), nullable=False, index=True, default="")
+    mime = db.Column(db.String(40), nullable=False, default="image/jpeg")
+    data = db.Column(db.LargeBinary, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)

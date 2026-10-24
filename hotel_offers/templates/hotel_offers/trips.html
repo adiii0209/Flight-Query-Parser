@@ -32,7 +32,7 @@
       <button class="pill primary lg" id="btnNew" type="button"><svg class="ic" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span id="btnNewLabel">New trip</span></button>
     </div>
     <div class="t-bar">
-      <nav class="t-tabs" id="tabs"><button class="t-tab on" data-tab="trips">Trips</button><button class="t-tab" data-tab="leads">Trip leads</button></nav>
+      <nav class="t-tabs" id="tabs"><button class="t-tab on" data-tab="trips">Trips</button><button class="t-tab" data-tab="leads">Leads</button></nav>
       <input class="t-find" id="findBox" type="search" placeholder="Search trips" aria-label="Search">
     </div>
   </div>
@@ -57,19 +57,45 @@
   </form>
 </dialog>
 
-<dialog class="t-dialog" id="leadDialog">
-  <form method="dialog" id="leadForm">
-    <header><h2>New trip lead</h2><button type="button" class="t-close" data-close aria-label="Close">×</button></header>
+<dialog class="t-dialog" id="detailDialog">
+  <form method="dialog" id="detailForm">
+    <header><h2>Trip details</h2><button type="button" class="t-close" data-close aria-label="Close">×</button></header>
     <div class="t-fields">
-      <label class="t-fl wide"><span>Client name *</span><input name="name" required autocomplete="off"></label>
-      <label class="t-fl"><span>Phone</span><input name="phone" inputmode="tel" autocomplete="off"></label>
+      <label class="t-fl wide"><span>Trip name</span><input name="title" autocomplete="off"></label>
+      <label class="t-fl"><span>Client name</span><input name="client_name" autocomplete="off"></label>
+      <label class="t-fl"><span>Client phone</span><input name="client_phone" inputmode="tel" autocomplete="off"></label>
       <label class="t-fl"><span>Destination</span><input name="destination" autocomplete="off"></label>
-      <label class="t-fl"><span>Travel from</span><input name="travel_from" type="date"></label>
-      <label class="t-fl"><span>Travel to</span><input name="travel_to" type="date"></label>
-      <label class="t-fl wide"><span>Travellers</span><input name="pax" placeholder="e.g. 2 adults + 1 child" autocomplete="off"></label>
-      <label class="t-fl wide"><span>Notes</span><textarea name="notes" rows="3"></textarea></label>
+      <label class="t-fl"><span>Currency</span><select name="currency"><option>INR</option><option>USD</option><option>EUR</option><option>GBP</option><option>THB</option><option>AED</option></select></label>
+      <label class="t-fl"><span>Start date</span><input name="start_date" type="date"></label>
+      <label class="t-fl"><span>End date</span><input name="end_date" type="date"></label>
     </div>
-    <footer><span class="ho-hint err" id="leadErr"></span><button type="button" class="pill ghost" data-close>Cancel</button><button type="submit" class="pill primary">Add lead</button></footer>
+    <footer><button type="button" class="pill danger-ghost" id="btnDeleteTrip">Delete trip</button><span class="spacer"></span><button type="button" class="pill ghost" data-close>Cancel</button><button type="submit" class="pill primary">Save</button></footer>
+  </form>
+</dialog>
+
+<dialog class="t-dialog" id="pasteDialog">
+  <form method="dialog" id="pasteForm">
+    <header><h2>Add hotel quotes</h2><button type="button" class="t-close" data-close aria-label="Close">×</button></header>
+    <div class="t-fields one">
+      <p class="ho-hint">Paste the rows copied from your quotation sheet, or any hotel quote text. Each hotel stay becomes its own quote, pinned on the map with photos.</p>
+      <textarea id="pasteBox" rows="9" placeholder="Date&#9;Day&#9;No. of Nights&#9;City&#9;Particulars…" spellcheck="false"></textarea>
+    </div>
+    <footer><span class="ho-hint" id="pasteStatus"></span><span class="spacer"></span><button type="button" class="pill ghost" id="btnBlank">Add blank quote</button><button type="submit" class="pill primary" id="btnParse">Add quotes</button></footer>
+  </form>
+</dialog>
+
+<dialog class="t-dialog" id="shareDialog">
+  <form method="dialog">
+    <header><h2>Share with client</h2><button type="button" class="t-close" data-close aria-label="Close">×</button></header>
+    <div class="t-fields one">
+      <label class="sw big"><input type="checkbox" id="fShared"><i></i><span><b>Anyone with the link can view</b><small id="shareHint"></small></span></label>
+      <div class="share-link" id="shareLinkRow" hidden>
+        <input id="shareUrl" readonly aria-label="Share link">
+        <button type="button" class="pill primary sm" id="btnCopy">Copy link</button>
+        <a class="pill ghost sm" id="btnView" target="_blank" rel="noopener">Preview</a>
+      </div>
+      <p class="ho-hint">The client sees hotels, photos, dates, room, meal plan, cancellation, prices and the map. Internal notes and guest names stay private.</p>
+    </div>
   </form>
 </dialog>
 

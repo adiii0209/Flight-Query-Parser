@@ -153,7 +153,11 @@ def list_leads():
     counts = {s: 0 for s in LEAD_STATUSES}
     for status, n in db.session.query(HotelOfferLead.status, db.func.count()).filter_by(organization_id=_org()).group_by(HotelOfferLead.status):
         counts[status] = n
-    return jsonify({"leads": [l.to_dict() for l in _lead_query().limit(500)], "counts": counts, "total": sum(counts.values())})
+    rows = _lead_query().limit(500).all()
+    from .models import HotelTrip  # imported here: the trips module is loaded after this one
+    trips = {t.lead_id: t.id for t in HotelTrip.query.filter(HotelTrip.organization_id == _org(), HotelTrip.lead_id.in_([r.id for r in rows] or [0])).all()}
+    leads = [dict(r.to_dict(), trip_id=trips.get(r.id)) for r in rows]
+    return jsonify({"leads": leads, "counts": counts, "total": sum(counts.values())})
 
 
 @bp.route("/api/hotel-offers/leads/summary")

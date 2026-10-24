@@ -8,8 +8,7 @@ from extensions import db
 from models_rbac import Organization
 
 from . import settings
-from .models import (HotelOffer, HotelOfferConfig, HotelOfferLead, HotelOfferLive, HotelQuote, HotelTrip,
-                     HotelTripLead)
+from .models import HotelOffer, HotelOfferConfig, HotelOfferLead, HotelOfferLive, HotelQuote, HotelTrip, HotelTripPhoto
 
 _tables_ready = False
 
@@ -19,7 +18,7 @@ def ensure_tables():
     if _tables_ready:
         return
     insp = inspect(db.engine)
-    for model in (HotelOfferConfig, HotelOffer, HotelOfferLive, HotelOfferLead, HotelTripLead, HotelTrip, HotelQuote):
+    for model in (HotelOfferConfig, HotelOffer, HotelOfferLive, HotelOfferLead, HotelTrip, HotelQuote, HotelTripPhoto):
         name = model.__tablename__
         if insp.has_table(name):
             col = next((c for c in insp.get_columns(name) if c["name"] == "organization_id"), None)
