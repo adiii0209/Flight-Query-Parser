@@ -1,15 +1,15 @@
-/* Trips: public client page. One card per city and dates; open it to compare the hotel options and pick one.
+/* Trips: public client page. A card per city and dates; a card opens that city's page with the hotel options to pick from.
    The pick is saved on the trip (the agent sees it). The trip total adds up the selected option of every city. */
 (function (TT) {
   const slug = document.body.dataset.slug, wa = (document.body.dataset.wa || '').replace(/\D/g, '');
   const root = TT.$('#trip');
-  let data = null, groups = [], selection = {}, map = null, chipSel = null, savedY = 0;
-  const openGroups = new Set();
+  let data = null, groups = [], selection = {}, map = null, chipSel = null, savedY = 0, listY = 0, current = null;
 
   const PIN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.2A7 7 0 0 1 19 9.8C19 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.5"/></svg>';
   const CLOSE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   const EXPAND = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
-  const CHEV = '<svg class="cg-chev" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+  const BACK = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>';
+  const CHEV = '<svg class="cc-chev" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
   const CHECK = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
   const cur = () => data.trip.currency;
@@ -48,15 +48,29 @@
       (located ? '<button class="tc-pin" data-id="' + located.id + '">View on map</button>' : '') + '</div></div></article>';
   }
 
-  // ---- one city card
-  function groupHtml(g, gi) {
+  // ---- city card (list page): taps through to that city's page
+  const cityHref = g => '#city/' + encodeURIComponent(g.key);
+
+  function cityCard(g, gi) {
     const multi = g.options.length > 1, sel = g.selectedOption;
-    return '<article class="cg' + (openGroups.has(g.key) ? ' open' : '') + '" data-g="' + TT.esc(g.key) + '" data-i="' + gi + '">' +
-      '<button type="button" class="cg-head" aria-expanded="' + openGroups.has(g.key) + '"><span class="cg-n">' + (gi + 1) + '</span>' +
-      '<span class="cg-title"><h2>' + TT.esc(g.city || 'Your stay') + '</h2><span class="cg-sub">' + TT.esc(groupDates(g)) + '</span>' +
-      '<span class="cg-pick">' + (multi ? '<i>Selected</i>' : '') + TT.esc(sel.hotel_name) + '</span></span>' +
-      '<span class="cg-right"><small>' + (multi ? plural(g.options.length, 'option') : 'Included') + '</small><b>' + TT.money(sel.total, cur()) + '</b></span>' + CHEV + '</button>' +
-      '<div class="cg-body"><div class="cg-opts">' + g.options.map(o => optionHtml(g, o, multi)).join('') + '</div></div></article>';
+    const photo = (sel.lines.find(l => l.photos.length) || { photos: [] }).photos[0];
+    const media = photo ? '<img src="' + photo + '" alt="" loading="lazy">' : '<div class="cc-ph"><span>' + TT.esc((g.city || '?').slice(0, 1)) + '</span></div>';
+    return '<a class="cc" href="' + cityHref(g) + '" data-g="' + TT.esc(g.key) + '"><div class="cc-media">' + media + '<span class="cg-n">' + (gi + 1) + '</span>' +
+      (multi ? '<span class="cc-tag">' + plural(g.options.length, 'hotel option') + '</span>' : '') + '</div>' +
+      '<div class="cc-body"><h2>' + TT.esc(g.city || 'Your stay') + '</h2><p class="cc-dates">' + TT.esc(groupDates(g)) + '</p>' +
+      '<p class="cc-hotel">' + (multi ? '<i>Selected</i>' : '') + TT.esc(sel.hotel_name) + '</p></div>' +
+      '<div class="cc-price"><small>' + (multi ? 'Selected' : 'Included') + '</small><b>' + TT.money(sel.total, cur()) + '</b><span class="cc-go">' + (multi ? 'Compare hotels' : 'View hotel') + CHEV + '</span></div></a>';
+  }
+
+  // ---- city page: the hotel options for one city and dates
+  function cityPage(g, gi) {
+    const multi = g.options.length > 1;
+    return '<div class="cp-bar"><a class="cp-back" href="#">' + BACK + 'All cities</a></div>' +
+      '<header class="cp-head"><span class="cg-n">' + (gi + 1) + '</span><div class="cp-title"><h1>' + TT.esc(g.city || 'Your stay') + '</h1><p>' + TT.esc(groupDates(g)) + '</p></div>' +
+      '<div class="cp-total"><small>' + (multi ? 'Selected' : 'Included') + '</small><b>' + TT.money(g.selectedOption.total, cur()) + '</b></div></header>' +
+      (multi ? '<p class="tc-help">' + plural(g.options.length, 'hotel') + ' to choose from. Tap <b>Select</b> on the one you prefer. Your choice is saved and added to the trip total.</p>' : '') +
+      '<div class="cp-opts">' + g.options.map(o => optionHtml(g, o, multi)).join('') + '</div>' +
+      '<a class="cp-done" href="#">Back to all cities</a>';
   }
 
   function summaryHtml() {
@@ -97,13 +111,13 @@
   function render() {
     const t = data.trip, dates = t.start_date ? TT.date(t.start_date) + (t.end_date ? ' – ' + TT.date(t.end_date) : '') : '';
     groups = TT.groupQuotes(data.quotes, selection);
-    if (groups.length === 1) openGroups.add(groups[0].key);
     const pins = TT.groupPins(groups);
-    root.innerHTML = '<section class="tc-hero"><p class="eyebrow">Your trip</p><h1>' + TT.esc(t.title) + '</h1><p class="tc-meta">' +
+    root.innerHTML = '<div id="viewList"><section class="tc-hero"><p class="eyebrow">Your trip</p><h1>' + TT.esc(t.title) + '</h1><p class="tc-meta">' +
       [t.client_name && 'Prepared for ' + t.client_name, t.destination, dates].filter(Boolean).map(TT.esc).join(' · ') + '</p>' +
-      (groups.some(g => g.options.length > 1) ? '<p class="tc-help">Some cities have more than one hotel to choose from. Open a city to compare, then tap <b>Select</b> on the one you prefer.</p>' : '') + '</section>' +
-      '<div class="cg-list" id="cgList">' + groups.map(groupHtml).join('') + '</div><div id="sumHost">' + summaryHtml() + '</div>' + mapSection(pins) +
-      '<p class="tc-note">Prices are indicative and subject to availability until confirmed.</p>';
+      (groups.some(g => g.options.length > 1) ? '<p class="tc-help">Open a city to see its hotels. Where there is more than one, you can choose the one you prefer.</p>' : '') + '</section>' +
+      '<div class="cc-list" id="ccList"></div><div id="sumHost"></div></div><div id="viewCity" hidden></div>' + mapSection(pins) +
+      '<p class="tc-note" id="tcNote">Prices are indicative and subject to availability until confirmed.</p>';
+    drawList();
     if (TT.$('#tcMap')) {
       map = TT.createMap(TT.$('#tcMap'), { onSelect: id => selectChip(id) });
       map.render(pins);
@@ -114,37 +128,55 @@
     }
     const a = TT.$('#navWa');
     if (wa) a.href = 'https://wa.me/' + wa + '?text=' + encodeURIComponent('Hi, about my trip: ' + t.title); else a.hidden = true;
+    route();
   }
 
-  // re-draw one city card and the total after a selection (the rest of the page, and the map, stay as they are)
-  function refreshAfterSelect(groupKey) {
+  const drawList = () => { TT.$('#ccList').innerHTML = groups.map(cityCard).join(''); TT.$('#sumHost').innerHTML = summaryHtml(); };
+
+  // ---- routing: "#" is the list of cities, "#city/<key>" a city's page (the browser's back button works)
+  function route() {
+    const m = location.hash.match(/^#city\/(.+)$/), key = m ? decodeURIComponent(m[1]) : null;
+    const gi = key ? groups.findIndex(g => g.key === key) : -1;
+    const list = TT.$('#viewList'), city = TT.$('#viewCity');
+    document.body.classList.toggle('in-city', gi >= 0);
+    if (gi < 0) {
+      current = null; city.hidden = true; list.hidden = false;
+      if (TT.$('#tcMapSec.full')) setFull(false);
+      window.scrollTo({ top: listY, behavior: 'instant' });
+      return;
+    }
+    if (current === null) listY = window.scrollY || listY;
+    current = key; list.hidden = true; city.hidden = false;
+    city.innerHTML = cityPage(groups[gi], gi);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+  window.addEventListener('hashchange', route);
+
+  // re-draw what depends on the selection (the city page you are on, the city cards and the trip total)
+  function refresh() {
     groups = TT.groupQuotes(data.quotes, selection);
-    const gi = groups.findIndex(g => g.key === groupKey), old = TT.$('.cg[data-g="' + CSS.escape(groupKey) + '"]');
-    if (gi >= 0 && old) { const tmp = document.createElement('div'); tmp.innerHTML = groupHtml(groups[gi], gi); old.replaceWith(tmp.firstChild); }
-    TT.$('#sumHost').innerHTML = summaryHtml();
+    drawList();
+    if (current !== null) {
+      const gi = groups.findIndex(g => g.key === current), y = window.scrollY;
+      if (gi >= 0) { TT.$('#viewCity').innerHTML = cityPage(groups[gi], gi); window.scrollTo({ top: y, behavior: 'instant' }); }
+    }
   }
 
   async function choose(groupKey, optionKey) {
     const before = Object.assign({}, selection);
-    selection[groupKey] = optionKey; refreshAfterSelect(groupKey);
+    selection[groupKey] = optionKey; refresh();
     try {
       const r = await TT.api('/api/public/trips/' + encodeURIComponent(slug) + '/select', { method: 'POST', json: { group: groupKey, option: optionKey } });
       selection = r.selection;
     } catch (err) {
-      selection = before; refreshAfterSelect(groupKey); TT.toast(err.message || 'Could not save your choice', 'err');
+      selection = before; refresh(); TT.toast(err.message || 'Could not save your choice', 'err');
     }
   }
 
   root.addEventListener('click', e => {
     const pick = e.target.closest('.co-pick');
     if (pick) { if (!pick.classList.contains('on')) choose(pick.dataset.g, pick.dataset.o); return; }
-    const head = e.target.closest('.cg-head');
-    if (head) {
-      const card = head.closest('.cg'), key = card.dataset.g, open = !card.classList.contains('open');
-      card.classList.toggle('open', open); head.setAttribute('aria-expanded', open);
-      open ? openGroups.add(key) : openGroups.delete(key);
-      return;
-    }
+    if (e.target.closest('.cc')) { listY = window.scrollY; return; }  // remember where the list was; the link itself changes the page
     const b = e.target.closest('.tc-pin, .tc-chip');
     if (!b || !map) return;
     const id = +b.dataset.id;
