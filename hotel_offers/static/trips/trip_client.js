@@ -39,8 +39,11 @@
       '<button type="button" class="tc-fs" id="tcFs" aria-label="Full screen">' + EXPAND + '</button></div></section>';
   }
 
+  let selected = null;
+
   function selectChip(id) {
-    TT.$$('.tc-chip').forEach(c => c.classList.toggle('on', +c.dataset.id === id));
+    selected = id;
+    TT.$$('.tc-chip').forEach(c => c.classList.toggle('on', id !== null && +c.dataset.id === id));
     const on = TT.$('.tc-chip.on');
     if (on) on.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
   }
@@ -81,7 +84,12 @@
     const b = e.target.closest('.tc-pin, .tc-chip');
     if (!b || !map) return;
     const id = +b.dataset.id;
-    if (b.classList.contains('tc-pin')) TT.$('#tcMapSec').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (b.classList.contains('tc-pin')) {  // "View on map" on a hotel card: open the map full screen on that hotel
+      if (!TT.$('#tcMapSec').classList.contains('full')) setFull(true);
+      selectChip(id); setTimeout(() => map.focus(id), 120);
+      return;
+    }
+    if (selected === id) { selectChip(null); map.showAll(); return; }  // tapping the selected chip again shows every hotel
     selectChip(id); map.focus(id);
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && TT.$('#tcMapSec.full')) setFull(false); });

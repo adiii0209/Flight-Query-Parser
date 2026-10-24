@@ -48,6 +48,10 @@
       map.flyTo(m.getLatLng(), Math.min(Math.max(map.getZoom(), 14), 16), { duration: .6 });
       m.openPopup();
     }
-    return { render, focus, resize() { map.invalidateSize(); if (pinsBounds) map.fitBounds(pinsBounds, { maxZoom: 15 }); } };
+    function showAll() {
+      map.closePopup();
+      if (pinsBounds) map.flyToBounds(pinsBounds, { maxZoom: 15, duration: .6 });
+    }
+    return { render, focus, showAll, resize() { map.invalidateSize(); if (pinsBounds) map.fitBounds(pinsBounds, { maxZoom: 15 }); } };
   };
 })(window.TT);
