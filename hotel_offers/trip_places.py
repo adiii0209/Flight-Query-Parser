@@ -1,8 +1,24 @@
-"""Google Places (New) text search, used to pin hotels and landmarks on the trip map."""
+"""Google Places (New): text search and details, used to pin hotels and landmarks and to fetch a hotel's rating and website."""
+import re
+
 import requests
 
-FIELDS = "places.id,places.displayName,places.formattedAddress,places.location,places.photos"
+BASE_FIELDS = "id,displayName,formattedAddress,location"
+RICH_FIELDS = "photos,rating,userRatingCount,websiteUri,googleMapsUri"
+FIELDS = ",".join("places." + f for f in (BASE_FIELDS + "," + RICH_FIELDS).split(","))
 MAX_PHOTOS = 6
+PLACE_ID_RE = re.compile(r"^[\w-]{10,200}$")
+
+
+def _shape(p):
+    loc = p.get("location") or {}
+    if "latitude" not in loc:
+        return None
+    return {"place_id": p.get("id", ""), "name": (p.get("displayName") or {}).get("text", ""), "address": p.get("formattedAddress", ""),
+            "photos": [ph["name"] for ph in p.get("photos", [])[:MAX_PHOTOS] if ph.get("name")],
+            "rating": p.get("rating") or 0, "rating_count": p.get("userRatingCount") or 0,
+            "website": p.get("websiteUri") or "", "maps_url": p.get("googleMapsUri") or "",
+            "lat": loc["latitude"], "lng": loc["longitude"]}
 
 
 def search(query, key, limit=5, near=None):
@@ -12,12 +28,14 @@ def search(query, key, limit=5, near=None):
     r = requests.post("https://places.googleapis.com/v1/places:searchText", timeout=15, json=body,
                       headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": FIELDS})
     r.raise_for_status()
-    out = []
-    for p in r.json().get("places", []):
-        loc = p.get("location") or {}
-        if "latitude" not in loc:
-            continue
-        out.append({"place_id": p.get("id", ""), "name": (p.get("displayName") or {}).get("text", ""),
-                    "address": p.get("formattedAddress", ""),
-                    "photos": [ph["name"] for ph in p.get("photos", [])[:MAX_PHOTOS] if ph.get("name")], "lat": loc["latitude"], "lng": loc["longitude"]})
-    return out
+    return [x for x in (_shape(p) for p in r.json().get("places", [])) if x]
+
+
+def details(place_id, key):
+    """Fresh details for one place (used by the Refresh button). Returns None when the id is not valid."""
+    if not PLACE_ID_RE.match(place_id or ""):
+        return None
+    r = requests.get(f"https://places.googleapis.com/v1/places/{place_id}", timeout=15,
+                     headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": BASE_FIELDS + "," + RICH_FIELDS})
+    r.raise_for_status()
+    return _shape(r.json())

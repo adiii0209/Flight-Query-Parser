@@ -162,3 +162,12 @@ body.in-city .tc-mapsec:not(.full),body.in-city .tc-fab:not(.over),body.in-city 
 .tc-price{min-width:0}
 
 @media(max-width:520px){.co-room .tc-facts{grid-template-columns:1fr}.co-room .tc-facts div:nth-child(n+5){grid-column:auto}}
+
+/* Google rating and hotel website */
+.tc-links{display:flex;flex-wrap:wrap;gap:8px}
+.tc-link{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 14px;border-radius:99px;background:var(--surface-2);font-size:.86rem;font-weight:500;color:var(--text)}
+a.tc-link:hover{background:var(--line)}
+.tc-link b{font-weight:600}
+.tc-stars{color:var(--gold);font-size:.95rem;margin-left:-3px}
+.tc-link small{color:var(--mute);font-size:.8rem;font-weight:400}
+.tc-link em{font-style:normal;color:var(--mute);font-size:.78rem;font-weight:400}

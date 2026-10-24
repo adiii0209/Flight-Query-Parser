@@ -3,7 +3,7 @@
 (function (TT) {
   const SECTIONS = [
     ['Stay', [['hotel_name', 'Hotel', 'wide'], ['city', 'City'], ['date', 'Check-in', '', 'date'], ['nights', 'Nights', '', 'number'], ['rooms', 'Rooms', '', 'number'],
-      ['guests', 'Guests'], ['guest_name', 'Guest name'], ['meal_plan', 'Meal plan']]],
+      ['guests', 'Guests'], ['guest_name', 'Guest name'], ['meal_plan', 'Meal plan'], ['website', 'Hotel website', 'wide', 'url']]],
     ['Room & price', [['room', 'Room', 'wide'], ['room_size', 'Room size'], ['items', 'Room nights', '', 'number'],
       ['cost_per_item', 'Rate per room night', '', 'number'], ['total', 'Total', '', 'number'], ['cancellation', 'Cancellation policy', 'wide']]],
   ];
@@ -48,6 +48,14 @@
       '<label class="q-f ' + (cls || '') + '"><span>' + label + '</span><input data-k="' + k + '" type="' + (type || 'text') + '" ' +
       (type === 'number' ? 'min="0" step="any" inputmode="decimal"' : '') + ' value="' + TT.esc(q[k] == null ? '' : q[k]) + '"></label>';
 
+    // Google rating line with a Refresh button (needs the hotel to be pinned)
+    function googleRow(q) {
+      if (!q.place_id) return '';
+      const when = q.google_at ? ' · fetched ' + TT.esc(TT.date(q.google_at)) : '';
+      const stars = q.rating ? '<b>★ ' + q.rating + '</b> ' + (q.rating_count ? '(' + q.rating_count.toLocaleString('en-IN') + ' Google reviews)' : '') : 'No Google rating saved';
+      return '<div class="q-google"><span>' + stars + when + '</span><button type="button" class="ib" data-act="refresh-google">Refresh rating, website &amp; photos</button></div>';
+    }
+
     function editor(q) {
       if (!q.rooms) q.rooms = TT.roomsOf(q);
       return SECTIONS.map(([title, fields]) => '<div class="q-sec"><h4>' + title + '</h4><div class="q-grid">' + fields.map(f => field(f, q)).join('') + '</div></div>').join('') +
@@ -59,7 +67,7 @@
         '<span class="ho-hint" data-phstatus></span></div>' +
         '<div class="q-sec"><h4>Location <span class="' + (q.lat != null ? 'ok' : 'warn') + '">' + (q.lat != null ? 'Pinned on the map' : 'Not pinned') + '</span></h4>' +
         (q.address ? '<p class="ho-hint">' + TT.esc(q.address) + '</p>' : '') +
-        '<div class="q-search"><input data-search="hotel" placeholder="Search the hotel to pin it and pull its photos…"><div class="q-res" hidden></div></div>' +
+        '<div class="q-search"><input data-search="hotel" placeholder="Search the hotel to pin it and pull its photos…"><div class="q-res" hidden></div></div>' + googleRow(q) +
         '<h4 class="sub">Nearby landmarks <em>Up to 2, shown on the map</em></h4><div class="q-chips">' + landList(q) + '</div>' +
         ((q.landmarks || []).length < 2 ? '<div class="q-search"><input data-search="landmark" placeholder="Add a landmark (e.g. Eiffel Tower)…"><div class="q-res" hidden></div></div>' : '') + '</div>';
     }
@@ -148,6 +156,14 @@
         else if (act === 'add-url') {
           const inp = cardOf(btn).querySelector('[data-photourl]');
           if (inp.value.trim()) { await addPhoto(q, { url: inp.value.trim() }); }
+        } else if (act === 'refresh-google') {
+          btn.disabled = true;
+          try {
+            const { place } = await TT.api('/api/hotel-offers/places/details?place_id=' + encodeURIComponent(q.place_id));
+            Object.assign(q, { rating: place.rating, rating_count: place.rating_count, maps_url: place.maps_url, google_at: place.google_at,
+              website: place.website || q.website, photos: (q.photos || []).length ? q.photos : place.photos });
+            rerenderEditor(q); save(q); TT.toast('Updated from Google');
+          } catch (err) { TT.toast(err.message, 'err'); btn.disabled = false; }
         } else if (act === 'rm-photo') { q.photos.splice(+btn.dataset.i, 1); rerenderEditor(q); save(q); }
         else if (act === 'rm-land') { q.landmarks.splice(+btn.dataset.i, 1); rerenderEditor(q); save(q); }
         return;
@@ -155,7 +171,8 @@
       const pick = e.target.closest('[data-pick]');
       if (pick) {
         const q = byId(idOf(pick)), r = JSON.parse(pick.dataset.pick);
-        if (pick.dataset.kind === 'hotel') Object.assign(q, { place_id: r.place_id, address: r.address, lat: r.lat, lng: r.lng, photos: r.photos && r.photos.length ? r.photos : q.photos });
+        if (pick.dataset.kind === 'hotel') Object.assign(q, { place_id: r.place_id, address: r.address, lat: r.lat, lng: r.lng, photos: r.photos && r.photos.length ? r.photos : q.photos,
+          rating: r.rating || 0, rating_count: r.rating_count || 0, maps_url: r.maps_url || '', website: r.website || q.website || '', google_at: new Date().toISOString().slice(0, 10) });
         else if ((q.landmarks || []).length < 2) q.landmarks = (q.landmarks || []).concat([{ name: r.name, address: r.address, place_id: r.place_id, lat: r.lat, lng: r.lng }]);
         rerenderEditor(q); save(q); opts.onFocus(q.id);
       }

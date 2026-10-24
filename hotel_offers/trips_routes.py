@@ -2,7 +2,7 @@
 import json
 import re
 import secrets
-from datetime import date
+from datetime import date, datetime
 
 import requests
 from flask import Response, jsonify, render_template, request, session
@@ -32,6 +32,11 @@ def _d(value):
 
 def _s(value, n=200):
     return re.sub(r"[ \t]+", " ", str(value or "")).strip()[:n]
+
+
+def _url(value):
+    v = str(value or "").strip()
+    return v[:500] if re.match(r"^https?://[^\s<>\"']+$", v) else ""
 
 
 def _coord(value, lo, hi):
@@ -76,6 +81,18 @@ def clean_quote(raw):
         marks.append({"name": _s(m.get("name"), 120), "address": _s(m.get("address"), 300),
                       "place_id": _s(m.get("place_id"), 200), "lat": lat, "lng": lng})
     q["landmarks"] = marks
+    q["website"], q["maps_url"] = _url(raw.get("website")), _url(raw.get("maps_url"))
+    try:
+        rating = round(float(raw.get("rating") or 0), 1)
+    except (TypeError, ValueError):
+        rating = 0
+    q["rating"] = rating if 0 < rating <= 5 else 0
+    try:
+        q["rating_count"] = max(0, min(int(float(raw.get("rating_count") or 0)), 10 ** 7))
+    except (TypeError, ValueError):
+        q["rating_count"] = 0
+    gd = _d(raw.get("google_at"))
+    q["google_at"] = gd.isoformat() if gd else None
     q["photos"] = [p for p in (raw.get("photos") or []) if isinstance(p, str) and PHOTO_RE.match(p)][:MAX_PHOTOS]
     stored = [int(p[2:]) for p in q["photos"] if p.startswith("u:")]
     if stored:  # a quote may only point at pictures that belong to this workspace
@@ -171,6 +188,25 @@ def get_photo(photo_id):
     if not row:
         return _err("Not found", 404)
     return Response(row.data, mimetype=row.mime, headers={"Cache-Control": "private, max-age=86400"})
+
+
+@bp.route("/api/hotel-offers/places/details")
+@login_required
+def place_details():
+    """Fresh rating, review count, website and photos for a hotel that is already pinned (the Refresh button)."""
+    key = settings.get_config(_org())["google_places_key"]
+    if not key:
+        return _err("Google Places key is not configured (Hotel Offers settings).")
+    try:
+        place = trip_places.details(request.args.get("place_id", ""), key)
+    except requests.HTTPError as exc:
+        return _err(f"Google Places rejected the request ({exc.response.status_code}).", 502)
+    except requests.RequestException as exc:
+        return _err(f"Could not reach Google Places: {exc}", 502)
+    if not place:
+        return _err("Pin the hotel on the map first.")
+    place["google_at"] = date.today().isoformat()
+    return jsonify({"place": place})
 
 
 # ------------------------------------------------------------------ convert an offer lead into a trip
@@ -295,7 +331,9 @@ def parse_trip_quotes(trip_id):
                 warning = "Some hotels could not be placed on the map; search for them on each card."
                 break
             if hits:
-                q.update(place_id=hits[0]["place_id"], address=hits[0]["address"], photos=hits[0]["photos"], lat=hits[0]["lat"], lng=hits[0]["lng"])
+                h = hits[0]
+                q.update(place_id=h["place_id"], address=h["address"], photos=h["photos"], lat=h["lat"], lng=h["lng"], rating=h["rating"],
+                         rating_count=h["rating_count"], website=h["website"], maps_url=h["maps_url"], google_at=date.today().isoformat())
     else:
         warning = "No Google Places key is set, so hotels were not placed on the map."
     pos = (db.session.query(db.func.max(HotelQuote.position)).filter_by(trip_id=trip.id).scalar() or 0) + 1

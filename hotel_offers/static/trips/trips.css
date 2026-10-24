@@ -215,6 +215,10 @@
 .qo-total{font-weight:600}
 .qo .qc{margin-bottom:.6rem}
 
+/* google rating row in the editor */
+.q-google{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;justify-content:space-between;margin:.2rem 0 .4rem;font-size:.84rem;color:var(--mute)}
+.q-google b{color:var(--text)}
+
 /* responsive (kept last so it overrides the rules above) */
 @media(max-width:960px){.d-cols{grid-template-columns:minmax(0,1fr)}.d-right{position:static;order:-1}.tt-map{height:300px}.d-stats{grid-template-columns:repeat(2,1fr)}.qc-view{grid-template-columns:150px minmax(0,1fr)}.qc-side{grid-column:1/-1;flex-direction:row;align-items:center;justify-content:space-between;text-align:left;padding:0}.qc-btns{margin:0;padding:0}}
 @media(max-width:560px){.qc-view{grid-template-columns:1fr}.qc-media{min-height:170px}.t-fields{grid-template-columns:1fr}.t-find{width:100%}.t-hero .pill{width:100%}}

@@ -12,7 +12,7 @@ from flask import request
 
 from extensions import db
 
-from . import photos, settings, trip_groups
+from . import photos, settings, trip_groups, trip_og
 from .common import ensure_tables, org_slug, public_base
 from .models import HotelQuote, HotelTrip, HotelTripPhoto
 
@@ -20,7 +20,8 @@ trips_public_bp = bp = Blueprint("hotel_trips_public", __name__, template_folder
 
 # fields the client may see; internal notes, place ids and the agent's remarks stay private
 PUBLIC_FIELDS = ("date", "day", "nights", "city", "hotel_name", "guests", "guest_name", "cancellation", "meal_plan", "room", "room_size",
-                 "rooms", "items", "cost_per_item", "total", "nutshell", "address", "lat", "lng", "landmarks")
+                 "rooms", "items", "cost_per_item", "total", "nutshell", "address", "lat", "lng", "landmarks",
+                 "rating", "rating_count", "website", "maps_url")
 
 
 @bp.before_request
@@ -48,9 +49,36 @@ def _public_quote(row):
 def trip_page(slug):
     trip = _shared_trip(slug)
     cfg = settings.get_config(trip.organization_id, include_env=False)
-    og = {"title": trip.title, "url": f"{public_base(trip.organization_id)}/t/{trip.share_slug}"}
+    base = public_base(trip.organization_id)
+    when = f"{trip.start_date:%d %b %Y}" + (f" – {trip.end_date:%d %b %Y}" if trip.end_date else "") if trip.start_date else ""
+    og = {"title": trip.title, "url": f"{base}/t/{trip.share_slug}", "image": f"{base}/t/{trip.share_slug}/og.jpg",
+          "desc": " · ".join(x for x in (f"Prepared for {trip.client_name}" if trip.client_name else "", trip.destination, when) if x) or "Your hotel stays, curated by Time Tours"}
     return render_template("hotel_offers/trip_client.html", slug=slug, og=og, brand=cfg["client_title"], map_tiles=cfg["map_tile_url"], whatsapp=cfg["whatsapp_number"],
                            org_slug=org_slug(trip.organization_id))
+
+
+@bp.route("/t/<slug>/og.jpg")
+def trip_og_image(slug):
+    """Preview picture used when the link is pasted into WhatsApp and similar apps."""
+    trip = _shared_trip(slug)
+    rows = HotelQuote.query.filter_by(trip_id=trip.id).order_by(HotelQuote.position, HotelQuote.id).all()
+    groups = trip_groups.group_quotes([r.to_dict() for r in rows], trip.selection_map())
+    ref = trip_og.cover_ref(groups)
+
+    def make():
+        raw = None
+        try:
+            if ref and ref.startswith("u:"):
+                pic = HotelTripPhoto.query.filter_by(id=int(ref[2:]), organization_id=trip.organization_id).first()
+                raw = pic.data if pic else None
+            elif ref:
+                raw, _ = photos.fetch_proxied("google", ref, settings.get_config(trip.organization_id), 1200)
+            return trip_og.render(raw)
+        except (ValueError, OSError, requests.RequestException):
+            return trip_og.render(None)
+
+    body = trip_og.cached((trip.id, ref), make)
+    return Response(body, mimetype="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
 
 
 @bp.route("/api/public/trips/<slug>")
