@@ -41,6 +41,7 @@ DEFAULTS = {
     "enquire_label": "Enquire now",
     "loyalty_note": "Earn your standard hotel loyalty points and elite night credits on eligible stays.",
     "availability_note": "*Subject to availability.",
+    "inr_disclaimer": "INR rates are indicative and may change with the exchange rate on the day of payment. The final amount is confirmed at the time of booking.",
 }
 
 SECRET_KEYS = ("ai_api_key", "unsplash_access_key", "google_places_key")

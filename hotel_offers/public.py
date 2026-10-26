@@ -60,7 +60,7 @@ def _to_public_domain(org_id, path):
 
 
 def _client_cfg(cfg):
-    return {k: cfg[k] for k in ("client_title", "client_subtitle", "whatsapp_number", "availability_note", "brand_footer")}
+    return {k: cfg[k] for k in ("client_title", "client_subtitle", "whatsapp_number", "availability_note", "brand_footer", "inr_disclaimer")}
 
 
 @bp.route("/offers")

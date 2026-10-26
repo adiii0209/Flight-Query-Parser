@@ -124,6 +124,8 @@
     $('#pcOld').textContent = o.online_rate > o.our_deal ? money(o, o.online_rate) : '';
     $('#pcSave').textContent = saving(o) ? `Save ${saving(o)}%` : '';
     $('#sValid').textContent = validTill(o);
+    const inr = $('#sInr'), inrText = String(boot.inr_disclaimer || '').trim();  // only for offers priced in rupees
+    inr.textContent = inrText; inr.hidden = !(inrText && (o.currency || 'INR').toUpperCase() === 'INR' && o.our_deal > 0);
     $('#bSub').textContent = `Share your details and our team will contact you about ${o.title || o.hotel_name}.`;
     const mem = store.get('ho_client') || {};
     $('#inName').value = mem.name || ''; $('#inPhone').value = mem.phone || '';
