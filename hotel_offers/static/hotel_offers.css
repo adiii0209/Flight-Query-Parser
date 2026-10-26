@@ -471,3 +471,5 @@ body{height:auto!important;min-height:100vh!important;overflow:visible!important
 .ho-hint.warn{color:#a36a00;background:#fff4dc;border-radius:10px;padding:.5rem .7rem}
 .gl-when + .gl-when{margin-top:1rem}
 @media(max-width:560px){.sample-row{grid-template-columns:repeat(2,minmax(0,1fr)) auto}}
+
+.gl-city{display:block;margin-bottom:.7rem}

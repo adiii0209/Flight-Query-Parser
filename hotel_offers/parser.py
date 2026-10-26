@@ -11,7 +11,7 @@ ICONS = ["credit", "breakfast", "upgrade", "checkin", "welcome", "spa", "transfe
 SYSTEM_PROMPT = f"""You convert pasted hotel offer text into JSON for a luxury promo poster.
 Return ONLY a JSON object with these keys:
 hotel_name (string), brand_line (string: the hotel brand, e.g. "Raffles"), place_line (string: the location part, e.g. "Udaipur"),
-city (string), tagline (string, max 8 words, evocative, e.g. "A timeless icon on Lake Pichola"),
+city (string: the destination a traveller would search for, the city, island or region, never a neighbourhood or resort area: "Bali" for Nusa Dua or Seminyak, "Paris" for Montmartre, "Phuket" for Patong), tagline (string, max 8 words, evocative, e.g. "A timeless icon on Lake Pichola"),
 room (string), check_in (YYYY-MM-DD), check_out (YYYY-MM-DD), nights (int), adults (int), rooms (int),
 free_nights (int: nights priced at zero or advertised as free), offer_headline (string like "Stay 3 Pay 2" when a free-night deal exists, else ""),
 currency (3-letter code), net_total (number: final total incl. taxes), cancellation (short string),

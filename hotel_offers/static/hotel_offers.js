@@ -810,6 +810,7 @@
       const sv = r.offer.data;
       gl.data = Object.assign({}, Object.assign(blank(), sv.data), { photos: sv.photos || {}, brand: brand(), layout: sv.layout || {} });
       $('#glValid').value = gl.editing ? (o.live.valid_till || '') : (gl.data.check_in || '');  // editing keeps a cleared date cleared
+      $('#glCity').value = gl.data.city || '';
       $('#glBookFrom').value = gl.data.booking_from || ''; $('#glTravelFrom').value = gl.data.travel_from || ''; $('#glTravelTo').value = gl.data.travel_to || '';
       glTravelUi();
       $('#glChipCheckin').hidden = !gl.data.check_in;
@@ -848,12 +849,13 @@
       const image = await toJpegDataUrl(canvas);
       say(msg, 'Publishing…');
       const r = await api(`/api/hotel-offers/offers/${gl.offer.id}/live`, { method: 'POST', body: { template_id: t.id, image, width: canvas.width, height: canvas.height, valid_till: $('#glValid').value || null,
-        booking_from: $('#glBookFrom').value || null, travel_from: $('#glTravelFrom').value || null, travel_to: $('#glTravelTo').value || null } });
+        city: $('#glCity').value.trim() || null, booking_from: $('#glBookFrom').value || null, travel_from: $('#glTravelFrom').value || null, travel_to: $('#glTravelTo').value || null } });
       $('#glLink').value = r.live.url;
       api('/api/hotel-offers/dashboard-link').then(d => { $('#glOpen').href = d.url; });
       $('#glPick').hidden = true; $('#glDone').hidden = false;
       $('#glDone h4').textContent = gl.running ? 'Live page updated' : "It's live";
       gl.live = r.live;
+      if (state.offerId === gl.offer.id) { const c = $('#glCity').value.trim(); if (c) { state.data.city = c; const f = $('[data-f=city]'); if (f) f.value = c; } }
       if (state.offerId === gl.offer.id) Object.assign(state.data, { booking_from: $('#glBookFrom').value, travel_from: $('#glTravelFrom').value, travel_to: $('#glTravelTo').value }), updateSampleWarn();
       if (state.offerId === gl.offer.id) { state.live = r.live; state.liveStale = false; renderLiveBtn(); }
       if (!$('#savedModal').hidden) loadSaved();

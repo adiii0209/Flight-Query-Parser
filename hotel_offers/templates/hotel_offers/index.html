@@ -92,6 +92,7 @@
         <div class="ho-grid2">
           <label>Brand line<input data-f="brand_line" placeholder="Raffles"></label>
           <label>Place line<input data-f="place_line" placeholder="Udaipur"></label>
+          <label>City <small>(the destination on the client page filter and search, not shown on the poster)</small><input data-f="city" placeholder="Bali"></label>
         </div>
         <label>Hotel tagline<input data-f="tagline" placeholder="A timeless icon on Lake Pichola"></label>
         <label>Offer <small>(e.g. Stay 3 Pay 2 &middot; shown on Offer templates, empty = hidden)</small><input data-f="offer_headline" placeholder="Stay 3 Pay 2"></label>
@@ -115,7 +116,6 @@
         <details class="ho-details" open>
           <summary>Extracted stay details <small>(used in the caption)</small></summary>
           <label>Hotel name<input data-f="hotel_name"></label>
-          <label>City <small>(the destination on the client page filter; not the poster text)</small><input data-f="city" placeholder="Bali"></label>
           <label>Room<input data-f="room"></label>
           <div class="ho-sub">Sample dates <small>(the first one is shown on the poster, with the price above)</small></div>
           <div class="ho-grid2">
@@ -230,6 +230,9 @@
       <div class="ho-sub first">Which template should clients see?</div>
       <div class="gl-grid" id="glGrid"></div>
       <div class="gl-foot">
+        <div class="gl-when">
+          <label class="gl-city">City <small>(the destination chips on the client page)</small><input id="glCity" maxlength="80" placeholder="Bali"></label>
+        </div>
         <div class="gl-when">
           <div class="gl-when-head"><span>Booking window</span><button type="button" class="linkbtn" id="glClear">Clear dates</button></div>
           <div class="ho-grid2"><label>Opens <small>(optional)</small><input type="date" id="glBookFrom"></label><label>Closes <small>(hides the offer)</small><input type="date" id="glValid"></label></div>

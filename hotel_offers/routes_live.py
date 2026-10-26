@@ -128,6 +128,9 @@ def go_live(offer_id):
     except ValueError:
         offer_json = {}
     saved = offer_json.setdefault("data", {})  # kept on the offer, so the next update starts from these dates
+    city = re.sub(r"\s+", " ", str(body.get("city") or "")).strip()[:80]
+    if city:
+        saved["city"] = city  # the destination the agent confirmed in the Go live dialog
     for key in ("booking_from", "travel_from", "travel_to"):
         saved[key] = windows[key].isoformat() if key in windows else ""
     offer.data = json.dumps(offer_json)

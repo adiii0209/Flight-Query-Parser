@@ -82,8 +82,8 @@
             <div class="eq-step"><span>Children</span><div><button type="button" data-p="children" data-d="-1" aria-label="Fewer children">&minus;</button><b id="eqChildren">0</b><button type="button" data-p="children" data-d="1" aria-label="More children">+</button></div></div>
           </div>
 
-          <label class="eq-sel" id="eqBudgetBox"><span>Budget per room per night <em>optional</em></span>
-            <select id="eqBudget"></select></label>
+          <label class="eq-sel" id="eqBudgetBox"><span>Budget per room per night</span>
+            <select id="eqBudget" required></select><small></small></label>
 
           <div class="eq-hotels-wrap" id="eqHotelsWrap" hidden>
             <p class="eq-h">Shortlisted hotels <em>optional</em></p>
@@ -309,6 +309,7 @@
     });
     $('#eqForm', root).addEventListener('submit', send);
     $$('input', root).forEach(i => i.addEventListener('input', () => { const f = i.closest('.field'); if (f) f.classList.remove('bad'); }));
+    $('#eqBudget', root).addEventListener('change', () => $('#eqBudgetBox', root).classList.remove('bad'));
   }
 
   // ---------- open / close / send
@@ -337,11 +338,12 @@
   function send(e) {
     e.preventDefault();
     const dest = $('#eqDestIn', root).value.trim().replace(/\s+/g, ' '), other = $('#eqOtherIn', root).value.trim().replace(/\s+/g, ' ');
-    flag('#eqDest'); flag('#eqDates');
+    flag('#eqDest'); flag('#eqDates'); flag('#eqBudgetBox');
     let bad = false;
     if (dest.length < 2) { flag('#eqDest', 'Where would you like to go?'); bad = true; }
     if (dt.mode === 'specific' && dt.from && !dt.to) { flag('#eqDates', 'Please choose your check-out date'); setOpen(true); bad = true; }
-    if (bad) { const f = $('.field.bad input', root); if (f) f.focus(); return; }
+    if (!$('#eqBudget', root).value) { flag('#eqBudgetBox', 'Please choose a budget'); bad = true; }
+    if (bad) { const f = $('.field.bad input, .eq-sel.bad select', root); if (f) f.focus(); return; }
 
     const hotels = Array.from(picked).concat(other ? [other] : []);
     // each detail is its own paragraph with a bold label, so it reads cleanly in WhatsApp
@@ -357,8 +359,7 @@
     const guests = [`${pax.adults} adult${pax.adults === 1 ? '' : 's'}`];
     if (pax.children) guests.push(`${pax.children} child${pax.children === 1 ? '' : 'ren'}`);
     lines.push(item('Guests', guests.join(', ')));
-    const budget = $('#eqBudget', root).value;
-    if (budget) lines.push(item('Budget', `${budget} per room per night`));
+    lines.push(item('Budget', `${$('#eqBudget', root).value} per room per night`));
     if (hotels.length) lines.push(item('Shortlisted hotels', hotels.join(', ')));
     lines.push('Please share the best options and rates. Thank you.');
     const url = C.waBase() + '?text=' + encodeURIComponent(lines.join('\n\n'));

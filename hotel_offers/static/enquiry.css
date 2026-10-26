@@ -54,3 +54,7 @@
 .eq-sel select:has(option[value='']:checked){color:var(--faint)}
 
 #eqOther span{max-width:calc(100% - 32px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.eq-sel small{display:block;max-height:0;overflow:hidden;opacity:0;font-size:.8rem;color:var(--err);padding:0 6px;transition:all .3s var(--out)}
+.eq-sel.bad select{border-color:var(--err);animation:shake .4s}
+.eq-sel.bad small{max-height:30px;opacity:1;padding-top:6px}
