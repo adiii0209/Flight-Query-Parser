@@ -1,0 +1,19 @@
+/* Client page: the enquiry sheet behind the WhatsApp button. Uses the sheet, field and button styles from client.css. */
+.eq-sheet{height:auto;max-height:92dvh}
+.eq-body{padding:56px 22px calc(26px + env(safe-area-inset-bottom));overflow-y:auto;overscroll-behavior:contain}
+.eq-body .b-sub{margin-bottom:22px}
+.eq-dates{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-bottom:14px}
+.eq-dates label{position:relative;display:block;min-width:0}
+.eq-dates label span{position:absolute;left:17px;top:9px;font-size:.72rem;letter-spacing:.04em;color:var(--mute);pointer-events:none;z-index:1}
+.eq-dates input{width:100%;height:60px;padding:24px 8px 6px 14px;border-radius:16px;border:1.5px solid transparent;background:var(--surface-2);color:var(--text);font-family:var(--sans);font-size:.95rem;min-width:0;max-width:100%;box-sizing:border-box;-webkit-appearance:none;appearance:none}
+.eq-dates input:focus{outline:none;background:var(--surface);border-color:var(--text);box-shadow:0 0 0 4px color-mix(in srgb,var(--gold) 22%,transparent)}
+.eq-dates small{grid-column:1/-1;display:block;max-height:0;overflow:hidden;opacity:0;font-size:.8rem;color:var(--err);padding:0 6px;transition:all .3s var(--out)}
+.eq-dates.bad input{border-color:var(--err)}
+.eq-dates.bad small{max-height:40px;opacity:1}
+.eq-hotels-wrap{margin:6px 0 10px}
+.eq-h{font-size:.82rem;font-weight:500;color:var(--mute);margin-bottom:8px}
+.eq-h em{font-style:normal;color:var(--faint);font-weight:400;margin-left:6px}
+.eq-hotels{display:flex;flex-wrap:wrap;gap:8px}
+.eq-hotels .chip{height:auto;min-height:36px;padding:7px 14px;text-align:left;line-height:1.25}
+.eq-send{width:100%;margin-top:8px}
+@media(min-width:760px){.eq-sheet{max-width:480px;height:auto}}

@@ -379,4 +379,7 @@
     }
   }
   load();
+
+  // shared with enquiry.js (the WhatsApp enquiry sheet)
+  window.HO_CLIENT = { offers: () => offers, waBase };
 })();
