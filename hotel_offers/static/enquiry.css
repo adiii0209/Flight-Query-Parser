@@ -42,3 +42,13 @@
 .eq-step button{width:34px;height:34px;border-radius:50%;background:var(--surface);border:1px solid var(--line);font-size:1.2rem;line-height:1;display:grid;place-items:center;transition:transform .2s var(--out),opacity .2s}
 .eq-step button:active{transform:scale(.9)}
 .eq-step button:disabled{opacity:.35;cursor:default}
+
+.eq-sug li b{font-weight:400;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* budget */
+.eq-sel{position:relative;display:block;margin-bottom:14px}
+.eq-sel span{position:absolute;left:17px;top:9px;z-index:1;font-size:.72rem;letter-spacing:.04em;color:var(--mute);pointer-events:none}
+.eq-sel em{font-style:normal;color:var(--faint);margin-left:6px}
+.eq-sel select{width:100%;height:60px;padding:24px 44px 6px 16px;border-radius:16px;border:1.5px solid transparent;background:var(--surface-2) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>") no-repeat right 14px center;color:var(--text);font-family:var(--sans);font-size:1.02rem;-webkit-appearance:none;appearance:none;transition:border-color .25s,background-color .25s}
+.eq-sel select:focus{outline:none;background-color:var(--surface);border-color:var(--text);box-shadow:0 0 0 4px color-mix(in srgb,var(--gold) 22%,transparent)}
+.eq-sel select:has(option[value='']:checked){color:var(--faint)}

@@ -19,6 +19,8 @@
   const shortDay = v => parseISO(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   const monthLabel = k => { const [y, m] = k.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }); };
   const LENGTHS = [['2-3', '2–3 nights'], ['4-5', '4–5 nights'], ['6-7', '6–7 nights'], ['8-10', '8–10 nights'], ['10+', '10+ nights']];
+  // budget per person, in rupees (optional)
+  const BUDGETS = ['Under ₹50,000', '₹50,000 – ₹1 lakh', '₹1 – ₹2 lakh', '₹2 – ₹3 lakh', '₹3 – ₹5 lakh', '₹5 lakh and above', 'Not sure yet'];
   const CHEV = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
 
   let root = null, sheet = null, lastFocus = null;
@@ -78,6 +80,9 @@
             <div class="eq-step"><span>Children</span><div><button type="button" data-p="children" data-d="-1" aria-label="Fewer children">&minus;</button><b id="eqChildren">0</b><button type="button" data-p="children" data-d="1" aria-label="More children">+</button></div></div>
           </div>
 
+          <label class="eq-sel" id="eqBudgetBox"><span>Budget per person <em>optional</em></span>
+            <select id="eqBudget"><option value="">Choose a budget</option>${BUDGETS.map(b => `<option>${b}</option>`).join('')}</select></label>
+
           <div class="eq-hotels-wrap" id="eqHotelsWrap" hidden>
             <p class="eq-h">Shortlisted hotels <em>optional</em></p>
             <div class="eq-hotels" id="eqHotels"></div>
@@ -120,7 +125,7 @@
     const inp = $('#eqDestIn', root), box = $('#eqSug', root);
     sugItems = suggestions(inp.value); sugActive = -1;
     if (!sugItems.length) { hideSug(); return; }
-    box.innerHTML = sugItems.map((s, i) => `<li role="option" id="eqOpt${i}" data-i="${i}"><span>${esc(s.label)}</span>${s.live ? '<em>Live offers</em>' : ''}</li>`).join('');
+    box.innerHTML = sugItems.map((s, i) => `<li role="option" id="eqOpt${i}" data-i="${i}"><b>${esc(s.label)}</b>${s.live ? '<em>Live offers</em>' : ''}</li>`).join('');
     box.hidden = false; inp.setAttribute('aria-expanded', 'true');
   }
   function hideSug() { const box = $('#eqSug', root); box.hidden = true; $('#eqDestIn', root).setAttribute('aria-expanded', 'false'); sugActive = -1; }
@@ -333,6 +338,8 @@
     const guests = [`${pax.adults} adult${pax.adults === 1 ? '' : 's'}`];
     if (pax.children) guests.push(`${pax.children} child${pax.children === 1 ? '' : 'ren'}`);
     lines.push(`Guests: ${guests.join(', ')}`);
+    const budget = $('#eqBudget', root).value;
+    if (budget) lines.push(`Budget: ${budget} per person`);
     if (hotels.length) lines.push(`Hotels I'm considering: ${hotels.join(', ')}`);
     const url = C.waBase() + '?text=' + encodeURIComponent(lines.join('\n'));
     const win = window.open(url, '_blank', 'noopener');
