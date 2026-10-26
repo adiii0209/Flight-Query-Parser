@@ -2,7 +2,7 @@
 import csv
 import io
 import re
-from datetime import datetime, timedelta
+from datetime import date as date_cls, datetime, timedelta
 
 DATE_FORMATS = ("%d-%B-%Y", "%d-%b-%Y", "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d %B %Y", "%d %b %Y")
 DATE_RE = re.compile(r"\d{1,2}[-/ ][A-Za-z]{3,9}[-/ ]\d{4}|\d{1,2}[-/]\d{1,2}[-/]\d{4}|\d{4}-\d{2}-\d{2}")
@@ -139,9 +139,31 @@ room_desc (a sentence about the room: bed, view, features), perks (array of up t
 Use "" or 0 when unknown. Never invent hotels or prices."""
 
 
+def _today():
+    return (datetime.utcnow() + timedelta(hours=5, minutes=30)).date()  # India date
+
+
+def _fix_year(d, text, today):
+    """The model cannot know today's year. When the pasted text never mentions the year it returned, use the next time that date comes round."""
+    if d is None or str(d.year) in text or f"{d.year % 100:02d}" in re.findall(r"\b\d{1,2}[/-]\d{1,2}[/-](\d{2})\b", text):
+        return d
+    for year in (today.year, today.year + 1):
+        try:
+            cand = d.replace(year=year)
+        except ValueError:  # 29 Feb
+            continue
+        if cand >= today - timedelta(days=1):
+            return cand
+    return d
+
+
 def parse_with_ai(text, cfg):
     from .parser import call_llm
-    data = call_llm(dict(cfg, ai_system_prompt=QUOTE_PROMPT, ai_max_tokens=max(cfg.get("ai_max_tokens", 1500), 3000)), text)
+    today = _today()
+    prompt = (QUOTE_PROMPT + f"\nToday's date is {today.isoformat()}. Dates in the text are day first (DD/MM/YYYY). "
+              "If a date has no year, use the next time that date occurs on or after today. "
+              "Also give check_out (YYYY-MM-DD) whenever the text gives a check-out date or a date range, and set nights to the number of nights between check-in and check-out.")
+    data = call_llm(dict(cfg, ai_system_prompt=prompt, ai_max_tokens=max(cfg.get("ai_max_tokens", 1500), 3000)), text)
     out = []
     for item in data.get("quotes") or []:
         if not isinstance(item, dict) or not item.get("hotel_name"):
@@ -152,6 +174,18 @@ def parse_with_ai(text, cfg):
                 q[k] = item[k]
         q["nights"], q["items"], q["rooms"] = _num(item.get("nights")), _num(item.get("items")), _num(item.get("rooms"))
         q["cost_per_item"], q["total"] = _num(item.get("cost_per_item")), _num(item.get("total"))
+        cin = _fix_year(parse_date(str(item.get("date") or "")), text, today)
+        cout = parse_date(str(item.get("check_out") or ""))
+        if cin and cout:
+            cout = _fix_year(cout, text, today)
+            if cout <= cin:  # a range over New Year, or a check-out that lost its year
+                try:
+                    cout = cout.replace(year=cin.year + 1) if cout.replace(year=cin.year) <= cin else cout.replace(year=cin.year)
+                except ValueError:
+                    pass
+            if cout > cin:
+                q["nights"] = (cout - cin).days  # the dates in the text beat a night count the model worked out
+        q["date"] = cin  # _finish turns it into the ISO string and the weekday
         cd = parse_date(q.get("cancellation"))
         q["cancel_by"] = cd.isoformat() if cd else None
         out.append(_finish(q))

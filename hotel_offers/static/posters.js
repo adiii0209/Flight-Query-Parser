@@ -113,8 +113,9 @@
     render(d) {
       const head = d.offer_headline ? A('left:76px;top:567px;width:310px', 'po-badge', 'Special offer') + headlineBlock(d, 76, 652, 400, 128) : '';
       return root('t1', 902, 1743,
-        A('left:490px;top:118px;width:412px;height:1366px;border-radius:206px 206px 0 0;background:linear-gradient(90deg,#eadfcb,#f6efe2);box-shadow:inset 0 0 40px rgba(120,90,40,.18)') +
-        PH(d, 'hero', 'left:524px;top:150px;width:378px;height:1334px;border-radius:174px 174px 0 0') +
+        /* the arch keeps the same margin on the right as the price bar below it (ends at x=848); it used to run into the poster's edge */
+        A('left:490px;top:118px;width:358px;height:1366px;border-radius:179px 179px 0 0;background:linear-gradient(90deg,#eadfcb,#f6efe2);box-shadow:inset 0 0 40px rgba(120,90,40,.18)') +
+        PH(d, 'hero', 'left:520px;top:150px;width:298px;height:1334px;border-radius:149px 149px 0 0') +
         logo(d, 'left:72px;top:60px') +
         brandBig(d, 70, 250, 126, 7) + placeSmall(d, 78, 388, 46, 9) + rule(78, 452, 56) + tagline(d, 'left:78px;top:482px;font-size:21px') + head +
         perkList(d, { left: 76, top: head ? 925 : 640, step: 102, w: 400, ico: 78, gap: 38, gap2: 36, fs: 21, maxBottom: 1335 }) +
@@ -154,7 +155,7 @@
         lotus +
         logo(d, 'left:125px;top:52px') +
         hdrNote(d, 'right:50px;top:46px;text-align:right;font-size:15px', rule(920, 124, 54)) +
-        brandSmall(d, 648, 252, 34, 9) + A(`left:640px;top:296px;font-size:${fs(d.place_line || d.brand_line, 112, 5.8)}px`, 't-brand', esc(d.place_line || d.brand_line)) +
+        brandSmall(d, 648, 252, 34, 9) + A(`left:640px;top:296px;font-size:${fs(d.place_line || d.brand_line, 112, 4.4)}px`, 't-brand', esc(d.place_line || d.brand_line)) +
         rule(648, 450, 64) + tagline(d, 'left:648px;top:480px;font-size:22px') +
         d.perks.slice(0, 5).map((p, i, arr) => {
           const five = arr.length > 4, ico = five ? 72 : 88, step = five ? 104 : 114;
