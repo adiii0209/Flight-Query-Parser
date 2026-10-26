@@ -19,8 +19,10 @@
   const shortDay = v => parseISO(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   const monthLabel = k => { const [y, m] = k.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }); };
   const LENGTHS = [['2-3', '2–3 nights'], ['4-5', '4–5 nights'], ['6-7', '6–7 nights'], ['8-10', '8–10 nights'], ['10+', '10+ nights']];
-  // budget per person, in rupees (optional)
-  const BUDGETS = ['Under ₹50,000', '₹50,000 – ₹1 lakh', '₹1 – ₹2 lakh', '₹2 – ₹3 lakh', '₹3 – ₹5 lakh', '₹5 lakh and above', 'Not sure yet'];
+  // budget per room per night in US dollars (optional). The lowest band is for Asia only; elsewhere the choices start at USD 250.
+  const BUDGETS = [{ label: 'USD 150 – 250', asiaOnly: true }, { label: 'USD 250 – 400' }, { label: 'USD 400 – 700' }, { label: 'USD 700 – 1,000' }, { label: 'USD 1,000+' }];
+  const ASIA = new Set(['India', 'Indonesia', 'Thailand', 'Malaysia', 'Singapore', 'Vietnam', 'Cambodia', 'Laos', 'Myanmar', 'Philippines', 'Maldives', 'Sri Lanka', 'Nepal', 'Bhutan', 'Bangladesh', 'Brunei',
+    'Japan', 'South Korea', 'China', 'Taiwan', 'Mongolia']);
   const CHEV = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
 
   let root = null, sheet = null, lastFocus = null;
@@ -80,8 +82,8 @@
             <div class="eq-step"><span>Children</span><div><button type="button" data-p="children" data-d="-1" aria-label="Fewer children">&minus;</button><b id="eqChildren">0</b><button type="button" data-p="children" data-d="1" aria-label="More children">+</button></div></div>
           </div>
 
-          <label class="eq-sel" id="eqBudgetBox"><span>Budget per person <em>optional</em></span>
-            <select id="eqBudget"><option value="">Choose a budget</option>${BUDGETS.map(b => `<option>${b}</option>`).join('')}</select></label>
+          <label class="eq-sel" id="eqBudgetBox"><span>Budget per room per night <em>optional</em></span>
+            <select id="eqBudget"></select></label>
 
           <div class="eq-hotels-wrap" id="eqHotelsWrap" hidden>
             <p class="eq-h">Shortlisted hotels <em>optional</em></p>
@@ -134,13 +136,28 @@
     if (!s) return;
     $('#eqDestIn', root).value = s.label;
     $('#eqDest', root).classList.remove('bad');
-    hideSug(); renderHotels();
+    hideSug(); renderHotels(); renderBudget();
   }
   function moveSug(d) {
     if ($('#eqSug', root).hidden) { showSug(); return; }
     sugActive = (sugActive + d + sugItems.length) % sugItems.length;
     $$('#eqSug li', root).forEach((li, i) => li.classList.toggle('on', i === sugActive));
     const li = $$('#eqSug li', root)[sugActive]; if (li) { li.scrollIntoView({ block: 'nearest' }); $('#eqDestIn', root).setAttribute('aria-activedescendant', li.id); }
+  }
+
+  // ---------- budget: the choices depend on where the guest is going
+  function regionOf(dest) {
+    const t = dest.trim();
+    if (!t) return '';
+    let country = t.includes(',') ? t.split(',').pop().trim() : '';
+    if (!country) { const hit = CITIES.find(x => norm(cityName(x)) === norm(t)); country = hit ? hit.split(',').pop().trim() : ''; }
+    return !country ? '' : ASIA.has(country) ? 'asia' : 'world';
+  }
+  function renderBudget() {
+    const sel = $('#eqBudget', root), keep = sel.value, region = regionOf($('#eqDestIn', root).value);
+    const list = BUDGETS.filter(b => !b.asiaOnly || region !== 'world');  // not Asia: the USD 150 – 250 band is left out
+    sel.innerHTML = '<option value="">Choose a budget</option>' + list.map(b => `<option>${esc(b.label)}</option>`).join('');
+    if (list.some(b => b.label === keep)) sel.value = keep;
   }
 
   // ---------- shortlisted hotels: only the live offers for the chosen destination
@@ -239,7 +256,7 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && !root.hidden) { if (!$('#eqSug', root).hidden) hideSug(); else close(); } });
 
     const dest = $('#eqDestIn', root);
-    dest.addEventListener('input', () => { $('#eqDest', root).classList.remove('bad'); showSug(); renderHotels(); });
+    dest.addEventListener('input', () => { $('#eqDest', root).classList.remove('bad'); showSug(); renderHotels(); renderBudget(); });
     dest.addEventListener('focus', showSug);
     dest.addEventListener('blur', () => setTimeout(hideSug, 120));
     dest.addEventListener('keydown', e => {
@@ -299,7 +316,7 @@
     if (!root) build();
     lastFocus = from || document.activeElement;
     dt.view = new Date(todayD().getFullYear(), todayD().getMonth(), 1);
-    setOpen(false); setMode(dt.mode); paxUi(); renderHotels();
+    setOpen(false); setMode(dt.mode); paxUi(); renderHotels(); renderBudget();
     $$('.bad', root).forEach(f => f.classList.remove('bad'));
     root.hidden = false;
     document.documentElement.classList.add('lock');
@@ -339,7 +356,7 @@
     if (pax.children) guests.push(`${pax.children} child${pax.children === 1 ? '' : 'ren'}`);
     lines.push(`Guests: ${guests.join(', ')}`);
     const budget = $('#eqBudget', root).value;
-    if (budget) lines.push(`Budget: ${budget} per person`);
+    if (budget) lines.push(`Budget: ${budget} per room per night`);
     if (hotels.length) lines.push(`Hotels I'm considering: ${hotels.join(', ')}`);
     const url = C.waBase() + '?text=' + encodeURIComponent(lines.join('\n'));
     const win = window.open(url, '_blank', 'noopener');
