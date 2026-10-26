@@ -115,11 +115,16 @@
         <details class="ho-details" open>
           <summary>Extracted stay details <small>(used in the caption)</small></summary>
           <label>Hotel name<input data-f="hotel_name"></label>
+          <label>City <small>(the destination on the client page filter; not the poster text)</small><input data-f="city" placeholder="Bali"></label>
           <label>Room<input data-f="room"></label>
+          <div class="ho-sub">Sample dates <small>(the first one is shown on the poster, with the price above)</small></div>
           <div class="ho-grid2">
             <label>Check-in<input data-f="check_in" type="date"></label>
             <label>Check-out<input data-f="check_out" type="date"></label>
           </div>
+          <div id="sampleRows"></div>
+          <button class="pill ghost sm" type="button" id="btnAddSample">Add more sample dates</button>
+          <p class="ho-hint warn" id="sampleWarn" hidden></p>
           <div class="ho-grid3">
             <label>Nights<input data-f="nights" type="number" min="0"></label>
             <label>Adults<input data-f="adults" type="number" min="0"></label>
@@ -226,10 +231,15 @@
       <div class="gl-grid" id="glGrid"></div>
       <div class="gl-foot">
         <div class="gl-when">
-          <div class="gl-when-head"><span>Valid till</span><button type="button" class="linkbtn" id="glClear">Clear date</button></div>
-          <input type="date" id="glValid">
+          <div class="gl-when-head"><span>Booking window</span><button type="button" class="linkbtn" id="glClear">Clear dates</button></div>
+          <div class="ho-grid2"><label>Opens <small>(optional)</small><input type="date" id="glBookFrom"></label><label>Closes <small>(hides the offer)</small><input type="date" id="glValid"></label></div>
           <div class="gl-chips"><button type="button" data-checkin id="glChipCheckin">Check-in date</button><button type="button" data-days="7">1 week</button><button type="button" data-days="14">2 weeks</button><button type="button" data-days="30">1 month</button></div>
           <p class="ho-hint" id="glValidHint"></p>
+        </div>
+        <div class="gl-when">
+          <div class="gl-when-head"><span>Travel window</span></div>
+          <div class="ho-grid2"><label>Travel from<input type="date" id="glTravelFrom"></label><label>Travel until<input type="date" id="glTravelTo"></label></div>
+          <p class="ho-hint warn" id="glTravelWarn" hidden></p>
         </div>
         <div class="gl-actions"><button class="pill ghost danger" id="glOff" hidden>Switch off</button><span class="ho-hint" id="glMsg"></span><button class="pill ghost" data-close>Cancel</button><button class="pill primary" id="glGo">Go live</button></div>
       </div>

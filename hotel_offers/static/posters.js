@@ -49,7 +49,40 @@
   const hdrBlock = (d, line, style) => has(d.brand.header_note) ? A(line) + A(style, '', nl(d.brand.header_note)) : '';
   const availBlock = (d, rule, style) => has(d.brand.availability) ? A(rule) + A(style, '', esc(d.brand.availability)) : '';
   const hdrNote = (d, style, line) => has(d.brand.header_note) ? A(style, 'hdr-note', nl(d.brand.header_note)) + (line || '') : '';
-  const tagline = (d, style) => !has(d.tagline) ? '' : A(style, 't-tag', nl((d.tagline || '').toUpperCase().replace(/\s+(ON|IN|AT|OVER|BY)\s+/, '\n$1 ')));
+  // Tagline: wraps to the width of its column (a tagline of more than three words used to run on in one line, over the photo).
+  // Each character takes about .82em (glyph plus letter-spacing); lines are balanced, and "... ON/IN/AT ..." still starts a new line when that fits.
+  const tagLines = (text, max) => {
+    const words = text.trim().split(/\s+/).filter(Boolean), m = words.length;
+    if (words.join(' ').length <= max || m < 2) return [words.join(' ')];
+    const lens = words.map(w => w.length);
+    const width = (i, j) => lens.slice(i, j).reduce((x, y) => x + y, 0) + (j - i - 1);
+    let best = null;
+    // the fewest lines that all fit, split so the longest line is as short as possible (then the lines as even as possible)
+    for (let n = 2; n <= m && !(best && best.longest <= max); n++) {
+      best = null;
+      const rec = (start, left, cuts) => {
+        if (left === 1) {
+          const parts = cuts.concat([[start, m]]).map(([i, j]) => width(i, j));
+          const cand = { parts: cuts.concat([[start, m]]), longest: Math.max(...parts), spread: parts.reduce((x, y) => x + y * y, 0) };
+          if (!best || cand.longest < best.longest || (cand.longest === best.longest && cand.spread < best.spread)) best = cand;
+          return;
+        }
+        for (let j = start + 1; j <= m - left + 1; j++) rec(j, left - 1, cuts.concat([[start, j]]));
+      };
+      rec(0, n, []);
+    }
+    return best.parts.map(([i, j]) => words.slice(i, j).join(' '));
+  };
+  const tagline = (d, style, width) => {
+    if (!has(d.tagline)) return '';
+    const text = String(d.tagline).toUpperCase();
+    if (text.includes('\n')) return A(style, 't-tag', nl(text));  // the agent already chose the line breaks
+    const fsz = Number((/font-size:(\d+(?:\.\d+)?)px/.exec(style) || [])[1]) || 22;
+    const max = Math.max(10, Math.floor((width || 400) / (fsz * 0.82)));
+    const byWord = text.replace(/\s+(ON|IN|AT|OVER|BY)\s+/, '\n$1 ').split('\n');
+    const lines = byWord.length > 1 && byWord.every(l => l.length <= max) ? byWord : tagLines(text, max);
+    return A(style, 't-tag', lines.map(esc).join('<br>'));
+  };
   const perk = (d, p, o) => {
     o = o || {};
     const icon = o.swap && p.icon === 'breakfast' ? 'dining' : p.icon;
@@ -156,7 +189,7 @@
         logo(d, 'left:125px;top:52px') +
         hdrNote(d, 'right:50px;top:46px;text-align:right;font-size:15px', rule(920, 124, 54)) +
         brandSmall(d, 648, 252, 34, 9) + A(`left:640px;top:296px;font-size:${fs(d.place_line || d.brand_line, 112, 4.4)}px`, 't-brand', esc(d.place_line || d.brand_line)) +
-        rule(648, 450, 64) + tagline(d, 'left:648px;top:480px;font-size:22px') +
+        rule(648, 450, 64) + tagline(d, 'left:648px;top:480px;font-size:22px', 326) +
         d.perks.slice(0, 5).map((p, i, arr) => {
           const five = arr.length > 4, ico = five ? 72 : 88, step = five ? 104 : 114;
           return A(`left:648px;top:${586 + i * step}px;width:360px;height:${ico}px`, 'perk', `${perk(d, p, { ico })}${perkLabel(p, `margin-left:${five ? 28 : 34}px;font-size:${five ? 18 : 20}px`)}`) +

@@ -34,6 +34,27 @@ def live_info(row):
     }
 
 
+def _iso(value):
+    try:
+        return date.fromisoformat(str(value)[:10]).isoformat()
+    except (TypeError, ValueError):
+        return ""
+
+
+def _amount(value):
+    try:
+        return max(0.0, float(value or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _sample(check_in, check_out, deal, online):
+    """One sample stay: its dates and the price for those dates."""
+    ci, co = _iso(check_in), _iso(check_out)
+    nights = (date.fromisoformat(co) - date.fromisoformat(ci)).days if ci and co else 0
+    return {"check_in": ci, "check_out": co, "nights": max(nights, 0), "our_deal": _amount(deal), "online_rate": _amount(online)}
+
+
 def build_snapshot(offer_json, title):
     d = (offer_json or {}).get("data") or {}
     keep = ("hotel_name", "brand_line", "place_line", "city", "tagline", "offer_headline", "currency", "room", "check_in", "check_out")
@@ -45,6 +66,16 @@ def build_snapshot(offer_json, title):
             snap[k] = 0
     snap["perks"] = [str(p.get("label") or "").replace("\n", " ")[:60] for p in (d.get("perks") or [])[:6] if isinstance(p, dict) and p.get("label")]
     snap["title"] = title
+    # the booking and travel windows, and the sample dates: the poster's own dates first, then the extra samples (each priced)
+    for k in ("booking_from", "travel_from", "travel_to"):
+        snap[k] = _iso(d.get(k))
+    samples = [_sample(d.get("check_in"), d.get("check_out"), d.get("our_deal"), d.get("online_rate"))]
+    for s in (d.get("extra_samples") or [])[:7]:
+        if isinstance(s, dict):
+            x = _sample(s.get("check_in"), s.get("check_out"), s.get("our_deal"), s.get("online_rate"))
+            if x["check_in"] and x["check_out"] and x["nights"] > 0 and x["our_deal"] > 0:
+                samples.append(x)
+    snap["samples"] = samples
     return snap
 
 
@@ -80,10 +111,26 @@ def go_live(offer_id):
             valid_till = date.fromisoformat(str(body["valid_till"])[:10])
         except ValueError:
             return _err("The valid-till date is not valid.")
+    windows = {}
+    for key, label in (("booking_from", "booking window start"), ("travel_from", "travel window start"), ("travel_to", "travel window end")):
+        raw = body.get(key)
+        if raw:
+            try:
+                windows[key] = date.fromisoformat(str(raw)[:10])
+            except ValueError:
+                return _err(f"The {label} date is not valid.")
+    if windows.get("booking_from") and valid_till and windows["booking_from"] > valid_till:
+        return _err("The booking window ends before it starts.")
+    if windows.get("travel_from") and windows.get("travel_to") and windows["travel_from"] > windows["travel_to"]:
+        return _err("The travel window ends before it starts.")
     try:
         offer_json = json.loads(offer.data or "{}")
     except ValueError:
         offer_json = {}
+    saved = offer_json.setdefault("data", {})  # kept on the offer, so the next update starts from these dates
+    for key in ("booking_from", "travel_from", "travel_to"):
+        saved[key] = windows[key].isoformat() if key in windows else ""
+    offer.data = json.dumps(offer_json)
     row = HotelOfferLive.query.filter_by(offer_id=offer.id).first()
     if row is None:
         snap = build_snapshot(offer_json, offer.title)

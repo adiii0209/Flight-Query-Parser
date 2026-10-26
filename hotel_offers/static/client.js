@@ -17,6 +17,7 @@
 
   // ---------- formatting
   const place = o => o.place_line || o.city || '';
+  const cityOf = o => o.city || o.place_line || '';  // the destination: the filter chips and the enquiry use this, not the poster's place line
   const money = (o, n) => n ? `${o.currency || 'INR'} ${Math.round(n).toLocaleString('en-US')}` : '';
   const day = s => (s ? new Date(s + 'T00:00:00') : null);
   function range(o) {
@@ -50,7 +51,7 @@
 
   // ---------- list
   function chipsFor(list) {
-    const places = Array.from(new Set(list.map(place).filter(Boolean)));
+    const places = Array.from(new Set(list.map(cityOf).filter(Boolean)));
     const wrap = $('#chipsWrap'), chips = $('#chips');
     wrap.hidden = places.length < 2;
     if (wrap.hidden) { filter = 'All'; return; }
@@ -66,7 +67,7 @@
   });
 
   function renderGrid() {
-    const grid = $('#grid'), list = offers.filter(o => filter === 'All' || place(o) === filter);
+    const grid = $('#grid'), list = offers.filter(o => filter === 'All' || cityOf(o) === filter);
     $('#empty').hidden = offers.length > 0;
     grid.hidden = offers.length === 0;
     grid.innerHTML = list.map((o, i) => {
@@ -102,7 +103,51 @@
     $('.sheet-body').scrollTop = 0; $('#sScroll').scrollTop = 0; // every step starts from the top (phones scroll the whole sheet, desktop only the right column)
     if (step === 'book') setTimeout(() => { if (!$('#inName').value) $('#inName').focus({ preventScroll: true }); else $('#inPhone').focus({ preventScroll: true }); }, 420);
   }
+  // ---------- sample dates: the first sample is what the poster shows; the others can be picked, each with its own price
+  const fmtDay = v => (v ? day(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
+  const windowText = (from, to, open) => from && to ? `${fmtDay(from)} – ${fmtDay(to)}` : to ? `${open || 'Until'} ${fmtDay(to)}` : from ? `From ${fmtDay(from)}` : '';
+  const sampleList = o => (o.samples || []).filter(s => s.check_in && s.check_out);
+  function useSample(o, i) {
+    const s = sampleList(o)[i];
+    if (!s) return;
+    Object.assign(o, { check_in: s.check_in, check_out: s.check_out, nights: s.nights || o.nights, our_deal: s.our_deal, online_rate: s.online_rate, _i: i });
+  }
+  function renderFacts(o) {
+    const facts = [];
+    if (range(o) && sampleList(o).length < 2) facts.push(['Sample dates', range(o) + (nights(o) ? ` · ${nights(o)} nights` : '')]);
+    if (o.adults || o.rooms) facts.push(['Guests', [o.adults && `${o.adults} adults`, o.rooms && `${o.rooms} room${o.rooms > 1 ? 's' : ''}`].filter(Boolean).join(' · ')]);
+    if (o.room) facts.push(['Room', o.room]);
+    const book = windowText(o.booking_from, o.valid_till), travel = windowText(o.travel_from, o.travel_to);
+    if (book) facts.push(['Book', book]);
+    if (travel) facts.push(['Travel', travel]);
+    $('#sFacts').innerHTML = facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('');
+    $('#sFacts').hidden = !facts.length;
+  }
+  function renderPrice(o) {
+    $('#pcNew').textContent = money(o, o.our_deal) || 'On request';
+    $('#pcOld').textContent = o.online_rate > o.our_deal ? money(o, o.online_rate) : '';
+    $('#pcSave').textContent = saving(o) ? `Save ${saving(o)}%` : '';
+  }
+  function renderSamples(o) {
+    const list = sampleList(o), box = $('#sSamples');
+    box.hidden = list.length < 2;
+    if (box.hidden) return;
+    const sel = o._i || 0;
+    $('#smList').innerHTML = list.map((s, i) => {
+      const n = s.nights || nights(s);
+      return `<button type="button" class="sample" data-i="${i}" aria-pressed="${i === sel}"><span class="sm-d">${esc(range(s))}</span><span class="sm-n">${n ? n + ' night' + (n > 1 ? 's' : '') : ''}</span>` +
+        `<span class="sm-p"><b>${esc(money(o, s.our_deal))}</b>${s.online_rate > s.our_deal ? `<s>${esc(money(o, s.online_rate))}</s>` : ''}</span></button>`;
+    }).join('');
+  }
+  $('#smList').addEventListener('click', e => {
+    const b = e.target.closest('.sample');
+    if (!b || !current) return;
+    useSample(current, Number(b.dataset.i));
+    renderSamples(current); renderPrice(current); calInit(current);
+  });
+
   function fillSheet(o) {
+    if (sampleList(o).length) useSample(o, 0);  // always open on the first sample (the poster's dates)
     const img = $('#sImg');
     img.classList.remove('ready'); img.alt = (o.title || o.hotel_name) + ' offer poster';
     img.onload = () => img.classList.add('ready'); img.src = o.image;
@@ -111,18 +156,11 @@
     $('#sTitle').textContent = o.title || o.hotel_name;
     $('#sTag').textContent = o.tagline || ''; $('#sTag').hidden = !o.tagline;
     const chip = $('#sOffer'); chip.textContent = o.offer_headline || ''; chip.hidden = !o.offer_headline;
-    const facts = [];
-    if (range(o)) facts.push(['Stay', range(o) + (nights(o) ? ` · ${nights(o)} nights` : '')]);
-    if (o.adults || o.rooms) facts.push(['Guests', [o.adults && `${o.adults} adults`, o.rooms && `${o.rooms} room${o.rooms > 1 ? 's' : ''}`].filter(Boolean).join(' · ')]);
-    if (o.room) facts.push(['Room', o.room]);
-    $('#sFacts').innerHTML = facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('');
-    $('#sFacts').hidden = !facts.length;
+    renderFacts(o); renderSamples(o);
     const check = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
     $('#sIncl').innerHTML = (o.perks || []).map((p, i) => `<li style="--i:${i}">${check}<span>${esc(sentence(p))}</span></li>`).join('');
     $('#sIncl').previousElementSibling.hidden = !(o.perks || []).length;
-    $('#pcNew').textContent = money(o, o.our_deal) || 'On request';
-    $('#pcOld').textContent = o.online_rate > o.our_deal ? money(o, o.online_rate) : '';
-    $('#pcSave').textContent = saving(o) ? `Save ${saving(o)}%` : '';
+    renderPrice(o);
     $('#sValid').textContent = validTill(o);
     const inr = $('#sInr'), inrText = String(boot.inr_disclaimer || '').trim();  // only for offers priced in rupees
     inr.textContent = inrText; inr.hidden = !(inrText && (o.currency || 'INR').toUpperCase() === 'INR' && o.our_deal > 0);
@@ -158,6 +196,7 @@
   function hideSheet() {
     const slug = current && current.slug, dest = closeDest;
     closeDest = 'card';
+    if (current && sampleList(current).length) useSample(current, 0);  // the cards on the page go back to the first sample's price
     root.classList.remove('open');
     document.documentElement.classList.remove('lock');
     setTimeout(() => { root.hidden = true; sheet.style.transform = ''; }, reduced ? 0 : 560);
@@ -383,5 +422,5 @@
   load();
 
   // shared with enquiry.js (the WhatsApp enquiry sheet)
-  window.HO_CLIENT = { offers: () => offers, waBase };
+  window.HO_CLIENT = { offers: () => offers, waBase, cityOf };
 })();

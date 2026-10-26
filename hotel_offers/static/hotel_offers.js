@@ -18,7 +18,7 @@
 
   function blank() {
     return { brand_line: '', place_line: '', tagline: '', offer_headline: '', headline_scale: 100, currency: 'INR', online_rate: 0, our_deal: 0, perks: [],
-      hotel_name: '', room: '', check_in: '', check_out: '', nights: 0, adults: 0, rooms: 0, net_total: 0, free_nights: 0, cancellation: '', photo_query: '', city: '' };
+      hotel_name: '', room: '', check_in: '', check_out: '', extra_samples: [], booking_from: '', travel_from: '', travel_to: '', nights: 0, adults: 0, rooms: 0, net_total: 0, free_nights: 0, cancellation: '', photo_query: '', city: '' };
   }
 
   // ---------- helpers
@@ -72,10 +72,49 @@
   function fillForm() {
     $$('[data-f]').forEach(inp => { const v = state.data[inp.dataset.f]; inp.value = v == null || v === 0 && NUMERIC.has(inp.dataset.f) && inp.dataset.f !== 'free_nights' ? (v || '') : v; });
     renderPerks();
+    renderSamples();
     renderSlots();
     updatePriceHint();
     updateHlVal();
   }
+  // ---------- sample dates: the first sample is the check-in / check-out above; more can be added, each with its own price
+  const samplesOf = d => [{ check_in: d.check_in, check_out: d.check_out }].concat(d.extra_samples || []).filter(s => s.check_in && s.check_out);
+  // samples that start before the travel window opens or end after it closes
+  const outsideTravel = d => (!d.travel_from && !d.travel_to) ? [] : samplesOf(d).filter(s => (d.travel_from && s.check_in < d.travel_from) || (d.travel_to && s.check_out > d.travel_to));
+  const travelWarning = d => {
+    const bad = outsideTravel(d);
+    return bad.length ? `Outside the travel window: ${bad.map(s => dayLabel(s.check_in) + ' to ' + dayLabel(s.check_out)).join(', ')}. Check these dates or the window.` : '';
+  };
+  function updateSampleWarn() {
+    const el = $('#sampleWarn'), w = travelWarning(state.data);
+    el.hidden = !w; el.textContent = w;
+  }
+  function renderSamples() {
+    if (!Array.isArray(state.data.extra_samples)) state.data.extra_samples = [];
+    const host = $('#sampleRows');
+    host.innerHTML = '';
+    state.data.extra_samples.forEach((s, i) => {
+      const row = document.createElement('div');
+      row.className = 'sample-row';
+      row.innerHTML = '<label>Check-in<input type="date" data-k="check_in"></label><label>Check-out<input type="date" data-k="check_out"></label>' +
+        '<label>Our deal<input type="number" min="0" step="any" data-k="our_deal"></label><label>Online rate<input type="number" min="0" step="any" data-k="online_rate"></label>' +
+        '<button type="button" class="sample-x" aria-label="Remove these dates" title="Remove">&times;</button>';
+      $$('input', row).forEach(inp => {
+        inp.value = s[inp.dataset.k] || '';
+        inp.addEventListener('input', () => { s[inp.dataset.k] = inp.type === 'number' ? Number(inp.value || 0) : inp.value; updateSampleWarn(); refresh(); });
+      });
+      $('button', row).addEventListener('click', () => { state.data.extra_samples.splice(i, 1); renderSamples(); refresh(); });
+      host.appendChild(row);
+    });
+    $('#btnAddSample').hidden = state.data.extra_samples.length >= 7;
+    updateSampleWarn();
+  }
+  $('#btnAddSample').addEventListener('click', () => {
+    state.data.extra_samples.push({ check_in: '', check_out: '', our_deal: 0, online_rate: 0 });
+    renderSamples(); refresh();
+    const rows = $$('#sampleRows .sample-row'); $('input', rows[rows.length - 1]).focus();
+  });
+
   function updateHlVal() { $('#hlVal').textContent = (state.data.headline_scale || 100) + '%'; }
   function bumpHl(delta) {
     const v = delta === 0 ? 100 : Math.min(160, Math.max(40, (state.data.headline_scale || 100) + delta));
@@ -95,6 +134,7 @@
     const k = inp.dataset.f;
     state.data[k] = NUMERIC.has(k) ? Number(inp.value || 0) : inp.value;
     updatePriceHint();
+    if (k === 'check_in' || k === 'check_out') updateSampleWarn();
     refresh();
   }));
 
@@ -754,6 +794,8 @@
       const sv = r.offer.data;
       gl.data = Object.assign({}, Object.assign(blank(), sv.data), { photos: sv.photos || {}, brand: brand(), layout: sv.layout || {} });
       $('#glValid').value = gl.editing ? (o.live.valid_till || '') : (gl.data.check_in || '');  // editing keeps a cleared date cleared
+      $('#glBookFrom').value = gl.data.booking_from || ''; $('#glTravelFrom').value = gl.data.travel_from || ''; $('#glTravelTo').value = gl.data.travel_to || '';
+      glTravelUi();
       $('#glChipCheckin').hidden = !gl.data.check_in;
       glValidUi();
       gl.pick = (o.live && o.live.template_id) || TEMPLATES[0].id;
@@ -789,12 +831,14 @@
       const canvas = await renderCanvas(t, gl.data, { size: 'native', scale: 1.5 });
       const image = await toJpegDataUrl(canvas);
       say(msg, 'Publishing…');
-      const r = await api(`/api/hotel-offers/offers/${gl.offer.id}/live`, { method: 'POST', body: { template_id: t.id, image, width: canvas.width, height: canvas.height, valid_till: $('#glValid').value || null } });
+      const r = await api(`/api/hotel-offers/offers/${gl.offer.id}/live`, { method: 'POST', body: { template_id: t.id, image, width: canvas.width, height: canvas.height, valid_till: $('#glValid').value || null,
+        booking_from: $('#glBookFrom').value || null, travel_from: $('#glTravelFrom').value || null, travel_to: $('#glTravelTo').value || null } });
       $('#glLink').value = r.live.url;
       api('/api/hotel-offers/dashboard-link').then(d => { $('#glOpen').href = d.url; });
       $('#glPick').hidden = true; $('#glDone').hidden = false;
       $('#glDone h4').textContent = gl.running ? 'Live page updated' : "It's live";
       gl.live = r.live;
+      if (state.offerId === gl.offer.id) Object.assign(state.data, { booking_from: $('#glBookFrom').value, travel_from: $('#glTravelFrom').value, travel_to: $('#glTravelTo').value }), updateSampleWarn();
       if (state.offerId === gl.offer.id) { state.live = r.live; state.liveStale = false; renderLiveBtn(); }
       if (!$('#savedModal').hidden) loadSaved();
     } catch (err) { say(msg, err.message, 'err'); }
@@ -810,7 +854,13 @@
       : 'No end date. It stays live until you switch it off.';
   }
   $('#glValid').addEventListener('input', glValidUi);
-  $('#glClear').addEventListener('click', () => { $('#glValid').value = ''; glValidUi(); });
+  // the travel window and the sample dates it should contain: warn when a sample falls outside it
+  function glTravelUi() {
+    const d = Object.assign({}, gl.data, { travel_from: $('#glTravelFrom').value, travel_to: $('#glTravelTo').value }), w = travelWarning(d), el = $('#glTravelWarn');
+    el.hidden = !w; el.textContent = w;
+  }
+  $('#glTravelFrom').addEventListener('input', glTravelUi); $('#glTravelTo').addEventListener('input', glTravelUi);
+  $('#glClear').addEventListener('click', () => { $('#glValid').value = ''; $('#glBookFrom').value = ''; glValidUi(); });
   $('#glChipCheckin').addEventListener('click', () => { $('#glValid').value = (gl.data && gl.data.check_in) || ''; glValidUi(); });
   $$('.gl-chips [data-days]').forEach(b => b.addEventListener('click', () => {
     const d = new Date(); d.setDate(d.getDate() + Number(b.dataset.days));

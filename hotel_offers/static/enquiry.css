@@ -2,14 +2,6 @@
 .eq-sheet{height:auto;max-height:92dvh}
 .eq-body{padding:56px 22px calc(26px + env(safe-area-inset-bottom));overflow-y:auto;overscroll-behavior:contain}
 .eq-body .b-sub{margin-bottom:22px}
-.eq-dates{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-bottom:14px}
-.eq-dates label{position:relative;display:block;min-width:0}
-.eq-dates label span{position:absolute;left:17px;top:9px;font-size:.72rem;letter-spacing:.04em;color:var(--mute);pointer-events:none;z-index:1}
-.eq-dates input{width:100%;height:60px;padding:24px 8px 6px 14px;border-radius:16px;border:1.5px solid transparent;background:var(--surface-2);color:var(--text);font-family:var(--sans);font-size:.95rem;min-width:0;max-width:100%;box-sizing:border-box;-webkit-appearance:none;appearance:none}
-.eq-dates input:focus{outline:none;background:var(--surface);border-color:var(--text);box-shadow:0 0 0 4px color-mix(in srgb,var(--gold) 22%,transparent)}
-.eq-dates small{grid-column:1/-1;display:block;max-height:0;overflow:hidden;opacity:0;font-size:.8rem;color:var(--err);padding:0 6px;transition:all .3s var(--out)}
-.eq-dates.bad input{border-color:var(--err)}
-.eq-dates.bad small{max-height:40px;opacity:1}
 .eq-hotels-wrap{margin:6px 0 10px}
 .eq-h{font-size:.82rem;font-weight:500;color:var(--mute);margin-bottom:8px}
 .eq-h em{font-style:normal;color:var(--faint);font-weight:400;margin-left:6px}
@@ -17,3 +9,36 @@
 .eq-hotels .chip{height:auto;min-height:36px;padding:7px 14px;text-align:left;line-height:1.25}
 .eq-send{width:100%;margin-top:8px}
 @media(min-width:760px){.eq-sheet{max-width:480px;height:auto}}
+
+/* destination suggestions */
+.eq-dest{z-index:6}
+.eq-sug{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:30;max-height:264px;overflow-y:auto;overscroll-behavior:contain;margin:0;padding:6px;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-lg)}
+.eq-sug[hidden]{display:none}
+.eq-sug li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;cursor:pointer;font-size:.98rem}
+.eq-sug li:hover,.eq-sug li.on{background:var(--surface-2)}
+.eq-sug em{font-style:normal;font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--gold)}
+
+/* dates: specific or flexible */
+.eq-cal.open{max-height:760px}
+.eq-seg{display:flex;gap:4px;padding:4px;border-radius:99px;background:var(--surface-2);margin:0 0 12px}
+.eq-seg button{flex:1;height:36px;border-radius:99px;font-size:.88rem;font-weight:500;color:var(--mute);transition:background .25s,color .25s}
+.eq-seg button[aria-selected=true]{background:var(--cta);color:var(--cta-fg)}
+.eq-h{font-size:.82rem;font-weight:500;color:var(--mute);margin:6px 0 8px}
+.eq-h em{font-style:normal;color:var(--faint);font-weight:400;margin-left:6px}
+.eq-months{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}
+.eq-month{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:62px;border-radius:16px;background:var(--surface-2);border:1.5px solid transparent;transition:border-color .2s,background .2s}
+.eq-month small{font-size:.72rem;color:var(--mute)}
+.eq-month b{font-size:.92rem;font-weight:500}
+.eq-month[aria-pressed=true]{border-color:var(--text);background:var(--surface)}
+.eq-lens{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+.eq-lens .chip{height:34px}
+
+/* guests */
+.eq-pax{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.eq-step{display:flex;flex-direction:column;gap:6px;padding:10px 14px;border-radius:16px;background:var(--surface-2)}
+.eq-step>span{font-size:.72rem;letter-spacing:.04em;color:var(--mute)}
+.eq-step>div{display:flex;align-items:center;justify-content:space-between}
+.eq-step b{font-size:1.15rem;font-weight:500;min-width:24px;text-align:center}
+.eq-step button{width:34px;height:34px;border-radius:50%;background:var(--surface);border:1px solid var(--line);font-size:1.2rem;line-height:1;display:grid;place-items:center;transition:transform .2s var(--out),opacity .2s}
+.eq-step button:active{transform:scale(.9)}
+.eq-step button:disabled{opacity:.35;cursor:default}
