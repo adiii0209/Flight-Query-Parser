@@ -89,7 +89,7 @@
             <p class="eq-h">Shortlisted hotels <em>optional</em></p>
             <div class="eq-hotels" id="eqHotels"></div>
           </div>
-          <label class="field" id="eqOther"><input id="eqOtherIn" type="text" placeholder=" " maxlength="200" autocomplete="off"><span>Other hotels you are considering</span></label>
+          <label class="field" id="eqOther"><input id="eqOtherIn" type="text" placeholder=" " maxlength="200" autocomplete="off"><span>Any hotels you have shortlisted already</span></label>
 
           <button class="btn btn-primary btn-lg eq-send" type="submit">Send query</button>
         </form>
@@ -344,21 +344,24 @@
     if (bad) { const f = $('.field.bad input', root); if (f) f.focus(); return; }
 
     const hotels = Array.from(picked).concat(other ? [other] : []);
-    const lines = ["Hi Time Tours, I'd like to plan a trip.", '', `Destination: ${dest}`];
+    // each detail is its own paragraph with a bold label, so it reads cleanly in WhatsApp
+    const item = (label, value) => `*${label}:* ${value}`;
+    const lines = ['Hello Time Tours,', 'I would like to plan a luxury stay.', item('Destination', dest)];
     if (dt.mode === 'specific' && dt.from && dt.to) {
       const n = nightsBetween(dt.from, dt.to);
-      lines.push(`Dates: ${fmt(dt.from)} to ${fmt(dt.to)} (${n} night${n === 1 ? '' : 's'})`);
+      lines.push(item('Dates', `${fmt(dt.from)} to ${fmt(dt.to)} (${n} night${n === 1 ? '' : 's'})`));
     } else if (dt.mode === 'flex' && dt.months.size) {
       const len = dt.len ? ` (${LENGTHS.find(l => l[0] === dt.len)[1]})` : '';
-      lines.push(`Dates: Flexible, ${Array.from(dt.months).sort().map(monthLabel).join(' or ')}${len}`);
+      lines.push(item('Dates', `Flexible, ${Array.from(dt.months).sort().map(monthLabel).join(' or ')}${len}`));
     }
     const guests = [`${pax.adults} adult${pax.adults === 1 ? '' : 's'}`];
     if (pax.children) guests.push(`${pax.children} child${pax.children === 1 ? '' : 'ren'}`);
-    lines.push(`Guests: ${guests.join(', ')}`);
+    lines.push(item('Guests', guests.join(', ')));
     const budget = $('#eqBudget', root).value;
-    if (budget) lines.push(`Budget: ${budget} per room per night`);
-    if (hotels.length) lines.push(`Hotels I'm considering: ${hotels.join(', ')}`);
-    const url = C.waBase() + '?text=' + encodeURIComponent(lines.join('\n'));
+    if (budget) lines.push(item('Budget', `${budget} per room per night`));
+    if (hotels.length) lines.push(item('Shortlisted hotels', hotels.join(', ')));
+    lines.push('Please share the best options and rates. Thank you.');
+    const url = C.waBase() + '?text=' + encodeURIComponent(lines.join('\n\n'));
     const win = window.open(url, '_blank', 'noopener');
     if (!win) location.href = url;  // pop-up blocked: go there in this tab instead
     picked.clear();

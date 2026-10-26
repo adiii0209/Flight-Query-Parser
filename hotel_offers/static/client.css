@@ -279,3 +279,14 @@ section.empty p{color:var(--mute);margin-bottom:22px}
 .sheet,.sheet-body{touch-action:pan-y;overscroll-behavior-x:none}
 .sheet-body,.s-poster{overflow-x:hidden}
 html.lock,html.lock body{overflow-x:hidden}
+
+/* the brand and "Curated by" sit together in the navigation; the page starts straight with the offers */
+.nav-in{min-height:60px;height:auto;padding-top:6px;padding-bottom:6px;gap:12px}
+.brand{display:flex;flex-direction:column;line-height:1.05;min-width:0}
+.brand-sub{font-family:var(--sans);font-size:.58rem;font-weight:500;letter-spacing:.17em;text-transform:uppercase;color:var(--gold);margin-top:4px;white-space:nowrap}
+.nav-wa{height:auto;min-height:38px;padding:6px 14px 6px 12px;flex:0 1 auto}
+.nav-wa span{line-height:1.15;text-align:left;max-width:7.2rem}
+.nav-wa svg{flex:none}
+.hero{padding:26px 0 22px}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+@media(min-width:1000px){.hero{padding:44px 0 28px}.nav-wa span{max-width:none}}

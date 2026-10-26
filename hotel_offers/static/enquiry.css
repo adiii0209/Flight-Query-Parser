@@ -52,3 +52,5 @@
 .eq-sel select{width:100%;height:60px;padding:24px 44px 6px 16px;border-radius:16px;border:1.5px solid transparent;background:var(--surface-2) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>") no-repeat right 14px center;color:var(--text);font-family:var(--sans);font-size:1.02rem;-webkit-appearance:none;appearance:none;transition:border-color .25s,background-color .25s}
 .eq-sel select:focus{outline:none;background-color:var(--surface);border-color:var(--text);box-shadow:0 0 0 4px color-mix(in srgb,var(--gold) 22%,transparent)}
 .eq-sel select:has(option[value='']:checked){color:var(--faint)}
+
+#eqOther span{max-width:calc(100% - 32px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

@@ -31,7 +31,7 @@ DEFAULTS = {
     "lead_email": "mail@timetours.in",
     "public_base_url": "",               # e.g. https://elevate.timetours.in (domain used in share links)
     "client_title": "Time Elevate",
-    "client_subtitle": "Hand-picked luxury stays, curated by Time Tours.",
+    "client_subtitle": "Hand-picked luxury stays.",
     # Fixed brand text printed on every template
     "brand_name": "Time Elevate",
     "brand_tagline": "Luxury stays.\nMore to enjoy.",
