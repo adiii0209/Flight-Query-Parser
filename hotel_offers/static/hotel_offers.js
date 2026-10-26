@@ -579,6 +579,21 @@
     try { await fn(); } catch (e) { alert(e.message || 'Export failed'); }
     btn.disabled = false; btn.textContent = label;
   }
+  // Text that ends up outside the poster (a moved element, long text, a scaled font) would be cut off in the picture.
+  // Before the picture is taken, pull any such text box back inside, leaving a small margin.
+  function keepTextInside(po, w, h) {
+    const r0 = po.getBoundingClientRect(), edge = Math.round(w * 0.012);
+    $$('.a', po).forEach(el => {
+      if (!el.textContent.trim() || el.querySelector('img') || getComputedStyle(el).writingMode !== 'horizontal-tb') return;
+      const r = el.getBoundingClientRect();
+      if (r.width > r0.width * 0.9 || /rotate/.test(el.style.transform)) return;  // full-width bars and rotated text are meant to touch the edges
+      let dx = 0, dy = 0;
+      if (r.right > r0.right + 2) dx = -(r.right - r0.right + edge);
+      else if (r.left < r0.left - 2) dx = r0.left - r.left + edge;
+      if (r.bottom > r0.bottom + 2) dy = -(r.bottom - r0.bottom + edge);
+      if (dx || dy) el.style.transform = `translate(${Math.round(dx)}px,${Math.round(dy)}px) ${el.style.transform || ''}`.trim();
+    });
+  }
   async function renderCanvas(t, d = posterData(), opts = {}) {
     const host = document.createElement('div');
     // Attach outside <body> (apps may zoom body on phones) and behind the page; layout is sized by the poster itself.
@@ -588,6 +603,7 @@
     try {
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
       const el = host.firstElementChild;
+      keepTextInside(el, t.w, t.h);
       const size = opts.size || $('#outSize').value, sc = opts.scale || 2;
       let W = Math.round(t.w * sc), H = Math.round(t.h * sc), k = sc;
       if (size !== 'native') {
