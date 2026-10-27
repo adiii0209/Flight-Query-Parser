@@ -149,10 +149,14 @@ def trip_select(slug):
     rows = HotelQuote.query.filter_by(trip_id=trip.id).order_by(HotelQuote.position, HotelQuote.id).all()
     groups = trip_groups.group_quotes([r.to_dict() for r in rows], trip.selection_map())
     group = next((g for g in groups if g["key"] == body.get("group")), None)
-    if group is None or not any(o["key"] == body.get("option") for o in group["options"]):
+    clearing = group is not None and not body.get("option")  # unselecting: back to no hotel chosen for this city
+    if group is None or (not clearing and not any(o["key"] == body.get("option") for o in group["options"])):
         return jsonify({"error": "That option is no longer available. Please refresh the page."}), 409
     selection = trip.selection_map()
-    selection[group["key"]] = body["option"]
+    if clearing:
+        selection.pop(group["key"], None)
+    else:
+        selection[group["key"]] = body["option"]
     trip.selection = json.dumps({g["key"]: selection[g["key"]] for g in groups if g["key"] in selection})
     db.session.commit()
     groups = trip_groups.group_quotes([r.to_dict() for r in rows], json.loads(trip.selection))

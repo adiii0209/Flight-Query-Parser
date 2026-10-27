@@ -98,7 +98,7 @@
     const body = rows.map(([label, vals]) => '<tr><th scope="row">' + label + '</th>' + vals.map(v => '<td>' + (v ? TT.esc(v) : '–') + '</td>').join('') + '</tr>').join('');
     const price = '<tr class="cmp-price"><th scope="row">Price</th>' + opts.map(o => '<td>' + (onlineOf(o) > o.total ? '<s>' + TT.money(onlineOf(o), cur()) + '</s>' : '') + '<b>' + TT.money(o.total, cur()) + '</b>' +
       (o.total === lowest ? '<em>Lowest</em>' : '') + saveHtml(o) + '</td>').join('') + '</tr>';
-    const pick = '<tr><th></th>' + opts.map(o => '<td>' + (o.key === g.selected ? '<span class="cmp-on">Selected</span>' : '<button type="button" class="co-pick" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">Select</button>') + '</td>').join('') + '</tr>';
+    const pick = '<tr><th></th>' + opts.map(o => '<td>' + ('<button type="button" class="co-pick' + (o.key === g.selected ? ' on' : '') + '" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">' + (o.key === g.selected ? 'Unselect' : 'Select') + '</button>') + '</td>').join('') + '</tr>';
     return '<section class="cmp"><h2>Compare hotels</h2><div class="cmp-scroll"><table>' + '<thead>' + head + '</thead><tbody>' + body + price + pick + '</tbody></table></div></section>';
   }
 
@@ -127,7 +127,7 @@
     const hv = key => (o.lines.find(l => l[key]) || {})[key] || '';  // hotel-level details come from the first room that has them
     const perks = (o.lines.find(l => (l.perks || []).length) || { perks: [] }).perks;
     const stay = [['Check-in', g.date ? (first.day ? first.day + ', ' : '') + TT.date(g.date) : ''], ['Check-out', g.checkout ? TT.date(g.checkout) : '']];
-    const pick = !isSel ? '<button type="button" class="co-pick" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">Select</button>' : '';
+    const pick = '<button type="button" class="co-pick' + (isSel ? ' on' : '') + '" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">' + (isSel ? 'Selected · Unselect' : 'Select') + '</button>';
     const badges = (multi && g.options[0] === o ? '<span class="co-rec">Recommended</span>' : '') + (isSel ? '<span class="co-sel" title="Selected" role="img" aria-label="Selected">' + CHECK + '</span>' : '');
     const details = many
       ? factsHtml(stay) + o.lines.map((l, i) => '<div class="co-room"><div class="co-room-h"><b>Room ' + (i + 1) + '</b><span>' + TT.money(l.total, cur()) + '</span></div>' + factsHtml(lineFacts(l)) + roomDesc(l) + '<small>' + rateText(l) + '</small></div>').join('')
@@ -161,7 +161,7 @@
     const media = photo ? '<img src="' + photo + '" alt="" loading="lazy">' : '<div class="cc-ph"><span>' + TT.esc((g.city || '?').slice(0, 1)) + '</span></div>';
     return '<a class="cc" href="' + cityHref(g) + '" data-g="' + TT.esc(g.key) + '"><div class="cc-media">' + media + '<span class="cg-n">' + (gi + 1) + '</span>' +
       (multi ? '<span class="cc-tag">' + g.options.length + ' options</span>' : '') + '</div>' +
-      '<div class="cc-body"><h2>' + TT.esc(g.city || 'Your stay') + '</h2><p class="cc-dates">' + TT.esc(groupDates(g)) + '</p><p class="cc-hotel">' + TT.esc(sel ? sel.hotel_name : multi ? 'Choose from ' + g.options.length + ' hotels' : shown.hotel_name) + '</p></div>' +
+      '<div class="cc-body"><h2>' + TT.esc(g.city || 'Your stay') + '</h2><p class="cc-dates">' + TT.esc(groupDates(g)) + '</p><p class="cc-hotel">' + TT.esc(sel ? sel.hotel_name : multi ? g.options.length + ' hotels to choose from' : 'Choose your hotel') + '</p></div>' +
       '<div class="cc-price">' + (sel ? '<b>' + TT.money(sel.total, cur()) + '</b>' : '<span class="cc-choose">Choose</span>') + CHEV + '</div></a>';
   }
 
@@ -415,7 +415,8 @@
 
   async function choose(groupKey, optionKey) {
     const before = Object.assign({}, selection);
-    selection[groupKey] = optionKey; refresh();
+    if (optionKey) selection[groupKey] = optionKey; else delete selection[groupKey];
+    refresh();
     try {
       const r = await TT.api('/api/public/trips/' + encodeURIComponent(slug) + '/select', { method: 'POST', json: { group: groupKey, option: optionKey } });
       selection = r.selection;
@@ -435,7 +436,7 @@
       return;
     }
     const pick = e.target.closest('.co-pick');
-    if (pick) { if (!pick.classList.contains('on')) choose(pick.dataset.g, pick.dataset.o); return; }
+    if (pick) { choose(pick.dataset.g, pick.classList.contains('on') ? null : pick.dataset.o); return; }
     if (e.target.closest('.cc')) { listY = window.scrollY; return; }  // remember where the list was; the link itself changes the page
     const b = e.target.closest('.tc-pin, .tc-chip');
     if (!b || !map) return;
