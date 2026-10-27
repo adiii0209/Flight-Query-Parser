@@ -85,6 +85,16 @@ def trip_og_image(slug):
     return Response(body, mimetype="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
 
 
+def _public_guide(trip):
+    """Only the places the agent ticked, per city."""
+    out = {}
+    for ck, g in trip.guide_map().items():
+        spots = [{k: s.get(k) for k in ("name", "address", "kind", "rating", "rating_count", "lat", "lng")} for s in g.get("spots", []) if s.get("on")]
+        if spots:
+            out[ck] = {"city": g.get("city", ""), "spots": spots}
+    return out
+
+
 @bp.route("/api/public/trips/<slug>")
 def trip_data(slug):
     trip = _shared_trip(slug)
@@ -95,7 +105,7 @@ def trip_data(slug):
         "start_date": trip.start_date.isoformat() if trip.start_date else None,
         "end_date": trip.end_date.isoformat() if trip.end_date else None,
         "total": trip_groups.selected_total(trip_groups.group_quotes([r.to_dict() for r in rows], trip.selection_map()))},
-        "quotes": quotes, "selection": trip.selection_map()})
+        "quotes": quotes, "selection": trip.selection_map(), "guide": _public_guide(trip)})
     resp.headers["Cache-Control"] = "no-cache"
     return resp
 

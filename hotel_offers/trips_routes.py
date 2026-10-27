@@ -383,6 +383,18 @@ def parse_trip_quotes(trip_id):
                         q["location_info"] = trip_places.distance_text(trip_places.km_between(h["lat"], h["lng"], centres[ck]["lat"], centres[ck]["lng"]), f"{q['city'].strip()} centre")
     else:
         warning = "No Google Places key is set, so hotels were not placed on the map."
+    if cfg["google_places_key"]:  # a local guide for every new city: the best 3 places ticked
+        guide = trip.guide_map()
+        try:
+            for q in quotes:
+                ck = _ckey(q.get("city"))
+                if ck and ck not in guide:
+                    g = _make_guide(q["city"], cfg["google_places_key"])
+                    if g["spots"]:
+                        guide[ck] = g
+        except requests.RequestException:
+            warning = warning or "Some city guides could not be fetched; use Build guide on the city."
+        trip.guide = json.dumps(guide)
     if cfg.get("ai_api_key"):
         trip_facts.fill(quotes, cfg)  # star class, "Boutique hotel · 50 rooms", opening year and a short brief, where the paste left them empty
     pos = (db.session.query(db.func.max(HotelQuote.position)).filter_by(trip_id=trip.id).scalar() or 0) + 1
@@ -393,7 +405,7 @@ def parse_trip_quotes(trip_id):
         rows.append(row)
     trip.updated_at = db.func.now()
     db.session.commit()
-    return jsonify({"quotes": [r.to_dict() for r in rows], "source": source, "warning": warning})
+    return jsonify({"quotes": [r.to_dict() for r in rows], "source": source, "warning": warning, "guide": trip.guide_map()})
 
 
 @bp.route("/api/hotel-offers/trips/<int:trip_id>/quotes", methods=["POST"])
@@ -426,6 +438,74 @@ def quote_facts(quote_id):
     if not facts:
         return _err("Could not fetch details for this hotel. Check the AI key in Hotel Offers settings.", 502)
     return jsonify({"facts": facts[0]})
+
+
+# ------------------------------------------------------------------ local guide
+GUIDE_ON_MAX = 8
+CKEY_RE = re.compile(r"^[a-z0-9]{1,60}$")
+
+
+def _ckey(city):
+    return re.sub(r"[^a-z0-9]+", "", (city or "").lower())[:60]
+
+
+def _make_guide(city, key):
+    """The popular places of a city; the best three are ticked, five are listed until the agent loads more."""
+    pool = trip_places.guide_pool(city, key)
+    for i, s in enumerate(pool):
+        s["on"] = i < 3
+    return {"city": city.strip(), "shown": 5, "spots": pool}
+
+
+@bp.route("/api/hotel-offers/trips/<int:trip_id>/guide/<ck>", methods=["PUT"])
+@login_required
+def save_guide(trip_id, ck):
+    """Ticks and unticks places and sets how many are listed. Body: {on: [place ids], shown: n}."""
+    trip = _trip(trip_id)
+    guide = trip.guide_map() if trip else {}
+    if not trip or not CKEY_RE.match(ck) or ck not in guide:
+        return _err("Not found", 404)
+    body = request.get_json(silent=True) or {}
+    on = {str(i) for i in (body.get("on") or [])}
+    g = guide[ck]
+    for s in g["spots"]:
+        s["on"] = s["place_id"] in on
+    if sum(s["on"] for s in g["spots"]) > GUIDE_ON_MAX:
+        return _err(f"Pick up to {GUIDE_ON_MAX} places.")
+    try:
+        g["shown"] = max(5, min(int(body.get("shown") or 5), len(g["spots"])))
+    except (TypeError, ValueError):
+        pass
+    trip.guide = json.dumps(guide)
+    trip.updated_at = db.func.now()
+    db.session.commit()
+    return jsonify({"guide": guide})
+
+
+@bp.route("/api/hotel-offers/trips/<int:trip_id>/guide/<ck>/refresh", methods=["POST"])
+@login_required
+def refresh_guide(trip_id, ck):
+    """Looks the city up again (or for the first time, on a trip made before guides existed). Body: {city}."""
+    trip = _trip(trip_id)
+    if not trip or not CKEY_RE.match(ck):
+        return _err("Not found", 404)
+    city = _s((request.get_json(silent=True) or {}).get("city"), 80)
+    key = settings.get_config(_org())["google_places_key"]
+    if not city or _ckey(city) != ck:
+        return _err("Give the city name.")
+    if not key:
+        return _err("Google Places key is not configured (Hotel Offers settings).")
+    try:
+        g = _make_guide(city, key)
+    except requests.RequestException as exc:
+        return _err(f"Could not reach Google Places: {exc}", 502)
+    if not g["spots"]:
+        return _err("No popular places found for that city.")
+    guide = trip.guide_map()
+    guide[ck] = g
+    trip.guide = json.dumps(guide)
+    db.session.commit()
+    return jsonify({"guide": guide})
 
 
 @bp.route("/api/hotel-offers/trips/<int:trip_id>/order", methods=["POST"])

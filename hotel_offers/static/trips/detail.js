@@ -22,6 +22,7 @@
         '<div class="d-cols"><div class="d-left" id="qList"></div><aside class="d-right"><div class="d-mapcard"><div id="tripMap" class="tt-map"></div><div class="d-chips" id="dChips"></div></div></aside></div>';
       qm = TT.quotes.mount($('#qList', root), {
         currency: () => trip.currency, onChange: onQuotes, selection: () => trip.selection || {}, tripId: () => trip.id,
+        guide: () => trip.guide || {}, setGuide: g => { trip.guide = g; },
         onFocus: id => { map.focus(id); selectChip(id); if (matchMedia('(max-width:960px)').matches) $('#tripMap', root).scrollIntoView({ block: 'center', behavior: 'smooth' }); },
       });
       map = TT.createMap($('#tripMap', root), { onSelect: id => { selectChip(id); const c = $('.qc[data-id="' + id + '"]', root); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'center' }); } });
@@ -86,6 +87,7 @@
       btn.disabled = true; status('', 'Reading the quotation and placing hotels on the map…');
       try {
         const r = await TT.api('/api/hotel-offers/trips/' + trip.id + '/parse', { method: 'POST', json: { text: box.value } });
+        if (r.guide) trip.guide = r.guide;
         qm.add(r.quotes); box.value = ''; $('#pasteDialog').close();
         TT.toast('Added ' + r.quotes.length + ' quote' + (r.quotes.length === 1 ? '' : 's') + (r.warning ? '. ' + r.warning : ''));
       } catch (err) { status('err', err.message); }

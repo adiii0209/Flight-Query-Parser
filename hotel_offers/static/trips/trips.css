@@ -231,3 +231,20 @@
 /* responsive (kept last so it overrides the rules above) */
 @media(max-width:960px){.d-cols{grid-template-columns:minmax(0,1fr)}.d-right{position:static;order:-1}.tt-map{height:300px}.d-stats{grid-template-columns:repeat(2,1fr)}.qc-view{grid-template-columns:150px minmax(0,1fr)}.qc-side{grid-column:1/-1;flex-direction:row;align-items:center;justify-content:space-between;text-align:left;padding:0}.qc-btns{margin:0;padding:0}}
 @media(max-width:560px){.qc-view{grid-template-columns:1fr}.qc-media{min-height:170px}.t-fields{grid-template-columns:1fr}.t-find{width:100%}.t-hero .pill{width:100%}}
+
+/* local guide of a city (agent) */
+.gd{margin:0 0 .8rem;border:1px solid var(--line);border-radius:14px;background:#fff}
+.gd summary{cursor:pointer;list-style:none;padding:.65rem .9rem;font-weight:600;font-size:.9rem;display:flex;align-items:center;gap:.5rem}
+.gd summary::-webkit-details-marker{display:none}
+.gd summary::after{content:'';margin-left:auto;width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform .2s}
+.gd[open] summary::after{transform:rotate(-135deg)}
+.gd summary em{font-style:normal;font-weight:400;color:var(--mute);font-size:.82rem}
+.gd-body{padding:0 .9rem .9rem}
+.gd-list{list-style:none;margin:.5rem 0;padding:0;display:grid;gap:.15rem}
+.gd-list label{display:flex;gap:.65rem;align-items:flex-start;padding:.45rem .3rem;border-radius:10px;cursor:pointer}
+.gd-list label:hover{background:var(--bg)}
+.gd-list input{margin-top:.2rem;width:17px;height:17px;flex:0 0 auto}
+.gd-t{display:flex;flex-direction:column;min-width:0}
+.gd-t b{font-weight:500;font-size:.92rem}
+.gd-t small{color:var(--mute);font-size:.78rem}
+.gd-btns{display:flex;gap:.5rem;flex-wrap:wrap}

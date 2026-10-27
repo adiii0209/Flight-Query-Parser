@@ -71,3 +71,45 @@ def distance_text(km, label):
     if km < 1:
         return f"{int(round(km * 20) * 50)} m from {label}"
     return f"{km:.1f} km from {label}"
+
+
+# ---- local guide: the lively places of a city, mixed from sights, food and nightlife
+GUIDE_QUERIES = ("top tourist attractions in {c}", "best restaurants and cafes in {c}", "nightlife and bars in {c}")
+GUIDE_FIELDS = "places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.primaryTypeDisplayName"
+GUIDE_MAX = 20
+
+
+def guide_pool(city, key):
+    """Up to 20 popular places of a city, best first and mixed (a sight, a food spot, a night spot, then the next of each).
+    Ranked by Google rating weighted by how many people rated it."""
+    city = (city or "").strip()
+    if not city:
+        return []
+    near = centre(city, key)
+    columns = []
+    for tpl in GUIDE_QUERIES:
+        body = {"textQuery": tpl.format(c=city), "maxResultCount": 10}
+        if near:
+            body["locationBias"] = {"circle": {"center": {"latitude": near["lat"], "longitude": near["lng"]}, "radius": 20000.0}}
+        r = requests.post("https://places.googleapis.com/v1/places:searchText", timeout=15, json=body,
+                          headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": GUIDE_FIELDS})
+        r.raise_for_status()
+        rows = []
+        for p in r.json().get("places", []):
+            loc = p.get("location") or {}
+            if "latitude" not in loc or not p.get("id") or (p.get("userRatingCount") or 0) < 20:
+                continue
+            if near and km_between(loc["latitude"], loc["longitude"], near["lat"], near["lng"]) > 40:
+                continue  # a namesake somewhere else
+            rating, count = p.get("rating") or 0, p.get("userRatingCount") or 0
+            rows.append({"place_id": p["id"], "name": (p.get("displayName") or {}).get("text", ""), "address": p.get("formattedAddress", ""),
+                         "kind": (p.get("primaryTypeDisplayName") or {}).get("text", ""), "rating": rating, "rating_count": count,
+                         "lat": loc["latitude"], "lng": loc["longitude"], "_s": rating * math.log10(count + 1)})
+        columns.append(sorted(rows, key=lambda x: -x["_s"]))
+    out, seen = [], set()
+    for i in range(max((len(c) for c in columns), default=0)):
+        for col in columns:
+            if i < len(col) and col[i]["place_id"] not in seen and col[i]["name"]:
+                seen.add(col[i]["place_id"])
+                out.append({k: v for k, v in col[i].items() if k != "_s"})
+    return out[:GUIDE_MAX]

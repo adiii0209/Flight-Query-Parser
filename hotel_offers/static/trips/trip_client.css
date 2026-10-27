@@ -224,3 +224,18 @@ a.tc-link:hover{background:var(--line)}
 .cmp .tc-save{margin-top:0}
 .cmp-on{display:inline-flex;align-items:center;height:36px;font-size:.84rem;color:var(--mute)}
 .cmp .co-pick{height:36px}
+
+/* local guide: a small map and the places the agent picked */
+.lg{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-radius:22px;overflow:hidden}
+.lg-h{padding:18px 20px 4px}
+.lg-h h2{font-family:var(--serif);font-weight:500;font-size:1.3rem}
+.lg-h p{color:var(--mute);font-size:.84rem;margin-top:2px}
+.lg-map{height:220px;margin:12px 0 0;background:var(--surface-2)}
+.lg-list{list-style:none;margin:0;padding:6px 8px 10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr))}
+.lg-list button{display:flex;gap:12px;align-items:center;width:100%;text-align:left;padding:10px 12px;border-radius:14px}
+.lg-list button:hover{background:var(--surface-2)}
+.lg-list i{flex:0 0 auto;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:.76rem;font-weight:600;background:var(--gold);color:#fff}
+.lg-list span{display:flex;flex-direction:column;min-width:0}
+.lg-list b{font-weight:500;font-size:.95rem}
+.lg-list small{color:var(--mute);font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tt-spot span{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--gold,#a67c37);color:#fff;font:600 12px/1 Inter,sans-serif;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35)}

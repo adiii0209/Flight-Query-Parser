@@ -4,7 +4,7 @@
   const slug = document.body.dataset.slug, wa = (document.body.dataset.wa || '').replace(/\D/g, '');
   const root = TT.$('#trip');
   const openCards = new Set();
-  let data = null, groups = [], selection = {}, map = null, chipSel = null, savedY = 0, listY = 0, current = null;
+  let miniMap = null, data = null, groups = [], selection = {}, map = null, chipSel = null, savedY = 0, listY = 0, current = null;
 
   const PIN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.2A7 7 0 0 1 19 9.8C19 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.5"/></svg>';
   const CLOSE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -156,7 +156,18 @@
     const multi = g.options.length > 1;
     return '<div class="cp-bar"><a class="cp-back" href="#" aria-label="Back to all cities">' + BACK + '</a><div class="cp-mid"><h1>' + TT.esc(g.city || 'Your stay') + '</h1><p>' + TT.esc(shortDates(g)) + '</p></div>' +
       '<b class="cp-amt">' + TT.money(g.selectedOption.total, cur()) + '</b></div>' +
-      '<div class="cp-opts">' + g.options.map(o => optionHtml(g, o, multi)).join('') + '</div><div id="cmpHost">' + compareHtml(g) + '</div>' + mapSection(cityPins(g)) + disclaimerHtml();
+      guideHtml(g) + '<div class="cp-opts">' + g.options.map(o => optionHtml(g, o, multi)).join('') + '</div><div id="cmpHost">' + compareHtml(g) + '</div>' + mapSection(cityPins(g)) + disclaimerHtml();
+  }
+
+  // the places the agent picked for this city (the local guide)
+  const spotsOf = g => { const e = (data.guide || {})[String(g.city || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 60)]; return e ? e.spots : []; };
+
+  function guideHtml(g) {
+    const spots = spotsOf(g);
+    if (!spots.length) return '';
+    return '<section class="lg"><div class="lg-h"><h2>Local guide</h2><p>Lively spots in ' + TT.esc(g.city) + ', picked for you</p></div><div class="lg-map" id="lgMap"></div><ul class="lg-list">' +
+      spots.map((s, i) => '<li><button type="button" data-spot="' + i + '"><i>' + String.fromCharCode(65 + i) + '</i><span><b>' + TT.esc(s.name) + '</b><small>' +
+        TT.esc([s.kind, s.rating ? '★ ' + s.rating.toFixed(1) : ''].filter(Boolean).join(' · ')) + '</small></span></button></li>').join('') + '</ul></section>';
   }
 
   // one pin per hotel option of this city, numbered 1, 2, 3 in the order of the cards
@@ -219,11 +230,12 @@
 
   // the map of the city page you are on (created when the page opens, dropped when you leave it)
   function mountMap(g) {
-    const pins = cityPins(g);
+    const pins = cityPins(g), spots = spotsOf(g);
     chipSel = null;
-    if (!pins.length || !TT.$('#tcMap')) return;
+    if (TT.$('#lgMap')) { miniMap = TT.createMap(TT.$('#lgMap'), { mini: true }); miniMap.render(pins, spots); }
+    if (!(pins.length || spots.length) || !TT.$('#tcMap')) return;
     map = TT.createMap(TT.$('#tcMap'), { onSelect: id => selectChip(id) });
-    map.render(pins);
+    map.render(pins, spots);
     document.body.insertAdjacentHTML('beforeend', '<button class="tc-fab" id="tcFab" type="button" aria-label="Open map">' + PIN + '<span>Map</span></button>');
     const toggle = () => setFull(!TT.$('#tcMapSec').classList.contains('full'));
     TT.$('#tcFab').addEventListener('click', toggle);
@@ -235,6 +247,7 @@
     const fab = TT.$('#tcFab');
     if (fab) fab.remove();
     if (map) { map.destroy(); map = null; }
+    if (miniMap) { miniMap.destroy(); miniMap = null; }
     chipSel = null;
   }
 
@@ -287,6 +300,8 @@
   }
 
   root.addEventListener('click', e => {
+    const spot = e.target.closest('[data-spot]');
+    if (spot) { if (miniMap) { miniMap.focusSpot(+spot.dataset.spot); TT.$('#lgMap').scrollIntoView({ block: 'center', behavior: 'smooth' }); } return; }
     const tog = e.target.closest('.tc-tog');
     if (tog) {
       const card = tog.closest('.co'), on = !card.classList.contains('open');

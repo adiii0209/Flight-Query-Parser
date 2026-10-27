@@ -119,8 +119,16 @@ class HotelTrip(db.Model):
     share_slug = db.Column(db.String(40), nullable=True, unique=True, index=True)
     is_shared = db.Column(db.Boolean, nullable=False, default=False)
     selection = db.Column(db.Text, nullable=True)  # JSON {group key: option key} chosen by the guest on the shared page
+    guide = db.Column(db.Text, nullable=True)  # JSON {city key: {city, shown, spots: [...]}}: the local guide of each city
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def guide_map(self):
+        try:
+            data = json.loads(self.guide or "{}")
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
 
     def selection_map(self):
         try:
@@ -135,7 +143,7 @@ class HotelTrip(db.Model):
             "client_phone": self.client_phone, "destination": self.destination,
             "start_date": self.start_date.isoformat() if self.start_date else None,
             "end_date": self.end_date.isoformat() if self.end_date else None,
-            "notes": self.notes, "currency": self.currency, "is_shared": bool(self.is_shared), "share_slug": self.share_slug, "selection": self.selection_map(),
+            "notes": self.notes, "currency": self.currency, "is_shared": bool(self.is_shared), "share_slug": self.share_slug, "selection": self.selection_map(), "guide": self.guide_map(),
             "updated_at": self.updated_at.isoformat() + "Z" if self.updated_at else None,
         }
         if quote_count is not None:

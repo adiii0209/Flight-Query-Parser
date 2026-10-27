@@ -89,17 +89,20 @@
       const groups = TT.groupQuotes(quotes, sel());
       Object.keys(numById).forEach(k => delete numById[k]);
       groups.forEach((g, gi) => g.options.forEach(o => o.lines.forEach(l => { numById[l.id] = gi + 1; })));
-      root.innerHTML = groups.length ? groups.map((g, gi) => groupHtml(g, gi)).join('') :
+      const guided = new Set();  // a city's guide is shown once, on its first stay
+      root.innerHTML = groups.length ? groups.map((g, gi) => groupHtml(g, gi, guided)).join('') :
         '<div class="t-empty"><b>No hotel quotes yet</b><p>Use <em>Add quotes</em> to paste a quotation, or add a blank one and fill it in.</p></div>';
     }
 
-    function groupHtml(g, gi) {
+    function groupHtml(g, gi, guided) {
+      const ck = (g.city || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+      const guide = ck && !guided.has(ck) && opts.guide ? (guided.add(ck), TT.guide.html(g, opts.guide())) : '';
       const dates = g.date ? TT.date(g.date) + (g.checkout ? ' → ' + TT.date(g.checkout) : '') : 'No dates';
       const multi = g.options.length > 1;
       return '<section class="qg" data-g="' + TT.esc(g.key) + '"><header class="qg-head"><span class="qg-n">' + (gi + 1) + '</span>' +
         '<div><h2>' + TT.esc(g.city || 'No city') + '</h2><p>' + TT.esc(dates) + (g.nights ? ' · ' + nightsLabel(g.nights) : '') + ' · ' + g.options.length + (multi ? ' options' : ' option') + '</p></div>' +
         '<div class="qg-total"><small>' + (multi ? 'Selected' : 'Total') + '</small><b>' + TT.money(g.selectedOption.total, opts.currency()) + '</b></div></header>' +
-        g.options.map((o, oi) => optionHtml(g, o, oi, multi)).join('') + '</section>';
+        guide + g.options.map((o, oi) => optionHtml(g, o, oi, multi)).join('') + '</section>';
     }
 
     function optionHtml(g, o, oi, multi) {
@@ -124,6 +127,8 @@
       }, 500);
       opts.onChange(quotes);
     }
+
+    if (opts.guide) TT.guide.bind(root, { tripId: opts.tripId, guide: opts.guide, setGuide: opts.setGuide });
 
     root.addEventListener('input', e => {
       const k = e.target.dataset.k;
