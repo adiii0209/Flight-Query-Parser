@@ -128,7 +128,7 @@
       opts.onChange(quotes);
     }
 
-    if (opts.guide) TT.guide.bind(root, { tripId: opts.tripId, guide: opts.guide, setGuide: opts.setGuide });
+    if (opts.guide) TT.guide.bind(root, { tripId: opts.tripId, guide: opts.guide, setGuide: opts.setGuide, refresh: opts.refresh });
 
     root.addEventListener('input', e => {
       const k = e.target.dataset.k;

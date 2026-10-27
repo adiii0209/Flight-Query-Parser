@@ -450,11 +450,11 @@ def _ckey(city):
 
 
 def _make_guide(city, key):
-    """The popular places of a city; the best three are ticked, five are listed until the agent loads more."""
+    """The popular places of a city, nothing ticked yet: the agent picks (the best three are only suggested) and five are listed until they load more."""
     pool = trip_places.guide_pool(city, key)
-    for i, s in enumerate(pool):
-        s["on"] = i < 3
-    return {"city": city.strip(), "shown": 5, "spots": pool}
+    for s in pool:
+        s["on"] = False
+    return {"city": city.strip(), "shown": 5, "confirmed": False, "spots": pool}
 
 
 @bp.route("/api/hotel-offers/trips/<int:trip_id>/guide/<ck>", methods=["PUT"])
@@ -468,6 +468,7 @@ def save_guide(trip_id, ck):
     body = request.get_json(silent=True) or {}
     on = {str(i) for i in (body.get("on") or [])}
     g = guide[ck]
+    g["confirmed"] = True
     for s in g["spots"]:
         s["on"] = s["place_id"] in on
     if sum(s["on"] for s in g["spots"]) > GUIDE_ON_MAX:
@@ -478,6 +479,34 @@ def save_guide(trip_id, ck):
         pass
     trip.guide = json.dumps(guide)
     trip.updated_at = db.func.now()
+    db.session.commit()
+    return jsonify({"guide": guide})
+
+
+@bp.route("/api/hotel-offers/trips/<int:trip_id>/guide/<ck>/add", methods=["POST"])
+@login_required
+def add_guide_spot(trip_id, ck):
+    """Adds a place the agent found by searching to a city's guide, ticked."""
+    trip = _trip(trip_id)
+    guide = trip.guide_map() if trip else {}
+    if not trip or not CKEY_RE.match(ck) or ck not in guide:
+        return _err("Not found", 404)
+    p = (request.get_json(silent=True) or {}).get("place") or {}
+    lat, lng = _coord(p.get("lat"), -90, 90), _coord(p.get("lng"), -180, 180)
+    pid = _s(p.get("place_id"), 200)
+    if not pid or not _s(p.get("name"), 160) or lat is None or lng is None:
+        return _err("That place cannot be added.")
+    g = guide[ck]
+    if any(s["place_id"] == pid for s in g["spots"]):
+        return _err("Already in the list.")
+    try:
+        rating, count = float(p.get("rating") or 0), int(p.get("rating_count") or 0)
+    except (TypeError, ValueError):
+        rating, count = 0, 0
+    g["spots"].append({"place_id": pid, "name": _s(p.get("name"), 160), "address": _s(p.get("address"), 300), "kind": "", "rating": rating, "rating_count": count,
+                       "lat": lat, "lng": lng, "on": True, "custom": True})
+    g["shown"] = max(g.get("shown", 5), len(g["spots"]))  # the new place must be visible
+    trip.guide = json.dumps(guide)
     db.session.commit()
     return jsonify({"guide": guide})
 

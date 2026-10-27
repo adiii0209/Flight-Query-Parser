@@ -248,3 +248,19 @@
 .gd-t b{font-weight:500;font-size:.92rem}
 .gd-t small{color:var(--mute);font-size:.78rem}
 .gd-btns{display:flex;gap:.5rem;flex-wrap:wrap}
+
+/* local guide: picker dialog, search to add, "choose places" hint */
+.gd summary em.need{color:#b45309;font-weight:600}
+.gd-add{position:relative;margin:.4rem 0 .6rem}
+.gd-add input{width:100%;padding:.55rem .8rem;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:.88rem;background:#fff;box-sizing:border-box}
+.gd-res{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.15);max-height:240px;overflow:auto;padding:4px}
+.gd-res button{display:flex;flex-direction:column;align-items:flex-start;width:100%;text-align:left;border:0;background:none;padding:.5rem .6rem;border-radius:8px;cursor:pointer;font:inherit}
+.gd-res button:hover{background:var(--bg)}
+.gd-res b{font-weight:500;font-size:.88rem}.gd-res small{color:var(--mute);font-size:.76rem}
+.gd-dialog{border:0;border-radius:18px;padding:0;width:min(520px,94vw);max-height:90vh;box-shadow:0 24px 70px rgba(0,0,0,.35);overflow:hidden}
+.gd-dialog[open]{display:flex;flex-direction:column}
+.gd-dialog::backdrop{background:rgba(15,23,42,.5)}
+.gd-modal{display:flex;flex-direction:column;margin:0;border:0;border-radius:0;background:#fff;max-height:90vh;overflow:auto;padding:1.2rem 1.3rem 0}
+.gd-modal h3{margin:0 0 .3rem;font-size:1.1rem}
+.gd-foot{position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:.5rem;padding:.9rem 0;margin-top:.5rem;background:linear-gradient(rgba(255,255,255,0),#fff 35%)}
+.gd-foot .ib.primary{background:#0071e3;color:#fff;border-color:#0071e3}
