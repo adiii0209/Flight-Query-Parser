@@ -135,11 +135,10 @@
     const ck = g.key + '|' + o.key, open = openCards.has(ck);
     const brief = hv('brief');
     const more = (brief ? '<p class="tc-brief">' + TT.esc(brief) + '</p>' : '') + (nut ? '<p class="tc-nut">' + TT.esc(nut).replace(/\n/g, '<br>') + '</p>' : '') + perksHtml(perks) + details + linksHtml(info) +
-      (near.length ? '<p class="tc-near"><b>Nearby:</b> ' + near.map(l => TT.esc(l.name) + (l.km != null ? ' <i>' + (l.km < 1 ? Math.round(l.km * 10) * 100 + ' m' : l.km.toFixed(1) + ' km') + '</i>' : '')).join(' · ') + '</p>' : '') +
       (located ? '<button class="tc-pin" data-id="' + located.id + '">View on map</button>' : '');
     return '<article class="tc-card co' + (isSel ? ' is-sel' : '') + (open ? ' open' : '') + '">' + gallery(o, badges) + '<div class="tc-body"><div class="tc-top"><div><h2>' + TT.esc(o.hotel_name || first.hotel_name) + '</h2>' +
       (first.address ? '<p class="tc-sub">' + TT.esc(first.address) + '</p>' : '') + '</div>' + pick + '</div>' + factsRow(hv('stars'), hv('style'), hv('age_info')) +
-      (hv('location_info') ? '<p class="tc-loc">' + PINICON + '<span>' + TT.esc(hv('location_info')) + '</span></p>' : '') +
+      (near.length ? '<p class="tc-loc">' + PINICON + '<span>' + near.slice(0, 3).map(l => '<b>' + TT.esc(l.name) + '</b>' + (l.km != null ? ' <i>' + (l.km < 1 ? Math.round(l.km * 10) * 100 + ' m' : l.km.toFixed(1) + ' km') + '</i>' : '')).join(' · ') + '</span></p>' : '') +
       '<div class="tc-foot"><div class="tc-price">' + onlineHtml(o) + '<small>' + (many ? 'Our price for ' + plural(o.lines.length, 'room') : first.items > 1 ? rateText(first) : 'Our price') + '</small><b>' + TT.money(o.total, cur()) + '</b>' + saveHtml(o) + '</div>' +
       '<button type="button" class="tc-tog" data-ck="' + TT.esc(ck) + '" aria-expanded="' + open + '"><span>' + (open ? 'Hide details' : 'View details') + '</span>' + CHEV + '</button></div>' +
       '<div class="tc-more" id="more-' + TT.esc(ck.replace(/[^\w-]/g, '_')) + '">' + more + '</div></div></article>';
@@ -295,7 +294,7 @@
     sh.addEventListener('touchend', end); sh.addEventListener('touchcancel', end);
     TT.$('#shHead').addEventListener('click', () => { if (!noTap) setSnap(snap === 'peek' ? 'half' : snap === 'half' ? 'full' : 'half'); });
   }
-  window.addEventListener('resize', () => { if (sheetOn && TT.$('#cpSheet')) { document.documentElement.style.setProperty('--bar', TT.$('.cp-bar').offsetHeight + 'px'); setSnap(snap, { instant: true, fit: false }); } });
+  window.addEventListener('resize', () => { if (sheetOn && TT.$('#cpSheet') && !TT.$('#cpSheet').classList.contains('drag')) { document.documentElement.style.setProperty('--bar', TT.$('.cp-bar').offsetHeight + 'px'); setSnap(snap, { instant: true, fit: false }); } });
 
   function render() {
     const t = data.trip, dates = t.start_date ? TT.date(t.start_date) + (t.end_date ? ' – ' + TT.date(t.end_date) : '') : '';
@@ -373,14 +372,29 @@
     setCard(card, false);
     if (above && anchor) { const shift = before - anchor.getBoundingClientRect().top; if (box) box.scrollTop -= shift; else window.scrollBy({ top: -shift, behavior: 'instant' }); }
   }
+  // iOS Safari stops its scroll momentum when the page is moved from script, so the closing waits until the scrolling has settled
+  const pendingClose = new Set();
+  let idleT = 0;
+  const viewTop = () => (sheetOn ? TT.$('#shIn').getBoundingClientRect().top : 0);
+  function flushClose() {
+    pendingClose.forEach(card => {
+      pendingClose.delete(card);
+      if (!card.isConnected || !card.classList.contains('open')) return;
+      const r = card.getBoundingClientRect(), top = viewTop();
+      if (r.bottom > top && r.top < window.innerHeight) return;  // it came back into view meanwhile
+      autoClose(card, r.bottom <= top);
+    });
+  }
+  const settle = () => { clearTimeout(idleT); if (pendingClose.size) idleT = setTimeout(flushClose, 200); };
+  window.addEventListener('scroll', settle, { passive: true, capture: true });
+  window.addEventListener('touchend', settle, { passive: true });
   function watchCard(card) {
     if (!cardIO) cardIO = new IntersectionObserver(list => list.forEach(en => {
-      const card = en.target;
-      if (en.isIntersecting) return;
-      if (!card.isConnected || !card.classList.contains('open')) { cardIO.unobserve(card); return; }
+      const c = en.target;
+      if (en.isIntersecting) { pendingClose.delete(c); return; }
+      if (!c.isConnected || !c.classList.contains('open')) { cardIO.unobserve(c); pendingClose.delete(c); return; }
       if (sheetOn && snap === 'peek') return;  // the sheet is only pulled down to look at the map
-      cardIO.unobserve(card);
-      autoClose(card, en.boundingClientRect.bottom <= 0 || (sheetOn && en.boundingClientRect.bottom <= (TT.$('#shIn').getBoundingClientRect().top)));
+      pendingClose.add(c); settle();
     }));
     cardIO.observe(card);
   }

@@ -274,3 +274,13 @@ body.has-sheet .tc-fab.hide{opacity:0;pointer-events:none;transform:translateX(-
 .cc-choose{font-size:.86rem;font-weight:600;color:var(--cta-fg);background:var(--cta);padding:7px 14px;border-radius:99px}
 .tc-sum-head small{font-size:.9rem;opacity:.85;text-align:right;max-width:60%;line-height:1.35}
 .tc-foot + .tc-more{margin-top:2px}
+
+/* iPhone Safari: no page bounce behind the sheet, no tap flash, smooth inertia inside the list */
+html.lock,html.lock body{overscroll-behavior:none}
+body.has-sheet{position:fixed;left:0;right:0;width:100%;overflow:hidden}
+.cp-sheet,.sh-head,.tc-chip,.tc-tog,.co-pick{-webkit-tap-highlight-color:transparent}
+.sh-in{-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain}
+.cp-sheet{padding-bottom:0;-webkit-transform:translateZ(0)}
+
+.tc-loc b{font-weight:500}
+.tc-loc i{font-style:normal;color:var(--faint);font-size:.8rem}
