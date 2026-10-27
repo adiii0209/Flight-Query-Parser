@@ -8,7 +8,7 @@
   const ratingText = s => (s.rating ? '★ ' + s.rating.toFixed(1) + (s.rating_count ? ' (' + s.rating_count.toLocaleString('en-IN') + ')' : '') : '');
 
   // a ticked box: the saved choice, or, before the agent has chosen, the suggested best three
-  const isOn = (entry, s, i) => (entry.confirmed || entry.draft ? !!s.on : i < 3);
+  const isOn = (entry, s, i) => (entry.confirmed !== false || entry.draft ? !!s.on : i < 3);
 
   function list(entry) {
     const spots = entry.spots || [], shown = Math.min(entry.shown || 5, spots.length);
@@ -23,17 +23,17 @@
     const on = (entry.spots || []).filter(s => s.on).length;
     const body = '<p class="ho-hint">Tick the places your client will see on the ' + TT.esc(city) + ' page and map (up to ' + MAX_ON + '). The best three are suggested.</p>' + list(entry) + tools(entry, modal);
     if (modal) return body;
-    return '<summary>Local guide <em' + (entry.confirmed ? '' : ' class="need"') + '>' + (entry.confirmed ? on + ' picked' : 'Choose places') + '</em></summary><div class="gd-body">' + body + '</div>';
+    return '<summary>Local guide <em' + (entry.confirmed !== false ? '' : ' class="need"') + '>' + (entry.confirmed !== false ? on + ' picked' : 'Choose places') + '</em></summary><div class="gd-body">' + body + '</div>';
   }
 
-  const html = (g, guide) => { const e = guide[ckey(g.city)]; return '<details class="gd" data-ck="' + TT.esc(ckey(g.city)) + '" data-city="' + TT.esc(g.city) + '"' + (e && !e.confirmed ? ' open' : '') + '>' + inner(g.city, e) + '</details>'; };
+  const html = (g, guide) => { const e = guide[ckey(g.city)]; return '<details class="gd" data-ck="' + TT.esc(ckey(g.city)) + '" data-city="' + TT.esc(g.city) + '"' + (e && e.confirmed === false ? ' open' : '') + '>' + inner(g.city, e) + '</details>'; };
 
   function bind(root, api) {
     const panelOf = el => el.closest('.gd');
     const modalOf = p => p.classList.contains('gd-modal');
     const redraw = (p, map) => {
       const entry = map[p.dataset.ck];
-      if (modalOf(p) && entry && !entry.confirmed) {  // keep what is ticked in the picker while it is redrawn (it is only saved with "Save places")
+      if (modalOf(p) && entry && entry.confirmed === false) {  // keep what is ticked in the picker while it is redrawn (it is only saved with "Save places")
         const keep = new Set(Array.from(p.querySelectorAll('[data-gd="tick"]:checked')).map(c => c.value));
         entry.spots.forEach(s => { s.on = keep.has(s.place_id) || !!s.on; }); entry.draft = true;
       }
@@ -118,7 +118,7 @@
   async function pickNew(cities, api) {
     for (const city of cities) {
       const ck = ckey(city), e = api.guide()[ck];
-      if (e && !e.confirmed) await openPicker(ck, city, api);
+      if (e && e.confirmed === false) await openPicker(ck, city, api);
     }
   }
 
