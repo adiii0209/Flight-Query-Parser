@@ -249,3 +249,23 @@ a.tc-link:hover{background:var(--line)}
 .lg-list li button{align-items:flex-start}
 .lg-list small.lg-bl{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.4}
 .lg-list li button{align-items:flex-start}
+
+/* phone: the map fills the screen under the bar; the hotels sit in a bottom sheet dragged between peek, half and full */
+body.has-sheet .page{padding:0;max-width:none}
+body.has-sheet .cp-bar{position:fixed;top:0;left:0;right:0;margin:0;padding-left:16px;padding-right:16px}
+body.has-sheet #tcMapSec{position:fixed;z-index:1;left:0;right:0;top:var(--bar,64px);bottom:0;margin:0}
+body.has-sheet #tcMapSec .tc-mapbox{position:absolute;inset:0;border:0;border-radius:0;margin:0}
+body.has-sheet #tcMapSec .tc-map{height:100%}
+body.has-sheet .tc-fs,body.has-sheet .leaflet-control-zoom{display:none}
+body.has-sheet .tc-fab{transition:opacity .25s,transform .3s var(--out),background .2s}
+body.has-sheet .tc-fab.hide{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(14px)}
+.cp-sheet{position:fixed;z-index:45;left:0;right:0;bottom:0;display:flex;flex-direction:column;background:var(--bg);border-radius:22px 22px 0 0;box-shadow:0 -8px 32px rgba(0,0,0,.22);transition:top .4s cubic-bezier(.22,1,.36,1);will-change:top}
+.cp-sheet.drag{transition:none}
+.sh-head{flex:0 0 auto;padding:8px 20px calc(12px + env(safe-area-inset-bottom));text-align:center;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+.sh-bar{display:block;width:42px;height:5px;border-radius:9px;background:var(--faint);opacity:.55;margin:0 auto 10px}
+.sh-t{font-weight:600;font-size:.95rem}
+.sh-in{flex:1;min-height:0;overflow:hidden;padding:0 16px calc(96px + env(safe-area-inset-bottom));overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.cp-sheet.is-full .sh-in{overflow-y:auto}
+.cp-sheet .lg{margin:0 0 4px;border:0;background:none;border-radius:0;overflow:visible}
+.cp-sheet .lg-h{padding:4px 4px 0}
+.cp-sheet .lg-list{padding:6px 0 4px;grid-template-columns:1fr}

@@ -4,7 +4,7 @@
   const slug = document.body.dataset.slug, wa = (document.body.dataset.wa || '').replace(/\D/g, '');
   const root = TT.$('#trip');
   const openCards = new Set();
-  let data = null, groups = [], selection = {}, map = null, chipSel = null, savedY = 0, listY = 0, current = null;
+  let data = null, groups = [], selection = {}, map = null, chipSel = null, savedY = 0, listY = 0, current = null, sheetOn = false, snap = 'half', sheetTop = 0, noTap = false;
 
   const PIN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.2A7 7 0 0 1 19 9.8C19 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.5"/></svg>';
   const CLOSE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -168,25 +168,32 @@
 
   // ---- city page: the hotel options for one city and dates
   function cityPage(g, gi) {
-    const multi = g.options.length > 1;
-    return '<div class="cp-bar"><a class="cp-back" href="#" aria-label="Back to all cities">' + BACK + '</a><div class="cp-mid"><h1>' + TT.esc(g.city || 'Your stay') + '</h1><p>' + TT.esc(shortDates(g)) + '</p></div>' +
-      '<b class="cp-amt">' + TT.money(g.selectedOption.total, cur()) + '</b></div>' +
-      guideHtml(g, cityPins(g)) + '<div class="cp-opts">' + g.options.map(o => optionHtml(g, o, multi)).join('') + '</div><div id="cmpHost">' + compareHtml(g) + '</div>' + disclaimerHtml();
+    const multi = g.options.length > 1, pins = cityPins(g), spots = spotsOf(g);
+    sheetOn = window.matchMedia('(max-width:640px)').matches && !!(pins.length || spots.length);  // a phone gets the map with a bottom sheet
+    const bar = '<div class="cp-bar"><a class="cp-back" href="#" aria-label="Back to all cities">' + BACK + '</a><div class="cp-mid"><h1>' + TT.esc(g.city || 'Your stay') + '</h1><p>' + TT.esc(shortDates(g)) + '</p></div>' +
+      '<b class="cp-amt">' + TT.money(g.selectedOption.total, cur()) + '</b></div>';
+    const rest = '<div class="cp-opts">' + g.options.map(o => optionHtml(g, o, multi)).join('') + '</div><div id="cmpHost">' + compareHtml(g) + '</div>' + disclaimerHtml();
+    if (!sheetOn) return bar + guideHtml(g, pins) + rest;
+    const title = pins.length + (pins.length === 1 ? ' hotel' : ' hotels') + (spots.length ? ' · ' + spots.length + (spots.length === 1 ? ' area' : ' areas') + ' to explore' : '');
+    return bar + '<section class="tc-mapsec" id="tcMapSec">' + mapBox(pins) + '</section>' +
+      '<div class="cp-sheet" id="cpSheet"><div class="sh-head" id="shHead"><i class="sh-bar"></i><p class="sh-t">' + title + '</p></div><div class="sh-in" id="shIn">' +
+      (spots.length ? '<section class="lg">' + guideHead(g, spots) + guideList(spots) + '</section>' : '') + rest + '</div></div>';
   }
 
   // the places the agent picked for this city (the local guide)
   const spotsOf = g => { const e = (data.guide || {})[String(g.city || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 60)]; return e ? e.spots : []; };
 
   // the one map of the city page: the hotels (chips on the map), the lively areas and a full screen button
+  const guideHead = (g, spots) => '<div class="lg-h"><h2>' + (spots.length ? 'Location guide' : 'On the map') + '</h2><p>' + (spots.length ? 'The liveliest areas of ' + TT.esc(g.city) + ', picked for you' : 'Your hotels in ' + TT.esc(g.city)) + '</p></div>';
+  const mapBox = pins => '<div class="tc-mapbox"><div class="tc-map" id="tcMap"></div>' +
+    '<div class="tc-chips" id="tcChips">' + pins.map(q => '<button type="button" class="tc-chip" data-id="' + q.id + '"><i>' + q.num + '</i>' + TT.esc(q.hotel_name) + '</button>').join('') + '</div>' +
+    '<button type="button" class="tc-fs" id="tcFs" aria-label="Full screen">' + EXPAND + '</button></div>';
+  const guideList = spots => '<ul class="lg-list">' + spots.map((s, i) => '<li><button type="button" data-spot="' + i + '"><i>' + String.fromCharCode(65 + i) + '</i><span><b>' + TT.esc(s.name) + '</b><small' + (s.blurb ? ' class="lg-bl"' : '') + '>' +
+    TT.esc(s.blurb || [s.kind, s.rating ? '★ ' + s.rating.toFixed(1) : ''].filter(Boolean).join(' · ')) + '</small></span></button></li>').join('') + '</ul>';
   function guideHtml(g, pins) {
     const spots = spotsOf(g);
     if (!spots.length && !pins.length) return '';
-    return '<section class="lg tc-mapsec" id="tcMapSec"><div class="lg-h"><h2>' + (spots.length ? 'Location guide' : 'On the map') + '</h2><p>' + (spots.length ? 'The liveliest areas of ' + TT.esc(g.city) + ', picked for you' : 'Your hotels in ' + TT.esc(g.city)) + '</p></div>' +
-      '<div class="tc-mapbox"><div class="tc-map" id="tcMap"></div>' +
-      '<div class="tc-chips" id="tcChips">' + pins.map(q => '<button type="button" class="tc-chip" data-id="' + q.id + '"><i>' + q.num + '</i>' + TT.esc(q.hotel_name) + '</button>').join('') + '</div>' +
-      '<button type="button" class="tc-fs" id="tcFs" aria-label="Full screen">' + EXPAND + '</button></div>' +
-      (spots.length ? '<ul class="lg-list">' + spots.map((s, i) => '<li><button type="button" data-spot="' + i + '"><i>' + String.fromCharCode(65 + i) + '</i><span><b>' + TT.esc(s.name) + '</b><small' + (s.blurb ? ' class="lg-bl"' : '') + '>' +
-        TT.esc(s.blurb || [s.kind, s.rating ? '★ ' + s.rating.toFixed(1) : ''].filter(Boolean).join(' · ')) + '</small></span></button></li>').join('') + '</ul>' : '') + '</section>';
+    return '<section class="lg tc-mapsec" id="tcMapSec">' + guideHead(g, spots) + mapBox(pins) + (spots.length ? guideList(spots) : '') + '</section>';
   }
 
   // one pin per hotel option of this city, numbered 1, 2, 3 in the order of the cards
@@ -214,6 +221,7 @@
   }
 
   function setFull(full) {
+    if (sheetOn) return setSnap(full ? 'peek' : 'half', { fit: false });
     const sec = TT.$('#tcMapSec'), fab = TT.$('#tcFab');
     if (full && !sec.classList.contains('full')) savedY = window.scrollY;
     if (full) { sec.classList.add('full'); document.documentElement.classList.add('lock'); } else { sec.classList.remove('full'); document.documentElement.classList.remove('lock'); }
@@ -226,6 +234,66 @@
     setTimeout(() => map.resize(), 60);
     if (!full) window.scrollTo({ top: savedY, behavior: 'instant' });  // back to exactly where you were, not down to the map
   }
+
+  // ---- phone: the map fills the screen and the hotels sit in a bottom sheet that is dragged between three heights
+  function snapTops() {
+    const H = window.innerHeight, bar = TT.$('.cp-bar').offsetHeight;
+    return { H, bar, full: bar + 8, half: Math.round(Math.max(bar + 140, H * 0.5)), peek: H - TT.$('#shHead').offsetHeight };
+  }
+  function setSnap(name, o) {
+    o = o || {};
+    const sh = TT.$('#cpSheet'), t = snapTops();
+    if (!sh) return;
+    snap = name; sheetTop = t[name];
+    sh.classList.toggle('drag', !!o.instant); sh.classList.toggle('is-full', name === 'full');
+    sh.style.top = sheetTop + 'px';
+    const fab = TT.$('#tcFab');
+    if (fab) fab.classList.toggle('hide', name === 'peek');
+    if (map) map.setInset(t.H - (name === 'full' ? t.half : sheetTop), o.fit !== false);
+    if (name !== 'full') TT.$('#shIn').scrollTop = 0;
+  }
+  function bindSheet() {
+    const sh = TT.$('#cpSheet'), inn = TT.$('#shIn');
+    let g = null;
+    sh.addEventListener('touchstart', e => {
+      if (e.touches.length !== 1) { g = null; return; }
+      const y = e.touches[0].clientY;
+      g = { y, top: sheetTop, ly: y, lt: e.timeStamp, v: 0, drag: false, head: !!e.target.closest('#shHead'), t: snapTops() };
+    }, { passive: true });
+    sh.addEventListener('touchmove', e => {
+      if (!g) return;
+      const y = e.touches[0].clientY;
+      if (!g.drag) {
+        const dy = y - g.y;
+        if (Math.abs(dy) < 6) return;
+        if (!(g.head || snap !== 'full' || (inn.scrollTop <= 0 && dy > 0))) { g = null; return; }  // the list scrolls by itself when the sheet is all the way up
+        g.drag = true; g.y = y; g.top = sheetTop; sh.classList.add('drag');
+      }
+      e.preventDefault();
+      const dt = e.timeStamp - g.lt;
+      if (dt > 0) { g.v = 0.8 * g.v + 0.2 * ((y - g.ly) / dt); g.ly = y; g.lt = e.timeStamp; }
+      sheetTop = Math.min(Math.max(g.top + (y - g.y), g.t.full), g.t.peek);
+      sh.style.top = sheetTop + 'px';
+    }, { passive: false });
+    const end = () => {
+      if (!g || !g.drag) { g = null; return; }
+      const t = g.t, v = g.v, names = ['full', 'half', 'peek'];
+      let pick;
+      if (Math.abs(v) > 0.5) {  // a flick moves to the next height in its direction
+        const cand = names.filter(n => (v < 0 ? t[n] < sheetTop - 24 : t[n] > sheetTop + 24)).sort((a, b) => Math.abs(t[a] - sheetTop) - Math.abs(t[b] - sheetTop));
+        pick = cand[0] || (v < 0 ? 'full' : 'peek');
+      } else {
+        const to = sheetTop + v * 160;
+        pick = names.sort((a, b) => Math.abs(t[a] - to) - Math.abs(t[b] - to))[0];
+      }
+      g = null; noTap = true; setTimeout(() => { noTap = false; }, 350);
+      sh.classList.remove('drag');
+      setSnap(pick);
+    };
+    sh.addEventListener('touchend', end); sh.addEventListener('touchcancel', end);
+    TT.$('#shHead').addEventListener('click', () => { if (!noTap) setSnap(snap === 'peek' ? 'half' : snap === 'half' ? 'full' : 'half'); });
+  }
+  window.addEventListener('resize', () => { if (sheetOn && TT.$('#cpSheet')) { document.documentElement.style.setProperty('--bar', TT.$('.cp-bar').offsetHeight + 'px'); setSnap(snap, { instant: true, fit: false }); } });
 
   function render() {
     const t = data.trip, dates = t.start_date ? TT.date(t.start_date) + (t.end_date ? ' – ' + TT.date(t.end_date) : '') : '';
@@ -246,16 +314,22 @@
     const pins = cityPins(g), spots = spotsOf(g);
     chipSel = null;
     if (!(pins.length || spots.length) || !TT.$('#tcMap')) return;
-    map = TT.createMap(TT.$('#tcMap'), { mini: true, onSelect: id => selectChip(id) });
+    if (sheetOn) {
+      document.body.classList.add('has-sheet'); document.documentElement.classList.add('lock');
+      document.documentElement.style.setProperty('--bar', TT.$('.cp-bar').offsetHeight + 'px');
+    }
+    map = TT.createMap(TT.$('#tcMap'), { mini: !sheetOn, onSelect: id => { if (sheetOn && snap === 'full') setSnap('half', { fit: false }); selectChip(id); } });
+    if (sheetOn) { const t = snapTops(); map.setInset(t.H - t.half, false); }
     map.render(pins, spots);
     document.body.insertAdjacentHTML('beforeend', '<button class="tc-fab" id="tcFab" type="button" aria-label="Open map">' + PIN + '<span>Map</span></button>');
-    const toggle = () => setFull(!TT.$('#tcMapSec').classList.contains('full'));
+    if (sheetOn) { bindSheet(); setSnap('half', { instant: true, fit: false }); }
+    const toggle = () => (sheetOn ? setSnap(snap === 'peek' ? 'half' : 'peek') : setFull(!TT.$('#tcMapSec').classList.contains('full')));
     TT.$('#tcFab').addEventListener('click', toggle);
     TT.$('#tcFs').addEventListener('click', toggle);
   }
 
   function unmountMap() {
-    document.documentElement.classList.remove('lock');
+    document.documentElement.classList.remove('lock'); document.body.classList.remove('has-sheet'); sheetOn = false;
     const fab = TT.$('#tcFab');
     if (fab) fab.remove();
     if (map) { map.destroy(); map = null; }
@@ -312,7 +386,7 @@
 
   root.addEventListener('click', e => {
     const spot = e.target.closest('[data-spot]');
-    if (spot) { if (map) { selectChip(null); map.focusSpot(+spot.dataset.spot); TT.$('#tcMap').scrollIntoView({ block: 'center', behavior: 'smooth' }); } return; }
+    if (spot) { if (map) { selectChip(null); if (sheetOn) { if (snap === 'full') setSnap('half', { fit: false }); } else TT.$('#tcMap').scrollIntoView({ block: 'center', behavior: 'smooth' }); map.focusSpot(+spot.dataset.spot); } return; }
     const tog = e.target.closest('.tc-tog');
     if (tog) {
       const card = tog.closest('.co'), on = !card.classList.contains('open');
@@ -331,6 +405,7 @@
       selectChip(id); setTimeout(() => map.focus(id), 120);
       return;
     }
+    if (sheetOn && snap === 'full' && !b.classList.contains('tc-pin')) setSnap('half', { fit: false });
     if (chipSel === id) { selectChip(null); map.showAll(); return; }  // tapping the selected chip again shows every hotel
     selectChip(id); map.focus(id);
   });

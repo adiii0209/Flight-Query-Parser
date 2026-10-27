@@ -16,7 +16,9 @@
     L.tileLayer(tiles.url, tiles.options).addTo(map);
     const layer = L.layerGroup().addTo(map);
     const pins = {}, spotPins = [];
-    let fitted = false, pinsBounds = null;
+    let fitted = false, pinsBounds = null, inset = 0;  // inset: the bottom sheet of a phone covers this many pixels of the map
+    const fit = () => (inset ? { maxZoom: 15, paddingTopLeft: [0, 56], paddingBottomRight: [0, inset] } : { maxZoom: 15 });
+    const shifted = (ll, z) => (inset ? map.unproject(map.project(ll, z).add([0, (inset - 56) / 2]), z) : ll);  // put the pin in the middle of what is still visible
 
     function render(quotes, spots) {
       layer.clearLayers();
@@ -47,7 +49,7 @@
       });
       if (pts.length) {
         pinsBounds = L.latLngBounds(pts).pad(0.25);
-        map.fitBounds(pinsBounds, { maxZoom: 15 });
+        map.fitBounds(pinsBounds, fit());
         fitted = true;
       } else if (!fitted) map.setView([20, 0], 2);
       setTimeout(() => map.invalidateSize(), 50);
@@ -55,19 +57,22 @@
     function focus(id) {
       const m = pins[id];
       if (!m) return;
-      map.flyTo(m.getLatLng(), Math.min(Math.max(map.getZoom(), 14), 16), { duration: .6 });
+      const z = Math.min(Math.max(map.getZoom(), 14), 16);
+      map.flyTo(shifted(m.getLatLng(), z), z, { duration: .6 });
       m.openPopup();
     }
     function focusSpot(i) {
       const m = spotPins[i];
       if (!m) return;
-      map.flyTo(m.getLatLng(), Math.min(Math.max(map.getZoom(), 14), 16), { duration: .6 });
+      const z = Math.min(Math.max(map.getZoom(), 14), 16);
+      map.flyTo(shifted(m.getLatLng(), z), z, { duration: .6 });
       m.openPopup();
     }
     function showAll() {
       map.closePopup();
-      if (pinsBounds) map.flyToBounds(pinsBounds, { maxZoom: 15, duration: .6 });
+      if (pinsBounds) map.flyToBounds(pinsBounds, Object.assign(fit(), { duration: .6 }));
     }
-    return { render, focus, focusSpot, showAll, drag(on) { if (on) map.dragging.enable(); else if (opts.mini && L.Browser.mobile) map.dragging.disable(); }, destroy() { map.remove(); }, resize() { map.invalidateSize(); if (pinsBounds) map.fitBounds(pinsBounds, { maxZoom: 15 }); } };
+    return { render, focus, focusSpot, showAll, drag(on) { if (on) map.dragging.enable(); else if (opts.mini && L.Browser.mobile) map.dragging.disable(); }, destroy() { map.remove(); }, resize() { map.invalidateSize(); if (pinsBounds) map.fitBounds(pinsBounds, fit()); },
+      setInset(px, refit) { inset = px; if (refit && pinsBounds) { map.invalidateSize(); map.flyToBounds(pinsBounds, Object.assign(fit(), { duration: .35 })); } } };
   };
 })(window.TT);
