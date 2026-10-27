@@ -359,6 +359,29 @@
   window.addEventListener('hashchange', route);
 
   // re-draw what depends on the selection (the city page you are on, the city cards and the trip total)
+  // an opened card closes by itself once it has scrolled completely out of view; when it is above the screen the page is moved back by the height it gave up, so nothing shifts
+  let cardIO = null;
+  function setCard(card, on) {
+    const tog = card.querySelector('.tc-tog');
+    card.classList.toggle('open', on); tog.setAttribute('aria-expanded', on); tog.firstChild.textContent = on ? 'Hide details' : 'View details';
+    if (on) openCards.add(tog.dataset.ck); else openCards.delete(tog.dataset.ck);
+  }
+  function autoClose(card, above) {
+    const anchor = TT.$('#cmpHost'), box = sheetOn ? TT.$('#shIn') : null, before = anchor ? anchor.getBoundingClientRect().top : 0;
+    setCard(card, false);
+    if (above && anchor) { const shift = before - anchor.getBoundingClientRect().top; if (box) box.scrollTop -= shift; else window.scrollBy({ top: -shift, behavior: 'instant' }); }
+  }
+  function watchCard(card) {
+    if (!cardIO) cardIO = new IntersectionObserver(list => list.forEach(en => {
+      const card = en.target;
+      if (en.isIntersecting) return;
+      if (!card.isConnected || !card.classList.contains('open')) { cardIO.unobserve(card); return; }
+      if (sheetOn && snap === 'peek') return;  // the sheet is only pulled down to look at the map
+      cardIO.unobserve(card);
+      autoClose(card, en.boundingClientRect.bottom <= 0 || (sheetOn && en.boundingClientRect.bottom <= (TT.$('#shIn').getBoundingClientRect().top)));
+    }));
+    cardIO.observe(card);
+  }
   function refresh() {
     groups = TT.groupQuotes(data.quotes, selection);
     drawList();
@@ -369,6 +392,7 @@
         TT.$('.cp-opts').innerHTML = g.options.map(o => optionHtml(g, o, g.options.length > 1)).join('');
         TT.$('#cmpHost').innerHTML = compareHtml(g);
         window.scrollTo({ top: y, behavior: 'instant' });
+        TT.$$('.cp-opts .co.open').forEach(watchCard);
       }
     }
   }
@@ -390,8 +414,8 @@
     const tog = e.target.closest('.tc-tog');
     if (tog) {
       const card = tog.closest('.co'), on = !card.classList.contains('open');
-      card.classList.toggle('open', on); tog.setAttribute('aria-expanded', on); tog.firstChild.textContent = on ? 'Hide details' : 'View details';
-      if (on) openCards.add(tog.dataset.ck); else openCards.delete(tog.dataset.ck);
+      setCard(card, on);
+      if (on) watchCard(card); else if (cardIO) cardIO.unobserve(card);
       return;
     }
     const pick = e.target.closest('.co-pick');
