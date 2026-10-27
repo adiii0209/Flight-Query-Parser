@@ -62,11 +62,16 @@ def clean_quote(raw):
             q[k] = max(0, min(int(float(raw.get(k) or 0)), hi))
         except (TypeError, ValueError):
             q[k] = 0
-    for k in ("cost_per_item", "total"):
+    for k in ("cost_per_item", "total", "online_total"):
         try:
             q[k] = max(0, min(round(float(raw.get(k) or 0)), 10 ** 9))
         except (TypeError, ValueError):
             q[k] = 0
+    q["local_currency"] = re.sub(r"[^A-Z]", "", str(raw.get("local_currency") or "").upper())[:3]
+    try:  # what one unit of the local currency is worth in the trip currency
+        q["local_rate"] = max(0, min(round(float(raw.get("local_rate") or 0), 4), 10 ** 7))
+    except (TypeError, ValueError):
+        q["local_rate"] = 0
     if not q["rooms"]:
         q["rooms"] = max(1, round(q["items"] / q["nights"])) if q["nights"] else max(1, q["items"])
     q["lat"], q["lng"] = _coord(raw.get("lat"), -90, 90), _coord(raw.get("lng"), -180, 180)

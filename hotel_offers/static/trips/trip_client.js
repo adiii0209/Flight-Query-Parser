@@ -59,6 +59,49 @@
     return parts.length ? '<div class="tc-links">' + parts.join('') + '</div>' : '';
   }
 
+  // what the client would pay online for the whole option; 0 unless every room has an online price
+  const onlineOf = o => (o.lines.every(l => l.online_total > 0) ? o.lines.reduce((s, l) => s + l.online_total, 0) : 0);
+  // "Online deal ₹1,60,000" struck through, then our price under it
+  function onlineHtml(o) {
+    const on = onlineOf(o);
+    if (!(on > o.total)) return '';
+    return '<span class="tc-online"><span>Online deal</span><s>' + TT.money(on, cur()) + '</s></span>';
+  }
+  const saveHtml = o => { const on = onlineOf(o); return on > o.total ? '<em class="tc-save">You save ' + TT.money(on - o.total, cur()) + '</em>' : ''; };
+
+  // all prices are in the trip currency; where the agent gave a local currency rate it is quoted here
+  function disclaimerHtml() {
+    const rates = new Map();
+    data.quotes.forEach(q => { if (q.local_currency && q.local_rate > 0 && q.local_currency !== cur() && !rates.has(q.local_currency)) rates.set(q.local_currency, q.local_rate); });
+    const fx = Array.from(rates, ([code, r]) => '1 ' + code + ' = ' + cur() + ' ' + (+r.toFixed(r < 10 ? 4 : 2)).toLocaleString('en-IN')).join(' · ');
+    return '<p class="tc-note">All rates are in ' + TT.esc(cur()) + ' and indicative' + (fx ? '. Local currency: ' + TT.esc(fx) : '') + '. Prices are subject to availability and the exchange rate on the day of payment.</p>';
+  }
+
+  // side by side: one column per hotel of the city, only the rows that have something to say
+  function compareHtml(g) {
+    const opts = g.options;
+    if (opts.length < 2) return '';
+    const first = o => o.lines[0];
+    const any = key => o => (o.lines.find(l => l[key]) || {})[key] || '';
+    const lowest = Math.min.apply(null, opts.map(o => o.total));
+    const rows = [
+      ['Class', o => (any('stars')(o) ? any('stars')(o) + ' star' : '')],
+      ['Style', any('style')],
+      ['Location', any('location_info')],
+      ['Room', o => Array.from(new Set(o.lines.map(l => l.room).filter(Boolean))).join(' + ')],
+      ['Meal plan', o => first(o).meal_plan || ''],
+      ['Cancellation', o => first(o).cancellation || ''],
+      ['Google rating', o => { const l = o.lines.find(x => x.rating); return l ? '★ ' + l.rating.toFixed(1) + (l.rating_count ? ' (' + l.rating_count.toLocaleString('en-IN') + ')' : '') : ''; }],
+      ['Includes', o => ((o.lines.find(l => (l.perks || []).length) || { perks: [] }).perks.map(p => p.label).join(' · '))],
+    ].map(([label, fn]) => [label, opts.map(fn)]).filter(r => r[1].some(Boolean));
+    const head = '<tr><th></th>' + opts.map(o => '<th' + (o.key === g.selected ? ' class="sel"' : '') + '><b>' + TT.esc(o.hotel_name) + '</b>' + (o.key === g.selected ? '<i>Selected</i>' : '') + '</th>').join('') + '</tr>';
+    const body = rows.map(([label, vals]) => '<tr><th scope="row">' + label + '</th>' + vals.map(v => '<td>' + (v ? TT.esc(v) : '–') + '</td>').join('') + '</tr>').join('');
+    const price = '<tr class="cmp-price"><th scope="row">Price</th>' + opts.map(o => '<td>' + (onlineOf(o) > o.total ? '<s>' + TT.money(onlineOf(o), cur()) + '</s>' : '') + '<b>' + TT.money(o.total, cur()) + '</b>' +
+      (o.total === lowest ? '<em>Lowest</em>' : '') + saveHtml(o) + '</td>').join('') + '</tr>';
+    const pick = '<tr><th></th>' + opts.map(o => '<td>' + (o.key === g.selected ? '<span class="cmp-on">Selected</span>' : '<button type="button" class="co-pick" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">Select</button>') + '</td>').join('') + '</tr>';
+    return '<section class="cmp"><h2>Compare hotels</h2><div class="cmp-scroll"><table>' + '<thead>' + head + '</thead><tbody>' + body + price + pick + '</tbody></table></div></section>';
+  }
+
   // the hotel card: the same card as before, now shown inside its city card
   function optionHtml(g, o, multi) {
     const isSel = o.key === g.selected;
@@ -83,7 +126,7 @@
       (first.address ? '<p class="tc-sub">' + TT.esc(first.address) + '</p>' : '') + '</div>' + pick + '</div>' + factsRow(hv('stars'), hv('style'), hv('age_info')) +
       (hv('location_info') ? '<p class="tc-loc">' + PINICON + '<span>' + TT.esc(hv('location_info')) + '</span></p>' : '') +
       '<div class="tc-more" id="more-' + TT.esc(ck.replace(/[^\w-]/g, '_')) + '">' + more + '</div>' +
-      '<div class="tc-foot"><div class="tc-price"><small>' + (many ? 'Total for ' + plural(o.lines.length, 'room') : first.items > 1 ? rateText(first) : 'Stay total') + '</small><b>' + TT.money(o.total, cur()) + '</b></div>' +
+      '<div class="tc-foot"><div class="tc-price">' + onlineHtml(o) + '<small>' + (many ? 'Our price for ' + plural(o.lines.length, 'room') : first.items > 1 ? rateText(first) : 'Our price') + '</small><b>' + TT.money(o.total, cur()) + '</b>' + saveHtml(o) + '</div>' +
       '<button type="button" class="tc-tog" data-ck="' + TT.esc(ck) + '" aria-expanded="' + open + '"><span>' + (open ? 'Hide details' : 'View details') + '</span>' + CHEV + '</button></div></div></article>';
   }
 
@@ -113,7 +156,7 @@
     const multi = g.options.length > 1;
     return '<div class="cp-bar"><a class="cp-back" href="#" aria-label="Back to all cities">' + BACK + '</a><div class="cp-mid"><h1>' + TT.esc(g.city || 'Your stay') + '</h1><p>' + TT.esc(shortDates(g)) + '</p></div>' +
       '<b class="cp-amt">' + TT.money(g.selectedOption.total, cur()) + '</b></div>' +
-      '<div class="cp-opts">' + g.options.map(o => optionHtml(g, o, multi)).join('') + '</div>' + mapSection(cityPins(g));
+      '<div class="cp-opts">' + g.options.map(o => optionHtml(g, o, multi)).join('') + '</div><div id="cmpHost">' + compareHtml(g) + '</div>' + mapSection(cityPins(g)) + disclaimerHtml();
   }
 
   // one pin per hotel option of this city, numbered 1, 2, 3 in the order of the cards
@@ -167,7 +210,7 @@
       [t.client_name && 'Prepared for ' + t.client_name, t.destination, dates].filter(Boolean).map(TT.esc).join(' · ') + '</p>' +
       '</section>' +
       '<div class="cc-list" id="ccList"></div><div id="sumHost"></div></div><div id="viewCity" hidden></div>' +
-      '<p class="tc-note" id="tcNote">Prices are subject to availability.</p>';
+      disclaimerHtml().replace('<p class="tc-note"', '<p class="tc-note" id="tcNote"');
     drawList();
     const a = TT.$('#navWa');
     if (wa) a.href = 'https://wa.me/' + wa + '?text=' + encodeURIComponent('Hi, about my trip: ' + t.title); else a.hidden = true;
@@ -226,6 +269,7 @@
       if (g) {
         TT.$('.cp-amt').textContent = TT.money(g.selectedOption.total, cur());
         TT.$('.cp-opts').innerHTML = g.options.map(o => optionHtml(g, o, g.options.length > 1)).join('');
+        TT.$('#cmpHost').innerHTML = compareHtml(g);
         window.scrollTo({ top: y, behavior: 'instant' });
       }
     }

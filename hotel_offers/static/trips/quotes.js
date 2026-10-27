@@ -6,6 +6,8 @@
       ['guests', 'Guests'], ['guest_name', 'Guest name'], ['meal_plan', 'Meal plan'], ['website', 'Hotel website', 'wide', 'url']]],
     ['Room & price', [['room', 'Room', 'wide'], ['room_desc', 'Room description', 'wide', 'textarea'], ['room_size', 'Room size'], ['items', 'Room nights', '', 'number'],
       ['cost_per_item', 'Rate per room night', '', 'number'], ['total', 'Total', '', 'number'], ['cancellation', 'Cancellation policy', 'wide']]],
+    ['Online deal & currency', [['online_total', 'Online deal total (the stay, as the client would find it online)', 'wide', 'number'], ['local_currency', 'Local currency (e.g. GBP)'],
+      ['local_rate', '1 local unit is worth (in trip currency)', '', 'number']]],
   ];
   const AREAS = [['nutshell', 'In a nutshell', 'Shown to the client'], ['notes', 'Internal notes', 'Never shown to the client']];
   const ICON = {
