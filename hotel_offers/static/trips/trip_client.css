@@ -4,7 +4,7 @@
 .tc-hero h1{font-family:var(--serif);font-weight:500;font-size:clamp(1.9rem,6vw,3rem);line-height:1.1;letter-spacing:-.02em}
 .tc-meta{color:var(--mute);margin-top:8px}
 /* map section: sits at the bottom of the page; the floating button expands it to fullscreen */
-.tc-mapsec{margin-top:34px}
+.tc-mapsec{margin-top:18px}
 .tc-maphead h2{font-family:var(--serif);font-weight:500;font-size:1.5rem;margin-bottom:12px}
 .tc-chips::-webkit-scrollbar{display:none}
 .tc-chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px 0 6px;border-radius:99px;background:var(--surface);border:1px solid var(--line);font-size:.86rem;font-weight:500;white-space:nowrap;transition:background .2s,border-color .2s}
@@ -50,7 +50,7 @@
 
 /* map: chips float inside the map, top; a full screen button sits in the corner */
 .tc-mapbox{position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--line);background:var(--surface-2)}
-.tc-map{height:min(62vh,500px);z-index:0}
+.tc-map{height:min(56vh,420px);z-index:0}
 .tc-chips{position:absolute;z-index:500;top:0;left:0;right:0;display:flex;gap:8px;overflow-x:auto;padding:12px 56px 22px 12px;scrollbar-width:none;
   background:linear-gradient(to bottom,rgba(0,0,0,.28),rgba(0,0,0,0));pointer-events:none}
 .tc-chips::-webkit-scrollbar{display:none}
@@ -59,7 +59,8 @@
 .tc-chips .tc-chip.on i{background:var(--cta-fg);color:var(--cta)}
 .tc-fs{position:absolute;z-index:501;top:10px;right:10px;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--surface);box-shadow:0 2px 10px rgba(0,0,0,.25)}
 .tc-fs:hover{background:var(--surface-2)}
-.tc-mapsec.full{position:fixed;inset:0;z-index:60;background:var(--bg);margin:0;padding:0;display:block}
+.tc-mapsec.full .lg-h,.tc-mapsec.full .lg-list{display:none}
+.tc-mapsec.full{border:0;border-radius:0;position:fixed;inset:0;z-index:60;background:var(--bg);margin:0;padding:0;display:block}
 .tc-mapsec.full .tc-maphead{display:none}
 .tc-mapsec.full .tc-mapbox{position:absolute;inset:0;border-radius:0;border:0}
 .tc-mapsec.full .tc-map{height:100%}
@@ -230,7 +231,7 @@ a.tc-link:hover{background:var(--line)}
 .lg-h{padding:18px 20px 4px}
 .lg-h h2{font-family:var(--serif);font-weight:500;font-size:1.3rem}
 .lg-h p{color:var(--mute);font-size:.84rem;margin-top:2px}
-.lg-map{height:220px;margin:12px 0 0;background:var(--surface-2)}
+.lg .tc-mapbox{margin-top:12px;border-radius:0;border-width:1px 0}
 .lg-list{list-style:none;margin:0;padding:6px 8px 10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr))}
 .lg-list button{display:flex;gap:12px;align-items:center;width:100%;text-align:left;padding:10px 12px;border-radius:14px}
 .lg-list button:hover{background:var(--surface-2)}

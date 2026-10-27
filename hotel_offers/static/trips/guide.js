@@ -19,11 +19,11 @@
     ((entry.shown || 5) < (entry.spots || []).length ? '<button type="button" class="ib" data-gd="more">Load more</button>' : '') + (modal ? '' : '<button type="button" class="ib" data-gd="pick">Open picker</button><button type="button" class="ib" data-gd="refresh">Look up again</button>') + '</div>';
 
   function inner(city, entry, modal) {
-    if (!entry) return '<summary>Local guide <em>Not built yet</em></summary><div class="gd-body"><p class="ho-hint">Lively places of ' + TT.esc(city) + ' for your client: sights, food and nightlife.</p><button type="button" class="ib" data-gd="build">Choose lively places</button></div>';
+    if (!entry) return '<summary>Location guide <em>Not built yet</em></summary><div class="gd-body"><p class="ho-hint">Lively places of ' + TT.esc(city) + ' for your client: sights, food and nightlife.</p><button type="button" class="ib" data-gd="build">Choose lively places</button></div>';
     const on = (entry.spots || []).filter(s => s.on).length;
     const body = '<p class="ho-hint">Tick the lively areas your client will see on the ' + TT.esc(city) + ' page and map (up to ' + MAX_ON + '). They also show as "Nearby" on each hotel, with the distance.</p>' + list(entry) + tools(entry, modal);
     if (modal) return body;
-    return '<summary>Local guide <em' + (entry.confirmed !== false ? '' : ' class="need"') + '>' + (entry.confirmed !== false ? on + ' picked' : 'Choose places') + '</em></summary><div class="gd-body">' + body + '</div>';
+    return '<summary>Location guide <em' + (entry.confirmed !== false ? '' : ' class="need"') + '>' + (entry.confirmed !== false ? on + ' picked' : 'Choose places') + '</em></summary><div class="gd-body">' + body + '</div>';
   }
 
   const html = (g, guide) => { const e = guide[ckey(g.city)]; return '<details class="gd" data-ck="' + TT.esc(ckey(g.city)) + '" data-city="' + TT.esc(g.city) + '"' + (e && e.confirmed === false ? ' open' : '') + '>' + inner(g.city, e) + '</details>'; };
