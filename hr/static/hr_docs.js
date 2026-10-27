@@ -105,7 +105,7 @@
   }
 
   // ---- payslip
-  function newPayslip(cfg, emp, year, month) {
+  function newPayslip(cfg, emp, year, month, lop) {
     const amount = Number(emp.amount) || 0, ps = cfg.payslip || {};
     const days = new Date(year, month + 1, 0).getDate(), period = monthLabel(year, month);
     const payDate = new Date(year, month + 1, 3), pd = payDate.getFullYear() + '-' + String(payDate.getMonth() + 1).padStart(2, '0') + '-03';
@@ -114,8 +114,8 @@
       company: clone(cfg.company), period, pay_date: pd, accent: ps.accent || '#16a34a',
       rows: [{ label: 'Employee Name', value: emp.full_name || '' }, { label: 'Employee ID', value: emp.emp_code || '' }, { label: 'Pay Period', value: period }, { label: 'Pay Date', value: slashDate(pd) }].concat(
         emp.designation ? [{ label: 'Designation', value: emp.designation }] : [], emp.pan ? [{ label: 'PAN', value: emp.pan }] : []),
-      paid_days: days, lop_days: 0,
-      earnings: (ps.earnings || ['Basic']).map((l, i) => ({ label: l, amount: i === 0 ? amount : 0 })),
+      paid_days: days - (lop || 0), lop_days: lop || 0,
+      earnings: (ps.earnings || ['Basic']).map((l, i) => ({ label: l, amount: i === 0 ? Math.round(amount * (days - (lop || 0)) / days) : 0 })),  // loss-of-pay days reduce the first earning
       deductions: (ps.deductions || []).map(l => ({ label: l, amount: 0 })),
       footer: ps.footer || '', show_words: true, show_logo: false,
     };
@@ -186,16 +186,17 @@ mark.hd-miss{background:#fde68a;color:#92400e;padding:0 2px;border-radius:3px}
 `;
 
   /** opens a print window with the paper only: use "Save as PDF" in the print dialog */
-  function print(doc) {
+  function print(input) {  // one document, or a list of them (one page each)
+    const docs = Array.isArray(input) ? input : [input], doc = docs[0];
     const w = window.open('', '_blank');
     if (!w) return false;
     const font = '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">';
-    w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + esc(doc.summary || 'Document') + '</title>' + font + '<style>body{margin:0;background:#fff}' + CSS + '</style></head><body>' + html(doc) + '</body></html>');
+    w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + esc(doc.summary || 'Document') + '</title>' + font + '<style>body{margin:0;background:#fff}' + CSS + '</style></head><body>' + docs.map(html).join('') + '</body></html>');
     w.document.close();
     const go = () => { w.focus(); w.print(); };
     setTimeout(go, 700);  // after the logo and the font have loaded
     return true;
   }
 
-  Object.assign(HR, { esc, clone, words, inr, num, longDate, slashDate, letterDate, today, parseISO, FULL_MONTHS, monthLabel, money0, rich, fill, varsIn, allVars, offerVars, newOffer, newPayslip, totals, html, CSS, print });
+  Object.assign(HR, { daysIn: (y, m) => new Date(y, m + 1, 0).getDate(), esc, clone, words, inr, num, longDate, slashDate, letterDate, today, parseISO, FULL_MONTHS, monthLabel, money0, rich, fill, varsIn, allVars, offerVars, newOffer, newPayslip, totals, html, CSS, print });
 })(window.HR = window.HR || {});

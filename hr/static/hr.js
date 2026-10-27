@@ -20,47 +20,86 @@
   const byId = id => state.emps.find(e => e.id === id);
   const titles = () => state.cfg.titles.map(t => t.name);
   const tplKeyFor = title => ((state.cfg.titles.find(t => t.name === title) || {}).template) || 'employee';
-  const chipCls = t => 'hr-chip t-' + (t === 'Intern' ? 'intern' : t === 'Employee' ? 'emp' : 'other');
+  const chipCls = t => 'chip t-' + (t === 'Intern' ? 'intern' : t === 'Employee' ? 'emp' : 'other');
 
   // ---------------------------------------------------------------- shell
+  const IC = {
+    users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
+    doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
+    slip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>',
+    print: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4v-7h16v7h-2M7 14h10v7H7z"/></svg>',
+    cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+    cog: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>',
+    type: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7V5h16v2M9 19h6M12 5v14"/></svg>',
+    build: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M10 21v-4h4v4"/></svg>',
+  };
+  const initials = n => String(n || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  const hue = n => { let h = 0; for (const c of String(n)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+  const avatar = n => '<div class="av" style="background:hsl(' + hue(n) + ' 55% 46%)">' + esc(initials(n)) + '</div>';
+  const ago = iso => {
+    const d = iso ? new Date(iso) : null; if (!d) return '';
+    const days = Math.floor((Date.now() - d) / 864e5);
+    return days < 1 ? 'Today' : days === 1 ? 'Yesterday' : days < 30 ? days + ' days ago' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
   function shell() {
-    root.innerHTML = '<div class="hr"><div class="hr-top"><div class="hr-tabs">' +
-      [['people', 'People'], ['documents', 'Documents'], ['settings', 'Letterhead & templates']].map(t => '<button data-view="' + t[0] + '">' + t[1] + '</button>').join('') +
-      '</div></div><div id="hrBody"></div></div><dialog id="hrPerson"></dialog><div id="hrEd" hidden></div>';
+    root.innerHTML = '<div class="hero"><div class="tabs" id="hrTabs"></div></div><div id="hrBody"></div><dialog id="hrPerson"></dialog><dialog id="hrBulk"></dialog><div id="hrEd" hidden></div>';
     root.addEventListener('click', onClick);
-    $$('.hr-tabs button', root).forEach(b => b.classList.toggle('on', b.dataset.view === view));
     draw();
   }
   function draw() {
-    $$('.hr-tabs button', root).forEach(b => b.classList.toggle('on', b.dataset.view === view));
+    $('#hrTabs').innerHTML = [['people', 'People', state.emps.length], ['documents', 'Documents', state.docs.length], ['settings', 'Letterhead & templates', '']]
+      .map(t => '<button data-view="' + t[0] + '" class="' + (t[0] === view ? 'on' : '') + '">' + t[1] + (t[2] !== '' ? ' <i>' + t[2] + '</i>' : '') + '</button>').join('');
     $('#hrBody').innerHTML = view === 'people' ? peopleHtml() : view === 'documents' ? docsHtml() : settingsHtml();
   }
 
   // ---------------------------------------------------------------- people
   function peopleHtml() {
-    const q = filter.q.toLowerCase();
+    const q = filter.q.toLowerCase(), active = state.emps.filter(e => e.status !== 'exited');
     const list = state.emps.filter(e => (!filter.title || e.title === filter.title) && (!q || (e.full_name + ' ' + e.designation + ' ' + e.emp_code + ' ' + e.email).toLowerCase().includes(q)));
-    const chips = ['All'].concat(titles()).map(t => '<button class="hr-f' + ((t === 'All' && !filter.title) || t === filter.title ? ' on' : '') + '" data-filter="' + esc(t === 'All' ? '' : t) + '">' + esc(t) +
-      (t === 'All' ? '' : ' <i>' + state.emps.filter(e => e.title === t).length + '</i>') + '</button>').join('');
-    return '<div class="hr-bar"><input class="hr-search" id="hrQ" placeholder="Search people" value="' + esc(filter.q) + '"><div class="hr-fs">' + chips + '</div><button class="btn primary" data-act="add-person">+ Onboard person</button></div>' +
-      (list.length ? '<div class="hr-tw"><table class="hr-t"><thead><tr><th>ID</th><th>Name</th><th>Title</th><th>Designation</th><th>Joined</th><th class="r">Monthly</th><th></th></tr></thead><tbody>' +
-        list.map(e => '<tr class="' + (e.status === 'exited' ? 'off' : '') + '"><td>' + esc(e.emp_code) + '</td><td><b>' + esc(e.full_name) + '</b><small>' + esc(e.email || e.phone) + '</small></td><td><span class="' + chipCls(e.title) + '">' + esc(e.title) + '</span></td><td>' + esc(e.designation) +
-          '</td><td>' + esc(fmtDate(e.join_date)) + '</td><td class="r">' + (e.amount ? HR.inr(e.amount) : '–') + '</td><td class="act"><button class="btn secondary sm" data-act="offer" data-id="' + e.id + '">Offer letter</button><button class="btn secondary sm" data-act="payslip" data-id="' + e.id +
-          '">Payslip</button><button class="btn secondary sm" data-act="edit-person" data-id="' + e.id + '">Edit</button></td></tr>').join('') + '</tbody></table></div>' :
-        '<div class="hr-empty"><b>' + (state.emps.length ? 'No one matches' : 'No one onboarded yet') + '</b><p>Onboard a person, give them a title, and generate their offer letter and payslips.</p></div>');
+    const pills = ['All'].concat(titles()).map(t => '<button class="pill' + ((t === 'All' && !filter.title) || t === filter.title ? ' on' : '') + '" data-filter="' + esc(t === 'All' ? '' : t) + '">' + esc(t) +
+      (t === 'All' ? '' : '<i>' + state.emps.filter(e => e.title === t).length + '</i>') + '</button>').join('');
+    const stats = '<div class="stats"><div class="stat"><b>' + active.length + '</b><span>Active people</span></div>' +
+      titles().slice(0, 2).map(t => '<div class="stat"><b>' + active.filter(e => e.title === t).length + '</b><span>' + esc(t) + 's</span></div>').join('') +
+      '<div class="stat"><b>' + state.docs.length + '</b><span>Documents made</span></div></div>';
+    const bar = '<div class="bar"><div class="search">' + IC.search + '<input id="hrQ" placeholder="Search by name, role or ID" value="' + esc(filter.q) + '"></div><div class="pills">' + pills + '</div><span class="sp"></span>' +
+      '<button class="hb hb-g" data-act="bulk">' + IC.slip + 'Bulk payslips</button><button class="hb hb-p" data-act="add-person">' + IC.plus + 'Onboard person</button></div>';
+    if (!state.emps.length) {
+      return '<div class="empty"><div class="ico">' + IC.users + '</div><b>Onboard your first person</b><p>Add them with a title like Employee or Intern, then create their offer letter and payslips in a click.</p>' +
+        '<button class="hb hb-p" data-act="add-person">' + IC.plus + 'Onboard person</button></div>';
+    }
+    return stats + bar + (list.length ? '<div class="list">' + list.map(e => {
+      const tail = e.title === 'Intern' && e.end_date ? 'Until ' + fmtDate(e.end_date) : '';
+      return '<div class="card' + (e.status === 'exited' ? ' off' : '') + '">' + avatar(e.full_name) + '<div class="nm"><b>' + esc(e.full_name) + '</b><small>' + esc([e.designation, e.emp_code && 'ID ' + e.emp_code].filter(Boolean).join(' · ') || e.email || 'No designation yet') + '</small></div>' +
+        '<div class="ct"><span class="' + chipCls(e.title) + '">' + esc(e.title) + (e.status === 'exited' ? ' · Exited' : '') + '</span></div>' +
+        '<div class="meta"><b>' + (e.amount ? HR.inr(e.amount) : 'No amount set') + '</b>' + (e.join_date ? 'Joined ' + esc(fmtDate(e.join_date)) : 'No joining date') + (tail ? ' · ' + esc(tail) : '') + '</div>' +
+        '<div class="acts"><button class="hb hb-g sm" data-act="offer" data-id="' + e.id + '">' + IC.doc + 'Offer letter</button><button class="hb hb-g sm" data-act="payslip" data-id="' + e.id + '">' + IC.slip + 'Payslip</button>' +
+        '<button class="hb hb-t sm" data-act="edit-person" data-id="' + e.id + '" aria-label="Edit ' + esc(e.full_name) + '">' + IC.edit + 'Edit</button></div></div>';
+    }).join('') + '</div>' : '<div class="empty"><b>No one matches</b><p>Try another name or clear the filter.</p></div>');
   }
 
   function personForm(e) {
-    const f = (k, label, type, extra) => '<label class="hr-f2' + (extra && extra.wide ? ' wide' : '') + '"><span>' + label + '</span>' + (type === 'textarea' ? '<textarea name="' + k + '" rows="3">' + esc(e[k] || '') + '</textarea>' :
-      '<input name="' + k + '" type="' + (type || 'text') + '" value="' + esc(e[k] == null ? '' : e[k]) + '"' + (type === 'number' ? ' min="0" step="any"' : '') + '></label>');
-    return '<form method="dialog" id="hrPersonForm"><h3>' + (e.id ? 'Edit person' : 'Onboard a person') + '</h3><div class="hr-g">' +
-      '<label class="hr-f2"><span>Title</span><select name="title">' + titles().map(t => '<option' + (t === e.title ? ' selected' : '') + '>' + esc(t) + '</option>').join('') + '</select></label>' +
-      f('full_name', 'Full name', 'text') + f('designation', 'Designation / job title (shown in the letter)', 'text', { wide: true }) + f('emp_code', 'Employee ID', 'text') + f('department', 'Department', 'text') +
-      f('email', 'Email', 'email') + f('phone', 'Phone', 'text') + f('institute', 'College / institute (for interns)', 'text', { wide: true }) + f('address', 'Address', 'textarea', { wide: true }) +
-      f('join_date', 'Joining date', 'date') + f('end_date', 'End date (interns)', 'date') + f('amount', 'Monthly salary / stipend (₹)', 'number') + f('pan', 'PAN', 'text') + f('bank_account', 'Bank account', 'text') +
-      '<label class="hr-f2"><span>Status</span><select name="status"><option value="active"' + (e.status !== 'exited' ? ' selected' : '') + '>Active</option><option value="exited"' + (e.status === 'exited' ? ' selected' : '') + '>Exited</option></select></label>' +
-      f('notes', 'Internal notes', 'textarea', { wide: true }) + '</div><div class="hr-dact">' + (e.id ? '<button type="button" class="btn danger" data-act="del-person" data-id="' + e.id + '">Delete</button>' : '') +
-      '<span class="sp"></span><button type="button" class="btn secondary" data-act="close-person">Cancel</button><button type="submit" class="btn primary">Save</button></div></form>';
+    const f = (k, label, type, extra) => '<label class="fld' + (extra && extra.wide ? ' wide' : '') + '"><span>' + label + '</span>' + (type === 'textarea' ? '<textarea name="' + k + '" rows="3"' + (extra && extra.ph ? ' placeholder="' + esc(extra.ph) + '"' : '') + '>' + esc(e[k] || '') + '</textarea>' :
+      '<input name="' + k + '" type="' + (type || 'text') + '" value="' + esc(e[k] == null ? '' : e[k]) + '"' + (type === 'number' ? ' min="0" step="any"' : '') + (extra && extra.ph ? ' placeholder="' + esc(extra.ph) + '"' : '') + (extra && extra.req ? ' required' : '') + '></label>');
+    const seg = titles().map(t => '<label><input type="radio" name="title" value="' + esc(t) + '"' + (t === e.title ? ' checked' : '') + '><span>' + esc(t) + '</span></label>').join('');
+    return '<form id="hrPersonForm" style="display:contents"><div class="dh"><div><h3>' + (e.id ? 'Edit ' + esc(e.full_name) : 'Onboard a person') + '</h3><p>' + (e.id ? 'Changes apply to new documents. Saved documents keep what they had.' : 'Add the basics now. You can fill in the rest later.') + '</p></div></div>' +
+      '<div class="db"><div class="grp"><h4>Who are they?</h4><div class="seg" role="radiogroup" aria-label="Title">' + seg + '</div></div>' +
+      '<div class="grp"><h4>Basics</h4><div class="grid">' + f('full_name', 'Full name', 'text', { wide: true, req: true, ph: 'e.g. Priya Sen' }) + f('designation', 'Job title <em>(printed in the letter)</em>', 'text', { wide: true, ph: 'e.g. Travel Consultant' }) +
+      f('department', 'Department', 'text') + f('emp_code', 'Employee ID <em>(auto if empty)</em>', 'text') + '</div></div>' +
+      '<div class="grp"><h4>Contact</h4><div class="grid">' + f('email', 'Email', 'email') + f('phone', 'Phone', 'text') + f('institute', 'College / institute <em>(interns)</em>', 'text', { wide: true }) + f('address', 'Address <em>(printed on the letter)</em>', 'textarea', { wide: true, ph: 'Street, city, PIN' }) + '</div></div>' +
+      '<div class="grp"><h4>Employment</h4><div class="grid">' + f('join_date', 'Joining date', 'date') + f('end_date', 'End date <em>(interns)</em>', 'date') + f('amount', 'Monthly salary or stipend (₹)', 'number', { ph: '0' }) +
+      '<label class="fld"><span>Status</span><select name="status"><option value="active"' + (e.status !== 'exited' ? ' selected' : '') + '>Active</option><option value="exited"' + (e.status === 'exited' ? ' selected' : '') + '>Exited</option></select></label></div></div>' +
+      '<div class="grp"><h4>Payroll details</h4><div class="grid">' + f('pan', 'PAN', 'text') + f('bank_account', 'Bank account', 'text') + f('notes', 'Internal notes <em>(never printed)</em>', 'textarea', { wide: true }) + '</div></div></div>' +
+      '<div class="df">' + (e.id ? '<button type="button" class="hb hb-d" data-act="del-person" data-id="' + e.id + '">Delete</button>' : '') + '<span class="sp"></span><button type="button" class="hb hb-g" data-act="close-person">Cancel</button><button type="submit" class="hb hb-p">' + (e.id ? 'Save changes' : 'Onboard') + '</button></div></form>';
+  }
+  function personDone(emp) {
+    $('#hrPerson').innerHTML = '<div class="db"><div class="done"><div class="ok">' + IC.check + '</div><h3>' + esc(emp.full_name) + ' is onboarded</h3><p>' + esc(emp.title) + (emp.designation ? ' · ' + esc(emp.designation) : '') + '. What would you like to do next?</p>' +
+      '<div class="next"><button class="hb hb-p" data-act="offer" data-id="' + emp.id + '">' + IC.doc + 'Create offer letter</button><button class="hb hb-g" data-act="payslip" data-id="' + emp.id + '">' + IC.slip + 'Create a payslip</button>' +
+      '<button class="hb hb-t" data-act="close-person">Not now</button></div></div></div>';
   }
   function openPerson(e) {
     const d = $('#hrPerson'); d.innerHTML = personForm(e);
@@ -70,42 +109,92 @@
       const body = Object.fromEntries(new FormData(ev.target).entries());
       try {
         const r = await api('/api/hr/employees' + (e.id ? '/' + e.id : ''), { method: e.id ? 'PUT' : 'POST', json: body });
-        if (e.id) state.emps = state.emps.map(x => (x.id === e.id ? r.employee : x)); else state.emps.push(r.employee);
-        d.close(); draw(); toast('Saved');
+        if (e.id) { state.emps = state.emps.map(x => (x.id === e.id ? r.employee : x)); d.close(); toast('Saved'); } else { state.emps.push(r.employee); personDone(r.employee); }
+        draw();
       } catch (err) { toast(err.message, true); }
     });
   }
 
+  // ---------------------------------------------------------------- bulk payslips
+  let bulk = null;  // { y, m, lop: {employee id: days}, on: Set of employee ids }
+  const hasSlip = (eid, period) => state.docs.some(d => d.kind === 'payslip' && d.employee_id === eid && (d.summary || '').startsWith('Payslip ' + period + ' ·'));
+
+  function bulkHtml() {
+    const period = HR.monthLabel(bulk.y, bulk.m), days = HR.daysIn(bulk.y, bulk.m);
+    const people = state.emps.filter(e => e.status !== 'exited');
+    const months = HR.FULL_MONTHS.map((n, i) => '<option value="' + i + '"' + (i === bulk.m ? ' selected' : '') + '>' + n + '</option>').join('');
+    const rows = people.map(e => {
+      const done = hasSlip(e.id, period), lop = bulk.lop[e.id] || 0;
+      return '<tr class="' + (done ? 'done' : '') + '"><td><input type="checkbox" data-bk="on" data-id="' + e.id + '"' + (bulk.on.has(e.id) ? ' checked' : '') + '></td><td><b>' + esc(e.full_name) + '</b><small>' + esc(e.title) + (e.designation ? ' · ' + esc(e.designation) : '') + '</small></td>' +
+        '<td class="r">' + (e.amount ? HR.inr(e.amount) : '<em class="warn">No amount</em>') + '</td><td><input type="number" min="0" max="' + days + '" step="0.5" data-bk="lop" data-id="' + e.id + '" value="' + lop + '"></td><td class="r">' +
+        (e.amount ? HR.inr(Math.round(e.amount * (days - lop) / days)) : '–') + '</td><td>' + (done ? '<span class="chip t-other">Already made</span>' : '') + '</td></tr>';
+    }).join('');
+    return '<div class="dh"><div><h3>Bulk payslips</h3><p>One payslip per person for the month. Review loss-of-pay days, then generate.</p></div></div><div class="db"><div class="bk"><label class="fld"><span>Month</span><select data-bk="m">' + months + '</select></label><label class="fld"><span>Year</span><input type="number" data-bk="y" value="' + bulk.y + '"></label>' +
+      '<p class="hint">' + days + ' days in ' + esc(period) + '. Basic is reduced for loss-of-pay days. People who already have this month\u2019s payslip start unticked.</p></div>' +
+      (people.length ? '<div class="tbl"><table><thead><tr><th></th><th>Person</th><th class="r">Monthly</th><th>LOP days</th><th class="r">Basic to pay</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="empty"><b>No active people</b></div>') + '</div>' +
+      '<div class="df"><span id="hrBulkMsg" class="hint" style="margin:0"></span><span class="sp"></span><button type="button" class="hb hb-g" data-act="bulk-close">Close</button><button type="button" class="hb hb-g" data-act="bulk-print">' + IC.print + 'Generate &amp; print all</button><button type="button" class="hb hb-p" data-act="bulk-go">Generate payslips</button></div>';
+  }
+  function bulkPick() {  // everyone active with a salary, except who already has this month's payslip
+    const period = HR.monthLabel(bulk.y, bulk.m);
+    bulk.on = new Set(state.emps.filter(e => e.status !== 'exited' && e.amount > 0 && !hasSlip(e.id, period)).map(e => e.id));
+  }
+  function openBulk() {
+    const n = new Date(), last = new Date(n.getFullYear(), n.getMonth() - 1, 1);
+    bulk = { y: last.getFullYear(), m: last.getMonth(), lop: {}, on: new Set() };
+    bulkPick(); $('#hrBulk').innerHTML = bulkHtml(); $('#hrBulk').showModal();
+  }
+  async function bulkGenerate(printAll) {
+    const picked = state.emps.filter(e => bulk.on.has(e.id));
+    if (!picked.length) return toast('Tick at least one person.', true);
+    const msg = $('#hrBulkMsg'), made = [];
+    $$('#hrBulk .hb').forEach(b => { b.disabled = true; });
+    try {
+      for (const e of picked) {
+        msg.textContent = 'Making ' + (made.length + 1) + ' of ' + picked.length + '…';
+        const doc = HR.newPayslip(state.cfg, e, bulk.y, bulk.m, bulk.lop[e.id] || 0);
+        const r = await api('/api/hr/documents', { method: 'POST', json: { kind: 'payslip', employee_id: e.id, title: doc.summary, data: doc } });
+        state.docs.unshift(r.document); made.push(doc);
+      }
+      toast(made.length + ' payslip' + (made.length === 1 ? '' : 's') + ' made for ' + HR.monthLabel(bulk.y, bulk.m));
+      $('#hrBulk').close(); view = 'documents'; filter.kind = 'payslip'; draw();
+      if (printAll && !HR.print(made)) toast('Allow pop-ups to print.', true);
+    } catch (err) {
+      toast((made.length ? made.length + ' made, then: ' : '') + err.message, true);
+      $$('#hrBulk .hb').forEach(b => { b.disabled = false; }); msg.textContent = '';
+    }
+  }
+
   // ---------------------------------------------------------------- documents list
   function docsHtml() {
-    const k = filter.kind || '';
+    const k = filter.kind || '', n = x => state.docs.filter(d => !x || d.kind === x).length;
     const list = state.docs.filter(d => !k || d.kind === k);
-    return '<div class="hr-bar"><div class="hr-fs">' + [['', 'All'], ['offer', 'Offer letters'], ['payslip', 'Payslips']].map(t => '<button class="hr-f' + (k === t[0] ? ' on' : '') + '" data-kind="' + t[0] + '">' + t[1] + '</button>').join('') + '</div></div>' +
-      (list.length ? '<div class="hr-tw"><table class="hr-t"><thead><tr><th>Document</th><th>Person</th><th>Updated</th><th></th></tr></thead><tbody>' + list.map(d => {
-        const e = byId(d.employee_id);
-        return '<tr><td><b>' + esc(d.summary || d.title) + '</b><small>' + (d.kind === 'offer' ? 'Offer letter' : 'Payslip') + '</small></td><td>' + (e ? esc(e.full_name) : '–') + '</td><td>' + esc((d.updated_at || '').slice(0, 10)) +
-          '</td><td class="act"><button class="btn secondary sm" data-act="open-doc" data-id="' + d.id + '">Open &amp; edit</button><button class="btn secondary sm" data-act="print-doc" data-id="' + d.id + '">PDF</button><button class="btn secondary sm" data-act="del-doc" data-id="' + d.id + '">Delete</button></td></tr>';
-      }).join('') + '</tbody></table></div>' : '<div class="hr-empty"><b>No documents yet</b><p>Generate an offer letter or payslip from the People tab.</p></div>');
+    return '<div class="bar"><div class="pills">' + [['', 'All'], ['offer', 'Offer letters'], ['payslip', 'Payslips']].map(t => '<button class="pill' + (k === t[0] ? ' on' : '') + '" data-kind="' + t[0] + '">' + t[1] + '<i>' + n(t[0]) + '</i></button>').join('') + '</div></div>' +
+      (list.length ? '<div class="list">' + list.map(d => {
+        const e = byId(d.employee_id), offer = d.kind === 'offer';
+        return '<div class="card doc"><div class="dk ' + d.kind + '">' + (offer ? IC.doc : IC.slip) + '</div><div class="nm"><b>' + esc(d.summary || d.title) + '</b><small>' + (offer ? 'Offer letter' : 'Payslip') + (e ? ' · ' + esc(e.full_name) : '') + '</small></div>' +
+          '<div class="meta">Edited<b>' + esc(ago(d.updated_at)) + '</b></div><div class="acts"><button class="hb hb-g sm" data-act="open-doc" data-id="' + d.id + '">' + IC.edit + 'Open &amp; edit</button><button class="hb hb-g sm" data-act="print-doc" data-id="' + d.id + '">' + IC.print + 'PDF</button>' +
+          '<button class="hb hb-t sm" data-act="del-doc" data-id="' + d.id + '">Delete</button></div></div>';
+      }).join('') + '</div>' : '<div class="empty"><div class="ico">' + IC.doc + '</div><b>No documents yet</b><p>Create an offer letter or a payslip from the People tab, or generate payslips for everyone at once.</p><button class="hb hb-p" data-act="bulk">' + IC.slip + 'Bulk payslips</button></div>');
   }
 
   // ---------------------------------------------------------------- settings
   function settingsHtml() {
     const c = state.cfg, co = c.company, tpls = Object.keys(c.offers);
-    const f = (path, label, val, wide, type) => '<label class="hr-f2' + (wide ? ' wide' : '') + '"><span>' + label + '</span>' + (type === 'textarea' ? '<textarea data-s="' + path + '" rows="3">' + esc(val) + '</textarea>' : '<input data-s="' + path + '" value="' + esc(val) + '">') + '</label>';
-    return '<div class="hr-card"><h3>Letterhead</h3><div class="hr-g">' + f('company.name', 'Company name (top of letters and payslips)', co.name, true) + f('company.short_name', 'Short name (used in the text)', co.short_name) + f('company.legal_name', 'Legal name (used in the text)', co.legal_name) +
+    const f = (path, label, val, wide, type) => '<label class="fld' + (wide ? ' wide' : '') + '"><span>' + label + '</span>' + (type === 'textarea' ? '<textarea data-s="' + path + '" rows="3">' + esc(val) + '</textarea>' : '<input data-s="' + path + '" value="' + esc(val) + '">') + '</label>';
+    return '<div class="sec"><h3>Letterhead</h3><div class="grid">' + f('company.name', 'Company name (top of letters and payslips)', co.name, true) + f('company.short_name', 'Short name (used in the text)', co.short_name) + f('company.legal_name', 'Legal name (used in the text)', co.legal_name) +
       f('company.address', 'Address (one line per row)', co.address, true, 'textarea') + f('company.phone', 'Phone', co.phone) + f('company.email', 'Email', co.email) +
-      '<div class="hr-f2 wide"><span>Logo</span><div class="hr-logo">' + (co.logo ? '<img src="' + esc(co.logo) + '" alt="">' : '<em>No logo</em>') + '<label class="btn secondary sm">Upload<input type="file" accept="image/*" hidden id="hrLogo"></label>' +
-      (co.logo ? '<button class="btn secondary sm" data-act="logo-clear">Remove</button>' : '') + '</div></div>' + f('signatory.name', 'Signatory name', c.signatory.name) + f('signatory.title', 'Signatory title', c.signatory.title) + '</div></div>' +
-      '<div class="hr-card"><h3>Titles</h3><p class="hr-hint">A title decides which offer letter a person gets. Assign it when onboarding. Add Consultant, Trainee, or anything else you use.</p><div class="hr-titles">' +
-      c.titles.map((t, i) => '<div class="hr-trow"><input data-s="titles.' + i + '.name" value="' + esc(t.name) + '"><select data-s="titles.' + i + '.template">' + tpls.map(k => '<option value="' + esc(k) + '"' + (k === t.template ? ' selected' : '') + '>' + esc(c.offers[k].label || k) + '</option>').join('') +
-        '</select>' + (c.titles.length > 1 ? '<button class="btn secondary sm" data-act="rm-title" data-i="' + i + '">Remove</button>' : '') + '</div>').join('') + '</div><button class="btn secondary sm" data-act="add-title">+ Add title</button></div>' +
-      '<div class="hr-card"><h3>Offer letter templates</h3><p class="hr-hint">Edit the wording once; every new letter starts from it. Letters already generated are not changed.</p>' +
-      tpls.map(k => '<div class="hr-trow"><b>' + esc(c.offers[k].label || k) + '</b><span class="sp"></span><button class="btn secondary sm" data-act="edit-tpl" data-k="' + esc(k) + '">Edit wording</button><button class="btn secondary sm" data-act="dup-tpl" data-k="' + esc(k) + '">Duplicate</button>' +
-        (state.defaults.offers[k] ? '<button class="btn secondary sm" data-act="reset-tpl" data-k="' + esc(k) + '">Reset</button>' : '<button class="btn secondary sm" data-act="del-tpl" data-k="' + esc(k) + '">Delete</button>') + '</div>').join('') + '</div>' +
-      '<div class="hr-card"><h3>Payslip defaults</h3><div class="hr-g"><label class="hr-f2"><span>Earnings (one per line)</span><textarea data-s="payslip.earnings" data-lines rows="5">' + esc(c.payslip.earnings.join('\n')) + '</textarea></label>' +
-      '<label class="hr-f2"><span>Deductions (one per line)</span><textarea data-s="payslip.deductions" data-lines rows="5">' + esc(c.payslip.deductions.join('\n')) + '</textarea></label>' + f('payslip.footer', 'Footer note', c.payslip.footer, true) +
-      '<label class="hr-f2"><span>Accent colour</span><input type="color" data-s="payslip.accent" value="' + esc(c.payslip.accent) + '"></label></div></div>' +
-      '<div class="hr-dact"><span class="sp"></span><button class="btn primary" data-act="save-config">Save settings</button></div>';
+      '<div class="fld wide"><span>Logo</span><div class="logo">' + (co.logo ? '<img src="' + esc(co.logo) + '" alt="">' : '<em>No logo</em>') + '<label class="hb hb-g sm">Upload<input type="file" accept="image/*" hidden id="hrLogo"></label>' +
+      (co.logo ? '<button class="hb hb-g sm" data-act="logo-clear">Remove</button>' : '') + '</div></div>' + f('signatory.name', 'Signatory name', c.signatory.name) + f('signatory.title', 'Signatory title', c.signatory.title) + '</div></div>' +
+      '<div class="sec"><h3>Titles</h3><p class="hint">A title decides which offer letter a person gets. Assign it when onboarding. Add Consultant, Trainee, or anything else you use.</p><div class="trows">' +
+      c.titles.map((t, i) => '<div class="trow"><input data-s="titles.' + i + '.name" value="' + esc(t.name) + '"><select data-s="titles.' + i + '.template">' + tpls.map(k => '<option value="' + esc(k) + '"' + (k === t.template ? ' selected' : '') + '>' + esc(c.offers[k].label || k) + '</option>').join('') +
+        '</select>' + (c.titles.length > 1 ? '<button class="hb hb-g sm" data-act="rm-title" data-i="' + i + '">Remove</button>' : '') + '</div>').join('') + '</div><button class="hb hb-g sm" data-act="add-title">+ Add title</button></div>' +
+      '<div class="sec"><h3>Offer letter templates</h3><p class="hint">Edit the wording once; every new letter starts from it. Letters already generated are not changed.</p>' +
+      tpls.map(k => '<div class="trow"><b>' + esc(c.offers[k].label || k) + '</b><span class="sp"></span><button class="hb hb-g sm" data-act="edit-tpl" data-k="' + esc(k) + '">Edit wording</button><button class="hb hb-g sm" data-act="dup-tpl" data-k="' + esc(k) + '">Duplicate</button>' +
+        (state.defaults.offers[k] ? '<button class="hb hb-g sm" data-act="reset-tpl" data-k="' + esc(k) + '">Reset</button>' : '<button class="hb hb-g sm" data-act="del-tpl" data-k="' + esc(k) + '">Delete</button>') + '</div>').join('') + '</div>' +
+      '<div class="sec"><h3>Payslip defaults</h3><div class="grid"><label class="fld"><span>Earnings (one per line)</span><textarea data-s="payslip.earnings" data-lines rows="5">' + esc(c.payslip.earnings.join('\n')) + '</textarea></label>' +
+      '<label class="fld"><span>Deductions (one per line)</span><textarea data-s="payslip.deductions" data-lines rows="5">' + esc(c.payslip.deductions.join('\n')) + '</textarea></label>' + f('payslip.footer', 'Footer note', c.payslip.footer, true) +
+      '<label class="fld"><span>Accent colour</span><input type="color" data-s="payslip.accent" value="' + esc(c.payslip.accent) + '"></label></div></div>' +
+      '<div class="savebar"><button class="hb hb-p" data-act="save-config">Save settings</button></div>';
   }
   function setPath(obj, path, val) {
     const p = path.split('.'); let o = obj;
@@ -123,9 +212,9 @@
   function openEditor(doc, meta) {
     ed = Object.assign({ doc, id: null, employee_id: null, mode: 'doc', dirty: false }, meta);
     const el = $('#hrEd'); el.hidden = false; document.body.classList.add('hr-lock');
-    el.innerHTML = '<div class="hr-edbar"><button class="btn secondary sm" data-act="ed-close">← Back</button><b id="hrEdTitle"></b><span class="sp"></span><span id="hrEdState"></span>' +
-      (ed.mode === 'doc' ? '<button class="btn secondary" data-act="ed-print">Print / Save as PDF</button>' : '') + '<button class="btn primary" data-act="ed-save">' + (ed.mode === 'template' ? 'Save template' : 'Save') + '</button></div>' +
-      '<div class="hr-edmain"><aside id="hrEdForm"></aside><div class="hr-prevwrap" id="hrPrevWrap"><div id="hrPrev"></div></div></div>';
+    el.innerHTML = '<div class="eb"><button class="hb hb-g sm" data-act="ed-close">← Back</button><div><h2 id="hrEdTitle"></h2><small id="hrEdSub"></small></div><span class="sp"></span><span class="st" id="hrEdState">' + (ed.id ? 'Saved' : 'Not saved yet') + '</span>' +
+      (ed.mode === 'doc' ? '<button class="hb hb-g" data-act="ed-print">' + IC.print + 'Print / PDF</button>' : '') + '<button class="hb hb-p" data-act="ed-save">' + (ed.mode === 'template' ? 'Save template' : 'Save') + '</button></div>' +
+      '<div class="em"><aside id="hrEdForm"></aside><div class="hr-prevwrap" id="hrPrevWrap"><div class="pvh"><span id="hrPvInfo"></span></div><div id="hrPrev"></div></div></div>';
     drawEdForm(); drawPreview();
     window.addEventListener('resize', fitPreview);
   }
@@ -133,7 +222,7 @@
     if (ed && ed.dirty && !confirm('Close without saving your changes?')) return;
     $('#hrEd').hidden = true; $('#hrEd').innerHTML = ''; document.body.classList.remove('hr-lock'); window.removeEventListener('resize', fitPreview); ed = null;
   }
-  const mark = () => { ed.dirty = true; $('#hrEdState').textContent = 'Unsaved changes'; };
+  const mark = () => { ed.dirty = true; const st = $('#hrEdState'); st.textContent = 'Unsaved changes'; st.classList.add('dirty'); };
 
   function previewDoc() {
     const d = clone(ed.doc);
@@ -146,7 +235,11 @@
   }
   function drawPreview() {
     $('#hrPrev').innerHTML = '<div id="hrPrevIn"><style>' + HR.CSS.replace(/@page\{[^}]*\}/, '').replace(/@media print\{.*\}\s*$/s, '') + '</style><div class="hr-sheet">' + HR.html(previewDoc()) + '</div></div>';
-    $('#hrEdTitle').textContent = ed.mode === 'template' ? 'Template · ' + (ed.doc.label || '') : (ed.doc.summary || 'Document');
+    const e = byId(ed.employee_id);
+    $('#hrEdTitle').textContent = ed.mode === 'template' ? ed.doc.label || 'Template' : (ed.doc.kind === 'payslip' ? 'Payslip · ' + (ed.doc.period || '') : ed.doc.summary || 'Offer letter');
+    $('#hrEdSub').textContent = ed.mode === 'template' ? 'Template wording. New letters start from this.' : (e ? e.full_name + ' · ' + e.title : '');
+    const pages = $$('#hrPrevIn .pg').length;
+    $('#hrPvInfo').textContent = 'A4 · ' + pages + (pages === 1 ? ' page' : ' pages') + ' · changes show instantly';
     fitPreview();
   }
   function fitPreview() {
@@ -156,9 +249,9 @@
     p.style.width = 794 * s + 'px'; p.style.height = inner.offsetHeight * s + 'px';
   }
 
-  const inp = (path, label, val, type, wide, extra) => '<label class="hr-f2' + (wide ? ' wide' : '') + '"><span>' + label + '</span>' +
+  const inp = (path, label, val, type, wide, extra) => '<label class="fld' + (wide ? ' wide' : '') + '"><span>' + label + '</span>' +
     (type === 'textarea' ? '<textarea data-p="' + path + '" rows="' + ((extra && extra.rows) || 3) + '">' + esc(val) + '</textarea>' : '<input data-p="' + path + '" type="' + (type || 'text') + '" value="' + esc(val == null ? '' : val) + '"' + (type === 'number' ? ' step="any"' : '') + '>') + '</label>';
-  const sec = (title, body, open) => '<details class="hr-sec"' + (open ? ' open' : '') + '><summary>' + title + '</summary><div class="hr-g">' + body + '</div></details>';
+  const sec = (title, body, open, icon) => '<details class="es"' + (open ? ' open' : '') + '><summary><span class="si">' + (IC[icon] || IC[/^Details/.test(title) ? 'type' : /^Company/.test(title) ? 'build' : /^Payslip/.test(title) ? 'slip' : /^Employee/.test(title) ? 'users' : /^(Earn|Deduc)/.test(title) ? 'plus' : 'doc']) + '</span>' + title + '</summary><div class="grid">' + body + '</div></details>';
   const pretty = k => k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 
   function companyFields(d) {
@@ -175,23 +268,23 @@
       const builtin = ['company_short', 'company_legal', 'company_name', 'signatory_name', 'signatory_title', 'date'];
       const keys = Array.from(new Set(Object.keys(d.vars || {}).concat(Array.from(used).filter(k => !builtin.includes(k)))));
       h += sec('Letter', (ed.mode === 'doc' ? inp('date', 'Date', d.date, 'date') + inp('recipient', 'Addressed to', d.recipient, 'textarea', true, { rows: 4 }) : inp('label', 'Template name', d.label, 'text', true)) +
-        '<label class="hr-f2"><span>Letterhead</span><select data-p="letterhead">' + [['company', 'Company block + logo'], ['logo', 'Title + logo'], ['none', 'None']].map(o => '<option value="' + o[0] + '"' + (d.letterhead === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
+        '<label class="fld"><span>Letterhead</span><select data-p="letterhead">' + [['company', 'Company block + logo'], ['logo', 'Title + logo'], ['none', 'None']].map(o => '<option value="' + o[0] + '"' + (d.letterhead === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
         inp('header_title', 'Header title (each page)', d.header_title) +
-        '<label class="hr-f2"><span>Font</span><select data-p="style.font">' + FONTS.map(o => '<option value="' + esc(o[0]) + '"' + (d.style.font === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
-        inp('style.size', 'Font size (pt)', d.style.size, 'number') + '<label class="hr-f2"><span>Alignment</span><select data-p="style.align"><option value="justify"' + (d.style.align !== 'left' ? ' selected' : '') + '>Justified</option><option value="left"' + (d.style.align === 'left' ? ' selected' : '') + '>Left</option></select></label>', true);
+        '<label class="fld"><span>Font</span><select data-p="style.font">' + FONTS.map(o => '<option value="' + esc(o[0]) + '"' + (d.style.font === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
+        inp('style.size', 'Font size (pt)', d.style.size, 'number') + '<label class="fld"><span>Alignment</span><select data-p="style.align"><option value="justify"' + (d.style.align !== 'left' ? ' selected' : '') + '>Justified</option><option value="left"' + (d.style.align === 'left' ? ' selected' : '') + '>Left</option></select></label>', true);
       h += sec('Details in the text <small>' + keys.length + '</small>', keys.map(k => inp('vars.' + k, pretty(k), d.vars[k] == null ? '' : d.vars[k], 'text', k === 'salary_words')).join('') +
-        '<div class="hr-addvar wide"><input id="hrNewVar" placeholder="New detail, e.g. reporting_manager"><button class="btn secondary sm" data-act="add-var">Add</button></div><p class="hr-hint wide">Use a detail in the text as {{name}}. Salary words fill themselves from the salary.</p>', true);
-      h += sec('Company & signatory', companyFields(d) + '<div class="hr-f2 wide"><span>Logo</span><div class="hr-logo">' + (d.company.logo ? '<img src="' + esc(d.company.logo) + '" alt="">' : '<em>No logo</em>') +
-        '<label class="btn secondary sm">Upload<input type="file" accept="image/*" hidden data-logo></label>' + (d.company.logo ? '<button class="btn secondary sm" data-act="ed-logo-clear">Remove</button>' : '') + '</div></div>');
-      h += '<details class="hr-sec" open><summary>Text <small>' + d.blocks.length + ' blocks</small></summary><div class="hr-blocks">' + d.blocks.map((b, i) => blockEd(b, i, d.blocks.length)).join('') +
-        '<div class="hr-addblk"><select id="hrBlkType">' + BLOCKS.map(o => '<option value="' + o[0] + '">' + o[1] + '</option>').join('') + '</select><button class="btn secondary sm" data-act="add-block">+ Add</button></div></div></details>';
+        '<div class="addvar wide"><input id="hrNewVar" placeholder="New detail, e.g. reporting_manager"><button class="hb hb-g sm" data-act="add-var">Add</button></div><p class="hint wide">Use a detail in the text as {{name}}. Salary words fill themselves from the salary.</p>', true);
+      h += sec('Company & signatory', companyFields(d) + '<div class="fld wide"><span>Logo</span><div class="logo">' + (d.company.logo ? '<img src="' + esc(d.company.logo) + '" alt="">' : '<em>No logo</em>') +
+        '<label class="hb hb-g sm">Upload<input type="file" accept="image/*" hidden data-logo></label>' + (d.company.logo ? '<button class="hb hb-g sm" data-act="ed-logo-clear">Remove</button>' : '') + '</div></div>');
+      h += '<details class="es" open><summary><span class="si">' + IC.type + '</span>Text <small>' + d.blocks.length + ' blocks</small></summary><div class="blocks">' + d.blocks.map((b, i) => blockEd(b, i, d.blocks.length)).join('') +
+        '<div class="addblk"><select id="hrBlkType">' + BLOCKS.map(o => '<option value="' + o[0] + '">' + o[1] + '</option>').join('') + '</select><button class="hb hb-g sm" data-act="add-block">+ Add</button></div></div></details>';
     } else {
       h += sec('Payslip', inp('period', 'Month', d.period) + inp('pay_date', 'Pay date', d.pay_date, 'date') + inp('paid_days', 'Paid days', d.paid_days, 'number') + inp('lop_days', 'LOP days', d.lop_days, 'number') +
-        '<label class="hr-f2"><span>Accent colour</span><input type="color" data-p="accent" value="' + esc(d.accent) + '"></label><label class="hr-f2 hr-chk"><input type="checkbox" data-p="show_words"' + (d.show_words ? ' checked' : '') + '> Show amount in words</label>' + inp('footer', 'Footer note', d.footer, 'text', true), true);
-      h += sec('Employee summary', d.rows.map((r, i) => '<div class="hr-row wide"><input data-p="rows.' + i + '.label" value="' + esc(r.label) + '"><input data-p="rows.' + i + '.value" value="' + esc(r.value) + '"><button class="x" data-act="rm-row" data-l="rows" data-i="' + i + '">×</button></div>').join('') + '<button class="btn secondary sm wide" data-act="add-row" data-l="rows">+ Add row</button>', true);
+        '<label class="fld"><span>Accent colour</span><input type="color" data-p="accent" value="' + esc(d.accent) + '"></label><label class="fld chk"><input type="checkbox" data-p="show_words"' + (d.show_words ? ' checked' : '') + '> Show amount in words</label>' + inp('footer', 'Footer note', d.footer, 'text', true), true);
+      h += sec('Employee summary', d.rows.map((r, i) => '<div class="rowin wide"><input data-p="rows.' + i + '.label" value="' + esc(r.label) + '"><input data-p="rows.' + i + '.value" value="' + esc(r.value) + '"><button class="xb" data-act="rm-row" data-l="rows" data-i="' + i + '">×</button></div>').join('') + '<button class="hb hb-g sm wide" data-act="add-row" data-l="rows">+ Add row</button>', true);
       ['earnings', 'deductions'].forEach(l => {
-        h += sec(pretty(l), d[l].map((r, i) => '<div class="hr-row wide"><input data-p="' + l + '.' + i + '.label" value="' + esc(r.label) + '"><input type="number" step="any" data-p="' + l + '.' + i + '.amount" value="' + esc(r.amount) + '"><button class="x" data-act="rm-row" data-l="' + l + '" data-i="' + i + '">×</button></div>').join('') +
-          '<button class="btn secondary sm wide" data-act="add-row" data-l="' + l + '">+ Add ' + (l === 'earnings' ? 'earning' : 'deduction') + '</button>', true);
+        h += sec(pretty(l), d[l].map((r, i) => '<div class="rowin wide"><input data-p="' + l + '.' + i + '.label" value="' + esc(r.label) + '"><input type="number" step="any" data-p="' + l + '.' + i + '.amount" value="' + esc(r.amount) + '"><button class="xb" data-act="rm-row" data-l="' + l + '" data-i="' + i + '">×</button></div>').join('') +
+          '<button class="hb hb-g sm wide" data-act="add-row" data-l="' + l + '">+ Add ' + (l === 'earnings' ? 'earning' : 'deduction') + '</button>', true);
       });
       h += sec('Company', companyFields(d));
     }
@@ -199,9 +292,9 @@
     $$('details', f).forEach((x, i) => { if (keep[i] !== undefined) x.open = keep[i]; });
   }
   function blockEd(b, i, n) {
-    const text = b.t === 'pb' || b.t === 'sp' ? '<em class="hr-hint">' + (b.t === 'pb' ? 'Starts a new page' : 'Blank space') + '</em>' : '<textarea data-p="blocks.' + i + '.text" rows="' + Math.min(10, Math.max(2, Math.ceil(String(b.text || '').length / 55))) + '">' + esc(b.text) + '</textarea>';
-    return '<div class="hr-blk"><div class="hr-blkh"><select data-p="blocks.' + i + '.t">' + BLOCKS.map(o => '<option value="' + o[0] + '"' + (b.t === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select><span class="sp"></span>' +
-      '<button data-act="blk-up" data-i="' + i + '"' + (i ? '' : ' disabled') + '>↑</button><button data-act="blk-dn" data-i="' + i + '"' + (i < n - 1 ? '' : ' disabled') + '>↓</button><button class="x" data-act="blk-rm" data-i="' + i + '">×</button></div>' + text + '</div>';
+    const text = b.t === 'pb' || b.t === 'sp' ? '<em class="hint">' + (b.t === 'pb' ? 'Starts a new page' : 'Blank space') + '</em>' : '<textarea data-p="blocks.' + i + '.text" rows="' + Math.min(10, Math.max(2, Math.ceil(String(b.text || '').length / 55))) + '">' + esc(b.text) + '</textarea>';
+    return '<div class="blk"><div class="blkh"><select data-p="blocks.' + i + '.t">' + BLOCKS.map(o => '<option value="' + o[0] + '"' + (b.t === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select><span class="sp"></span>' +
+      '<button data-act="blk-up" data-i="' + i + '"' + (i ? '' : ' disabled') + '>↑</button><button data-act="blk-dn" data-i="' + i + '"' + (i < n - 1 ? '' : ' disabled') + '>↓</button><button class="xb" data-act="blk-rm" data-i="' + i + '">×</button></div>' + text + '</div>';
   }
 
   function onEdInput(e) {
@@ -233,7 +326,7 @@
       const r = await api('/api/hr/documents' + (ed.id ? '/' + ed.id : ''), { method: ed.id ? 'PUT' : 'POST', json: { kind: d.kind, employee_id: ed.employee_id, title: d.summary, data: d } });
       ed.id = r.document.id; ed.dirty = false;
       state.docs = [r.document].concat(state.docs.filter(x => x.id !== r.document.id));
-      $('#hrEdState').textContent = 'Saved'; drawPreview(); toast('Saved');
+      const st = $('#hrEdState'); st.textContent = 'Saved'; st.classList.remove('dirty'); drawPreview(); toast('Saved');
     } catch (err) { toast(err.message, true); }
   }
 
@@ -251,6 +344,10 @@
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act, id = +b.dataset.id, i = +b.dataset.i;
     const emp = byId(id);
+    if (act === 'bulk') return openBulk();
+    if (act === 'bulk-close') return $('#hrBulk').close();
+    if (act === 'bulk-go') return bulkGenerate(false);
+    if (act === 'bulk-print') return bulkGenerate(true);
     if (act === 'add-person') return openPerson({ title: titles()[0], status: 'active' });
     if (act === 'edit-person') return openPerson(emp);
     if (act === 'close-person') return $('#hrPerson').close();
@@ -294,16 +391,26 @@
   // ---------------------------------------------------------------- boot
   async function mount(el) {
     root = el;
-    root.innerHTML = '<p class="hr-hint">Loading…</p>';
+    root.innerHTML = '<p class="hint">Loading…</p>';
     try {
       const d = await api('/api/hr/bootstrap');
       state = { cfg: d.config, defaults: d.defaults, emps: d.employees, docs: d.documents };
-    } catch (err) { root.innerHTML = '<p class="hr-hint">' + esc(err.message) + '</p>'; return; }
+    } catch (err) { root.innerHTML = '<p class="hint">' + esc(err.message) + '</p>'; return; }
     shell();
     root.addEventListener('input', e => {
       if (e.target.id === 'hrQ') { filter.q = e.target.value; const pos = e.target.selectionStart; draw(); const q = $('#hrQ'); q.focus(); q.setSelectionRange(pos, pos); return; }
       const s = e.target.dataset.s;
       if (s) { const val = e.target.hasAttribute('data-lines') ? e.target.value.split('\n').map(x => x.trim()).filter(Boolean) : e.target.value; setPath(state.cfg, s, val); }
+    });
+    root.addEventListener('change', e => {  // the bulk payslip dialog
+      const k = e.target.dataset.bk; if (!k || !bulk) return;
+      const id = +e.target.dataset.id;
+      if (k === 'on') { if (e.target.checked) bulk.on.add(id); else bulk.on.delete(id); return; }
+      if (k === 'lop') bulk.lop[id] = Math.max(0, Math.min(Number(e.target.value) || 0, HR.daysIn(bulk.y, bulk.m)));
+      else if (k === 'm') bulk.m = +e.target.value;
+      else if (k === 'y') bulk.y = Math.max(2000, Math.min(+e.target.value || bulk.y, 2100));
+      if (k !== 'lop') bulkPick();
+      $('#hrBulk').innerHTML = bulkHtml();
     });
     root.addEventListener('change', e => { if (e.target.id === 'hrLogo') readLogo(e.target.files[0], url => { state.cfg.company.logo = url; draw(); }); });
     $('#hrEd').addEventListener('input', onEdInput);
