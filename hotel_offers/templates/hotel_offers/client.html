@@ -86,8 +86,12 @@
               <dl class="facts" id="sFacts"></dl>
 
               <div class="samples" id="sSamples" hidden>
-                <h3 class="s-h">Sample dates</h3>
-                <div class="sm-list" id="smList"></div>
+                <button type="button" class="samples-btn" id="smToggle" aria-expanded="false" aria-controls="smList">
+                  <span class="sb-t"><span class="sb-l">Sample dates</span><span class="sb-v" id="smCur"></span></span>
+                  <span class="sb-n" id="smCount"></span>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div class="sm-list" id="smList" hidden></div>
               </div>
 
               <h3 class="s-h">Included</h3>

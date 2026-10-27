@@ -85,9 +85,17 @@
     const bad = outsideTravel(d);
     return bad.length ? `Outside the travel window: ${bad.map(s => dayLabel(s.check_in) + ' to ' + dayLabel(s.check_out)).join(', ')}. Check these dates or the window.` : '';
   };
+  // an extra sample is published only with check-in, check-out (after check-in) and a price; say which ones are skipped
+  const sampleReady = s => s.check_in && s.check_out && s.check_out > s.check_in && Number(s.our_deal) > 0;
+  const publishableSamples = d => (d.check_in && d.check_out ? 1 : 0) + (d.extra_samples || []).filter(sampleReady).length;
+  function incompleteSamples(d) {
+    return (d.extra_samples || []).map((s, i) => [s, i + 2]).filter(([s]) => !sampleReady(s))
+      .map(([s, n]) => `Sample ${n} ${s.check_in || s.check_out || Number(s.our_deal) ? 'needs check-in, check-out and a price' : 'is empty'}, so clients will not see it.`);
+  }
   function updateSampleWarn() {
-    const el = $('#sampleWarn'), w = travelWarning(state.data);
-    el.hidden = !w; el.textContent = w;
+    const el = $('#sampleWarn'), msgs = incompleteSamples(state.data), w = travelWarning(state.data);
+    if (w) msgs.push(w);
+    el.hidden = !msgs.length; el.innerHTML = msgs.map(m => `<span>${m.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</span>`).join('<br>');
   }
   function renderSamples() {
     if (!Array.isArray(state.data.extra_samples)) state.data.extra_samples = [];
@@ -812,7 +820,7 @@
       $('#glValid').value = gl.editing ? (o.live.valid_till || '') : (gl.data.check_in || '');  // editing keeps a cleared date cleared
       $('#glCity').value = gl.data.city || '';
       $('#glBookFrom').value = gl.data.booking_from || ''; $('#glTravelFrom').value = gl.data.travel_from || ''; $('#glTravelTo').value = gl.data.travel_to || '';
-      glTravelUi();
+      glTravelUi(); glSampleHint();
       $('#glChipCheckin').hidden = !gl.data.check_in;
       glValidUi();
       gl.pick = (o.live && o.live.template_id) || TEMPLATES[0].id;
@@ -873,6 +881,11 @@
   }
   $('#glValid').addEventListener('input', glValidUi);
   // the travel window and the sample dates it should contain: warn when a sample falls outside it
+  function glSampleHint() {
+    const n = publishableSamples(gl.data), skipped = incompleteSamples(gl.data).length, el = $('#glSampleHint');
+    el.textContent = n > 1 ? `Clients will be able to look through ${n} sample dates.${skipped ? ` ${skipped} incomplete ${skipped === 1 ? 'row is' : 'rows are'} left out.` : ''}`
+      : skipped ? 'The extra sample dates are incomplete (each needs check-in, check-out and a price), so only the first is shown.' : 'Only the first sample dates are shown. Add more in the studio to let clients compare.';
+  }
   function glTravelUi() {
     const d = Object.assign({}, gl.data, { travel_from: $('#glTravelFrom').value, travel_to: $('#glTravelTo').value }), w = travelWarning(d), el = $('#glTravelWarn');
     el.hidden = !w; el.textContent = w;

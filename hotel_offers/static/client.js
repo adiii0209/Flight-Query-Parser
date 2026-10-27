@@ -77,7 +77,7 @@
         <div class="card-body">
           ${place(o) || o.offer_headline ? `<div class="card-place">${esc(place(o))}${place(o) && o.offer_headline ? '<i></i>' : ''}${o.offer_headline ? `<span>${esc(o.offer_headline)}</span>` : ''}</div>` : ''}
           <h3>${esc(o.title || o.hotel_name)}</h3>
-          <div class="card-meta">${esc([range(o), nights(o) ? nights(o) + ' nights' : ''].filter(Boolean).join(' · ') || validTill(o))}</div>
+          <div class="card-meta">${esc([range(o), nights(o) ? nights(o) + ' nights' : ''].filter(Boolean).join(' · ') || validTill(o))}${sampleList(o).length > 1 ? `<span class="card-more">+${sampleList(o).length - 1} more date${sampleList(o).length > 2 ? 's' : ''}</span>` : ''}</div>
           ${o.our_deal ? `<div class="card-price"><b>${esc(money(o, o.our_deal))}</b>${o.online_rate > o.our_deal ? `<s>${esc(money(o, o.online_rate))}</s>` : ''}${sv ? `<em>Save ${sv}%</em>` : ''}</div>` : ''}
         </div></article>`;
     }).join('');
@@ -132,13 +132,21 @@
     const list = sampleList(o), box = $('#sSamples');
     box.hidden = list.length < 2;
     if (box.hidden) return;
-    const sel = o._i || 0;
+    const sel = o._i || 0, cur = list[sel];
+    $('#smCur').textContent = range(cur) + (cur.nights ? ` · ${cur.nights} night${cur.nights > 1 ? 's' : ''}` : '');
+    $('#smCount').textContent = `See all ${list.length}`;
     $('#smList').innerHTML = list.map((s, i) => {
       const n = s.nights || nights(s);
       return `<button type="button" class="sample" data-i="${i}" aria-pressed="${i === sel}"><span class="sm-d">${esc(range(s))}</span><span class="sm-n">${n ? n + ' night' + (n > 1 ? 's' : '') : ''}</span>` +
         `<span class="sm-p"><b>${esc(money(o, s.our_deal))}</b>${s.online_rate > s.our_deal ? `<s>${esc(money(o, s.online_rate))}</s>` : ''}</span></button>`;
     }).join('');
   }
+  function toggleSamples(open) {
+    const list = $('#smList'), btn = $('#smToggle');
+    list.hidden = !open; btn.setAttribute('aria-expanded', String(open));
+    $('#sSamples').classList.toggle('open', open);
+  }
+  $('#smToggle').addEventListener('click', () => toggleSamples($('#smList').hidden));
   $('#smList').addEventListener('click', e => {
     const b = e.target.closest('.sample');
     if (!b || !current) return;
@@ -148,6 +156,7 @@
 
   function fillSheet(o) {
     if (sampleList(o).length) useSample(o, 0);  // always open on the first sample (the poster's dates)
+    toggleSamples(false);
     const img = $('#sImg');
     img.classList.remove('ready'); img.alt = (o.title || o.hotel_name) + ' offer poster';
     img.onload = () => img.classList.add('ready'); img.src = o.image;

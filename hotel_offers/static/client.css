@@ -290,3 +290,16 @@ html.lock,html.lock body{overflow-x:hidden}
 .hero{padding:26px 0 22px}
 .sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 @media(min-width:1000px){.hero{padding:44px 0 28px}.nav-wa span{max-width:none}}
+
+/* the button that opens every sample date */
+.samples-btn{width:100%;display:flex;align-items:center;gap:12px;text-align:left;padding:12px 14px;border-radius:18px;border:1.5px solid var(--line);background:transparent;transition:border-color .25s,background .25s}
+.samples-btn:hover{background:var(--surface-2)}
+.samples.open .samples-btn{border-color:var(--text);background:var(--surface-2)}
+.sb-t{flex:1;min-width:0;display:flex;flex-direction:column}
+.sb-l{font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.sb-v{font-weight:500;margin-top:2px}
+.sb-n{flex:none;font-size:.82rem;font-weight:500;color:var(--gold)}
+.samples-btn svg{flex:none;width:20px;height:20px;fill:none;stroke:var(--mute);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:transform .35s var(--ease)}
+.samples.open .samples-btn svg{transform:rotate(180deg)}
+.sm-list[hidden]{display:none}
+.card-more{display:inline-block;margin-left:8px;padding:1px 9px;border-radius:99px;background:var(--surface-2);font-size:.72rem;color:var(--gold);font-weight:500}
