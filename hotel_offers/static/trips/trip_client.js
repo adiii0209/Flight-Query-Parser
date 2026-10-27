@@ -3,6 +3,7 @@
 (function (TT) {
   const slug = document.body.dataset.slug, wa = (document.body.dataset.wa || '').replace(/\D/g, '');
   const root = TT.$('#trip');
+  const openCards = new Set();
   let data = null, groups = [], selection = {}, map = null, chipSel = null, savedY = 0, listY = 0, current = null;
 
   const PIN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.2A7 7 0 0 1 19 9.8C19 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.5"/></svg>';
@@ -35,7 +36,7 @@
   // star class, style and age: small chips under the hotel name; nothing is drawn for what is empty
   function factsRow(stars, style, age) {
     const parts = [];
-    if (stars) parts.push('<span class="tc-chipx tc-starsrow" aria-label="' + stars + '-star hotel"><span aria-hidden="true">' + '★'.repeat(stars) + '</span></span>');
+    if (stars) parts.push('<span class="tc-chipx tc-starsrow"><span aria-hidden="true">★</span>' + stars + ' star property</span>');
     if (style) parts.push('<span class="tc-chipx">' + TT.esc(style) + '</span>');
     if (age) parts.push('<span class="tc-chipx">' + TT.esc(age) + '</span>');
     return parts.length ? '<div class="tc-chiprow">' + parts.join('') + '</div>' : '';
@@ -73,14 +74,16 @@
     const details = many
       ? factsHtml(stay) + o.lines.map((l, i) => '<div class="co-room"><div class="co-room-h"><b>Room ' + (i + 1) + '</b><span>' + TT.money(l.total, cur()) + '</span></div>' + factsHtml(lineFacts(l)) + roomDesc(l) + '<small>' + rateText(l) + '</small></div>').join('')
       : factsHtml(stay.concat(lineFacts(first))) + roomDesc(first);
-    return '<article class="tc-card co' + (isSel && multi ? ' is-sel' : '') + '">' + gallery(o, badges) + '<div class="tc-body"><div class="tc-top"><div><h2>' + TT.esc(o.hotel_name || first.hotel_name) + '</h2>' +
+    const ck = g.key + '|' + o.key, open = openCards.has(ck);
+    const more = (nut ? '<p class="tc-nut">' + TT.esc(nut).replace(/\n/g, '<br>') + '</p>' : '') + perksHtml(perks) + details + linksHtml(info) +
+      (near.length ? '<p class="tc-near"><b>Nearby:</b> ' + near.map(l => TT.esc(l.name)).join(' · ') + '</p>' : '') +
+      (located ? '<button class="tc-pin" data-id="' + located.id + '">View on map</button>' : '');
+    return '<article class="tc-card co' + (isSel && multi ? ' is-sel' : '') + (open ? ' open' : '') + '">' + gallery(o, badges) + '<div class="tc-body"><div class="tc-top"><div><h2>' + TT.esc(o.hotel_name || first.hotel_name) + '</h2>' +
       (first.address ? '<p class="tc-sub">' + TT.esc(first.address) + '</p>' : '') + '</div>' + pick + '</div>' + factsRow(hv('stars'), hv('style'), hv('age_info')) +
       (hv('location_info') ? '<p class="tc-loc">' + PINICON + '<span>' + TT.esc(hv('location_info')) + '</span></p>' : '') +
-      (nut ? '<p class="tc-nut">' + TT.esc(nut).replace(/\n/g, '<br>') + '</p>' : '') + perksHtml(perks) + details +
-      linksHtml(info) +
-      (near.length ? '<p class="tc-near"><b>Nearby:</b> ' + near.map(l => TT.esc(l.name)).join(' · ') + '</p>' : '') +
+      '<div class="tc-more" id="more-' + TT.esc(ck.replace(/[^\w-]/g, '_')) + '">' + more + '</div>' +
       '<div class="tc-foot"><div class="tc-price"><small>' + (many ? 'Total for ' + plural(o.lines.length, 'room') : first.items > 1 ? rateText(first) : 'Stay total') + '</small><b>' + TT.money(o.total, cur()) + '</b></div>' +
-      (located ? '<button class="tc-pin" data-id="' + located.id + '">View on map</button>' : '') + '</div></div></article>';
+      '<button type="button" class="tc-tog" data-ck="' + TT.esc(ck) + '" aria-expanded="' + open + '"><span>' + (open ? 'Hide details' : 'View details') + '</span>' + CHEV + '</button></div></div></article>';
   }
 
   // "27–30 Dec · 3 nights": short enough for the city page bar
@@ -239,6 +242,13 @@
   }
 
   root.addEventListener('click', e => {
+    const tog = e.target.closest('.tc-tog');
+    if (tog) {
+      const card = tog.closest('.co'), on = !card.classList.contains('open');
+      card.classList.toggle('open', on); tog.setAttribute('aria-expanded', on); tog.firstChild.textContent = on ? 'Hide details' : 'View details';
+      if (on) openCards.add(tog.dataset.ck); else openCards.delete(tog.dataset.ck);
+      return;
+    }
     const pick = e.target.closest('.co-pick');
     if (pick) { if (!pick.classList.contains('on')) choose(pick.dataset.g, pick.dataset.o); return; }
     if (e.target.closest('.cc')) { listY = window.scrollY; return; }  // remember where the list was; the link itself changes the page

@@ -184,3 +184,17 @@ a.tc-link:hover{background:var(--line)}
 .pk-ic svg{width:16px;height:16px}
 .pk-tx{font-size:.72rem;font-weight:500;letter-spacing:.07em;text-transform:uppercase;line-height:1.25}
 .tc-roomdesc{font-size:.88rem;color:var(--mute);line-height:1.45}
+
+/* hotel cards: one photo frame size for every hotel, details fold away */
+.cp-opts{align-items:start}
+.tc-ph{aspect-ratio:auto;height:240px;flex:none;overflow:hidden}
+.tc-strip img{height:240px}
+@media(max-width:520px){.tc-ph,.tc-strip img{height:210px}}
+.tc-starsrow{letter-spacing:0;gap:5px;font-weight:500}
+.tc-starsrow span{color:var(--gold)}
+.tc-more{display:none;flex-direction:column;gap:12px}
+.co.open .tc-more{display:flex}
+.tc-more .tc-pin{align-self:flex-start}
+.tc-tog{display:inline-flex;align-items:center;gap:4px;height:38px;padding:0 6px 0 14px;border-radius:99px;font-size:.86rem;font-weight:500;color:var(--mute);background:var(--surface-2)}
+.tc-tog .cc-chev{width:16px;height:16px;transform:none;transition:transform .25s}
+.co.open .tc-tog .cc-chev{transform:rotate(180deg)}
