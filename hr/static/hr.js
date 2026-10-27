@@ -59,7 +59,7 @@
   function draw() {
     $('#hrTabs').innerHTML = [['people', 'People', state.emps.length], ['documents', 'Documents', state.docs.length], ['settings', 'Letterhead & templates', '']]
       .map(t => '<button data-view="' + t[0] + '" class="' + (t[0] === view ? 'on' : '') + '">' + t[1] + (t[2] !== '' ? ' <i>' + t[2] + '</i>' : '') + '</button>').join('');
-    $('#hrLockBtn').innerHTML = protectedOn ? '<button class="hb hb-g sm" data-act="lock-now">' + IC.lock + 'Lock</button>' : '';
+    $('#hrLockBtn').innerHTML = protectedOn ? '<button class="hb hb-g sm" data-act="lock-now">' + IC.lock + 'Lock</button>' : '<button class="hb hb-g sm" data-act="go-password">' + IC.lock + 'Set password</button>';
     $('#hrBody').innerHTML = view === 'people' ? peopleHtml() : view === 'documents' ? docsHtml() : settingsHtml();
   }
 
@@ -436,6 +436,7 @@
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act, id = +b.dataset.id, i = +b.dataset.i;
     const emp = byId(id);
+    if (act === 'go-password') { view = 'settings'; draw(); const c = $('#hrSecurity'); if (c) { c.scrollIntoView({ behavior: 'smooth', block: 'center' }); const i = c.querySelector('input'); if (i) setTimeout(() => i.focus({ preventScroll: true }), 350); } return; }
     if (act === 'pw-save') return savePassword(false);
     if (act === 'pw-remove') return savePassword(true);
     if (act === 'lock-now') { try { await fetch('/api/hr/lock', { method: 'POST' }); } catch (x) { /* locks on the next request anyway */ } return lockScreen(); }
