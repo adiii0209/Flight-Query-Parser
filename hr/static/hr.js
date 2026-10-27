@@ -3,13 +3,17 @@
 (function (HR) {
   const { esc, clone } = HR;
   const $ = (s, r) => (r || document).querySelector(s), $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
-  let root, state = { cfg: null, defaults: null, emps: [], docs: [] }, view = 'people', filter = { q: '', title: '' }, ed = null;
+  let protectedOn = false, bound = false, root, state = { cfg: null, defaults: null, emps: [], docs: [] }, view = 'people', filter = { q: '', title: '' }, ed = null;
 
   async function api(url, opts) {
     opts = opts || {};
     const r = await fetch(url, { method: opts.method || 'GET', headers: opts.json ? { 'Content-Type': 'application/json' } : {}, body: opts.json ? JSON.stringify(opts.json) : undefined });
     let d = {}; try { d = await r.json(); } catch (e) { /* not JSON */ }
-    if (!r.ok) throw new Error(d.error || 'Something went wrong (' + r.status + ')');
+    if (!r.ok) {
+      const err = new Error(d.error || 'Something went wrong (' + r.status + ')');
+      if (r.status === 423) { err.locked = true; lockScreen(); }  // the section locked itself (idle) or was locked from another tab
+      throw err;
+    }
     return d;
   }
   function toast(msg, bad) {
@@ -37,6 +41,7 @@
     type: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7V5h16v2M9 19h6M12 5v14"/></svg>',
     build: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M10 21v-4h4v4"/></svg>',
   };
+  IC.lock = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
   const initials = n => String(n || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
   const hue = n => { let h = 0; for (const c of String(n)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
   const avatar = n => '<div class="av" style="background:hsl(' + hue(n) + ' 55% 46%)">' + esc(initials(n)) + '</div>';
@@ -47,13 +52,14 @@
   };
 
   function shell() {
-    root.innerHTML = '<div class="hero"><div class="tabs" id="hrTabs"></div></div><div id="hrBody"></div><dialog id="hrPerson"></dialog><dialog id="hrBulk"></dialog><div id="hrEd" hidden></div>';
-    root.addEventListener('click', onClick);
+    root.innerHTML = '<div class="hero"><div class="tabs" id="hrTabs"></div><span class="sp"></span><span id="hrLockBtn"></span></div><div id="hrBody"></div><dialog id="hrPerson"></dialog><dialog id="hrBulk"></dialog><div id="hrEd" hidden></div>';
+    bindEditor();
     draw();
   }
   function draw() {
     $('#hrTabs').innerHTML = [['people', 'People', state.emps.length], ['documents', 'Documents', state.docs.length], ['settings', 'Letterhead & templates', '']]
       .map(t => '<button data-view="' + t[0] + '" class="' + (t[0] === view ? 'on' : '') + '">' + t[1] + (t[2] !== '' ? ' <i>' + t[2] + '</i>' : '') + '</button>').join('');
+    $('#hrLockBtn').innerHTML = protectedOn ? '<button class="hb hb-g sm" data-act="lock-now">' + IC.lock + 'Lock</button>' : '';
     $('#hrBody').innerHTML = view === 'people' ? peopleHtml() : view === 'documents' ? docsHtml() : settingsHtml();
   }
 
@@ -183,7 +189,7 @@
   function settingsHtml() {
     const c = state.cfg, co = c.company, tpls = Object.keys(c.offers);
     const f = (path, label, val, wide, type) => '<label class="fld' + (wide ? ' wide' : '') + '"><span>' + label + '</span>' + (type === 'textarea' ? '<textarea data-s="' + path + '" rows="3">' + esc(val) + '</textarea>' : '<input data-s="' + path + '" value="' + esc(val) + '">') + '</label>';
-    return '<div class="sec"><h3>Letterhead</h3><div class="grid">' + f('company.name', 'Company name (top of letters and payslips)', co.name, true) + f('company.short_name', 'Short name (used in the text)', co.short_name) + f('company.legal_name', 'Legal name (used in the text)', co.legal_name) +
+    return securityHtml() + '<div class="sec"><h3>Letterhead</h3><div class="grid">' + f('company.name', 'Company name (top of letters and payslips)', co.name, true) + f('company.short_name', 'Short name (used in the text)', co.short_name) + f('company.legal_name', 'Legal name (used in the text)', co.legal_name) +
       f('company.address', 'Address (one line per row)', co.address, true, 'textarea') + f('company.phone', 'Phone', co.phone) + f('company.email', 'Email', co.email) +
       '<div class="fld wide"><span>Logo</span><div class="logo">' + (co.logo ? '<img src="' + esc(co.logo) + '" alt="">' : '<em>No logo</em>') + '<label class="hb hb-g sm">Upload<input type="file" accept="image/*" hidden id="hrLogo"></label>' +
       (co.logo ? '<button class="hb hb-g sm" data-act="logo-clear">Remove</button>' : '') + '</div></div>' + f('signatory.name', 'Signatory name', c.signatory.name) + f('signatory.title', 'Signatory title', c.signatory.title) + '</div></div>' +
@@ -197,6 +203,37 @@
       '<label class="fld"><span>Deductions (one per line)</span><textarea data-s="payslip.deductions" data-lines rows="5">' + esc(c.payslip.deductions.join('\n')) + '</textarea></label>' + f('payslip.footer', 'Footer note', c.payslip.footer, true) +
       '<label class="fld"><span>Accent colour</span><input type="color" data-s="payslip.accent" value="' + esc(c.payslip.accent) + '"></label></div></div>' +
       '<div class="savebar"><button class="hb hb-p" data-act="save-config">Save settings</button></div>';
+  }
+  function securityHtml() {
+    const pw = (key, label) => '<label class="fld"><span>' + label + '</span><input type="password" data-pw="' + key + '" autocomplete="' + (key === 'current' ? 'current-password' : 'new-password') + '"></label>';
+    return '<div class="sec" id="hrSecurity"><h3>Password for this section</h3><p class="hint">' + (protectedOn ?
+      'HR &amp; Payroll asks for this password before it shows anyone\'s details. It locks again after 30 minutes without use.' : 'Ask for a password before anyone can open people, salaries, offer letters and payslips. Only you will know it, so keep it safe.') + '</p><div class="grid">' +
+      (protectedOn ? pw('current', 'Current password') + '<span></span>' : '') + pw('new', protectedOn ? 'New password' : 'Password') + pw('confirm', 'Type it again') + '</div>' +
+      '<div class="dact"><button class="hb hb-p" data-act="pw-save">' + (protectedOn ? 'Change password' : 'Turn on password') + '</button>' + (protectedOn ? '<button class="hb hb-d" data-act="pw-remove">Remove password</button>' : '') + '</div></div>';
+  }
+  async function savePassword(remove) {
+    const box = $('#hrSecurity'), v = k => (box.querySelector('[data-pw="' + k + '"]') || { value: '' }).value;
+    if (!remove) {
+      if (v('new').length < 6) return toast('Use at least 6 characters.', true);
+      if (v('new') !== v('confirm')) return toast('The two passwords do not match.', true);
+    } else if (!confirm('Remove the password? Anyone who can open Workspace settings will see HR & Payroll.')) return;
+    try {
+      const r = await api('/api/hr/password', { method: 'PUT', json: { current: v('current'), new: remove ? '' : v('new') } });
+      protectedOn = r.protected; draw(); toast(r.protected ? 'Password is on' : 'Password removed');
+    } catch (err) { toast(err.message, true); }
+  }
+  function lockScreen(msg) {
+    document.body.classList.remove('hr-lock'); ed = null; closeDetails && closeDetails();
+    root.innerHTML = '<div class="lockbox"><div class="ico">' + IC.lock + '</div><h3>HR &amp; Payroll is locked</h3><p>Enter the password to see people, salaries and documents.</p>' +
+      '<form id="hrUnlock"><input type="password" id="hrPw" placeholder="Password" autocomplete="current-password" autofocus><button class="hb hb-p" type="submit">Unlock</button></form><p class="bad" id="hrPwMsg">' + esc(msg || '') + '</p></div>';
+    const f = $('#hrUnlock');
+    setTimeout(() => { const i = $('#hrPw'); if (i) i.focus(); }, 50);
+    f.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const btn = f.querySelector('button'); btn.disabled = true;
+      try { await fetch('/api/hr/unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: $('#hrPw').value }) }).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Could not unlock.'); }); boot(); }
+      catch (err) { $('#hrPwMsg').textContent = err.message; $('#hrPw').select(); btn.disabled = false; }
+    });
   }
   function setPath(obj, path, val) {
     const p = path.split('.'); let o = obj;
@@ -399,6 +436,9 @@
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act, id = +b.dataset.id, i = +b.dataset.i;
     const emp = byId(id);
+    if (act === 'pw-save') return savePassword(false);
+    if (act === 'pw-remove') return savePassword(true);
+    if (act === 'lock-now') { try { await fetch('/api/hr/lock', { method: 'POST' }); } catch (x) { /* locks on the next request anyway */ } return lockScreen(); }
     if (act === 'bulk') return openBulk();
     if (act === 'bulk-close') return $('#hrBulk').close();
     if (act === 'bulk-go') return bulkGenerate(false);
@@ -445,40 +485,57 @@
   }
 
   // ---------------------------------------------------------------- boot
-  async function mount(el) {
-    root = el;
+  async function boot() {
     root.innerHTML = '<p class="hint">Loading…</p>';
     try {
+      const st = await api('/api/hr/status');
+      if (st.protected && !st.unlocked) return lockScreen();
       const d = await api('/api/hr/bootstrap');
       state = { cfg: d.config, defaults: d.defaults, emps: d.employees, docs: d.documents };
-    } catch (err) { root.innerHTML = '<p class="hint">' + esc(err.message) + '</p>'; return; }
+      protectedOn = !!d.protected;
+    } catch (err) { if (!err.locked) root.innerHTML = '<p class="hint">' + esc(err.message) + '</p>'; return; }
     shell();
-    root.addEventListener('input', e => {
-      if (e.target.id === 'hrQ') { filter.q = e.target.value; const pos = e.target.selectionStart; draw(); const q = $('#hrQ'); q.focus(); q.setSelectionRange(pos, pos); return; }
-      const s = e.target.dataset.s;
-      if (s) { const val = e.target.hasAttribute('data-lines') ? e.target.value.split('\n').map(x => x.trim()).filter(Boolean) : e.target.value; setPath(state.cfg, s, val); }
-    });
-    root.addEventListener('change', e => {  // the bulk payslip dialog
-      const k = e.target.dataset.bk; if (!k || !bulk) return;
-      const id = +e.target.dataset.id;
-      if (k === 'on') { if (e.target.checked) bulk.on.add(id); else bulk.on.delete(id); return; }
-      if (k === 'lop') bulk.lop[id] = Math.max(0, Math.min(Number(e.target.value) || 0, HR.daysIn(bulk.y, bulk.m)));
-      else if (k === 'm') bulk.m = +e.target.value;
-      else if (k === 'y') bulk.y = Math.max(2000, Math.min(+e.target.value || bulk.y, 2100));
-      if (k !== 'lop') bulkPick();
-      $('#hrBulk').innerHTML = bulkHtml();
-    });
-    root.addEventListener('change', e => { if (e.target.id === 'hrLogo') readLogo(e.target.files[0], url => { state.cfg.company.logo = url; draw(); }); });
-    $('#hrEd').addEventListener('input', onEdInput);
-    $('#hrEd').addEventListener('mousedown', e => { if (e.target.closest('.fmt, [data-ins]')) { rememberCaret(); e.preventDefault(); } });  // keep the selection while a toolbar button is pressed
-    $('#hrEd').addEventListener('keyup', e => { if (e.target.matches && e.target.matches('.rte')) rememberCaret(); });
-    $('#hrEd').addEventListener('mouseup', e => { if (e.target.closest && e.target.closest('.rte')) rememberCaret(); });
-    $('#hrEd').addEventListener('focusout', e => { if (e.target.matches && e.target.matches('.rte')) rememberCaret(); });
-    $('#hrEd').addEventListener('paste', e => { if (e.target.closest && e.target.closest('.rte')) { e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain')); } });
-    $('#hrEd').addEventListener('change', e => {
+  }
+
+  // the listeners of the editor sit on an element that is rebuilt with every shell()
+  function bindEditor() {
+    const ee = $('#hrEd');
+    ee.addEventListener('input', onEdInput);
+    ee.addEventListener('mousedown', e => { if (e.target.closest('.fmt, [data-ins]')) { rememberCaret(); e.preventDefault(); } });  // keep the selection while a toolbar button is pressed
+    ee.addEventListener('keyup', e => { if (e.target.matches && e.target.matches('.rte')) rememberCaret(); });
+    ee.addEventListener('mouseup', e => { if (e.target.closest && e.target.closest('.rte')) rememberCaret(); });
+    ee.addEventListener('focusout', e => { if (e.target.matches && e.target.matches('.rte')) rememberCaret(); });
+    ee.addEventListener('paste', e => { if (e.target.closest && e.target.closest('.rte')) { e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain')); } });
+    ee.addEventListener('change', e => {
       if (e.target.matches('[data-logo]')) return readLogo(e.target.files[0], url => { ed.doc.company.logo = url; mark(); drawEdForm(); drawPreview(); });
       onEdInput(e);
     });
+  }
+
+  async function mount(el) {
+    root = el;
+    if (!bound) {
+      bound = true;
+      root.addEventListener('click', onClick);
+      root.addEventListener('input', e => {
+        if (e.target.id === 'hrQ') { filter.q = e.target.value; const pos = e.target.selectionStart; draw(); const q = $('#hrQ'); q.focus(); q.setSelectionRange(pos, pos); return; }
+        const s = e.target.dataset.s;
+        if (s) { const val = e.target.hasAttribute('data-lines') ? e.target.value.split('\n').map(x => x.trim()).filter(Boolean) : e.target.value; setPath(state.cfg, s, val); }
+      });
+      root.addEventListener('change', e => {  // the bulk payslip dialog
+        const k = e.target.dataset.bk;
+        if (!k || !bulk) return;
+        const id = +e.target.dataset.id;
+        if (k === 'on') { if (e.target.checked) bulk.on.add(id); else bulk.on.delete(id); return; }
+        if (k === 'lop') bulk.lop[id] = Math.max(0, Math.min(Number(e.target.value) || 0, HR.daysIn(bulk.y, bulk.m)));
+        else if (k === 'm') bulk.m = +e.target.value;
+        else if (k === 'y') bulk.y = Math.max(2000, Math.min(+e.target.value || bulk.y, 2100));
+        if (k !== 'lop') bulkPick();
+        $('#hrBulk').innerHTML = bulkHtml();
+      });
+      root.addEventListener('change', e => { if (e.target.id === 'hrLogo') readLogo(e.target.files[0], url => { state.cfg.company.logo = url; draw(); }); });
+    }
+    await boot();
   }
   HR.mount = mount;
 })(window.HR);

@@ -197,3 +197,15 @@ mark.hd-miss{background:#fde68a;color:#92400e}
 #hrDetailMenu button{display:flex;justify-content:space-between;gap:.8rem;width:100%;text-align:left;border:0;background:none;padding:.5rem .6rem;border-radius:9px;cursor:pointer;font:inherit;font-size:.88rem;color:inherit}
 #hrDetailMenu button:hover{background:#eef0ff}
 #hrDetailMenu small{color:#667085;font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55%}
+
+/* password screen and the security card */
+#hrRoot .lockbox{max-width:380px;margin:3rem auto;text-align:center;background:var(--h-card);border:1px solid var(--h-line);border-radius:20px;padding:2rem 1.6rem;box-shadow:var(--h-sh)}
+#hrRoot .lockbox .ico{width:60px;height:60px;border-radius:18px;background:var(--h-acc-s);color:var(--h-acc);display:grid;place-items:center;margin:0 auto 1rem}
+#hrRoot .lockbox .ico svg{width:28px;height:28px}
+#hrRoot .lockbox h3{margin:0 0 .3rem}#hrRoot .lockbox p{color:var(--h-mute);margin:0 0 1.2rem;font-size:.9rem}
+#hrRoot .lockbox form{display:flex;flex-direction:column;gap:.7rem}
+#hrRoot .lockbox input{height:44px;padding:0 .9rem;border:1px solid var(--h-line);border-radius:11px;font:inherit;background:var(--h-card);color:var(--h-text);text-align:center}
+#hrRoot .lockbox input:focus{outline:none;border-color:var(--h-acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--h-acc) 22%,transparent)}
+#hrRoot .lockbox .hb{height:44px}
+#hrRoot .lockbox .bad{color:var(--h-bad);margin:.8rem 0 0;min-height:1.2em}
+#hrRoot .dact{display:flex;gap:.6rem;margin-top:1rem}

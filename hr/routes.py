@@ -1,9 +1,12 @@
 """HR and payroll API (admins of a workspace only): employees, offer letters and payslips, and the workspace's letterhead and templates."""
 import copy
 import json
+import time
+from collections import defaultdict, deque
 from datetime import date, datetime
 
 from flask import Blueprint, jsonify, request, session
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from extensions import db
 from routes.auth import login_required, role_required
@@ -19,6 +22,34 @@ KINDS = ("offer", "payslip")
 _ready = False
 
 
+# ---------------------------------------------------------------- password for the whole section
+UNLOCK_MINUTES = 30  # idle time after which the section locks again
+OPEN_PATHS = ("/api/hr/status", "/api/hr/unlock", "/api/hr/lock")
+_fails = defaultdict(deque)  # (workspace, ip) -> times of wrong passwords
+
+
+def _password_hash(org):
+    row = HrConfig.query.filter_by(organization_id=org).first()
+    return (row.load().get("_pw") if row else "") or ""
+
+
+def _unlocked(org):
+    return time.time() < (session.get("hr_unlock") or {}).get(org, 0)
+
+
+def _unlock(org):
+    d = dict(session.get("hr_unlock") or {})
+    d[org] = time.time() + UNLOCK_MINUTES * 60
+    session["hr_unlock"] = d
+
+
+def _too_many(org):
+    q = _fails[(org, request.remote_addr)]
+    while q and time.time() - q[0] > 600:
+        q.popleft()
+    return len(q) >= 5
+
+
 @hr_bp.before_request
 def _before():
     global _ready
@@ -26,6 +57,92 @@ def _before():
         for model in (HrConfig, HrEmployee, HrDocument):
             model.__table__.create(db.engine, checkfirst=True)
         _ready = True
+    org = _org()
+    if request.path.startswith("/api/hr/") and request.path not in OPEN_PATHS and org and _password_hash(org):
+        if not _unlocked(org):
+            return jsonify({"error": "The HR section is locked.", "locked": True}), 423
+        _unlock(org)  # activity keeps it open
+
+
+@hr_bp.route("/api/hr/status")
+@login_required
+@role_required(*ADMIN)
+def status():
+    org = _org()
+    protected = bool(_password_hash(org))
+    return jsonify({"protected": protected, "unlocked": (not protected) or _unlocked(org)})
+
+
+@hr_bp.route("/api/hr/unlock", methods=["POST"])
+@login_required
+@role_required(*ADMIN)
+def unlock():
+    org, pw = _org(), _password_hash(_org())
+    if not pw:
+        return jsonify({"ok": True})
+    if _too_many(org):
+        return _err("Too many wrong passwords. Try again in 10 minutes.", 429)
+    if not check_password_hash(pw, str((request.get_json(silent=True) or {}).get("password") or "")):
+        _fails[(org, request.remote_addr)].append(time.time())
+        return _err("That password is not right.", 403)
+    _unlock(org)
+    return jsonify({"ok": True})
+
+
+@hr_bp.route("/api/hr/lock", methods=["POST"])
+@login_required
+@role_required(*ADMIN)
+def lock():
+    d = dict(session.get("hr_unlock") or {})
+    d.pop(_org(), None)
+    session["hr_unlock"] = d
+    return jsonify({"ok": True})
+
+
+@hr_bp.route("/api/hr/password", methods=["PUT"])
+@login_required
+@role_required(*ADMIN)
+def set_password():
+    """Sets, changes or removes the password. Changing or removing needs the current one. Body: {current, new} (new empty = remove)."""
+    org, b = _org(), request.get_json(silent=True) or {}
+    row = HrConfig.query.filter_by(organization_id=org).first()
+    saved = row.load() if row else {}
+    if saved.get("_pw"):
+        if _too_many(org):
+            return _err("Too many wrong passwords. Try again in 10 minutes.", 429)
+        if not check_password_hash(saved["_pw"], str(b.get("current") or "")):
+            _fails[(org, request.remote_addr)].append(time.time())
+            return _err("The current password is not right.", 403)
+    new = str(b.get("new") or "")
+    if new and len(new) < 6:
+        return _err("Use at least 6 characters.")
+    if new:
+        saved["_pw"] = generate_password_hash(new)
+    else:
+        saved.pop("_pw", None)
+    if not row:
+        row = HrConfig(organization_id=org)
+        db.session.add(row)
+    row.data = json.dumps(saved)
+    db.session.commit()
+    if new:
+        _unlock(org)
+    return jsonify({"protected": bool(new)})
+
+
+@hr_bp.route("/api/hr/password/reset", methods=["POST"])
+@login_required
+@role_required("PLATFORM_SUPER_ADMIN")
+def reset_password():
+    """For a forgotten password: only a platform super admin can clear it. Body: {organization_id}."""
+    org = str((request.get_json(silent=True) or {}).get("organization_id") or _org())
+    row = HrConfig.query.filter_by(organization_id=org).first()
+    if row:
+        saved = row.load()
+        saved.pop("_pw", None)
+        row.data = json.dumps(saved)
+        db.session.commit()
+    return jsonify({"ok": True})
 
 
 def _org():
@@ -57,6 +174,8 @@ def _config(org):
     if row:
         saved = row.load()
         for k, v in saved.items():
+            if k == "_pw":
+                continue
             if k == "offers" and isinstance(v, dict):
                 cfg["offers"].update(v)
             else:
@@ -101,7 +220,7 @@ def bootstrap():
     org = _org()
     emps = HrEmployee.query.filter_by(organization_id=org).order_by(HrEmployee.id).all()
     docs = HrDocument.query.filter_by(organization_id=org).order_by(HrDocument.updated_at.desc()).limit(500).all()
-    return jsonify({"config": _config(org), "defaults": DEFAULT_CONFIG, "employees": [e.to_dict() for e in emps], "documents": [d.to_dict() for d in docs]})
+    return jsonify({"protected": bool(_password_hash(org)), "config": _config(org), "defaults": DEFAULT_CONFIG, "employees": [e.to_dict() for e in emps], "documents": [d.to_dict() for d in docs]})
 
 
 @hr_bp.route("/api/hr/config", methods=["PUT"])
@@ -112,6 +231,9 @@ def save_config():
     cfg = _check_config(body)
     if cfg is None:
         return _err("Invalid settings.")
+    row0 = HrConfig.query.filter_by(organization_id=_org()).first()
+    if row0 and row0.load().get("_pw"):
+        cfg["_pw"] = row0.load()["_pw"]  # the browser never sees the password hash, so keep it when settings are saved
     raw = json.dumps(cfg)
     if len(raw) > MAX_JSON:
         return _err("Settings are too large (is the logo big?).")
