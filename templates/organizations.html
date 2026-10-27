@@ -181,11 +181,12 @@
                                 <th>Members</th>
                                 <th>Limit</th>
                                 <th>Joined</th>
+                                <th>HR password</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="orgTableBody">
-                            <tr><td colspan="7" style="text-align: center;">Loading organizations...</td></tr>
+                            <tr><td colspan="8" style="text-align: center;">Loading organizations...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -246,10 +247,12 @@
                 const r = await fetch('/api/organizations');
                 if (!r.ok) throw new Error('Failed to fetch');
                 const data = await r.json();
+                let hrPw = {};
+                try { hrPw = (await (await fetch('/api/hr/protected')).json()).protected || {}; } catch (e) { /* the column just shows nothing */ }
                 const tbody = document.getElementById('orgTableBody');
                 
                 if (!data.organizations || data.organizations.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">No organizations found</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">No organizations found</td></tr>';
                     return;
                 }
 
@@ -267,6 +270,12 @@
                         <td>${org.member_count}</td>
                         <td>${org.max_users === null ? 'Unlimited' : org.max_users}</td>
                         <td style="color: var(--text-muted); font-size: 0.875rem;">${new Date(org.created_at).toLocaleDateString()}</td>
+                        <td style="font-size: 0.8rem;">
+                            ${org.id in hrPw
+                                ? `<span class="badge badge-success">Set</span>${hrPw[org.id] ? '<div style="color: var(--text-muted);">since ' + new Date(hrPw[org.id]).toLocaleDateString() + '</div>' : ''}
+                                   <button class="btn btn-outline" style="padding: 0.2rem 0.5rem; font-size: 0.72rem; margin-top: 0.3rem;" onclick="resetHrPassword('${org.id}', this)">Reset</button>`
+                                : '<span style="color: var(--text-muted);">Not set</span>'}
+                        </td>
                         <td>
                             <button class="btn btn-outline" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" 
                                 onclick="openModal('${org.id}', ${org.max_users}, ${org.is_approved && org.is_active})">
@@ -277,8 +286,19 @@
                 `).join('');
             } catch (e) {
                 console.error(e);
-                document.getElementById('orgTableBody').innerHTML = '<tr><td colspan="7" style="color: #ef4444; text-align: center;">Failed to load organizations</td></tr>';
+                document.getElementById('orgTableBody').innerHTML = '<tr><td colspan="8" style="color: #ef4444; text-align: center;">Failed to load organizations</td></tr>';
             }
+        }
+
+        // passwords are stored scrambled and cannot be read; a reset clears it so the workspace admin can set a new one
+        async function resetHrPassword(id, btn) {
+            if (!confirm('Clear the HR & Payroll password of this workspace? Its admins will be able to open the section without a password until they set a new one. The old password cannot be shown.')) return;
+            btn.disabled = true;
+            try {
+                const r = await fetch('/api/hr/password/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ organization_id: id }) });
+                if (!r.ok) throw new Error('Failed');
+                loadOrganizations();
+            } catch (e) { alert('Could not reset the password.'); btn.disabled = false; }
         }
 
         function openModal(id, maxUsers, isActive) {

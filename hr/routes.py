@@ -24,7 +24,7 @@ _ready = False
 
 # ---------------------------------------------------------------- password for the whole section
 UNLOCK_MINUTES = 30  # idle time after which the section locks again
-OPEN_PATHS = ("/api/hr/status", "/api/hr/unlock", "/api/hr/lock")
+OPEN_PATHS = ("/api/hr/status", "/api/hr/unlock", "/api/hr/lock", "/api/hr/protected", "/api/hr/password/reset")  # the last two are for platform super admins
 _fails = defaultdict(deque)  # (workspace, ip) -> times of wrong passwords
 
 
@@ -118,8 +118,10 @@ def set_password():
         return _err("Use at least 6 characters.")
     if new:
         saved["_pw"] = generate_password_hash(new)
+        saved["_pw_at"] = datetime.utcnow().isoformat() + "Z"  # when, so a super admin can see it; the password itself cannot be read back
     else:
         saved.pop("_pw", None)
+        saved.pop("_pw_at", None)
     if not row:
         row = HrConfig(organization_id=org)
         db.session.add(row)
@@ -140,9 +142,23 @@ def reset_password():
     if row:
         saved = row.load()
         saved.pop("_pw", None)
+        saved.pop("_pw_at", None)
         row.data = json.dumps(saved)
         db.session.commit()
     return jsonify({"ok": True})
+
+
+@hr_bp.route("/api/hr/protected")
+@login_required
+@role_required("PLATFORM_SUPER_ADMIN")
+def protected_workspaces():
+    """Which workspaces have put a password on HR & Payroll, and since when. The passwords themselves are stored scrambled and cannot be shown."""
+    out = {}
+    for row in HrConfig.query.all():
+        d = row.load()
+        if d.get("_pw"):
+            out[row.organization_id] = d.get("_pw_at", "")
+    return jsonify({"protected": out})
 
 
 def _org():
@@ -174,7 +190,7 @@ def _config(org):
     if row:
         saved = row.load()
         for k, v in saved.items():
-            if k == "_pw":
+            if k in ("_pw", "_pw_at"):
                 continue
             if k == "offers" and isinstance(v, dict):
                 cfg["offers"].update(v)
@@ -233,7 +249,7 @@ def save_config():
         return _err("Invalid settings.")
     row0 = HrConfig.query.filter_by(organization_id=_org()).first()
     if row0 and row0.load().get("_pw"):
-        cfg["_pw"] = row0.load()["_pw"]  # the browser never sees the password hash, so keep it when settings are saved
+        cfg["_pw"], cfg["_pw_at"] = row0.load()["_pw"], row0.load().get("_pw_at", "")  # the browser never sees the password hash, so keep it when settings are saved
     raw = json.dumps(cfg)
     if len(raw) > MAX_JSON:
         return _err("Settings are too large (is the logo big?).")
