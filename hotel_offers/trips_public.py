@@ -89,7 +89,7 @@ def _public_guide(trip):
     """Only the places the agent ticked, per city."""
     out = {}
     for ck, g in trip.guide_map().items():
-        spots = [{k: s.get(k) for k in ("name", "address", "kind", "rating", "rating_count", "lat", "lng")} for s in g.get("spots", []) if s.get("on")]
+        spots = [{k: s.get(k) for k in ("name", "address", "kind", "blurb", "rating", "rating_count", "lat", "lng")} for s in g.get("spots", []) if s.get("on")]
         if spots:
             out[ck] = {"city": g.get("city", ""), "spots": spots}
     return out

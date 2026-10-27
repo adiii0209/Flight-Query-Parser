@@ -57,3 +57,25 @@ def fill(quotes, cfg):
                 if v and not q.get(k):
                     q[k] = v
     return bool(hotels)
+
+
+AREAS_PROMPT = """You are a local guide. Given a city, list its liveliest AREAS for a visitor: neighbourhoods, districts, famous streets or boulevards, squares and market quarters where there is atmosphere, people, food, shopping or nightlife.
+Return ONLY {"areas":[{"name":"...","blurb":"..."}]} with up to 12 areas, the most popular and liveliest first.
+Rules: areas and streets only, never a single landmark, museum, hotel, restaurant or park. Use the name travellers know (e.g. "Champs-Élysées", "Le Marais", "Montmartre").
+blurb: two short lines (about 25 words) on what the area is like and what to do there, in a warm, plain tone, not repeating the area's name. Only real places; never invent."""
+
+
+def areas(city, cfg):
+    """[{name, blurb}] for the lively areas of a city, or [] if the model is not available."""
+    from .parser import call_llm
+    if not (city or "").strip() or not cfg.get("ai_api_key"):
+        return []
+    try:
+        data = call_llm(dict(cfg, ai_system_prompt=AREAS_PROMPT, ai_max_tokens=max(cfg.get("ai_max_tokens", 1500), 1800)), json.dumps({"city": city.strip()}, ensure_ascii=False))
+    except Exception:
+        return []
+    out = []
+    for a in (data.get("areas") if isinstance(data, dict) else None) or []:
+        if isinstance(a, dict) and _txt(a.get("name"), 80):
+            out.append({"name": _txt(a.get("name"), 80), "blurb": _txt(a.get("blurb"), 240)})
+    return out[:12]

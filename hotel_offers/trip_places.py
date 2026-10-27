@@ -113,3 +113,58 @@ def guide_pool(city, key):
                 seen.add(col[i]["place_id"])
                 out.append({k: v for k, v in col[i].items() if k != "_s"})
     return out[:GUIDE_MAX]
+
+
+# ---- lively AREAS (neighbourhoods, districts, streets), named by the AI model and put on the map by Google
+AREA_TYPES = {"neighborhood", "sublocality", "sublocality_level_1", "sublocality_level_2", "route", "locality", "administrative_area_level_3", "political"}
+
+
+def _place_area(name, city, key, near):
+    body = {"textQuery": f"{name}, {city}", "maxResultCount": 1}
+    if near:
+        body["locationBias"] = {"circle": {"center": {"latitude": near["lat"], "longitude": near["lng"]}, "radius": 30000.0}}
+    r = requests.post("https://places.googleapis.com/v1/places:searchText", timeout=15, json=body,
+                      headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": "places.id,places.formattedAddress,places.location,places.rating,places.userRatingCount"})
+    r.raise_for_status()
+    for p in r.json().get("places", []):
+        loc = p.get("location") or {}
+        if "latitude" in loc and p.get("id") and not (near and km_between(loc["latitude"], loc["longitude"], near["lat"], near["lng"]) > 40):
+            return {"place_id": p["id"], "address": p.get("formattedAddress", ""), "lat": loc["latitude"], "lng": loc["longitude"],
+                    "rating": p.get("rating") or 0, "rating_count": p.get("userRatingCount") or 0}
+    return None
+
+
+def guide_areas(city, key, named):
+    """named: [{name, blurb}] from the AI model. Returns the ones Google can place near the city, in the same order."""
+    from concurrent.futures import ThreadPoolExecutor
+    near = centre(city, key)
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        found = list(pool.map(lambda a: _place_area(a["name"], city, key, near), named))
+    out, seen = [], set()
+    for a, f in zip(named, found):
+        if f and f["place_id"] not in seen:
+            seen.add(f["place_id"])
+            out.append({"place_id": f["place_id"], "name": a["name"], "blurb": a.get("blurb", ""), "kind": "Area", "address": f["address"], "rating": 0, "rating_count": 0, "lat": f["lat"], "lng": f["lng"]})
+    return out
+
+
+def guide_areas_from_google(city, key):
+    """Without the AI model: neighbourhoods and streets Google returns for a few area searches (no description)."""
+    near = centre(city, key)
+    out, seen = [], set()
+    for q in ("best neighbourhoods to explore in {c}", "famous streets and districts in {c}", "nightlife districts in {c}"):
+        body = {"textQuery": q.format(c=city), "maxResultCount": 10}
+        if near:
+            body["locationBias"] = {"circle": {"center": {"latitude": near["lat"], "longitude": near["lng"]}, "radius": 20000.0}}
+        r = requests.post("https://places.googleapis.com/v1/places:searchText", timeout=15, json=body,
+                          headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location,places.types,places.primaryType"})
+        r.raise_for_status()
+        for p in r.json().get("places", []):
+            loc = p.get("location") or {}
+            if "latitude" not in loc or p.get("id") in seen or not (set(p.get("types") or []) & AREA_TYPES):
+                continue
+            if near and km_between(loc["latitude"], loc["longitude"], near["lat"], near["lng"]) > 40:
+                continue
+            seen.add(p["id"])
+            out.append({"place_id": p["id"], "name": (p.get("displayName") or {}).get("text", ""), "blurb": "", "kind": "Area", "address": p.get("formattedAddress", ""), "rating": 0, "rating_count": 0, "lat": loc["latitude"], "lng": loc["longitude"]})
+    return out[:12]

@@ -27,7 +27,7 @@
         if (s.lat == null || s.lng == null) return;
         pts.push([s.lat, s.lng]);
         spotPins[i] = L.marker([s.lat, s.lng], { icon: spotIcon(i), title: s.name }).addTo(layer)
-          .bindPopup('<b>' + TT.esc(s.name) + '</b>' + (s.kind ? '<br><small>' + TT.esc(s.kind) + '</small>' : ''));
+          .bindPopup('<b>' + TT.esc(s.name) + '</b>' + (s.blurb ? '<br><small>' + TT.esc(s.blurb) + '</small>' : s.kind ? '<br><small>' + TT.esc(s.kind) + '</small>' : ''));
       });
       quotes.forEach((q, i) => {
         if (q.lat == null || q.lng == null) return;

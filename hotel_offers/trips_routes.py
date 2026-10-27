@@ -389,7 +389,7 @@ def parse_trip_quotes(trip_id):
             for q in quotes:
                 ck = _ckey(q.get("city"))
                 if ck and ck not in guide:
-                    g = _make_guide(q["city"], cfg["google_places_key"])
+                    g = _make_guide(q["city"], cfg)
                     if g["spots"]:
                         guide[ck] = g
         except requests.RequestException:
@@ -449,9 +449,15 @@ def _ckey(city):
     return re.sub(r"[^a-z0-9]+", "", (city or "").lower())[:60]
 
 
-def _make_guide(city, key):
-    """The popular places of a city, nothing ticked yet: the agent picks (the best three are only suggested) and five are listed until they load more."""
-    pool = trip_places.guide_pool(city, key)
+def _make_guide(city, cfg):
+    """The lively AREAS of a city (the AI model names them with a two-line description, Google puts them on the map), nothing ticked yet:
+    the agent picks (the best three are only suggested) and five are listed until they load more."""
+    key = cfg["google_places_key"]
+    pool = trip_places.guide_areas(city, key, trip_facts.areas(city, cfg)) if cfg.get("ai_api_key") else []
+    if len(pool) < 3:  # no AI key, or it knew too little: neighbourhoods and streets straight from Google
+        pool = pool + [s for s in trip_places.guide_areas_from_google(city, key) if s["place_id"] not in {x["place_id"] for x in pool}]
+    if not pool:
+        pool = trip_places.guide_pool(city, key)  # last resort: the popular places of the city
     for s in pool:
         s["on"] = False
     return {"city": city.strip(), "shown": 5, "confirmed": False, "spots": pool}
@@ -503,7 +509,7 @@ def add_guide_spot(trip_id, ck):
         rating, count = float(p.get("rating") or 0), int(p.get("rating_count") or 0)
     except (TypeError, ValueError):
         rating, count = 0, 0
-    g["spots"].append({"place_id": pid, "name": _s(p.get("name"), 160), "address": _s(p.get("address"), 300), "kind": "", "rating": rating, "rating_count": count,
+    g["spots"].append({"place_id": pid, "name": _s(p.get("name"), 160), "address": _s(p.get("address"), 300), "kind": "", "blurb": _s(p.get("blurb"), 240), "rating": rating, "rating_count": count,
                        "lat": lat, "lng": lng, "on": True, "custom": True})
     g["shown"] = max(g.get("shown", 5), len(g["spots"]))  # the new place must be visible
     trip.guide = json.dumps(guide)
@@ -525,7 +531,7 @@ def refresh_guide(trip_id, ck):
     if not key:
         return _err("Google Places key is not configured (Hotel Offers settings).")
     try:
-        g = _make_guide(city, key)
+        g = _make_guide(city, settings.get_config(_org()))
     except requests.RequestException as exc:
         return _err(f"Could not reach Google Places: {exc}", 502)
     if not g["spots"]:

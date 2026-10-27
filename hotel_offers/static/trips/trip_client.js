@@ -180,9 +180,9 @@
   function guideHtml(g) {
     const spots = spotsOf(g);
     if (!spots.length) return '';
-    return '<section class="lg"><div class="lg-h"><h2>Local guide</h2><p>Lively spots in ' + TT.esc(g.city) + ', picked for you</p></div><div class="lg-map" id="lgMap"></div><ul class="lg-list">' +
-      spots.map((s, i) => '<li><button type="button" data-spot="' + i + '"><i>' + String.fromCharCode(65 + i) + '</i><span><b>' + TT.esc(s.name) + '</b><small>' +
-        TT.esc([s.kind, s.rating ? '★ ' + s.rating.toFixed(1) : ''].filter(Boolean).join(' · ')) + '</small></span></button></li>').join('') + '</ul></section>';
+    return '<section class="lg"><div class="lg-h"><h2>Local guide</h2><p>The liveliest areas of ' + TT.esc(g.city) + ', picked for you</p></div><div class="lg-map" id="lgMap"></div><ul class="lg-list">' +
+      spots.map((s, i) => '<li><button type="button" data-spot="' + i + '"><i>' + String.fromCharCode(65 + i) + '</i><span><b>' + TT.esc(s.name) + '</b><small' + (s.blurb ? ' class="lg-bl"' : '') + '>' +
+        TT.esc(s.blurb || [s.kind, s.rating ? '★ ' + s.rating.toFixed(1) : ''].filter(Boolean).join(' · ')) + '</small></span></button></li>').join('') + '</ul></section>';
   }
 
   // one pin per hotel option of this city, numbered 1, 2, 3 in the order of the cards
