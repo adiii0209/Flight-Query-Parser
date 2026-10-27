@@ -44,7 +44,7 @@ def _lines(cell):
 def _blank():
     return {"date": None, "day": "", "nights": 0, "city": "", "hotel_name": "", "guests": "", "guest_name": "",
             "cancellation": "", "cancel_by": None, "meal_plan": "", "room": "", "room_size": "", "rooms": 0, "items": 1,
-            "stars": 0, "style": "", "age_info": "", "location_info": "", "room_desc": "", "perks": [], "hide_rating": False, "hide_reviews": False,
+            "stars": 0, "style": "", "age_info": "", "brief": "", "location_info": "", "room_desc": "", "perks": [], "hide_rating": False, "hide_reviews": False,
             "cost_per_item": 0, "total": 0, "nutshell": "", "notes": "",
             "place_id": "", "address": "", "photos": [], "lat": None, "lng": None, "landmarks": []}
 

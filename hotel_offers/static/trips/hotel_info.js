@@ -22,7 +22,8 @@
       '<datalist id="hiStyles' + q.id + '">' + STYLES.map(s => '<option value="' + s + '">').join('') + '</datalist></label>' +
       '<label class="q-f wide"><span>Age or renovation</span><input data-k="age_info" value="' + TT.esc(q.age_info || '') + '" placeholder="e.g. Built 1998, renovated 2022" maxlength="120"></label>' +
       '<label class="q-f wide"><span>Where it is</span><input data-k="location_info" value="' + TT.esc(q.location_info || '') + '" placeholder="e.g. 2 km from the city centre, a short walk to Walking Street" maxlength="300"></label>' +
-      '</div><div class="q-dist"><input data-ref placeholder="Measure from: the city centre, or a lively spot (e.g. Walking Street)"><button type="button" class="ib" data-hi="distance">Calculate distance</button></div>' +
+      '<label class="q-f wide"><span>Hotel in a nutshell</span><textarea data-k="brief" rows="2" maxlength="300" placeholder="About 20 words: location, standout features, the overall feel">' + TT.esc(q.brief || '') + '</textarea></label>' +
+      '</div><div class="q-dist"><button type="button" class="ib" data-hi="facts">Auto-fill with AI</button></div><div class="q-dist"><input data-ref placeholder="Measure from: the city centre, or a lively spot (e.g. Walking Street)"><button type="button" class="ib" data-hi="distance">Calculate distance</button></div>' +
       '<h4 class="sub">Perks <em>Up to ' + MAX_PERKS + '</em></h4><div class="q-perks">' + perks.map(perkRow).join('') + '</div>' +
       (perks.length < MAX_PERKS ? '<button type="button" class="ib" data-hi="add-perk">+ Add perk</button>' : '') +
       '<h4 class="sub">Google <em>Switch off what you do not want the client to see</em></h4><div class="q-checks">' +
@@ -60,6 +61,15 @@
         api.save(x); api.rerender(x);
       } else if (act === 'rm-perk') {
         x.perks.splice(+b.closest('.q-perk').dataset.i, 1); api.save(x); api.rerender(x);
+      } else if (act === 'facts') {
+        b.disabled = true; b.textContent = 'Fetching…';
+        try {
+          const f = (await TT.api('/api/hotel-offers/quotes/' + x.id + '/facts', { method: 'POST' })).facts;
+          const filled = ['stars', 'style', 'age_info', 'brief'].filter(k => f[k] && !x[k]);
+          filled.forEach(k => { x[k] = f[k]; });
+          api.save(x); api.rerender(x);
+          TT.toast(filled.length ? 'Filled ' + filled.length + ' empty field' + (filled.length === 1 ? '' : 's') + '. Check them before sharing.' : 'Nothing empty to fill.');
+        } catch (err) { TT.toast(err.message, 'err'); b.disabled = false; b.textContent = 'Auto-fill with AI'; }
       } else if (act === 'distance') {
         if (x.lat == null) return TT.toast('Pin the hotel on the map first (search it under Location).', 'err');
         const ref = b.closest('.q-sec').querySelector('[data-ref]').value.trim();

@@ -10,7 +10,7 @@ from flask import Response, jsonify, render_template, request, session
 from extensions import db
 from routes.auth import login_required
 
-from . import settings, trip_groups, trip_photos, trip_places
+from . import settings, trip_facts, trip_groups, trip_photos, trip_places
 from .common import public_base
 from .models import HotelOfferLead, HotelQuote, HotelTrip, HotelTripPhoto
 from .routes import _err, _org, hotel_offers_bp as bp
@@ -86,7 +86,7 @@ def clean_quote(raw):
         q["stars"] = max(0, min(int(float(raw.get("stars") or 0)), 5))
     except (TypeError, ValueError):
         q["stars"] = 0
-    q["style"], q["age_info"] = _s(raw.get("style"), 60), _s(raw.get("age_info"), 120)
+    q["style"], q["age_info"], q["brief"] = _s(raw.get("style"), 60), _s(raw.get("age_info"), 120), _s(raw.get("brief"), 300)
     q["location_info"], q["room_desc"] = _s(raw.get("location_info"), 300), _s(raw.get("room_desc"), 600)
     q["hide_rating"], q["hide_reviews"] = bool(raw.get("hide_rating")), bool(raw.get("hide_reviews"))
     q["perks"] = [{"icon": p.get("icon") if p.get("icon") in PERK_ICONS else "gift", "label": _s(p.get("label"), 60)}
@@ -378,6 +378,8 @@ def parse_trip_quotes(trip_id):
                         q["location_info"] = trip_places.distance_text(trip_places.km_between(h["lat"], h["lng"], centres[ck]["lat"], centres[ck]["lng"]), f"{q['city'].strip()} centre")
     else:
         warning = "No Google Places key is set, so hotels were not placed on the map."
+    if cfg.get("ai_api_key"):
+        trip_facts.fill(quotes, cfg)  # star class, "Boutique hotel · 50 rooms", opening year and a short brief, where the paste left them empty
     pos = (db.session.query(db.func.max(HotelQuote.position)).filter_by(trip_id=trip.id).scalar() or 0) + 1
     rows = []
     for i, q in enumerate(quotes):
@@ -405,6 +407,20 @@ def add_quote(trip_id):
 
 def _quote(quote_id):
     return HotelQuote.query.filter_by(id=quote_id, organization_id=_org()).first()
+
+
+@bp.route("/api/hotel-offers/quotes/<int:quote_id>/facts", methods=["POST"])
+@login_required
+def quote_facts(quote_id):
+    """Auto-fill the hotel details (stars, style, age, brief) of one quote with the AI model. Returns the suggestions; the page decides what to keep."""
+    row = _quote(quote_id)
+    if not row:
+        return _err("Not found", 404)
+    d = json.loads(row.data or "{}")
+    facts = trip_facts.fetch([{"name": d.get("hotel_name", ""), "city": d.get("city", ""), "address": d.get("address", "")}], settings.get_config(_org()))
+    if not facts:
+        return _err("Could not fetch details for this hotel. Check the AI key in Hotel Offers settings.", 502)
+    return jsonify({"facts": facts[0]})
 
 
 @bp.route("/api/hotel-offers/trips/<int:trip_id>/order", methods=["POST"])

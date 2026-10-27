@@ -198,3 +198,5 @@ a.tc-link:hover{background:var(--line)}
 .tc-tog{display:inline-flex;align-items:center;gap:4px;height:38px;padding:0 6px 0 14px;border-radius:99px;font-size:.86rem;font-weight:500;color:var(--mute);background:var(--surface-2)}
 .tc-tog .cc-chev{width:16px;height:16px;transform:none;transition:transform .25s}
 .co.open .tc-tog .cc-chev{transform:rotate(180deg)}
+
+.tc-brief{font-size:.94rem;line-height:1.5;color:var(--text)}
