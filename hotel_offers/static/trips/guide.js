@@ -16,12 +16,12 @@
       TT.esc([s.kind, ratingText(s), s.custom ? 'added by you' : ''].filter(Boolean).join(' · ')) + '</small></span></label></li>').join('') + '</ul>';
   }
   const tools = (entry, modal) => '<div class="gd-add"><input data-gd-q placeholder="Search a place to add, e.g. a café or a market…" autocomplete="off"><div class="gd-res" hidden></div></div><div class="gd-btns">' +
-    ((entry.shown || 5) < (entry.spots || []).length ? '<button type="button" class="ib" data-gd="more">Load more</button>' : '') + (modal ? '' : '<button type="button" class="ib" data-gd="refresh">Look up again</button>') + '</div>';
+    ((entry.shown || 5) < (entry.spots || []).length ? '<button type="button" class="ib" data-gd="more">Load more</button>' : '') + (modal ? '' : '<button type="button" class="ib" data-gd="pick">Open picker</button><button type="button" class="ib" data-gd="refresh">Look up again</button>') + '</div>';
 
   function inner(city, entry, modal) {
     if (!entry) return '<summary>Local guide <em>Not built yet</em></summary><div class="gd-body"><p class="ho-hint">Lively places of ' + TT.esc(city) + ' for your client: sights, food and nightlife.</p><button type="button" class="ib" data-gd="build">Choose lively places</button></div>';
     const on = (entry.spots || []).filter(s => s.on).length;
-    const body = '<p class="ho-hint">Tick the places your client will see on the ' + TT.esc(city) + ' page and map (up to ' + MAX_ON + '). The best three are suggested.</p>' + list(entry) + tools(entry, modal);
+    const body = '<p class="ho-hint">Tick the places your client will see on the ' + TT.esc(city) + ' page and map (up to ' + MAX_ON + '). They also show as "Nearby" on each hotel, with the distance.</p>' + list(entry) + tools(entry, modal);
     if (modal) return body;
     return '<summary>Local guide <em' + (entry.confirmed !== false ? '' : ' class="need"') + '>' + (entry.confirmed !== false ? on + ' picked' : 'Choose places') + '</em></summary><div class="gd-body">' + body + '</div>';
   }
@@ -84,6 +84,7 @@
       const p = panelOf(b), act = b.dataset.gd, entry = api.guide()[p.dataset.ck];
       b.disabled = true;
       try {
+        if (act === 'pick') { b.disabled = false; openPicker(p.dataset.ck, p.dataset.city, api); return; }
         if (act === 'skip') { p.closest('dialog').close(); return; }
         if (act === 'done') { const map = await put(p, entry); api.setGuide(map); api.refresh && api.refresh(); p.closest('dialog').close(); return; }
         if (act === 'more') { entry.shown = Math.min((entry.shown || 5) + 5, entry.spots.length); redraw(p, modalOf(p) ? api.guide() : await put(p, entry)); }

@@ -37,6 +37,7 @@
         m.bindPopup('<b>' + TT.esc(q.hotel_name) + '</b><br>' + TT.esc(q.city || ''));
         m.on('click', () => opts.onSelect && opts.onSelect(q.id));
         pins[q.id] = m;
+        (q.near_spots || []).forEach(s => L.polyline([p, [s.lat, s.lng]], { color: '#a67c37', weight: 1.5, dashArray: '4 5', opacity: .8 }).addTo(layer));
         (q.landmarks || []).forEach(l => {
           if (l.lat == null) return;
           pts.push([l.lat, l.lng]);

@@ -239,3 +239,5 @@ a.tc-link:hover{background:var(--line)}
 .lg-list b{font-weight:500;font-size:.95rem}
 .lg-list small{color:var(--mute);font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tt-spot span{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--gold,#a67c37);color:#fff;font:600 12px/1 Inter,sans-serif;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+
+.tc-near i{font-style:normal;color:var(--faint);font-size:.8rem}

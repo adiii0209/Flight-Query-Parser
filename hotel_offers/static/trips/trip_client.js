@@ -102,12 +102,27 @@
     return '<section class="cmp"><h2>Compare hotels</h2><div class="cmp-scroll"><table>' + '<thead>' + head + '</thead><tbody>' + body + price + pick + '</tbody></table></div></section>';
   }
 
+  // the hotel's own landmarks and the lively places picked for its city, nearest first, with the distance when both are on the map
+  const kmBetween = (a, b) => { const r = x => x * Math.PI / 180, h = Math.sin(r(b.lat - a.lat) / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(r(b.lng - a.lng) / 2) ** 2; return 12742 * Math.asin(Math.sqrt(h)); };
+  function nearbyOf(g, o, hotel) {
+    const own = (o.lines.find(l => (l.landmarks || []).length) || { landmarks: [] }).landmarks;
+    const all = own.concat(spotsOf(g)), seen = new Set(), out = [];
+    all.forEach(p => {
+      const k = String(p.name || '').toLowerCase();
+      if (!k || seen.has(k)) return;
+      seen.add(k);
+      out.push({ name: p.name, lat: p.lat, lng: p.lng, km: hotel && hotel.lat != null && p.lat != null ? kmBetween(hotel, p) : null });
+    });
+    out.sort((a, b) => (a.km == null) - (b.km == null) || a.km - b.km);
+    return out.slice(0, 4);
+  }
+
   // the hotel card: the same card as before, now shown inside its city card
   function optionHtml(g, o, multi) {
     const isSel = o.key === g.selected;
     const first = o.lines[0], located = o.lines.find(l => l.lat != null), many = o.lines.length > 1;
     const nut = (o.lines.find(l => l.nutshell) || {}).nutshell;
-    const near = (o.lines.find(l => (l.landmarks || []).length) || { landmarks: [] }).landmarks;
+    const near = nearbyOf(g, o, located);
     const info = o.lines.find(l => l.rating || l.rating_count || l.website) || {};
     const hv = key => (o.lines.find(l => l[key]) || {})[key] || '';  // hotel-level details come from the first room that has them
     const perks = (o.lines.find(l => (l.perks || []).length) || { perks: [] }).perks;
@@ -120,7 +135,7 @@
     const ck = g.key + '|' + o.key, open = openCards.has(ck);
     const brief = hv('brief');
     const more = (brief ? '<p class="tc-brief">' + TT.esc(brief) + '</p>' : '') + (nut ? '<p class="tc-nut">' + TT.esc(nut).replace(/\n/g, '<br>') + '</p>' : '') + perksHtml(perks) + details + linksHtml(info) +
-      (near.length ? '<p class="tc-near"><b>Nearby:</b> ' + near.map(l => TT.esc(l.name)).join(' · ') + '</p>' : '') +
+      (near.length ? '<p class="tc-near"><b>Nearby:</b> ' + near.map(l => TT.esc(l.name) + (l.km != null ? ' <i>' + (l.km < 1 ? Math.round(l.km * 10) * 100 + ' m' : l.km.toFixed(1) + ' km') + '</i>' : '')).join(' · ') + '</p>' : '') +
       (located ? '<button class="tc-pin" data-id="' + located.id + '">View on map</button>' : '');
     return '<article class="tc-card co' + (isSel && multi ? ' is-sel' : '') + (open ? ' open' : '') + '">' + gallery(o, badges) + '<div class="tc-body"><div class="tc-top"><div><h2>' + TT.esc(o.hotel_name || first.hotel_name) + '</h2>' +
       (first.address ? '<p class="tc-sub">' + TT.esc(first.address) + '</p>' : '') + '</div>' + pick + '</div>' + factsRow(hv('stars'), hv('style'), hv('age_info')) +
@@ -175,7 +190,8 @@
     const pins = [];
     g.options.forEach((o, oi) => {
       const line = o.lines.find(l => l.lat != null && l.lng != null);
-      if (line) pins.push(Object.assign({}, line, { num: oi + 1, hotel_name: o.hotel_name || line.hotel_name, landmarks: o.lines.reduce((a, l) => a.length ? a : (l.landmarks || []), []) }));
+      if (line) pins.push(Object.assign({}, line, { num: oi + 1, hotel_name: o.hotel_name || line.hotel_name, landmarks: o.lines.reduce((a, l) => a.length ? a : (l.landmarks || []), []),
+        near_spots: nearbyOf(g, o, line).filter(p => p.lat != null && spotsOf(g).some(s => s.name === p.name)).slice(0, 2) }));
     });
     return pins;
   }
