@@ -96,9 +96,9 @@
     state.data.extra_samples.forEach((s, i) => {
       const row = document.createElement('div');
       row.className = 'sample-row';
-      row.innerHTML = '<label>Check-in<input type="date" data-k="check_in"></label><label>Check-out<input type="date" data-k="check_out"></label>' +
-        '<label>Our deal<input type="number" min="0" step="any" data-k="our_deal"></label><label>Online rate<input type="number" min="0" step="any" data-k="online_rate"></label>' +
-        '<button type="button" class="sample-x" aria-label="Remove these dates" title="Remove">&times;</button>';
+      row.innerHTML = `<div class="sample-head"><b>Sample ${i + 2}</b><button type="button" class="sample-x" aria-label="Remove these dates" title="Remove">&times;</button></div>` +
+        '<div class="sample-grid"><label>Check-in<input type="date" data-k="check_in"></label><label>Check-out<input type="date" data-k="check_out"></label>' +
+        '<label>Our deal<input type="number" min="0" step="any" inputmode="decimal" data-k="our_deal"></label><label>Online rate<input type="number" min="0" step="any" inputmode="decimal" data-k="online_rate"></label></div>';
       $$('input', row).forEach(inp => {
         inp.value = s[inp.dataset.k] || '';
         inp.addEventListener('input', () => { s[inp.dataset.k] = inp.type === 'number' ? Number(inp.value || 0) : inp.value; updateSampleWarn(); refresh(); });

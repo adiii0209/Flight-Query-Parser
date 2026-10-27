@@ -463,13 +463,31 @@ body{height:auto!important;min-height:100vh!important;overflow:visible!important
 .ho-sep{border:0;border-top:1px solid var(--line);margin:1rem 0}
 
 /* sample dates and windows */
-.sample-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto;gap:.5rem;align-items:end;margin:.5rem 0}
-.sample-row label{min-width:0;font-size:.74rem;color:var(--mute)}
-.sample-row input{width:100%;min-width:0}
 .sample-x{border:0;background:#f0f0f3;width:32px;height:32px;border-radius:50%;font-size:1.1rem;line-height:1;cursor:pointer;margin-bottom:2px}
 .sample-x:hover{background:#fde7ea;color:#d70015}
 .ho-hint.warn{color:#a36a00;background:#fff4dc;border-radius:10px;padding:.5rem .7rem}
 .gl-when + .gl-when{margin-top:1rem}
-@media(max-width:560px){.sample-row{grid-template-columns:repeat(2,minmax(0,1fr)) auto}}
 
 .gl-city{display:block;margin-bottom:.7rem}
+
+/* forms on phones: dates and grids must never push the page wider than the screen */
+input[type=date]{min-width:0;max-width:100%;box-sizing:border-box}
+.ho-grid2>*,.ho-grid3>*{min-width:0}
+.ho-dialog input[type=date],.ho-details input[type=date]{width:100%}
+.gl-when-head{margin-bottom:.45rem}
+.sample-row{border:1px solid var(--line);border-radius:14px;padding:.55rem .7rem .15rem;margin:.6rem 0;background:#fafafc}
+.sample-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:.25rem;font-size:.78rem;color:#4b5563}
+.sample-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.1rem .6rem}
+.sample-grid label{display:block;min-width:0;font-size:.74rem;color:var(--mute);margin-bottom:.5rem}
+.sample-grid input{width:100%;min-width:0;box-sizing:border-box}
+@media(min-width:720px){.sample-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:520px){
+  .gl-when .ho-grid2{grid-template-columns:1fr}
+  .ho-dialog{padding:1.2rem 1rem}
+  input[type=date]{font-size:.88rem}
+  .gl-chips button{padding:.4rem .85rem}
+  .gl-actions .pill,.gl-actions .ho-hint{flex:1 1 100%}
+}
+
+#btnAddSample{margin:.2rem 0 .9rem}
+#sampleWarn{margin-bottom:.9rem}
