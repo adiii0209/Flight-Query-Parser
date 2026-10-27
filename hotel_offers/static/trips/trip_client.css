@@ -284,3 +284,15 @@ body.has-sheet{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 
 .tc-loc b{font-weight:500}
 .tc-loc i{font-style:normal;color:var(--faint);font-size:.8rem}
+
+.co-sel{cursor:pointer;border:0;padding:0}
+.cmp-tick{width:32px;height:32px;border-radius:50%;display:inline-grid;place-items:center;background:var(--cta);color:var(--cta-fg);cursor:pointer}
+.cmp-tick svg{width:16px;height:16px}
+
+/* the location guide places fold away */
+.lg-h{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.lg-tg{flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;height:36px;padding:0 6px 0 14px;border-radius:99px;font-size:.84rem;font-weight:500;color:var(--mute);background:var(--surface-2);white-space:nowrap}
+.lg-tg .cc-chev{width:16px;height:16px;transform:none;transition:transform .25s}
+.lg.open .lg-tg .cc-chev{transform:rotate(180deg)}
+.lg:not(.open) .lg-list{display:none}
+.lg:not(.open){padding-bottom:0}

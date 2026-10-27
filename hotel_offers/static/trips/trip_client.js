@@ -4,7 +4,7 @@
   const slug = document.body.dataset.slug, wa = (document.body.dataset.wa || '').replace(/\D/g, '');
   const root = TT.$('#trip');
   const openCards = new Set();
-  let data = null, groups = [], selection = {}, map = null, chipSel = null, savedY = 0, listY = 0, current = null, sheetOn = false, snap = 'half', sheetTop = 0, noTap = false;
+  let guideOpen = false, data = null, groups = [], selection = {}, map = null, chipSel = null, savedY = 0, listY = 0, current = null, sheetOn = false, snap = 'half', sheetTop = 0, noTap = false;
 
   const PIN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.2A7 7 0 0 1 19 9.8C19 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.5"/></svg>';
   const CLOSE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -98,7 +98,7 @@
     const body = rows.map(([label, vals]) => '<tr><th scope="row">' + label + '</th>' + vals.map(v => '<td>' + (v ? TT.esc(v) : '–') + '</td>').join('') + '</tr>').join('');
     const price = '<tr class="cmp-price"><th scope="row">Price</th>' + opts.map(o => '<td>' + (onlineOf(o) > o.total ? '<s>' + TT.money(onlineOf(o), cur()) + '</s>' : '') + '<b>' + TT.money(o.total, cur()) + '</b>' +
       (o.total === lowest ? '<em>Lowest</em>' : '') + saveHtml(o) + '</td>').join('') + '</tr>';
-    const pick = '<tr><th></th>' + opts.map(o => '<td>' + ('<button type="button" class="co-pick' + (o.key === g.selected ? ' on' : '') + '" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">' + (o.key === g.selected ? 'Unselect' : 'Select') + '</button>') + '</td>').join('') + '</tr>';
+    const pick = '<tr><th></th>' + opts.map(o => '<td>' + (o.key === g.selected ? '<button type="button" class="cmp-tick co-un" data-g="' + TT.esc(g.key) + '" title="Selected. Tap to unselect" aria-label="Selected. Tap to unselect">' + CHECK + '</button>' : '<button type="button" class="co-pick" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">Select</button>') + '</td>').join('') + '</tr>';
     return '<section class="cmp"><h2>Compare hotels</h2><div class="cmp-scroll"><table>' + '<thead>' + head + '</thead><tbody>' + body + price + pick + '</tbody></table></div></section>';
   }
 
@@ -127,17 +127,17 @@
     const hv = key => (o.lines.find(l => l[key]) || {})[key] || '';  // hotel-level details come from the first room that has them
     const perks = (o.lines.find(l => (l.perks || []).length) || { perks: [] }).perks;
     const stay = [['Check-in', g.date ? (first.day ? first.day + ', ' : '') + TT.date(g.date) : ''], ['Check-out', g.checkout ? TT.date(g.checkout) : '']];
-    const pick = '<button type="button" class="co-pick' + (isSel ? ' on' : '') + '" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">' + (isSel ? 'Selected · Unselect' : 'Select') + '</button>';
-    const badges = (multi && g.options[0] === o ? '<span class="co-rec">Recommended</span>' : '') + (isSel ? '<span class="co-sel" title="Selected" role="img" aria-label="Selected">' + CHECK + '</span>' : '');
+    const pick = !isSel ? '<button type="button" class="co-pick" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">Select</button>' : '';
+    const badges = (multi && g.options[0] === o ? '<span class="co-rec">Recommended</span>' : '') + (isSel ? '<button type="button" class="co-sel co-un" data-g="' + TT.esc(g.key) + '" title="Selected. Tap to unselect" aria-label="Selected. Tap to unselect">' + CHECK + '</button>' : '');
     const details = many
       ? factsHtml(stay) + o.lines.map((l, i) => '<div class="co-room"><div class="co-room-h"><b>Room ' + (i + 1) + '</b><span>' + TT.money(l.total, cur()) + '</span></div>' + factsHtml(lineFacts(l)) + roomDesc(l) + '<small>' + rateText(l) + '</small></div>').join('')
       : factsHtml(stay.concat(lineFacts(first))) + roomDesc(first);
     const ck = g.key + '|' + o.key, open = openCards.has(ck);
     const brief = hv('brief');
-    const more = (brief ? '<p class="tc-brief">' + TT.esc(brief) + '</p>' : '') + (nut ? '<p class="tc-nut">' + TT.esc(nut).replace(/\n/g, '<br>') + '</p>' : '') + perksHtml(perks) + details + linksHtml(info) +
+    const more = (first.address ? '<p class="tc-sub">' + TT.esc(first.address) + '</p>' : '') + (brief ? '<p class="tc-brief">' + TT.esc(brief) + '</p>' : '') + (nut ? '<p class="tc-nut">' + TT.esc(nut).replace(/\n/g, '<br>') + '</p>' : '') + perksHtml(perks) + details + linksHtml(info) +
       (located ? '<button class="tc-pin" data-id="' + located.id + '">View on map</button>' : '');
     return '<article class="tc-card co' + (isSel ? ' is-sel' : '') + (open ? ' open' : '') + '">' + gallery(o, badges) + '<div class="tc-body"><div class="tc-top"><div><h2>' + TT.esc(o.hotel_name || first.hotel_name) + '</h2>' +
-      (first.address ? '<p class="tc-sub">' + TT.esc(first.address) + '</p>' : '') + '</div>' + pick + '</div>' + factsRow(hv('stars'), hv('style'), hv('age_info')) +
+      '</div>' + pick + '</div>' + factsRow(hv('stars'), hv('style'), hv('age_info')) +
       (near.length ? '<p class="tc-loc">' + PINICON + '<span>' + near.slice(0, 3).map(l => '<b>' + TT.esc(l.name) + '</b>' + (l.km != null ? ' <i>' + (l.km < 1 ? Math.round(l.km * 10) * 100 + ' m' : l.km.toFixed(1) + ' km') + '</i>' : '')).join(' · ') + '</span></p>' : '') +
       '<div class="tc-foot"><div class="tc-price">' + onlineHtml(o) + '<small>' + (many ? 'Our price for ' + plural(o.lines.length, 'room') : first.items > 1 ? rateText(first) : 'Our price') + '</small><b>' + TT.money(o.total, cur()) + '</b>' + saveHtml(o) + '</div>' +
       '<button type="button" class="tc-tog" data-ck="' + TT.esc(ck) + '" aria-expanded="' + open + '"><span>' + (open ? 'Hide details' : 'View details') + '</span>' + CHEV + '</button></div>' +
@@ -177,14 +177,15 @@
     const title = pins.length + (pins.length === 1 ? ' hotel' : ' hotels') + (spots.length ? ' · ' + spots.length + (spots.length === 1 ? ' area' : ' areas') + ' to explore' : '');
     return bar + '<section class="tc-mapsec" id="tcMapSec">' + mapBox(pins) + '</section>' +
       '<div class="cp-sheet" id="cpSheet"><div class="sh-head" id="shHead"><i class="sh-bar"></i><p class="sh-t">' + title + '</p></div><div class="sh-in" id="shIn">' +
-      (spots.length ? '<section class="lg">' + guideHead(g, spots) + guideList(spots) + '</section>' : '') + rest + '</div></div>';
+      (spots.length ? '<section class="lg' + (guideOpen ? ' open' : '') + '">' + guideHead(g, spots) + guideList(spots) + '</section>' : '') + rest + '</div></div>';
   }
 
   // the places the agent picked for this city (the local guide)
   const spotsOf = g => { const e = (data.guide || {})[String(g.city || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 60)]; return e ? e.spots : []; };
 
   // the one map of the city page: the hotels (chips on the map), the lively areas and a full screen button
-  const guideHead = (g, spots) => '<div class="lg-h"><h2>' + (spots.length ? 'Location guide' : 'On the map') + '</h2><p>' + (spots.length ? 'The liveliest areas of ' + TT.esc(g.city) + ', picked for you' : 'Your hotels in ' + TT.esc(g.city)) + '</p></div>';
+  const guideHead = (g, spots) => '<div class="lg-h"><div><h2>' + (spots.length ? 'Location guide' : 'On the map') + '</h2><p>' + (spots.length ? 'The liveliest areas of ' + TT.esc(g.city) + ', picked for you' : 'Your hotels in ' + TT.esc(g.city)) + '</p></div>' +
+    (spots.length ? '<button type="button" class="lg-tg" aria-expanded="' + guideOpen + '"><span>' + (guideOpen ? 'Hide places' : spots.length + (spots.length === 1 ? ' place' : ' places')) + '</span>' + CHEV + '</button>' : '') + '</div>';
   const mapBox = pins => '<div class="tc-mapbox"><div class="tc-map" id="tcMap"></div>' +
     '<div class="tc-chips" id="tcChips">' + pins.map(q => '<button type="button" class="tc-chip" data-id="' + q.id + '"><i>' + q.num + '</i>' + TT.esc(q.hotel_name) + '</button>').join('') + '</div>' +
     '<button type="button" class="tc-fs" id="tcFs" aria-label="Full screen">' + EXPAND + '</button></div>';
@@ -193,7 +194,7 @@
   function guideHtml(g, pins) {
     const spots = spotsOf(g);
     if (!spots.length && !pins.length) return '';
-    return '<section class="lg tc-mapsec" id="tcMapSec">' + guideHead(g, spots) + mapBox(pins) + (spots.length ? guideList(spots) : '') + '</section>';
+    return '<section class="lg tc-mapsec' + (guideOpen ? ' open' : '') + '" id="tcMapSec">' + guideHead(g, spots) + mapBox(pins) + (spots.length ? guideList(spots) : '') + '</section>';
   }
 
   // one pin per hotel option of this city, numbered 1, 2, 3 in the order of the cards
@@ -428,6 +429,14 @@
   root.addEventListener('click', e => {
     const spot = e.target.closest('[data-spot]');
     if (spot) { if (map) { selectChip(null); if (sheetOn) { if (snap === 'full') setSnap('half', { fit: false }); } else TT.$('#tcMap').scrollIntoView({ block: 'center', behavior: 'smooth' }); map.focusSpot(+spot.dataset.spot); } return; }
+    const lgt = e.target.closest('.lg-tg');
+    if (lgt) {
+      const sec = lgt.closest('.lg'), n = sec.querySelectorAll('.lg-list li').length;
+      guideOpen = !sec.classList.contains('open');
+      sec.classList.toggle('open', guideOpen); lgt.setAttribute('aria-expanded', guideOpen);
+      lgt.firstChild.textContent = guideOpen ? 'Hide places' : n + (n === 1 ? ' place' : ' places');
+      return;
+    }
     const tog = e.target.closest('.tc-tog');
     if (tog) {
       const card = tog.closest('.co'), on = !card.classList.contains('open');
@@ -436,7 +445,9 @@
       return;
     }
     const pick = e.target.closest('.co-pick');
-    if (pick) { choose(pick.dataset.g, pick.classList.contains('on') ? null : pick.dataset.o); return; }
+    if (pick) { choose(pick.dataset.g, pick.dataset.o); return; }
+    const un = e.target.closest('.co-un');
+    if (un) { choose(un.dataset.g, null); return; }
     if (e.target.closest('.cc')) { listY = window.scrollY; return; }  // remember where the list was; the link itself changes the page
     const b = e.target.closest('.tc-pin, .tc-chip');
     if (!b || !map) return;
