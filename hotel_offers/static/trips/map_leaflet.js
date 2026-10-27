@@ -68,6 +68,6 @@
       map.closePopup();
       if (pinsBounds) map.flyToBounds(pinsBounds, { maxZoom: 15, duration: .6 });
     }
-    return { render, focus, focusSpot, showAll, destroy() { map.remove(); }, resize() { map.invalidateSize(); if (pinsBounds) map.fitBounds(pinsBounds, { maxZoom: 15 }); } };
+    return { render, focus, focusSpot, showAll, drag(on) { if (on) map.dragging.enable(); else if (opts.mini && L.Browser.mobile) map.dragging.disable(); }, destroy() { map.remove(); }, resize() { map.invalidateSize(); if (pinsBounds) map.fitBounds(pinsBounds, { maxZoom: 15 }); } };
   };
 })(window.TT);

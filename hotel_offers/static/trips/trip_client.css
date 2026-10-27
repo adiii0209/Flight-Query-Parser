@@ -51,6 +51,7 @@
 /* map: chips float inside the map, top; a full screen button sits in the corner */
 .tc-mapbox{position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--line);background:var(--surface-2)}
 .tc-map{height:min(56vh,420px);z-index:0}
+@media (max-width:640px){.tc-map{height:220px}.tc-mapsec.full .tc-map{height:100%}}
 .tc-chips{position:absolute;z-index:500;top:0;left:0;right:0;display:flex;gap:8px;overflow-x:auto;padding:12px 56px 22px 12px;scrollbar-width:none;
   background:linear-gradient(to bottom,rgba(0,0,0,.28),rgba(0,0,0,0));pointer-events:none}
 .tc-chips::-webkit-scrollbar{display:none}

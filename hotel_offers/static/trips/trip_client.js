@@ -222,6 +222,7 @@
     fab.classList.toggle('over', full);
     TT.$('#tcFs').innerHTML = full ? CLOSE : EXPAND;
     TT.$('#tcFs').setAttribute('aria-label', full ? 'Exit full screen' : 'Full screen');
+    map.drag(full);  // on a phone the small map lets the page scroll; full screen can be dragged
     setTimeout(() => map.resize(), 60);
     if (!full) window.scrollTo({ top: savedY, behavior: 'instant' });  // back to exactly where you were, not down to the map
   }
@@ -245,7 +246,7 @@
     const pins = cityPins(g), spots = spotsOf(g);
     chipSel = null;
     if (!(pins.length || spots.length) || !TT.$('#tcMap')) return;
-    map = TT.createMap(TT.$('#tcMap'), { onSelect: id => selectChip(id) });
+    map = TT.createMap(TT.$('#tcMap'), { mini: true, onSelect: id => selectChip(id) });
     map.render(pins, spots);
     document.body.insertAdjacentHTML('beforeend', '<button class="tc-fab" id="tcFab" type="button" aria-label="Open map">' + PIN + '<span>Map</span></button>');
     const toggle = () => setFull(!TT.$('#tcMapSec').classList.contains('full'));
