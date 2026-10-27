@@ -1,6 +1,6 @@
 /* Trips: grouping of hotel quotes (city + dates -> options -> room lines). Mirrors trip_groups.py; used by the agent and client pages.
    Same city and dates = one group. Rows for the same hotel in a group = ONE option (several rooms, all needed, totals added);
-   different hotels = alternatives. The first option in the agent's order is the default. */
+   different hotels = alternatives. Nothing is selected until the guest picks (selectedOption is null). */
 (function (TT) {
   const norm = s => String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, '');
   const groupKey = q => norm(q.city) + '|' + (q.date || '') + '|' + (parseInt(q.nights, 10) || 0);
@@ -20,16 +20,15 @@
     });
     return Array.from(map.values()).sort((a, b) => ((a.date || '9999-99-99') < (b.date || '9999-99-99') ? -1 : (a.date || '9999-99-99') > (b.date || '9999-99-99') ? 1 : a.first - b.first)).map(g => {
       const options = Array.from(g.options.values());
-      const explicit = options.some(o => o.key === selection[g.key]);
-      const selected = explicit ? selection[g.key] : options[0].key;
+      const chosen = options.find(o => o.key === selection[g.key]) || null;
       return Object.assign(g, {
-        options, selected, explicit, selectedOption: options.find(o => o.key === selected),
+        options, selected: chosen ? chosen.key : null, explicit: !!chosen, selectedOption: chosen,
         checkout: g.date && g.nights ? TT.addDays(g.date, g.nights) : '',
       });
     });
   };
 
-  TT.groupsTotal = groups => groups.reduce((s, g) => s + g.selectedOption.total, 0);
+  TT.groupsTotal = groups => groups.reduce((s, g) => s + (g.selectedOption ? g.selectedOption.total : 0), 0);
 
   /** One map pin per option (its first line that has a location), numbered by city card. selectedOnly: just the chosen hotel of each city. */
   TT.groupPins = function (groups, selectedOnly) {

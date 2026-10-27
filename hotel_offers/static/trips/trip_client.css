@@ -269,3 +269,8 @@ body.has-sheet .tc-fab.hide{opacity:0;pointer-events:none;transform:translateX(-
 .cp-sheet .lg{margin:0 0 4px;border:0;background:none;border-radius:0;overflow:visible}
 .cp-sheet .lg-h{padding:4px 4px 0}
 .cp-sheet .lg-list{padding:6px 0 4px;grid-template-columns:1fr}
+
+/* nothing is selected until the guest chooses */
+.cc-choose{font-size:.86rem;font-weight:600;color:var(--cta-fg);background:var(--cta);padding:7px 14px;border-radius:99px}
+.tc-sum-head small{font-size:.9rem;opacity:.85;text-align:right;max-width:60%;line-height:1.35}
+.tc-foot + .tc-more{margin-top:2px}

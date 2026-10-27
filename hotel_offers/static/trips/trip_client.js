@@ -127,8 +127,8 @@
     const hv = key => (o.lines.find(l => l[key]) || {})[key] || '';  // hotel-level details come from the first room that has them
     const perks = (o.lines.find(l => (l.perks || []).length) || { perks: [] }).perks;
     const stay = [['Check-in', g.date ? (first.day ? first.day + ', ' : '') + TT.date(g.date) : ''], ['Check-out', g.checkout ? TT.date(g.checkout) : '']];
-    const pick = multi && !isSel ? '<button type="button" class="co-pick" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">Select</button>' : '';
-    const badges = multi ? (g.options[0] === o ? '<span class="co-rec">Recommended</span>' : '') + (isSel ? '<span class="co-sel" title="Selected" role="img" aria-label="Selected">' + CHECK + '</span>' : '') : '';
+    const pick = !isSel ? '<button type="button" class="co-pick" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">Select</button>' : '';
+    const badges = (multi && g.options[0] === o ? '<span class="co-rec">Recommended</span>' : '') + (isSel ? '<span class="co-sel" title="Selected" role="img" aria-label="Selected">' + CHECK + '</span>' : '');
     const details = many
       ? factsHtml(stay) + o.lines.map((l, i) => '<div class="co-room"><div class="co-room-h"><b>Room ' + (i + 1) + '</b><span>' + TT.money(l.total, cur()) + '</span></div>' + factsHtml(lineFacts(l)) + roomDesc(l) + '<small>' + rateText(l) + '</small></div>').join('')
       : factsHtml(stay.concat(lineFacts(first))) + roomDesc(first);
@@ -137,12 +137,12 @@
     const more = (brief ? '<p class="tc-brief">' + TT.esc(brief) + '</p>' : '') + (nut ? '<p class="tc-nut">' + TT.esc(nut).replace(/\n/g, '<br>') + '</p>' : '') + perksHtml(perks) + details + linksHtml(info) +
       (near.length ? '<p class="tc-near"><b>Nearby:</b> ' + near.map(l => TT.esc(l.name) + (l.km != null ? ' <i>' + (l.km < 1 ? Math.round(l.km * 10) * 100 + ' m' : l.km.toFixed(1) + ' km') + '</i>' : '')).join(' · ') + '</p>' : '') +
       (located ? '<button class="tc-pin" data-id="' + located.id + '">View on map</button>' : '');
-    return '<article class="tc-card co' + (isSel && multi ? ' is-sel' : '') + (open ? ' open' : '') + '">' + gallery(o, badges) + '<div class="tc-body"><div class="tc-top"><div><h2>' + TT.esc(o.hotel_name || first.hotel_name) + '</h2>' +
+    return '<article class="tc-card co' + (isSel ? ' is-sel' : '') + (open ? ' open' : '') + '">' + gallery(o, badges) + '<div class="tc-body"><div class="tc-top"><div><h2>' + TT.esc(o.hotel_name || first.hotel_name) + '</h2>' +
       (first.address ? '<p class="tc-sub">' + TT.esc(first.address) + '</p>' : '') + '</div>' + pick + '</div>' + factsRow(hv('stars'), hv('style'), hv('age_info')) +
       (hv('location_info') ? '<p class="tc-loc">' + PINICON + '<span>' + TT.esc(hv('location_info')) + '</span></p>' : '') +
-      '<div class="tc-more" id="more-' + TT.esc(ck.replace(/[^\w-]/g, '_')) + '">' + more + '</div>' +
       '<div class="tc-foot"><div class="tc-price">' + onlineHtml(o) + '<small>' + (many ? 'Our price for ' + plural(o.lines.length, 'room') : first.items > 1 ? rateText(first) : 'Our price') + '</small><b>' + TT.money(o.total, cur()) + '</b>' + saveHtml(o) + '</div>' +
-      '<button type="button" class="tc-tog" data-ck="' + TT.esc(ck) + '" aria-expanded="' + open + '"><span>' + (open ? 'Hide details' : 'View details') + '</span>' + CHEV + '</button></div></div></article>';
+      '<button type="button" class="tc-tog" data-ck="' + TT.esc(ck) + '" aria-expanded="' + open + '"><span>' + (open ? 'Hide details' : 'View details') + '</span>' + CHEV + '</button></div>' +
+      '<div class="tc-more" id="more-' + TT.esc(ck.replace(/[^\w-]/g, '_')) + '">' + more + '</div></div></article>';
   }
 
   // "27–30 Dec · 3 nights": short enough for the city page bar
@@ -157,21 +157,22 @@
   const cityHref = g => '#city/' + encodeURIComponent(g.key);
 
   function cityCard(g, gi) {
-    const multi = g.options.length > 1, sel = g.selectedOption;
-    const photo = (sel.lines.find(l => l.photos.length) || { photos: [] }).photos[0];
+    const multi = g.options.length > 1, sel = g.selectedOption, shown = sel || g.options[0];
+    const photo = (shown.lines.find(l => l.photos.length) || { photos: [] }).photos[0];
     const media = photo ? '<img src="' + photo + '" alt="" loading="lazy">' : '<div class="cc-ph"><span>' + TT.esc((g.city || '?').slice(0, 1)) + '</span></div>';
     return '<a class="cc" href="' + cityHref(g) + '" data-g="' + TT.esc(g.key) + '"><div class="cc-media">' + media + '<span class="cg-n">' + (gi + 1) + '</span>' +
       (multi ? '<span class="cc-tag">' + g.options.length + ' options</span>' : '') + '</div>' +
-      '<div class="cc-body"><h2>' + TT.esc(g.city || 'Your stay') + '</h2><p class="cc-dates">' + TT.esc(groupDates(g)) + '</p><p class="cc-hotel">' + TT.esc(sel.hotel_name) + '</p></div>' +
-      '<div class="cc-price"><b>' + TT.money(sel.total, cur()) + '</b>' + CHEV + '</div></a>';
+      '<div class="cc-body"><h2>' + TT.esc(g.city || 'Your stay') + '</h2><p class="cc-dates">' + TT.esc(groupDates(g)) + '</p><p class="cc-hotel">' + TT.esc(sel ? sel.hotel_name : multi ? 'Choose from ' + g.options.length + ' hotels' : shown.hotel_name) + '</p></div>' +
+      '<div class="cc-price">' + (sel ? '<b>' + TT.money(sel.total, cur()) + '</b>' : '<span class="cc-choose">Choose</span>') + CHEV + '</div></a>';
   }
 
   // ---- city page: the hotel options for one city and dates
+  const amtOf = g => (g.selectedOption ? TT.money(g.selectedOption.total, cur()) : '');
   function cityPage(g, gi) {
     const multi = g.options.length > 1, pins = cityPins(g), spots = spotsOf(g);
     sheetOn = window.matchMedia('(max-width:640px)').matches && !!(pins.length || spots.length);  // a phone gets the map with a bottom sheet
     const bar = '<div class="cp-bar"><a class="cp-back" href="#" aria-label="Back to all cities">' + BACK + '</a><div class="cp-mid"><h1>' + TT.esc(g.city || 'Your stay') + '</h1><p>' + TT.esc(shortDates(g)) + '</p></div>' +
-      '<b class="cp-amt">' + TT.money(g.selectedOption.total, cur()) + '</b></div>';
+      '<b class="cp-amt">' + amtOf(g) + '</b></div>';
     const rest = '<div class="cp-opts">' + g.options.map(o => optionHtml(g, o, multi)).join('') + '</div><div id="cmpHost">' + compareHtml(g) + '</div>' + disclaimerHtml();
     if (!sheetOn) return bar + guideHtml(g, pins) + rest;
     const title = pins.length + (pins.length === 1 ? ' hotel' : ' hotels') + (spots.length ? ' · ' + spots.length + (spots.length === 1 ? ' area' : ' areas') + ' to explore' : '');
@@ -208,8 +209,9 @@
   }
 
   function summaryHtml() {
-    const rows = groups.map((g, gi) => '<li><span><i>' + (gi + 1) + '</i><em>' + TT.esc(g.city || 'Stay') + '</em><small>' + TT.esc(g.selectedOption.hotel_name) + '</small></span><b>' + TT.money(g.selectedOption.total, cur()) + '</b></li>').join('');
-    return '<section class="tc-sum"><div class="tc-sum-head"><span>Trip total</span><b>' + TT.money(TT.groupsTotal(groups), cur()) + '</b></div><ul>' + rows + '</ul></section>';
+    const rows = groups.map((g, gi) => '<li><span><i>' + (gi + 1) + '</i><em>' + TT.esc(g.city || 'Stay') + '</em><small>' + TT.esc(g.selectedOption ? g.selectedOption.hotel_name : 'Not chosen yet') + '</small></span>' + (g.selectedOption ? '<b>' + TT.money(g.selectedOption.total, cur()) + '</b>' : '') + '</li>').join('');
+    const done = groups.filter(g => g.selectedOption).length;
+    return '<section class="tc-sum"><div class="tc-sum-head"><span>Trip total</span>' + (done === groups.length ? '<b>' + TT.money(TT.groupsTotal(groups), cur()) + '</b>' : '<small>Choose a hotel in each city to see your total · ' + done + ' of ' + groups.length + ' chosen</small>') + '</div><ul>' + rows + '</ul></section>';
   }
 
   // ---- map
@@ -388,7 +390,7 @@
     if (current !== null) {
       const g = groups.find(x => x.key === current), y = window.scrollY;
       if (g) {
-        TT.$('.cp-amt').textContent = TT.money(g.selectedOption.total, cur());
+        TT.$('.cp-amt').textContent = amtOf(g);
         TT.$('.cp-opts').innerHTML = g.options.map(o => optionHtml(g, o, g.options.length > 1)).join('');
         TT.$('#cmpHost').innerHTML = compareHtml(g);
         window.scrollTo({ top: y, behavior: 'instant' });

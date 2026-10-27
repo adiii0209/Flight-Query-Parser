@@ -35,7 +35,7 @@
       const cities = new Set(groups.map(g => (g.city || '').trim().toLowerCase()).filter(Boolean));
       const stat = (v, l) => '<div class="stat"><b>' + v + '</b><span>' + l + '</span></div>';
       $('#dStats', root).innerHTML = stat(groups.length, groups.length === 1 ? 'Stay' : 'Stays') + stat(cities.size, cities.size === 1 ? 'City' : 'Cities') +
-        stat(nights, nights === 1 ? 'Night' : 'Nights') + stat(TT.money(total, trip.currency), 'Total (selected)');
+        stat(nights, nights === 1 ? 'Night' : 'Nights') + stat(groups.some(g => g.selectedOption) ? TT.money(total, trip.currency) : '—', 'Total (selected)');
       const pins = TT.groupPins(groups);
       $('#dChips', root).innerHTML = pins.map(q =>
         '<button type="button" class="d-chip" data-id="' + q.id + '"><i>' + q.num + '</i>' + TT.esc(q.hotel_name || 'Hotel') + '</button>').join('');

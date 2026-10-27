@@ -101,13 +101,13 @@
       const multi = g.options.length > 1;
       return '<section class="qg" data-g="' + TT.esc(g.key) + '"><header class="qg-head"><span class="qg-n">' + (gi + 1) + '</span>' +
         '<div><h2>' + TT.esc(g.city || 'No city') + '</h2><p>' + TT.esc(dates) + (g.nights ? ' · ' + nightsLabel(g.nights) : '') + ' · ' + g.options.length + (multi ? ' options' : ' option') + '</p></div>' +
-        '<div class="qg-total"><small>' + (multi ? 'Selected' : 'Total') + '</small><b>' + TT.money(g.selectedOption.total, opts.currency()) + '</b></div></header>' +
+        '<div class="qg-total"><small>' + (!multi ? 'Total' : g.selectedOption ? 'Selected' : 'Not chosen yet') + '</small><b>' + (!multi ? TT.money(g.options[0].total, opts.currency()) : g.selectedOption ? TT.money(g.selectedOption.total, opts.currency()) : '—') + '</b></div></header>' +
         guide + g.options.map((o, oi) => optionHtml(g, o, oi, multi)).join('') + '</section>';
     }
 
     function optionHtml(g, o, oi, multi) {
       const isSel = o.key === g.selected;
-      const badge = !multi ? '' : isSel ? '<span class="badge">' + (g.explicit ? 'Guest picked' : 'Default') + '</span>' : '';
+      const badge = !multi ? '' : isSel ? '<span class="badge">' + 'Guest picked' + '</span>' : '';
       const head = multi ? '<div class="qo-head"><span class="qo-tag">Option ' + (oi + 1) + '</span><b>' + TT.esc(o.hotel_name || 'Hotel') + '</b>' + badge +
         (o.lines.length > 1 ? '<span class="qo-rooms">' + o.lines.length + ' rooms</span>' : '') + '<span class="spacer"></span>' +
         '<span class="qo-total">' + TT.money(o.total, opts.currency()) + '</span>' +

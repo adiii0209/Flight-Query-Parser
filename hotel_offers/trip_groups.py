@@ -1,8 +1,8 @@
 """Groups a trip's hotel quotes for the client: city + dates -> options (hotels) -> room lines.
 
 Same city and dates form one group. Within a group, rows for the same hotel are ONE option (several rooms / guests,
-all needed, totals added); different hotels are alternatives the guest chooses between. The first option in the
-agent's order is the default. The same rules are mirrored in static/trips/groups.js, which draws the pages."""
+all needed, totals added); different hotels are alternatives the guest chooses between. Nothing is
+selected until the guest picks one. The same rules are mirrored in static/trips/groups.js, which draws the pages."""
 import re
 
 
@@ -32,7 +32,7 @@ def group_quotes(quotes, selection=None):
         options = list(g["options"].values())
         chosen = selection.get(g["key"])
         g["options"] = options
-        g["selected"] = chosen if any(o["key"] == chosen for o in options) else options[0]["key"]
+        g["selected"] = chosen if any(o["key"] == chosen for o in options) else None
         out.append(g)
     return out
 
