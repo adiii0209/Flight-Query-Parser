@@ -107,6 +107,10 @@
                         <i data-lucide="users"></i>
                         <span>Members</span>
                     </button>
+                    <button class="nav-item" data-tab="hr">
+                        <i data-lucide="briefcase"></i>
+                        <span>HR &amp; Payroll</span>
+                    </button>
                 </nav>
             </aside>
 
@@ -131,6 +135,15 @@
                             <button class="btn primary" id="saveBtn" onclick="saveSettings()">Save Changes</button>
                         </div>
                     </div>
+                </div>
+
+                <!-- Tab: HR & Payroll (built by /hr/static/hr.js the first time it is opened) -->
+                <div class="tab-pane" id="hr">
+                    <div class="content-header">
+                        <h2>HR &amp; Payroll</h2>
+                        <p>Onboard people, give them a title, and generate offer letters and payslips.</p>
+                    </div>
+                    <div id="hrRoot"></div>
                 </div>
 
                 <!-- Tab: Members -->
@@ -229,6 +242,7 @@
                 btn.addEventListener('click', function() {
                     const targetId = this.getAttribute('data-tab');
                     if (!targetId) return;
+                    if (targetId === 'hr') loadHr();
 
                     tabButtons.forEach(b => b.classList.remove('active'));
                     this.classList.add('active');
@@ -242,10 +256,21 @@
                 });
             });
 
+            if (location.hash === '#hr') { document.querySelector('[data-tab="hr"]').click(); }
             await loadUser();
             await loadWorkspaceData();
             await loadMembers();
         });
+
+        // HR & Payroll: its scripts and styles are only fetched when the tab is first opened
+        let hrLoaded = false;
+        function loadHr() {
+            if (hrLoaded) return;
+            hrLoaded = true;
+            const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/hr/static/hr.css'; document.head.appendChild(css);
+            ['hr_docs.js', 'hr.js'].reduce((p, f) => p.then(() => new Promise(res => { const s = document.createElement('script'); s.src = '/hr/static/' + f; s.onload = res; document.body.appendChild(s); })), Promise.resolve())
+                .then(() => HR.mount(document.getElementById('hrRoot')));
+        }
 
         async function loadUser() {
             try {
