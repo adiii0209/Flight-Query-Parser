@@ -19,3 +19,4 @@ gunicorn
 gevent
 simple-websocket
 openpyxl
+python-docx

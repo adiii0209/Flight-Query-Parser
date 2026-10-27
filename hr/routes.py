@@ -263,3 +263,23 @@ def delete_document(did):
     db.session.delete(d)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+@hr_bp.route("/api/hr/documents/docx", methods=["POST"])
+@login_required
+@role_required(*ADMIN)
+def export_docx():
+    """The document as it is on screen, as an editable Word file. Takes the content in the body, so unsaved edits are included."""
+    import re as _re
+    from flask import Response
+    from . import docx_export
+    data = (request.get_json(silent=True) or {}).get("data")
+    if not isinstance(data, dict) or len(json.dumps(data)) > MAX_JSON:
+        return _err("Missing or too large document.")
+    try:
+        body = docx_export.build(data)
+    except Exception as exc:  # a malformed document should not crash the page
+        return _err(f"Could not build the Word file: {exc}", 400)
+    name = _re.sub(r"[^A-Za-z0-9 _.-]+", "", str(data.get("summary") or "document")).strip()[:80] or "document"
+    return Response(body, mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": f'attachment; filename="{name}.docx"'})

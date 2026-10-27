@@ -85,12 +85,13 @@
   function personForm(e) {
     const f = (k, label, type, extra) => '<label class="fld' + (extra && extra.wide ? ' wide' : '') + '"><span>' + label + '</span>' + (type === 'textarea' ? '<textarea name="' + k + '" rows="3"' + (extra && extra.ph ? ' placeholder="' + esc(extra.ph) + '"' : '') + '>' + esc(e[k] || '') + '</textarea>' :
       '<input name="' + k + '" type="' + (type || 'text') + '" value="' + esc(e[k] == null ? '' : e[k]) + '"' + (type === 'number' ? ' min="0" step="any"' : '') + (extra && extra.ph ? ' placeholder="' + esc(extra.ph) + '"' : '') + (extra && extra.req ? ' required' : '') + '></label>');
+    const addr = HR.splitAddress(e.address);
     const seg = titles().map(t => '<label><input type="radio" name="title" value="' + esc(t) + '"' + (t === e.title ? ' checked' : '') + '><span>' + esc(t) + '</span></label>').join('');
     return '<form id="hrPersonForm" style="display:contents"><div class="dh"><div><h3>' + (e.id ? 'Edit ' + esc(e.full_name) : 'Onboard a person') + '</h3><p>' + (e.id ? 'Changes apply to new documents. Saved documents keep what they had.' : 'Add the basics now. You can fill in the rest later.') + '</p></div></div>' +
       '<div class="db"><div class="grp"><h4>Who are they?</h4><div class="seg" role="radiogroup" aria-label="Title">' + seg + '</div></div>' +
       '<div class="grp"><h4>Basics</h4><div class="grid">' + f('full_name', 'Full name', 'text', { wide: true, req: true, ph: 'e.g. Priya Sen' }) + f('designation', 'Job title <em>(printed in the letter)</em>', 'text', { wide: true, ph: 'e.g. Travel Consultant' }) +
       f('department', 'Department', 'text') + f('emp_code', 'Employee ID <em>(auto if empty)</em>', 'text') + '</div></div>' +
-      '<div class="grp"><h4>Contact</h4><div class="grid">' + f('email', 'Email', 'email') + f('phone', 'Phone', 'text') + f('institute', 'College / institute <em>(interns)</em>', 'text', { wide: true }) + f('address', 'Address <em>(printed on the letter)</em>', 'textarea', { wide: true, ph: 'Street, city, PIN' }) + '</div></div>' +
+      '<div class="grp"><h4>Contact</h4><div class="grid">' + f('email', 'Email', 'email') + f('phone', 'Phone', 'text') + f('institute', 'College / institute <em>(interns)</em>', 'text', { wide: true }) + '<div class="fld wide"><span>Address <em>(printed on the letter, one row per line)</em></span><input name="addr1" value="' + esc(addr[0] || '') + '" placeholder="Flat / building and street"><input name="addr2" value="' + esc(addr[1] || '') + '" placeholder="Area / locality"><input name="addr3" value="' + esc(addr[2] || '') + '" placeholder="City - PIN"></div>' + '</div></div>' +
       '<div class="grp"><h4>Employment</h4><div class="grid">' + f('join_date', 'Joining date', 'date') + f('end_date', 'End date <em>(interns)</em>', 'date') + f('amount', 'Monthly salary or stipend (₹)', 'number', { ph: '0' }) +
       '<label class="fld"><span>Status</span><select name="status"><option value="active"' + (e.status !== 'exited' ? ' selected' : '') + '>Active</option><option value="exited"' + (e.status === 'exited' ? ' selected' : '') + '>Exited</option></select></label></div></div>' +
       '<div class="grp"><h4>Payroll details</h4><div class="grid">' + f('pan', 'PAN', 'text') + f('bank_account', 'Bank account', 'text') + f('notes', 'Internal notes <em>(never printed)</em>', 'textarea', { wide: true }) + '</div></div></div>' +
@@ -107,6 +108,7 @@
     $('#hrPersonForm').addEventListener('submit', async ev => {
       ev.preventDefault();
       const body = Object.fromEntries(new FormData(ev.target).entries());
+      body.address = [body.addr1, body.addr2, body.addr3].map(x => (x || '').trim()).filter(Boolean).join('\n');
       try {
         const r = await api('/api/hr/employees' + (e.id ? '/' + e.id : ''), { method: e.id ? 'PUT' : 'POST', json: body });
         if (e.id) { state.emps = state.emps.map(x => (x.id === e.id ? r.employee : x)); d.close(); toast('Saved'); } else { state.emps.push(r.employee); personDone(r.employee); }
@@ -213,7 +215,7 @@
     ed = Object.assign({ doc, id: null, employee_id: null, mode: 'doc', dirty: false }, meta);
     const el = $('#hrEd'); el.hidden = false; document.body.classList.add('hr-lock');
     el.innerHTML = '<div class="eb"><button class="hb hb-g sm" data-act="ed-close">← Back</button><div><h2 id="hrEdTitle"></h2><small id="hrEdSub"></small></div><span class="sp"></span><span class="st" id="hrEdState">' + (ed.id ? 'Saved' : 'Not saved yet') + '</span>' +
-      (ed.mode === 'doc' ? '<button class="hb hb-g" data-act="ed-print">' + IC.print + 'Print / PDF</button>' : '') + '<button class="hb hb-p" data-act="ed-save">' + (ed.mode === 'template' ? 'Save template' : 'Save') + '</button></div>' +
+      (ed.mode === 'doc' ? '<button class="hb hb-g" data-act="ed-word">' + IC.doc + 'Word</button><button class="hb hb-g" data-act="ed-print">' + IC.print + 'Print / PDF</button>' : '') + '<button class="hb hb-p" data-act="ed-save">' + (ed.mode === 'template' ? 'Save template' : 'Save') + '</button></div>' +
       '<div class="em"><aside id="hrEdForm"></aside><div class="hr-prevwrap" id="hrPrevWrap"><div class="pvh"><span id="hrPvInfo"></span></div><div id="hrPrev"></div></div></div>';
     drawEdForm(); drawPreview();
     window.addEventListener('resize', fitPreview);
@@ -267,17 +269,17 @@
       const used = new Set(); (d.blocks || []).forEach(b => HR.varsIn(b.text).forEach(k => used.add(k))); HR.varsIn(d.header_title).forEach(k => used.add(k));
       const builtin = ['company_short', 'company_legal', 'company_name', 'signatory_name', 'signatory_title', 'date'];
       const keys = Array.from(new Set(Object.keys(d.vars || {}).concat(Array.from(used).filter(k => !builtin.includes(k)))));
-      h += sec('Letter', (ed.mode === 'doc' ? inp('date', 'Date', d.date, 'date') + inp('recipient', 'Addressed to', d.recipient, 'textarea', true, { rows: 4 }) : inp('label', 'Template name', d.label, 'text', true)) +
+      h += sec('Letter', (ed.mode === 'doc' ? inp('date', 'Date', d.date, 'date') + inp('recipient', 'Addressed to <em>(one row per line)</em>', d.recipient, 'textarea', true, { rows: 4 }) : inp('label', 'Template name', d.label, 'text', true)) +
         '<label class="fld"><span>Letterhead</span><select data-p="letterhead">' + [['company', 'Company block + logo'], ['logo', 'Title + logo'], ['none', 'None']].map(o => '<option value="' + o[0] + '"' + (d.letterhead === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
         inp('header_title', 'Header title (each page)', d.header_title) +
         '<label class="fld"><span>Font</span><select data-p="style.font">' + FONTS.map(o => '<option value="' + esc(o[0]) + '"' + (d.style.font === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>' +
         inp('style.size', 'Font size (pt)', d.style.size, 'number') + '<label class="fld"><span>Alignment</span><select data-p="style.align"><option value="justify"' + (d.style.align !== 'left' ? ' selected' : '') + '>Justified</option><option value="left"' + (d.style.align === 'left' ? ' selected' : '') + '>Left</option></select></label>', true);
       h += sec('Details in the text <small>' + keys.length + '</small>', keys.map(k => inp('vars.' + k, pretty(k), d.vars[k] == null ? '' : d.vars[k], 'text', k === 'salary_words')).join('') +
-        '<div class="addvar wide"><input id="hrNewVar" placeholder="New detail, e.g. reporting_manager"><button class="hb hb-g sm" data-act="add-var">Add</button></div><p class="hint wide">Use a detail in the text as {{name}}. Salary words fill themselves from the salary.</p>', true);
+        '<div class="addvar wide"><input id="hrNewVar" placeholder="New detail, e.g. reporting_manager"><button class="hb hb-g sm" data-act="add-var">Add</button></div><p class="hint wide">These fill themselves into the text wherever you insert them. Salary in words follows the salary.</p>', true);
       h += sec('Company & signatory', companyFields(d) + '<div class="fld wide"><span>Logo</span><div class="logo">' + (d.company.logo ? '<img src="' + esc(d.company.logo) + '" alt="">' : '<em>No logo</em>') +
         '<label class="hb hb-g sm">Upload<input type="file" accept="image/*" hidden data-logo></label>' + (d.company.logo ? '<button class="hb hb-g sm" data-act="ed-logo-clear">Remove</button>' : '') + '</div></div>');
       h += '<details class="es" open><summary><span class="si">' + IC.type + '</span>Text <small>' + d.blocks.length + ' blocks</small></summary><div class="blocks">' + d.blocks.map((b, i) => blockEd(b, i, d.blocks.length)).join('') +
-        '<div class="addblk"><select id="hrBlkType">' + BLOCKS.map(o => '<option value="' + o[0] + '">' + o[1] + '</option>').join('') + '</select><button class="hb hb-g sm" data-act="add-block">+ Add</button></div></div></details>';
+        '<p class="hint">Click in a paragraph to type. Select words and press <b>B</b> for bold. <b>+ Insert detail</b> adds the person\'s name, joining date, salary and so on.</p><div class="addblk"><select id="hrBlkType">' + BLOCKS.map(o => '<option value="' + o[0] + '">' + o[1] + '</option>').join('') + '</select><button class="hb hb-g sm" data-act="add-block">+ Add</button></div></div></details>';
     } else {
       h += sec('Payslip', inp('period', 'Month', d.period) + inp('pay_date', 'Pay date', d.pay_date, 'date') + inp('paid_days', 'Paid days', d.paid_days, 'number') + inp('lop_days', 'LOP days', d.lop_days, 'number') +
         '<label class="fld"><span>Accent colour</span><input type="color" data-p="accent" value="' + esc(d.accent) + '"></label><label class="fld chk"><input type="checkbox" data-p="show_words"' + (d.show_words ? ' checked' : '') + '> Show amount in words</label>' + inp('footer', 'Footer note', d.footer, 'text', true), true);
@@ -291,16 +293,64 @@
     f.innerHTML = h;
     $$('details', f).forEach((x, i) => { if (keep[i] !== undefined) x.open = keep[i]; });
   }
+  const RICH = ['p', 'h', 'num', 'sign'];
+  const detailValue = k => { const v = HR.allVars(ed.doc); return v[k] == null ? '' : String(v[k]); };
   function blockEd(b, i, n) {
-    const text = b.t === 'pb' || b.t === 'sp' ? '<em class="hint">' + (b.t === 'pb' ? 'Starts a new page' : 'Blank space') + '</em>' : '<textarea data-p="blocks.' + i + '.text" rows="' + Math.min(10, Math.max(2, Math.ceil(String(b.text || '').length / 55))) + '">' + esc(b.text) + '</textarea>';
-    return '<div class="blk"><div class="blkh"><select data-p="blocks.' + i + '.t">' + BLOCKS.map(o => '<option value="' + o[0] + '"' + (b.t === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select><span class="sp"></span>' +
+    const rich = RICH.includes(b.t);
+    const text = b.t === 'pb' || b.t === 'sp' ? '<em class="hint">' + (b.t === 'pb' ? 'Starts a new page' : 'Blank space') + '</em>' :
+      rich ? '<div class="rte' + (b.t === 'h' ? ' is-h' : '') + '" contenteditable="true" data-rte="' + i + '" data-p="blocks.' + i + '.text" data-ph="Type here…">' + HR.markupToHtml(b.text || '', detailValue) + '</div>' :
+      '<textarea data-p="blocks.' + i + '.text" rows="4" placeholder="One label per line, e.g. Date:">' + esc(b.text) + '</textarea>';
+    const tools = rich ? '<span class="fmts"><button type="button" class="fmt" data-fmt="bold" title="Bold (select text first)"><b>B</b></button><button type="button" class="fmt" data-fmt="italic" title="Italic"><i>I</i></button>' +
+      '<button type="button" class="fmt det" data-detail="' + i + '" title="Insert the person\'s name, joining date, salary…">+ Insert detail</button></span>' : '';
+    return '<div class="blk"><div class="blkh"><select data-p="blocks.' + i + '.t">' + BLOCKS.map(o => '<option value="' + o[0] + '"' + (b.t === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select><span class="sp"></span>' + tools +
       '<button data-act="blk-up" data-i="' + i + '"' + (i ? '' : ' disabled') + '>↑</button><button data-act="blk-dn" data-i="' + i + '"' + (i < n - 1 ? '' : ' disabled') + '>↓</button><button class="xb" data-act="blk-rm" data-i="' + i + '">×</button></div>' + text + '</div>';
+  }
+
+  // ---- text tools: bold, italic and "insert detail" for a letter block
+  let caret = null;  // the last cursor position inside a block, kept when a toolbar button takes the focus
+  const rteOf = el => $('[data-rte="' + (el.closest('.blk') ? el.closest('.blk').querySelector('[data-rte]').dataset.rte : '') + '"]');
+  function rememberCaret() {
+    const sel = window.getSelection();
+    if (sel.rangeCount && sel.anchorNode) { const host = (sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentElement : sel.anchorNode).closest('.rte'); if (host) caret = { host, range: sel.getRangeAt(0).cloneRange() }; }
+  }
+  function openDetails(btn) {
+    closeDetails();
+    const i = btn.dataset.detail, d = ed.doc;
+    const builtin = ['company_short', 'company_legal', 'signatory_name', 'signatory_title', 'date'];
+    const keys = Object.keys(d.vars || {}).concat(builtin.filter(k => !(d.vars || {})[k]));
+    const m = document.createElement('div'); m.id = 'hrDetailMenu'; m.dataset.for = i;
+    m.innerHTML = '<p>Click to put it in the text. It fills itself in for each person.</p>' + keys.map(k => { const v = detailValue(k); return '<button type="button" data-ins="' + esc(k) + '"><b>' + esc(HR.labelOf(k)) + '</b><small>' + (v ? esc(v.length > 34 ? v.slice(0, 34) + '…' : v) : 'not filled in yet') + '</small></button>'; }).join('');
+    $('#hrEd').appendChild(m);
+    const r = btn.getBoundingClientRect();
+    m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 300)) + 'px'; m.style.top = Math.min(r.bottom + 6, window.innerHeight - 330) + 'px';
+  }
+  const closeDetails = () => { const m = $('#hrDetailMenu'); if (m) m.remove(); };
+  function insertDetail(k) {
+    const m = $('#hrDetailMenu'), host = $('[data-rte="' + m.dataset.for + '"]');
+    closeDetails();
+    if (!host) return;
+    host.focus();
+    if (caret && caret.host === host) { const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(caret.range); }
+    else { const r = document.createRange(); r.selectNodeContents(host); r.collapse(false); const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+    document.execCommand('insertHTML', false, '<span class="var" contenteditable="false" data-k="' + esc(k) + '" title="' + esc(detailValue(k) || 'Not filled in yet') + '">' + esc(HR.labelOf(k)) + '</span>&nbsp;');
+    host.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  async function downloadWord(btn) {
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/hr/documents/docx', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: previewDoc() }) });
+      if (!r.ok) { let m = 'Could not make the Word file.'; try { m = (await r.json()).error || m; } catch (x) { /* not JSON */ } throw new Error(m); }
+      const blob = await r.blob(), a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = ((ed.doc.summary || 'document').replace(/[^A-Za-z0-9 _.-]+/g, '').trim() || 'document') + '.docx';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch (err) { toast(err.message, true); }
+    btn.disabled = false;
   }
 
   function onEdInput(e) {
     const t = e.target, p = t.dataset.p;
     if (!p || !ed) return;
-    const val = t.type === 'checkbox' ? t.checked : t.type === 'number' ? (t.value === '' ? '' : Number(t.value)) : t.value;
+    const val = t.dataset.rte !== undefined ? HR.htmlToMarkup(t) : t.type === 'checkbox' ? t.checked : t.type === 'number' ? (t.value === '' ? '' : Number(t.value)) : t.value;
     setPath(ed.doc, p, val);
     mark();
     if (ed.doc.kind === 'payslip' && (p === 'period' || p === 'pay_date')) {  // the summary rows follow the month and the pay date until someone types over them
@@ -341,6 +391,11 @@
     const v = e.target.closest('[data-view]'); if (v) { view = v.dataset.view; draw(); return; }
     const fl = e.target.closest('[data-filter]'); if (fl) { filter.title = fl.dataset.filter; draw(); return; }
     const kd = e.target.closest('[data-kind]'); if (kd) { filter.kind = kd.dataset.kind; draw(); return; }
+    const fm = e.target.closest('[data-fmt]');
+    if (fm && ed) { const r = rteOf(fm); if (r) { r.focus(); document.execCommand(fm.dataset.fmt); r.dispatchEvent(new Event('input', { bubbles: true })); } return; }
+    const dt = e.target.closest('[data-detail]'); if (dt && ed) return openDetails(dt);
+    const ins = e.target.closest('[data-ins]'); if (ins && ed) return insertDetail(ins.dataset.ins);
+    if (!e.target.closest('#hrDetailMenu')) closeDetails();
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act, id = +b.dataset.id, i = +b.dataset.i;
     const emp = byId(id);
@@ -374,6 +429,7 @@
     if (!ed) return;
     if (act === 'ed-close') return closeEditor();
     if (act === 'ed-save') return saveEditor();
+    if (act === 'ed-word') return downloadWord(b);
     if (act === 'ed-print') { if (!HR.print(previewDoc())) toast('Allow pop-ups to print.', true); return; }
     if (act === 'ed-logo-clear') { ed.doc.company.logo = ''; mark(); drawEdForm(); return drawPreview(); }
     const d = ed.doc;
@@ -414,6 +470,11 @@
     });
     root.addEventListener('change', e => { if (e.target.id === 'hrLogo') readLogo(e.target.files[0], url => { state.cfg.company.logo = url; draw(); }); });
     $('#hrEd').addEventListener('input', onEdInput);
+    $('#hrEd').addEventListener('mousedown', e => { if (e.target.closest('.fmt, [data-ins]')) { rememberCaret(); e.preventDefault(); } });  // keep the selection while a toolbar button is pressed
+    $('#hrEd').addEventListener('keyup', e => { if (e.target.matches && e.target.matches('.rte')) rememberCaret(); });
+    $('#hrEd').addEventListener('mouseup', e => { if (e.target.closest && e.target.closest('.rte')) rememberCaret(); });
+    $('#hrEd').addEventListener('focusout', e => { if (e.target.matches && e.target.matches('.rte')) rememberCaret(); });
+    $('#hrEd').addEventListener('paste', e => { if (e.target.closest && e.target.closest('.rte')) { e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain')); } });
     $('#hrEd').addEventListener('change', e => {
       if (e.target.matches('[data-logo]')) return readLogo(e.target.files[0], url => { ed.doc.company.logo = url; mark(); drawEdForm(); drawPreview(); });
       onEdInput(e);

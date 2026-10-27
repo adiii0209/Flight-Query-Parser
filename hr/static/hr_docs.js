@@ -41,6 +41,43 @@
   }
   const varsIn = text => Array.from(String(text || '').matchAll(/\{\{\s*(\w+)\s*\}\}/g), m => m[1]);
 
+  // ---- the text editor of a letter block: details show as chips, **bold** and *italic* as real bold and italic
+  const LABELS = { name: 'Name', title: 'Job title', join_date: 'Joining date', salary: 'Salary', salary_words: 'Salary in words', stipend: 'Stipend', duration: 'Duration', probation: 'Probation', office_hours: 'Office hours', join_time: 'Joining time',
+    notice: 'Notice period', min_days: 'Minimum days', company_short: 'Company', company_legal: 'Company legal name', company_name: 'Company full name', signatory_name: 'Signatory', signatory_title: 'Signatory title', date: 'Letter date' };
+  const labelOf = k => LABELS[k] || String(k).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+  const chip = (k, value) => '<span class="var" contenteditable="false" data-k="' + esc(k) + '" title="' + esc(value || 'Not filled in yet') + '">' + esc(labelOf(k)) + '</span>';
+  function markupToHtml(text, valueOf) {
+    let t = esc(text).replace(/\{\{\s*(\w+)\s*\}\}/g, (all, k) => chip(k, valueOf ? valueOf(k) : ''));
+    t = t.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<i>$1</i>');
+    return t.replace(/\n/g, '<br>');
+  }
+  function htmlToMarkup(el) {
+    const walk = node => Array.from(node.childNodes).map(n => {
+      if (n.nodeType === 3) return n.nodeValue.replace(/[\u00a0\u200b]/g, ' ');
+      if (n.nodeType !== 1) return '';
+      const tag = n.tagName;
+      if (tag === 'SPAN' && n.classList.contains('var')) return '{{' + n.dataset.k + '}}';
+      if (tag === 'BR') return '\n';
+      const inner = walk(n);
+      if (tag === 'B' || tag === 'STRONG') return inner.trim() ? '**' + inner + '**' : inner;
+      if (tag === 'I' || tag === 'EM') return inner.trim() ? '*' + inner + '*' : inner;
+      if (tag === 'DIV' || tag === 'P') return '\n' + inner;
+      return inner;
+    }).join('');
+    return walk(el).replace(/^\n/, '').replace(/\n+$/, '').replace(/\*\*\s*\*\*/g, '').replace(/ {2,}/g, ' ').replace(/ \n/g, '\n');
+  }
+  /** "12 Owner's Court, Mayfair Road, Ballygunge, Kolkata - 700019" -> three lines for the letter */
+  function splitAddress(a) {
+    a = String(a || '').trim();
+    if (!a) return [];
+    const lines = a.split(/\n+/).map(x => x.trim()).filter(Boolean);
+    if (lines.length > 1) return lines;
+    const parts = a.split(/\s*,\s*/).filter(Boolean);
+    if (parts.length <= 3) return parts;
+    const rest = parts.slice(0, -1), cut = Math.ceil(rest.length / 2);
+    return [rest.slice(0, cut).join(', '), rest.slice(cut).join(', '), parts[parts.length - 1]];
+  }
+
   // ---- offer letter
   /** the variables a letter can use, with the person's details in them */
   function offerVars(cfg, emp, tpl) {
@@ -56,7 +93,7 @@
 
   function newOffer(cfg, emp, templateKey) {
     const tpl = clone(cfg.offers[templateKey] || cfg.offers.employee);
-    const lines = [emp.full_name, emp.institute, emp.address].filter(Boolean).join('\n');
+    const lines = [emp.full_name, emp.institute].concat(splitAddress(emp.address)).filter(Boolean).join('\n');
     return {
       kind: 'offer', template: templateKey, summary: (tpl.label || 'Offer letter') + ' · ' + (emp.full_name || ''),
       date: today(), recipient: lines, letterhead: tpl.letterhead || 'company', header_title: tpl.header_title || '',
@@ -198,5 +235,5 @@ mark.hd-miss{background:#fde68a;color:#92400e;padding:0 2px;border-radius:3px}
     return true;
   }
 
-  Object.assign(HR, { daysIn: (y, m) => new Date(y, m + 1, 0).getDate(), esc, clone, words, inr, num, longDate, slashDate, letterDate, today, parseISO, FULL_MONTHS, monthLabel, money0, rich, fill, varsIn, allVars, offerVars, newOffer, newPayslip, totals, html, CSS, print });
+  Object.assign(HR, { markupToHtml, htmlToMarkup, splitAddress, labelOf, daysIn: (y, m) => new Date(y, m + 1, 0).getDate(), esc, clone, words, inr, num, longDate, slashDate, letterDate, today, parseISO, FULL_MONTHS, monthLabel, money0, rich, fill, varsIn, allVars, offerVars, newOffer, newPayslip, totals, html, CSS, print });
 })(window.HR = window.HR || {});
