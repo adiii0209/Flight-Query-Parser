@@ -222,7 +222,7 @@
     const rows = groups.map((g, gi) => '<li><span><i>' + (gi + 1) + '</i><em>' + TT.esc(g.city || 'Stay') + '</em><small>' + TT.esc(g.selectedOption ? g.selectedOption.hotel_name : 'Not chosen yet') + '</small></span>' + (g.selectedOption ? '<b>' + TT.money(g.selectedOption.total, cur()) + '</b>' : '') + '</li>').join('');
     const done = groups.filter(g => g.selectedOption).length;
     return '<section class="tc-sum"><div class="tc-sum-head"><span>' + (done === groups.length ? 'Trip total' : 'Cart total · ' + done + ' of ' + groups.length + ' cities') + '</span>' + (done ? '<b>' + TT.money(TT.groupsTotal(groups), cur()) + '</b>' : '<small>Choose a hotel in each city to see your total · ' + done + ' of ' + groups.length + ' chosen</small>') + '</div><ul>' + rows + '</ul>' +
-      '<button type="button" class="tc-checkout" id="tcCheckout"' + (done ? '' : ' disabled') + '>' + (done ? 'View cart & checkout' : 'Choose a hotel to start your cart') + '</button></section>';
+      '<button type="button" class="tc-checkout" id="tcCheckout"' + (done ? '' : ' disabled') + '>' + (done ? 'View cart & book now' : 'Choose a hotel to start your cart') + '</button></section>';
   }
 
   // ---- map
@@ -502,8 +502,18 @@
     location.hash = '#cart';
   }
   function checkout() {
-    const lines = groups.filter(g => g.selectedOption).map((g, i) => (i + 1) + '. ' + (g.city || 'Stay') + ' (' + groupDates(g) + '): ' + g.selectedOption.hotel_name + (TT.qtyText(g.selectedOption) ? ' - ' + TT.qtyText(g.selectedOption) : '') + ' - ' + TT.money(g.selectedOption.total, cur()));
-    const msg = 'Hi, I would like to book this trip: ' + data.trip.title + '\n' + lines.join('\n') + '\nTotal: ' + TT.money(TT.groupsTotal(groups), cur()) + (cartNote.trim() ? '\nNote: ' + cartNote.trim() : '');
+    const items = chosenGroups(), cu = cur();
+    let save = 0;
+    const blocks = items.map((g, i) => {
+      const taken = takenOf(g), so = g.selectedOption, stars = (so.lines.find(l => l.stars) || {}).stars;
+      const sub = taken.reduce((a, x) => a + priceOf(x.l, x.k), 0), allOn = taken.every(x => x.l.online_total > 0), on = allOn ? taken.reduce((a, x) => a + onlineLine(x.l, x.k), 0) : 0;
+      if (on > sub) save += on - sub;
+      return '*' + (i + 1) + '. ' + (g.city || 'Stay') + '*\n' + groupDates(g) + '\n🏨 ' + so.hotel_name + (stars ? ' (' + stars + '★)' : '') + '\n' +
+        taken.map(x => '🛏 ' + x.k + ' × ' + (x.l.room || 'Room')).join('\n') + '\n💰 ' + TT.money(sub, cu);
+    });
+    const t = data.trip, who = t.client_name ? '\nFor: ' + t.client_name : '';
+    const msg = '*Booking request*\n' + t.title + who + '\n\n' + blocks.join('\n\n') + '\n\n━━━━━━━━━━\n*Total: ' + TT.money(TT.groupsTotal(groups), cu) + '*' + (save > 0 ? '\n(Saving ' + TT.money(save, cu) + ' vs online prices)' : '') +
+      (cartNote.trim() ? '\n\n📝 Note: ' + cartNote.trim() : '') + '\n\nPlease confirm availability and share the payment details. Thank you!';
     if (wa) { window.open('https://wa.me/' + wa + '?text=' + encodeURIComponent(msg), '_blank', 'noopener'); return; }
     cartToast('Your choices are saved', 'Your travel agent can see them on this trip.', false);
   }
@@ -550,7 +560,7 @@
       (save > 0 ? '<div class="ca-save">You are saving ' + TT.money(save, cu) + ' with us</div>' : '') + '</section>' +
       (policy ? '<section class="ca-card ca-pol"><h3>Cancellation policy</h3><ul>' + policy + '</ul></section>' : '') +
       '<div class="ca-fine">' + disclaimerHtml() + '</div></div>' +
-      '<div class="ca-checkout"><div><b>' + TT.money(total, cu) + '</b><small>' + plural(items.length, 'hotel') + ' · ' + plural(roomCount(), 'room') + '</small></div><button type="button" class="ca-go" id="caGo">Checkout</button></div>';
+      '<div class="ca-checkout"><div><b>' + TT.money(total, cu) + '</b><small>' + plural(items.length, 'hotel') + ' · ' + plural(roomCount(), 'room') + '</small></div><button type="button" class="ca-go" id="caGo">Book now</button></div>';
   }
   function drawCart() { const v = TT.$('#viewCity'); if (v && inCart) { const y = window.scrollY, f = document.activeElement && document.activeElement.id === 'caNote'; v.innerHTML = cartPage(); window.scrollTo({ top: y, behavior: 'instant' }); if (f) TT.$('#caNote').focus(); } }
   function cartStep(gk, id, d) {
@@ -630,5 +640,5 @@
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && TT.$('#tcMapSec.full')) setFull(false); });
 
   TT.api('/api/public/trips/' + encodeURIComponent(slug)).then(d => { data = d; selection = d.selection || {}; render(); })
-    .catch(() => { root.innerHTML = '<p class="tc-load">This trip link is no longer available.</p>'; });
+    .catch(err => { console.error(err); root.innerHTML = '<p class="tc-load">This trip link is no longer available.</p>'; });
 })(window.TT);
