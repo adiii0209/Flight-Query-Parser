@@ -141,21 +141,41 @@
     }).join('');
   }
 
-  // ---- payslip
+  // ---- payslip: ESI and professional tax work themselves out from the gross earnings; an edited amount sticks until it is reset
+  const rup = x => Math.ceil(Math.round(x * 1e6) / 1e6);  // ROUNDUP to a whole rupee, without float noise
+  const RULES = {
+    esi_er: g => (g <= 21000 ? rup(g * 0.0075) : 0),
+    esi_ee: g => (g <= 21000 ? rup(g * 0.0325) : 0),
+    ptax: g => (g <= 10000 ? 0 : g <= 15000 ? 110 : g <= 25000 ? 130 : g <= 40000 ? 150 : 200),
+  };
+  const AUTO_TEXT = {
+    esi_er: 'ESI employer: 0.75% of gross, rounded up, when gross is up to ₹21,000; otherwise 0.',
+    esi_ee: 'ESI employee: 3.25% of gross, rounded up, when gross is up to ₹21,000; otherwise 0.',
+    ptax: 'Professional tax by gross: up to ₹10,000 → 0 · ₹15,000 → 110 · ₹25,000 → 130 · ₹40,000 → 150 · above → 200.',
+  };
+  const autoOf = l => (/professional\s*tax|^p\.?\s*tax$/i.test(l) ? 'ptax' : /\besi\b/i.test(l) ? (/employer/i.test(l) ? 'esi_er' : 'esi_ee') : null);
+  function autoApply(doc) {
+    const gross = (doc.earnings || []).reduce((s, r) => s + num(r.amount), 0);
+    ['deductions', 'employer'].forEach(l => (doc[l] || []).forEach(r => { if (r.auto && RULES[r.auto] && !r.manual) r.amount = RULES[r.auto](gross); }));
+  }
   function newPayslip(cfg, emp, year, month, lop) {
     const amount = Number(emp.amount) || 0, ps = cfg.payslip || {};
     const days = new Date(year, month + 1, 0).getDate(), period = monthLabel(year, month);
     const payDate = new Date(year, month + 1, 3), pd = payDate.getFullYear() + '-' + String(payDate.getMonth() + 1).padStart(2, '0') + '-03';
-    return {
+    const doc = {
       kind: 'payslip', summary: 'Payslip ' + period + ' · ' + (emp.full_name || ''),
       company: clone(cfg.company), period, pay_date: pd, accent: ps.accent || '#16a34a',
       rows: [{ label: 'Employee Name', value: emp.full_name || '' }, { label: 'Employee ID', value: emp.emp_code || '' }, { label: 'Pay Period', value: period }, { label: 'Pay Date', value: slashDate(pd) }].concat(
         emp.designation ? [{ label: 'Designation', value: emp.designation }] : [], emp.pan ? [{ label: 'PAN', value: emp.pan }] : []),
       paid_days: days - (lop || 0), lop_days: lop || 0,
       earnings: (ps.earnings || ['Basic']).map((l, i) => ({ label: l, amount: i === 0 ? Math.round(amount * (days - (lop || 0)) / days) : 0 })),  // loss-of-pay days reduce the first earning
-      deductions: (ps.deductions || []).map(l => ({ label: l, amount: 0 })),
+      deductions: (ps.deductions || []).map(l => ({ label: l, amount: 0, auto: autoOf(l) })),
+      employer: [{ label: 'ESI (employer)', amount: 0, auto: 'esi_er' }],
       footer: ps.footer || '', show_words: true, show_logo: false,
     };
+    [['esi_ee', 'ESI (employee)'], ['ptax', 'Professional tax']].forEach(([k, label]) => { if (!doc.deductions.some(r => r.auto === k)) doc.deductions.push({ label, amount: 0, auto: k }); });
+    autoApply(doc);
+    return doc;
   }
 
   function totals(doc) {
@@ -173,6 +193,7 @@
       '<div class="ps-r"><span>Paid Days</span><i>:</i><b>' + esc(doc.paid_days) + '</b></div><div class="ps-r"><span>LOP Days</span><i>:</i><b>' + esc(doc.lop_days) + '</b></div></div></div>' +
       '<div class="ps-tab"><div><h4><span>EARNINGS</span><span>AMOUNT</span></h4>' + (doc.earnings || []).map(line).join('') + '</div><div><h4><span>DEDUCTIONS</span><span>AMOUNT</span></h4>' + (doc.deductions || []).map(line).join('') + '</div>' +
       '<div class="ps-tot"><span>Gross Earnings</span><b>' + inr(t.gross) + '</b></div><div class="ps-tot"><span>Total Deductions</span><b>' + inr(t.ded) + '</b></div></div>' +
+      ((doc.employer || []).filter(r => num(r.amount)).length ? '<div class="ps-emp">Employer contribution, not deducted from your pay: ' + (doc.employer || []).filter(r => num(r.amount)).map(r => esc(r.label) + ' ' + inr(num(r.amount))).join(' · ') + '</div>' : '') +
       '<div class="ps-pay"><div><b>TOTAL NET PAYABLE</b><small>Gross Earnings - Total Deductions</small></div><b class="ps-amt">' + inr(t.net) + '</b></div>' +
       (doc.show_words ? '<div class="ps-words">Amount In Words : <b>Indian Rupee ' + esc(words(t.net)) + ' Only</b></div>' : '') +
       '<div class="hd-rule thin"></div><div class="ps-foot">' + esc(doc.footer) + '</div></section>';
@@ -217,6 +238,7 @@ mark.hd-miss{background:#fde68a;color:#92400e;padding:0 2px;border-radius:3px}
 .ps-pay>div{padding:12px 14px}.ps-pay b{font-size:9pt}.ps-pay small{display:block;color:#6b7280;font-size:8pt;margin-top:2px}
 .ps-pay .ps-amt{display:flex;align-items:center;background:color-mix(in srgb,var(--acc) 9%,#fff);padding:0 22px;font-size:10.5pt}
 .ps-words{text-align:right;color:#6b7280;font-size:8.8pt;margin:14px 0}.ps-words b{color:#111;font-weight:500}
+.ps-emp{margin-top:10px;font-size:8pt;color:#6b7280}
 .ps-foot{text-align:center;color:#6b7280;font-size:7.5pt;margin-top:20px}
 @page{size:A4;margin:0}
 @media print{.pg{margin:0;page-break-after:always;break-after:page}.pg:last-child{page-break-after:auto;break-after:auto}mark.hd-miss{background:none;color:inherit}}
@@ -235,5 +257,5 @@ mark.hd-miss{background:#fde68a;color:#92400e;padding:0 2px;border-radius:3px}
     return true;
   }
 
-  Object.assign(HR, { markupToHtml, htmlToMarkup, splitAddress, labelOf, daysIn: (y, m) => new Date(y, m + 1, 0).getDate(), esc, clone, words, inr, num, longDate, slashDate, letterDate, today, parseISO, FULL_MONTHS, monthLabel, money0, rich, fill, varsIn, allVars, offerVars, newOffer, newPayslip, totals, html, CSS, print });
+  Object.assign(HR, { markupToHtml, htmlToMarkup, splitAddress, labelOf, daysIn: (y, m) => new Date(y, m + 1, 0).getDate(), esc, clone, words, inr, num, longDate, slashDate, letterDate, today, parseISO, FULL_MONTHS, monthLabel, money0, rich, fill, varsIn, allVars, offerVars, newOffer, newPayslip, autoApply, AUTO_TEXT, totals, html, CSS, print });
 })(window.HR = window.HR || {});

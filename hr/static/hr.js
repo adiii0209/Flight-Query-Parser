@@ -321,9 +321,11 @@
       h += sec('Payslip', inp('period', 'Month', d.period) + inp('pay_date', 'Pay date', d.pay_date, 'date') + inp('paid_days', 'Paid days', d.paid_days, 'number') + inp('lop_days', 'LOP days', d.lop_days, 'number') +
         '<label class="fld"><span>Accent colour</span><input type="color" data-p="accent" value="' + esc(d.accent) + '"></label><label class="fld chk"><input type="checkbox" data-p="show_words"' + (d.show_words ? ' checked' : '') + '> Show amount in words</label>' + inp('footer', 'Footer note', d.footer, 'text', true), true);
       h += sec('Employee summary', d.rows.map((r, i) => '<div class="rowin wide"><input data-p="rows.' + i + '.label" value="' + esc(r.label) + '"><input data-p="rows.' + i + '.value" value="' + esc(r.value) + '"><button class="xb" data-act="rm-row" data-l="rows" data-i="' + i + '">×</button></div>').join('') + '<button class="hb hb-g sm wide" data-act="add-row" data-l="rows">+ Add row</button>', true);
-      ['earnings', 'deductions'].forEach(l => {
-        h += sec(pretty(l), d[l].map((r, i) => '<div class="rowin wide"><input data-p="' + l + '.' + i + '.label" value="' + esc(r.label) + '"><input type="number" step="any" data-p="' + l + '.' + i + '.amount" value="' + esc(r.amount) + '"><button class="xb" data-act="rm-row" data-l="' + l + '" data-i="' + i + '">×</button></div>').join('') +
-          '<button class="hb hb-g sm wide" data-act="add-row" data-l="' + l + '">+ Add ' + (l === 'earnings' ? 'earning' : 'deduction') + '</button>', true);
+      ['earnings', 'deductions', 'employer'].forEach(l => {
+        if (!(d[l] || []).length) return;
+        h += sec(l === 'employer' ? 'Employer contribution <small>not deducted</small>' : pretty(l), d[l].map((r, i) => '<div class="rowin wide"><input data-p="' + l + '.' + i + '.label" value="' + esc(r.label) + '"><input type="number" step="any" data-p="' + l + '.' + i + '.amount" value="' + esc(r.amount) + '"><button class="xb" data-act="rm-row" data-l="' + l + '" data-i="' + i + '">×</button></div>' +
+          (r.auto ? '<p class="autoh wide"><span>' + esc(HR.AUTO_TEXT[r.auto] || '') + '</span> ' + (r.manual ? '<b>Edited</b> <button type="button" class="lnk" data-act="auto-reset" data-l="' + l + '" data-i="' + i + '">Reset to formula</button>' : '<i>Auto</i>') + '</p>' : '')).join('') +
+          (l === 'employer' ? '' : '<button class="hb hb-g sm wide" data-act="add-row" data-l="' + l + '">+ Add ' + (l === 'earnings' ? 'earning' : 'deduction') + '</button>'), true);
       });
       h += sec('Company', companyFields(d));
     }
@@ -390,6 +392,14 @@
     const val = t.dataset.rte !== undefined ? HR.htmlToMarkup(t) : t.type === 'checkbox' ? t.checked : t.type === 'number' ? (t.value === '' ? '' : Number(t.value)) : t.value;
     setPath(ed.doc, p, val);
     mark();
+    if (ed.doc.kind === 'payslip') {
+      const am = p.match(/^(deductions|employer)\.(\d+)\.amount$/);
+      if (am) { const r = ed.doc[am[1]][am[2]]; if (r && r.auto && !r.manual) { r.manual = true; } if (e.type === 'change') drawEdForm(); }  // typing over a formula amount keeps it until it is reset
+      else if (/^earnings\.\d+\.amount$/.test(p)) {  // the formula rows follow the gross earnings
+        HR.autoApply(ed.doc);
+        ['deductions', 'employer'].forEach(l => (ed.doc[l] || []).forEach((r, i) => { const inp = $('#hrEdForm [data-p="' + l + '.' + i + '.amount"]'); if (inp && r.auto && !r.manual && document.activeElement !== inp) inp.value = r.amount; }));
+      }
+    }
     if (ed.doc.kind === 'payslip' && (p === 'period' || p === 'pay_date')) {  // the summary rows follow the month and the pay date until someone types over them
       const row = ed.doc.rows.find(r => r.label === (p === 'period' ? 'Pay Period' : 'Pay Date'));
       if (row) { row.value = p === 'period' ? val : HR.slashDate(val); if (e.type === 'change') drawEdForm(); }
@@ -481,6 +491,7 @@
     else if (act === 'blk-dn') { d.blocks.splice(i + 1, 0, d.blocks.splice(i, 1)[0]); }
     else if (act === 'add-row') { d[b.dataset.l].push(b.dataset.l === 'rows' ? { label: '', value: '' } : { label: '', amount: 0 }); }
     else if (act === 'rm-row') { d[b.dataset.l].splice(i, 1); }
+    else if (act === 'auto-reset') { const r = d[b.dataset.l][i]; if (r) { r.manual = false; HR.autoApply(d); } }
     else return;
     mark(); drawEdForm(); drawPreview();
   }

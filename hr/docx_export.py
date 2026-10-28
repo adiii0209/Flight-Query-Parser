@@ -366,6 +366,12 @@ def payslip_docx(data):
         y = p.add_run(f"Indian Rupee {words(net)} Only")
         y.font.size = Pt(8.5)
         _fmt(p, before=8)
+    emp = [x for x in data.get("employer") or [] if num(x.get("amount"))]
+    if emp:
+        p = d.add_paragraph()
+        x = p.add_run("Employer contribution, not deducted from your pay: " + " · ".join(f"{r.get('label', '')} {inr(r.get('amount'))}" for r in emp))
+        x.font.size, x.font.color.rgb = Pt(8), RGBColor.from_string("6B7280")
+        _fmt(p, before=8)
     foot = d.add_paragraph(data.get("footer", ""))
     foot.alignment = WD_ALIGN_PARAGRAPH.CENTER
     for r in foot.runs:

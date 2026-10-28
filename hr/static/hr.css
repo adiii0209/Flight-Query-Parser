@@ -209,3 +209,9 @@ mark.hd-miss{background:#fde68a;color:#92400e}
 #hrRoot .lockbox .hb{height:44px}
 #hrRoot .lockbox .bad{color:var(--h-bad);margin:.8rem 0 0;min-height:1.2em}
 #hrRoot .dact{display:flex;gap:.6rem;margin-top:1rem}
+
+/* formula rows of a payslip */
+#hrEd .autoh{margin:-.35rem 0 .5rem;font-size:.78rem;color:var(--h-mute);line-height:1.4}
+#hrEd .autoh i{font-style:normal;font-weight:600;color:var(--h-acc);margin-left:.3rem}
+#hrEd .autoh b{color:#b45309;margin-left:.3rem}
+#hrEd .autoh .lnk{background:none;border:0;padding:0;color:var(--h-acc);font:inherit;font-weight:600;text-decoration:underline;cursor:pointer}
