@@ -122,7 +122,7 @@
   function priceHtml(g, o, isSel, many, first) {
     const so = isSel ? g.selectedOption : o;
     if (isSel && so.qty) {
-      return '<small>' + TT.esc(TT.qtyText(so) || 'Rooms') + '</small><b>' + TT.money(so.total, cur()) + '</b><button type="button" class="rs-change" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">Change rooms</button>';
+      return '<small>' + TT.esc(TT.qtyText(so) || 'Rooms') + '</small><b>' + TT.money(so.total, cur()) + '</b>';
     }
     if (many) return '<small>' + o.lines.length + ' room categories' + ' · pick your rooms</small><b>From ' + TT.money(Math.min.apply(null, o.lines.map(unitOf)), cur()) + '</b>';
     return onlineHtml(o) + '<small>' + (first.items > 1 ? rateText(first) : 'Our price') + '</small><b>' + TT.money(o.total, cur()) + '</b>' + saveHtml(o);
@@ -136,7 +136,7 @@
     const hv = key => (o.lines.find(l => l[key]) || {})[key] || '';  // hotel-level details come from the first room that has them
     const perks = (o.lines.find(l => (l.perks || []).length) || { perks: [] }).perks;
     const stay = [['Check-in', g.date ? (first.day ? first.day + ', ' : '') + TT.date(g.date) : ''], ['Check-out', g.checkout ? TT.date(g.checkout) : '']];
-    const pick = !isSel ? '<button type="button" class="co-pick" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">Select</button>' : '';
+    const pick = '<button type="button" class="co-pick' + (isSel ? ' co-chg' : '') + '" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">' + (isSel ? 'Change rooms' : 'Select') + '</button>';
     const badges = (multi && g.options[0] === o ? '<span class="co-rec">Recommended</span>' : '') + (isSel ? '<button type="button" class="co-sel co-un" data-g="' + TT.esc(g.key) + '" title="Selected. Tap to unselect" aria-label="Selected. Tap to unselect">' + CHECK + '</button>' : '');
     const details = many
       ? factsHtml(stay) + o.lines.map((l, i) => '<div class="co-room"><div class="co-room-h"><b>' + TT.esc(l.room || 'Room ' + (i + 1)) + '</b><span>' + TT.money(l.total, cur()) + '</span></div>' + factsHtml(lineFacts(l)) + roomDesc(l) + '<small>' + rateText(l) + '</small></div>').join('')

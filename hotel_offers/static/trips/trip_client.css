@@ -424,3 +424,6 @@ body.in-cart .nav,body.in-cart #tcNote{display:none}
 .ca-empty p{color:var(--mute);margin:6px 0 22px}
 .ca-browse{display:inline-flex;align-items:center;justify-content:center;width:auto;padding:0 28px;text-decoration:none;margin-top:0}
 @media(min-width:900px){.ca-checkout{justify-content:center;gap:40px}}
+
+.co-pick.co-chg{height:30px;padding:0 12px;font-size:.76rem;border-width:1px;color:var(--mute);border-color:var(--line)}
+.co-pick.co-chg:hover{color:var(--text);border-color:var(--text)}
