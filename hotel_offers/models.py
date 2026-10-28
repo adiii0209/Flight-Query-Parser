@@ -118,7 +118,7 @@ class HotelTrip(db.Model):
     currency = db.Column(db.String(8), nullable=False, default="INR")
     share_slug = db.Column(db.String(40), nullable=True, unique=True, index=True)
     is_shared = db.Column(db.Boolean, nullable=False, default=False)
-    selection = db.Column(db.Text, nullable=True)  # JSON {group key: option key} chosen by the guest on the shared page
+    selection = db.Column(db.Text, nullable=True)  # JSON {group key: option key, or {"o": option key, "q": {quote id: rooms}}} chosen by the guest on the shared page
     guide = db.Column(db.Text, nullable=True)  # JSON {city key: {city, shown, spots: [...]}}: the local guide of each city
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -20,13 +20,27 @@
     });
     return Array.from(map.values()).sort((a, b) => ((a.date || '9999-99-99') < (b.date || '9999-99-99') ? -1 : (a.date || '9999-99-99') > (b.date || '9999-99-99') ? 1 : a.first - b.first)).map(g => {
       const options = Array.from(g.options.values());
-      const chosen = options.find(o => o.key === selection[g.key]) || null;
+      const raw = selection[g.key], ckey = raw && typeof raw === 'object' ? raw.o : raw, cq = raw && typeof raw === 'object' && raw.q ? raw.q : null;
+      const chosen = options.find(o => o.key === ckey) || null;
+      let selectedOption = chosen;
+      if (chosen && cq) {  // rooms picked per category: each row counts its rate per room times the rooms chosen
+        const qty = {};
+        let total = 0, count = 0;
+        chosen.lines.forEach(l => {
+          const r = TT.roomsOf(l), n = Math.max(0, Math.min(r, parseInt(cq[l.id], 10) || 0));
+          qty[l.id] = n; count += n; total += Math.round((l.total || 0) / r * n);
+        });
+        selectedOption = Object.assign({}, chosen, { total, qty, roomCount: count });
+      }
       return Object.assign(g, {
-        options, selected: chosen ? chosen.key : null, explicit: !!chosen, selectedOption: chosen,
+        options, selected: chosen ? chosen.key : null, explicit: !!chosen, selectedOption,
         checkout: g.date && g.nights ? TT.addDays(g.date, g.nights) : '',
       });
     });
   };
+
+  /** "1 × Deluxe · 2 × Suite" for the rooms picked in an option (empty when every quoted room is taken). */
+  TT.qtyText = o => (o && o.qty ? o.lines.filter(l => o.qty[l.id] > 0).map(l => o.qty[l.id] + ' × ' + (l.room || 'Room')).join(' · ') : '');
 
   TT.groupsTotal = groups => groups.reduce((s, g) => s + (g.selectedOption ? g.selectedOption.total : 0), 0);
 

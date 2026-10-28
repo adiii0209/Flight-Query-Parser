@@ -156,7 +156,25 @@ def trip_select(slug):
     if clearing:
         selection.pop(group["key"], None)
     else:
-        selection[group["key"]] = body["option"]
+        option = next(o for o in group["options"] if o["key"] == body["option"])
+        qty = body.get("qty")
+        if qty is None:
+            selection[group["key"]] = body["option"]  # every quoted room
+        else:
+            if not isinstance(qty, dict):
+                return jsonify({"error": "Choose your rooms again."}), 400
+            clean = {}
+            for line in option["lines"]:
+                try:
+                    n = int(qty.get(str(line["id"]), 0))
+                except (TypeError, ValueError):
+                    return jsonify({"error": "Choose your rooms again."}), 400
+                if not 0 <= n <= trip_groups.rooms_of(line):
+                    return jsonify({"error": "That is more rooms than are available. Please refresh the page."}), 409
+                clean[str(line["id"])] = n
+            if sum(clean.values()) < 1:
+                return jsonify({"error": "Choose at least one room."}), 400
+            selection[group["key"]] = {"o": body["option"], "q": clean}
     trip.selection = json.dumps({g["key"]: selection[g["key"]] for g in groups if g["key"] in selection})
     db.session.commit()
     groups = trip_groups.group_quotes([r.to_dict() for r in rows], json.loads(trip.selection))

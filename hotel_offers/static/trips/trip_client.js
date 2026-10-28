@@ -83,7 +83,7 @@
     if (opts.length < 2) return '';
     const first = o => o.lines[0];
     const any = key => o => (o.lines.find(l => l[key]) || {})[key] || '';
-    const lowest = Math.min.apply(null, opts.map(o => o.total));
+    const fromOf = o => (o.lines.length > 1 ? Math.min.apply(null, o.lines.map(unitOf)) : o.total), lowest = Math.min.apply(null, opts.map(fromOf));
     const rows = [
       ['Class', o => (any('stars')(o) ? any('stars')(o) + ' star' : '')],
       ['Style', any('style')],
@@ -96,7 +96,7 @@
     ].map(([label, fn]) => [label, opts.map(fn)]).filter(r => r[1].some(Boolean));
     const head = '<tr><th></th>' + opts.map(o => '<th' + (o.key === g.selected ? ' class="sel"' : '') + '><b>' + TT.esc(o.hotel_name) + '</b>' + (o.key === g.selected ? '<i>Selected</i>' : '') + '</th>').join('') + '</tr>';
     const body = rows.map(([label, vals]) => '<tr><th scope="row">' + label + '</th>' + vals.map(v => '<td>' + (v ? TT.esc(v) : '–') + '</td>').join('') + '</tr>').join('');
-    const price = '<tr class="cmp-price"><th scope="row">Price</th>' + opts.map(o => '<td>' + (onlineOf(o) > o.total ? '<s>' + TT.money(onlineOf(o), cur()) + '</s>' : '') + '<b>' + TT.money(o.total, cur()) + '</b>' +
+    const price = '<tr class="cmp-price"><th scope="row">Price</th>' + opts.map(o => o.lines.length > 1 ? '<td><b>From ' + TT.money(fromOf(o), cur()) + '</b>' + (fromOf(o) === lowest ? '<em>Lowest</em>' : '') + '<small class="cmp-sm">per room</small></td>' : '<td>' + (onlineOf(o) > o.total ? '<s>' + TT.money(onlineOf(o), cur()) + '</s>' : '') + '<b>' + TT.money(o.total, cur()) + '</b>' +
       (o.total === lowest ? '<em>Lowest</em>' : '') + saveHtml(o) + '</td>').join('') + '</tr>';
     const pick = '<tr><th></th>' + opts.map(o => '<td>' + (o.key === g.selected ? '<button type="button" class="cmp-tick co-un" data-g="' + TT.esc(g.key) + '" title="Selected. Tap to unselect" aria-label="Selected. Tap to unselect">' + CHECK + '</button>' : '<button type="button" class="co-pick" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">Select</button>') + '</td>').join('') + '</tr>';
     return '<section class="cmp"><h2>Compare hotels</h2><div class="cmp-scroll"><table>' + '<thead>' + head + '</thead><tbody>' + body + price + pick + '</tbody></table></div></section>';
@@ -118,6 +118,15 @@
   }
 
   // the hotel card: the same card as before, now shown inside its city card
+  // several room categories: "From" the cheapest room until the guest has picked rooms, then what was picked
+  function priceHtml(g, o, isSel, many, first) {
+    const so = isSel ? g.selectedOption : o;
+    if (many && isSel && so.qty) {
+      return '<small>' + TT.esc(TT.qtyText(so) || 'Rooms') + '</small><b>' + TT.money(so.total, cur()) + '</b><button type="button" class="rs-change" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">Change rooms</button>';
+    }
+    if (many) return '<small>' + o.lines.length + ' room categories' + ' · pick your rooms</small><b>From ' + TT.money(Math.min.apply(null, o.lines.map(unitOf)), cur()) + '</b>';
+    return onlineHtml(o) + '<small>' + (first.items > 1 ? rateText(first) : 'Our price') + '</small><b>' + TT.money(o.total, cur()) + '</b>' + saveHtml(o);
+  }
   function optionHtml(g, o, multi) {
     const isSel = o.key === g.selected;
     const first = o.lines[0], located = o.lines.find(l => l.lat != null), many = o.lines.length > 1;
@@ -130,7 +139,7 @@
     const pick = !isSel ? '<button type="button" class="co-pick" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">Select</button>' : '';
     const badges = (multi && g.options[0] === o ? '<span class="co-rec">Recommended</span>' : '') + (isSel ? '<button type="button" class="co-sel co-un" data-g="' + TT.esc(g.key) + '" title="Selected. Tap to unselect" aria-label="Selected. Tap to unselect">' + CHECK + '</button>' : '');
     const details = many
-      ? factsHtml(stay) + o.lines.map((l, i) => '<div class="co-room"><div class="co-room-h"><b>Room ' + (i + 1) + '</b><span>' + TT.money(l.total, cur()) + '</span></div>' + factsHtml(lineFacts(l)) + roomDesc(l) + '<small>' + rateText(l) + '</small></div>').join('')
+      ? factsHtml(stay) + o.lines.map((l, i) => '<div class="co-room"><div class="co-room-h"><b>' + TT.esc(l.room || 'Room ' + (i + 1)) + '</b><span>' + TT.money(l.total, cur()) + '</span></div>' + factsHtml(lineFacts(l)) + roomDesc(l) + '<small>' + rateText(l) + '</small></div>').join('')
       : factsHtml(stay.concat(lineFacts(first))) + roomDesc(first);
     const ck = g.key + '|' + o.key, open = openCards.has(ck);
     const brief = hv('brief');
@@ -139,7 +148,7 @@
     return '<article class="tc-card co' + (isSel ? ' is-sel' : '') + (open ? ' open' : '') + '">' + gallery(o, badges) + '<div class="tc-body"><div class="tc-top"><div><h2>' + TT.esc(o.hotel_name || first.hotel_name) + '</h2>' +
       '</div>' + pick + '</div>' + factsRow(hv('stars'), hv('style'), hv('age_info')) +
       (near.length ? '<p class="tc-loc">' + PINICON + '<span>' + near.slice(0, 2).map(l => '<b>' + TT.esc(l.name) + '</b>' + (l.km != null ? ' <i>' + (l.km < 1 ? Math.round(l.km * 10) * 100 + ' m' : l.km.toFixed(1) + ' km') + '</i>' : '')).join(' · ') + '</span></p>' : '') +
-      '<div class="tc-foot"><div class="tc-price">' + onlineHtml(o) + '<small>' + (many ? 'Our price for ' + plural(o.lines.length, 'room') : first.items > 1 ? rateText(first) : 'Our price') + '</small><b>' + TT.money(o.total, cur()) + '</b>' + saveHtml(o) + '</div>' +
+      '<div class="tc-foot"><div class="tc-price">' + priceHtml(g, o, isSel, many, first) + '</div>' +
       '<button type="button" class="tc-tog" data-ck="' + TT.esc(ck) + '" aria-expanded="' + open + '"><span>' + (open ? 'Hide details' : 'View details') + '</span>' + CHEV + '</button></div>' +
       '<div class="tc-more" id="more-' + TT.esc(ck.replace(/[^\w-]/g, '_')) + '">' + more + '</div></div></article>';
   }
@@ -414,12 +423,61 @@
     }
   }
 
-  async function choose(groupKey, optionKey) {
+  // ---- room categories: Select on a hotel with several of them opens this sheet (+ / − per category, then Confirm)
+  let rs = null;
+  const priceOf = (l, k) => Math.round((l.total || 0) / TT.roomsOf(l) * k);
+  const unitOf = l => priceOf(l, 1);
+  function roomSheetHtml() {
+    const { g, o, qty } = rs;
+    let total = 0, n = 0;
+    const rows = o.lines.map((l, i) => {
+      const r = TT.roomsOf(l), k = qty[l.id] || 0, meta = [l.room_size, l.meal_plan, l.cancellation].filter(Boolean).join(' · ');
+      total += priceOf(l, k); n += k;
+      return '<li class="rs-row' + (k ? ' on' : '') + '"><div class="rs-i"><b>' + TT.esc(l.room || 'Room ' + (i + 1)) + '</b>' + (meta ? '<small>' + TT.esc(meta) + '</small>' : '') +
+        '<em>' + TT.money(unitOf(l), cur()) + ' per room' + (l.nights ? ' for ' + plural(l.nights, 'night') : '') + (r > 1 ? ' · up to ' + r : '') + '</em></div>' +
+        '<div class="rs-step"><button type="button" data-rs="-" data-id="' + l.id + '" aria-label="Fewer ' + TT.esc(l.room || 'rooms') + '"' + (k <= 0 ? ' disabled' : '') + '>−</button><span aria-live="polite">' + k +
+        '</span><button type="button" data-rs="+" data-id="' + l.id + '" aria-label="More ' + TT.esc(l.room || 'rooms') + '"' + (k >= r ? ' disabled' : '') + '>+</button></div></li>';
+    });
+    return '<div class="rs-h"><div><b>Choose your rooms</b><small>' + TT.esc(o.hotel_name) + ' · ' + TT.esc(g.city || '') + '</small></div><button type="button" class="rs-x" aria-label="Close">' + CLOSE + '</button></div>' +
+      '<ul class="rs-list">' + rows.join('') + '</ul><div class="rs-f"><div><small>' + (n ? plural(n, 'room') : 'Pick at least one room') + '</small><b>' + TT.money(total, cur()) + '</b></div>' +
+      '<button type="button" class="rs-ok"' + (n ? '' : ' disabled') + '>' + (rs.had ? 'Update rooms' : 'Confirm') + '</button></div>';
+  }
+  function openRooms(g, o) {
+    const cur0 = g.selectedOption && g.selected === o.key ? g.selectedOption : null, qty = {};
+    o.lines.forEach(l => { qty[l.id] = cur0 ? (cur0.qty ? cur0.qty[l.id] || 0 : TT.roomsOf(l)) : 0; });
+    rs = { g, o, qty, had: !!cur0 };
+    let dlg = TT.$('#rsDlg');
+    if (!dlg) {
+      dlg = document.createElement('dialog'); dlg.id = 'rsDlg'; dlg.className = 'rs';
+      document.body.appendChild(dlg);
+      dlg.addEventListener('close', () => { rs = null; });
+      dlg.addEventListener('click', e => {
+        if (e.target === dlg || e.target.closest('.rs-x')) { dlg.close(); return; }
+        const st = e.target.closest('[data-rs]');
+        if (st && rs) {
+          const l = rs.o.lines.find(x => String(x.id) === st.dataset.id), r = TT.roomsOf(l);
+          rs.qty[l.id] = Math.max(0, Math.min(r, (rs.qty[l.id] || 0) + (st.dataset.rs === '+' ? 1 : -1)));
+          dlg.innerHTML = roomSheetHtml();
+          return;
+        }
+        if (e.target.closest('.rs-ok') && rs) { const { g: gg, o: oo, qty: q } = rs; dlg.close(); choose(gg.key, oo.key, q); }
+      });
+    }
+    dlg.innerHTML = roomSheetHtml();
+    dlg.showModal();
+  }
+  function startSelect(gk, ok) {
+    const g = groups.find(x => x.key === gk), o = g && g.options.find(x => x.key === ok);
+    if (!o) return;
+    if (o.lines.length > 1) openRooms(g, o); else choose(gk, ok);
+  }
+
+  async function choose(groupKey, optionKey, qty) {
     const before = Object.assign({}, selection);
-    if (optionKey) selection[groupKey] = optionKey; else delete selection[groupKey];
+    if (optionKey) selection[groupKey] = qty ? { o: optionKey, q: qty } : optionKey; else delete selection[groupKey];
     refresh();
     try {
-      const r = await TT.api('/api/public/trips/' + encodeURIComponent(slug) + '/select', { method: 'POST', json: { group: groupKey, option: optionKey } });
+      const r = await TT.api('/api/public/trips/' + encodeURIComponent(slug) + '/select', { method: 'POST', json: qty ? { group: groupKey, option: optionKey, qty } : { group: groupKey, option: optionKey } });
       selection = r.selection;
     } catch (err) {
       selection = before; refresh(); TT.toast(err.message || 'Could not save your choice', 'err');
@@ -445,7 +503,9 @@
       return;
     }
     const pick = e.target.closest('.co-pick');
-    if (pick) { choose(pick.dataset.g, pick.dataset.o); return; }
+    if (pick) { startSelect(pick.dataset.g, pick.dataset.o); return; }
+    const chg = e.target.closest('.rs-change');
+    if (chg) { startSelect(chg.dataset.g, chg.dataset.o); return; }
     const un = e.target.closest('.co-un');
     if (un) { choose(un.dataset.g, null); return; }
     if (e.target.closest('.cc')) { listY = window.scrollY; return; }  // remember where the list was; the link itself changes the page

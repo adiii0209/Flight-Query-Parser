@@ -107,7 +107,7 @@
 
     function optionHtml(g, o, oi, multi) {
       const isSel = o.key === g.selected;
-      const badge = !multi ? '' : isSel ? '<span class="badge">' + 'Guest picked' + '</span>' : '';
+      const badge = !multi ? '' : isSel ? '<span class="badge">' + 'Guest picked' + (TT.qtyText(g.selectedOption) ? ' · ' + TT.esc(TT.qtyText(g.selectedOption)) : '') + '</span>' : '';
       const head = multi ? '<div class="qo-head"><span class="qo-tag">Option ' + (oi + 1) + '</span><b>' + TT.esc(o.hotel_name || 'Hotel') + '</b>' + badge +
         (o.lines.length > 1 ? '<span class="qo-rooms">' + o.lines.length + ' rooms</span>' : '') + '<span class="spacer"></span>' +
         '<span class="qo-total">' + TT.money(o.total, opts.currency()) + '</span>' +
