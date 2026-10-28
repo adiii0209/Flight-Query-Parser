@@ -138,7 +138,7 @@
       (located ? '<button class="tc-pin" data-id="' + located.id + '">View on map</button>' : '');
     return '<article class="tc-card co' + (isSel ? ' is-sel' : '') + (open ? ' open' : '') + '">' + gallery(o, badges) + '<div class="tc-body"><div class="tc-top"><div><h2>' + TT.esc(o.hotel_name || first.hotel_name) + '</h2>' +
       '</div>' + pick + '</div>' + factsRow(hv('stars'), hv('style'), hv('age_info')) +
-      (near.length ? '<p class="tc-loc">' + PINICON + '<span>' + near.slice(0, 3).map(l => '<b>' + TT.esc(l.name) + '</b>' + (l.km != null ? ' <i>' + (l.km < 1 ? Math.round(l.km * 10) * 100 + ' m' : l.km.toFixed(1) + ' km') + '</i>' : '')).join(' · ') + '</span></p>' : '') +
+      (near.length ? '<p class="tc-loc">' + PINICON + '<span>' + near.slice(0, 2).map(l => '<b>' + TT.esc(l.name) + '</b>' + (l.km != null ? ' <i>' + (l.km < 1 ? Math.round(l.km * 10) * 100 + ' m' : l.km.toFixed(1) + ' km') + '</i>' : '')).join(' · ') + '</span></p>' : '') +
       '<div class="tc-foot"><div class="tc-price">' + onlineHtml(o) + '<small>' + (many ? 'Our price for ' + plural(o.lines.length, 'room') : first.items > 1 ? rateText(first) : 'Our price') + '</small><b>' + TT.money(o.total, cur()) + '</b>' + saveHtml(o) + '</div>' +
       '<button type="button" class="tc-tog" data-ck="' + TT.esc(ck) + '" aria-expanded="' + open + '"><span>' + (open ? 'Hide details' : 'View details') + '</span>' + CHEV + '</button></div>' +
       '<div class="tc-more" id="more-' + TT.esc(ck.replace(/[^\w-]/g, '_')) + '">' + more + '</div></div></article>';

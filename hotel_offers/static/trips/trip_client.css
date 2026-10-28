@@ -296,3 +296,23 @@ body.has-sheet{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 .lg.open .lg-tg .cc-chev{transform:rotate(180deg)}
 .lg:not(.open) .lg-list{display:none}
 .lg:not(.open){padding-bottom:0}
+
+/* compact hotel card: smaller name, chips and price row, tidy footer */
+.tc-body{padding:14px 16px 16px;gap:9px}
+.tc-top h2{font-size:1.18rem;line-height:1.22}
+.tc-chiprow{gap:5px}
+.tc-chipx{min-height:24px;padding:0 9px;font-size:.73rem}
+.tc-starsrow{font-size:.75rem}
+.tc-loc{font-size:.8rem;gap:6px;line-height:1.4;color:var(--mute)}
+.tc-loc b{color:var(--text)}
+.tc-loc i{font-size:.74rem}
+.tc-foot{align-items:center;gap:10px;padding-top:10px}
+.tc-price small{font-size:.72rem;padding-top:4px;line-height:1.35}
+.tc-price b{font-size:1.35rem;line-height:1.15}
+.tc-online{padding-top:4px;font-size:.72rem}
+.tc-online s{font-size:.85rem}
+.tc-save{font-size:.7rem}
+.tc-tog{height:34px;padding:0 4px 0 12px;font-size:.78rem;white-space:nowrap;flex:0 0 auto}
+.tc-tog .cc-chev{width:14px;height:14px}
+.co-pick{height:34px;padding:0 14px;font-size:.8rem}
+@media(max-width:520px){.tc-top h2{font-size:1.08rem}.tc-body{padding:12px 14px 14px}.tc-price b{font-size:1.25rem}}
