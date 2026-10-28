@@ -144,13 +144,13 @@
   // ---- payslip: ESI and professional tax work themselves out from the gross earnings; an edited amount sticks until it is reset
   const rup = x => Math.ceil(Math.round(x * 1e6) / 1e6);  // ROUNDUP to a whole rupee, without float noise
   const RULES = {
-    esi_er: g => (g <= 21000 ? rup(g * 0.0075) : 0),
-    esi_ee: g => (g <= 21000 ? rup(g * 0.0325) : 0),
+    esi_er: g => (g <= 21000 ? rup(g * 0.0325) : 0),
+    esi_ee: g => (g <= 21000 ? rup(g * 0.0075) : 0),
     ptax: g => (g <= 10000 ? 0 : g <= 15000 ? 110 : g <= 25000 ? 130 : g <= 40000 ? 150 : 200),
   };
   const AUTO_TEXT = {
-    esi_er: 'ESI employer: 0.75% of gross, rounded up, when gross is up to ₹21,000; otherwise 0.',
-    esi_ee: 'ESI employee: 3.25% of gross, rounded up, when gross is up to ₹21,000; otherwise 0.',
+    esi_er: 'ESI employer: 3.25% of gross, rounded up, when gross is up to ₹21,000; otherwise 0.',
+    esi_ee: 'ESI employee: 0.75% of gross, rounded up, when gross is up to ₹21,000; otherwise 0.',
     ptax: 'Professional tax by gross: up to ₹10,000 → 0 · ₹15,000 → 110 · ₹25,000 → 130 · ₹40,000 → 150 · above → 200.',
   };
   const autoOf = l => (/professional\s*tax|^p\.?\s*tax$/i.test(l) ? 'ptax' : /\besi\b/i.test(l) ? (/employer/i.test(l) ? 'esi_er' : 'esi_ee') : null);
