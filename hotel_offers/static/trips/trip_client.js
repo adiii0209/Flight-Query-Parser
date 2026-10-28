@@ -220,7 +220,8 @@
   function summaryHtml() {
     const rows = groups.map((g, gi) => '<li><span><i>' + (gi + 1) + '</i><em>' + TT.esc(g.city || 'Stay') + '</em><small>' + TT.esc(g.selectedOption ? g.selectedOption.hotel_name : 'Not chosen yet') + '</small></span>' + (g.selectedOption ? '<b>' + TT.money(g.selectedOption.total, cur()) + '</b>' : '') + '</li>').join('');
     const done = groups.filter(g => g.selectedOption).length;
-    return '<section class="tc-sum"><div class="tc-sum-head"><span>Trip total</span>' + (done === groups.length ? '<b>' + TT.money(TT.groupsTotal(groups), cur()) + '</b>' : '<small>Choose a hotel in each city to see your total · ' + done + ' of ' + groups.length + ' chosen</small>') + '</div><ul>' + rows + '</ul></section>';
+    return '<section class="tc-sum"><div class="tc-sum-head"><span>Trip total</span>' + (done === groups.length ? '<b>' + TT.money(TT.groupsTotal(groups), cur()) + '</b>' : '<small>Choose a hotel in each city to see your total · ' + done + ' of ' + groups.length + ' chosen</small>') + '</div><ul>' + rows + '</ul>' +
+      '<button type="button" class="tc-checkout" id="tcCheckout"' + (done === groups.length && done ? '' : ' disabled') + '>' + (done === groups.length && done ? 'Checkout' : 'Choose a hotel in every city to check out') + '</button></section>';
   }
 
   // ---- map
@@ -472,10 +473,35 @@
     if (o.lines.length > 1) openRooms(g, o); else choose(gk, ok);
   }
 
+  // ---- cart: choosing a hotel adds it to the cart (a toast at the top right); Checkout sends the whole selection to the agent
+  const CART = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.4 10.2a1 1 0 0 0 1 .8h8.2a1 1 0 0 0 1-.8L19 8H6"/><circle cx="9.5" cy="19" r="1.3"/><circle cx="16.5" cy="19" r="1.3"/></svg>';
+  let cartT = 0;
+  function cartToast(title, sub, view) {
+    let el = TT.$('#tcCartToast');
+    if (!el) { el = document.createElement('div'); el.id = 'tcCartToast'; el.setAttribute('role', 'status'); document.body.appendChild(el); el.addEventListener('click', e => { if (e.target.closest('.ct-go')) viewCart(); }); }
+    el.innerHTML = '<span class="ct-ic">' + CART + '</span><div><b>' + TT.esc(title) + '</b>' + (sub ? '<small>' + TT.esc(sub) + '</small>' : '') + '</div>' + (view ? '<button type="button" class="ct-go">View cart</button>' : '');
+    el.classList.add('show');
+    clearTimeout(cartT); cartT = setTimeout(() => el.classList.remove('show'), 4200);
+  }
+  function viewCart() {
+    const el = TT.$('#tcCartToast'); if (el) el.classList.remove('show');
+    if (current !== null) location.hash = '';
+    setTimeout(() => { const t = TT.$('#sumHost'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 120);
+  }
+  function checkout() {
+    const lines = groups.filter(g => g.selectedOption).map((g, i) => (i + 1) + '. ' + (g.city || 'Stay') + ' (' + groupDates(g) + '): ' + g.selectedOption.hotel_name + (TT.qtyText(g.selectedOption) ? ' - ' + TT.qtyText(g.selectedOption) : '') + ' - ' + TT.money(g.selectedOption.total, cur()));
+    const msg = 'Hi, I would like to book this trip: ' + data.trip.title + '\n' + lines.join('\n') + '\nTotal: ' + TT.money(TT.groupsTotal(groups), cur());
+    if (wa) { window.open('https://wa.me/' + wa + '?text=' + encodeURIComponent(msg), '_blank', 'noopener'); return; }
+    cartToast('Your choices are saved', 'Your travel agent can see them on this trip.', false);
+  }
+
   async function choose(groupKey, optionKey, qty) {
     const before = Object.assign({}, selection);
     if (optionKey) selection[groupKey] = qty ? { o: optionKey, q: qty } : optionKey; else delete selection[groupKey];
     refresh();
+    const gsel = groups.find(x => x.key === groupKey);
+    if (optionKey && gsel && gsel.selectedOption) cartToast('Added to cart', gsel.selectedOption.hotel_name + ' · ' + TT.money(gsel.selectedOption.total, cur()), true);
+    else if (!optionKey) cartToast('Removed from cart', '', false);
     try {
       const r = await TT.api('/api/public/trips/' + encodeURIComponent(slug) + '/select', { method: 'POST', json: qty ? { group: groupKey, option: optionKey, qty } : { group: groupKey, option: optionKey } });
       selection = r.selection;
@@ -506,6 +532,7 @@
     if (pick) { startSelect(pick.dataset.g, pick.dataset.o); return; }
     const chg = e.target.closest('.rs-change');
     if (chg) { startSelect(chg.dataset.g, chg.dataset.o); return; }
+    if (e.target.closest('.tc-checkout')) { checkout(); return; }
     const un = e.target.closest('.co-un');
     if (un) { choose(un.dataset.g, null); return; }
     if (e.target.closest('.cc')) { listY = window.scrollY; return; }  // remember where the list was; the link itself changes the page
