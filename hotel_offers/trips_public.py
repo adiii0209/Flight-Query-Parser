@@ -169,7 +169,7 @@ def trip_select(slug):
                     n = int(qty.get(str(line["id"]), 0))
                 except (TypeError, ValueError):
                     return jsonify({"error": "Choose your rooms again."}), 400
-                if not 0 <= n <= trip_groups.rooms_of(line):
+                if not 0 <= n <= trip_groups.room_cap(line):
                     return jsonify({"error": "That is more rooms than are available. Please refresh the page."}), 409
                 clean[str(line["id"])] = n
             if sum(clean.values()) < 1:

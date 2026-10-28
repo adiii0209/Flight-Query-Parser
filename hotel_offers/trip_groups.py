@@ -26,6 +26,14 @@ def rooms_of(q):
     return max(1, round(items / nights)) if nights else max(1, items or 1)
 
 
+MAX_ROOMS = 9
+
+
+def room_cap(q):
+    """Most rooms a guest can add of one category."""
+    return max(MAX_ROOMS, rooms_of(q))
+
+
 def split_choice(value):
     """(option key, {quote id: rooms} or None) from what is stored for a city."""
     if isinstance(value, dict):
@@ -62,7 +70,7 @@ def option_total(option, qty=None):
     for line in option["lines"]:
         rooms = rooms_of(line)
         try:
-            n = min(max(int(qty.get(str(line.get("id")), 0)), 0), rooms)
+            n = min(max(int(qty.get(str(line.get("id")), 0)), 0), room_cap(line))
         except (TypeError, ValueError):
             n = 0
         total += round((line.get("total") or 0) / rooms * n)

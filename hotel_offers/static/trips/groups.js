@@ -27,7 +27,7 @@
         const qty = {};
         let total = 0, count = 0;
         chosen.lines.forEach(l => {
-          const r = TT.roomsOf(l), n = Math.max(0, Math.min(r, parseInt(cq[l.id], 10) || 0));
+          const r = TT.roomsOf(l), n = Math.max(0, Math.min(TT.roomCap(l), parseInt(cq[l.id], 10) || 0));
           qty[l.id] = n; count += n; total += Math.round((l.total || 0) / r * n);
         });
         selectedOption = Object.assign({}, chosen, { total, qty, roomCount: count });
@@ -41,6 +41,8 @@
 
   /** "1 × Deluxe · 2 × Suite" for the rooms picked in an option (empty when every quoted room is taken). */
   TT.qtyText = o => (o && o.qty ? o.lines.filter(l => o.qty[l.id] > 0).map(l => o.qty[l.id] + ' × ' + (l.room || 'Room')).join(' · ') : '');
+
+  TT.roomCap = l => Math.max(9, TT.roomsOf(l));  // most rooms of one category a guest can add
 
   TT.groupsTotal = groups => groups.reduce((s, g) => s + (g.selectedOption ? g.selectedOption.total : 0), 0);
 

@@ -4,7 +4,7 @@
   const slug = document.body.dataset.slug, wa = (document.body.dataset.wa || '').replace(/\D/g, '');
   const root = TT.$('#trip');
   const openCards = new Set();
-  let guideOpen = false, data = null, groups = [], selection = {}, map = null, chipSel = null, savedY = 0, listY = 0, current = null, sheetOn = false, snap = 'half', sheetTop = 0, noTap = false;
+  let inCart = false, cartNote = '', guideOpen = false, data = null, groups = [], selection = {}, map = null, chipSel = null, savedY = 0, listY = 0, current = null, sheetOn = false, snap = 'half', sheetTop = 0, noTap = false;
 
   const PIN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.2A7 7 0 0 1 19 9.8C19 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.5"/></svg>';
   const CLOSE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -121,7 +121,7 @@
   // several room categories: "From" the cheapest room until the guest has picked rooms, then what was picked
   function priceHtml(g, o, isSel, many, first) {
     const so = isSel ? g.selectedOption : o;
-    if (many && isSel && so.qty) {
+    if (isSel && so.qty) {
       return '<small>' + TT.esc(TT.qtyText(so) || 'Rooms') + '</small><b>' + TT.money(so.total, cur()) + '</b><button type="button" class="rs-change" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">Change rooms</button>';
     }
     if (many) return '<small>' + o.lines.length + ' room categories' + ' · pick your rooms</small><b>From ' + TT.money(Math.min.apply(null, o.lines.map(unitOf)), cur()) + '</b>';
@@ -141,9 +141,10 @@
     const details = many
       ? factsHtml(stay) + o.lines.map((l, i) => '<div class="co-room"><div class="co-room-h"><b>' + TT.esc(l.room || 'Room ' + (i + 1)) + '</b><span>' + TT.money(l.total, cur()) + '</span></div>' + factsHtml(lineFacts(l)) + roomDesc(l) + '<small>' + rateText(l) + '</small></div>').join('')
       : factsHtml(stay.concat(lineFacts(first))) + roomDesc(first);
+    const roomBtn = '<button type="button" class="rs-change rs-in" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">' + (isSel ? 'Change rooms' : many ? 'Choose rooms' : 'Add rooms') + '</button>';
     const ck = g.key + '|' + o.key, open = openCards.has(ck);
     const brief = hv('brief');
-    const more = (first.address ? '<p class="tc-sub">' + TT.esc(first.address) + '</p>' : '') + (brief ? '<p class="tc-brief">' + TT.esc(brief) + '</p>' : '') + (nut ? '<p class="tc-nut">' + TT.esc(nut).replace(/\n/g, '<br>') + '</p>' : '') + perksHtml(perks) + details + linksHtml(info) +
+    const more = (first.address ? '<p class="tc-sub">' + TT.esc(first.address) + '</p>' : '') + (brief ? '<p class="tc-brief">' + TT.esc(brief) + '</p>' : '') + (nut ? '<p class="tc-nut">' + TT.esc(nut).replace(/\n/g, '<br>') + '</p>' : '') + perksHtml(perks) + details + roomBtn + linksHtml(info) +
       (located ? '<button class="tc-pin" data-id="' + located.id + '">View on map</button>' : '');
     return '<article class="tc-card co' + (isSel ? ' is-sel' : '') + (open ? ' open' : '') + '">' + gallery(o, badges) + '<div class="tc-body"><div class="tc-top"><div><h2>' + TT.esc(o.hotel_name || first.hotel_name) + '</h2>' +
       '</div>' + pick + '</div>' + factsRow(hv('stars'), hv('style'), hv('age_info')) +
@@ -180,7 +181,7 @@
     const multi = g.options.length > 1, pins = cityPins(g), spots = spotsOf(g);
     sheetOn = window.matchMedia('(max-width:640px)').matches && !!(pins.length || spots.length);  // a phone gets the map with a bottom sheet
     const bar = '<div class="cp-bar"><a class="cp-back" href="#" aria-label="Back to all cities">' + BACK + '</a><div class="cp-mid"><h1>' + TT.esc(g.city || 'Your stay') + '</h1><p>' + TT.esc(shortDates(g)) + '</p></div>' +
-      '<b class="cp-amt">' + amtOf(g) + '</b></div>';
+      '<b class="cp-amt">' + amtOf(g) + '</b>' + cartBtn('in-bar') + '</div>';
     const rest = '<div class="cp-opts">' + g.options.map(o => optionHtml(g, o, multi)).join('') + '</div><div id="cmpHost">' + compareHtml(g) + '</div>' + disclaimerHtml();
     if (!sheetOn) return bar + guideHtml(g, pins) + rest;
     const title = pins.length + (pins.length === 1 ? ' hotel' : ' hotels') + (spots.length ? ' · ' + spots.length + (spots.length === 1 ? ' area' : ' areas') + ' to explore' : '');
@@ -220,8 +221,8 @@
   function summaryHtml() {
     const rows = groups.map((g, gi) => '<li><span><i>' + (gi + 1) + '</i><em>' + TT.esc(g.city || 'Stay') + '</em><small>' + TT.esc(g.selectedOption ? g.selectedOption.hotel_name : 'Not chosen yet') + '</small></span>' + (g.selectedOption ? '<b>' + TT.money(g.selectedOption.total, cur()) + '</b>' : '') + '</li>').join('');
     const done = groups.filter(g => g.selectedOption).length;
-    return '<section class="tc-sum"><div class="tc-sum-head"><span>Trip total</span>' + (done === groups.length ? '<b>' + TT.money(TT.groupsTotal(groups), cur()) + '</b>' : '<small>Choose a hotel in each city to see your total · ' + done + ' of ' + groups.length + ' chosen</small>') + '</div><ul>' + rows + '</ul>' +
-      '<button type="button" class="tc-checkout" id="tcCheckout"' + (done === groups.length && done ? '' : ' disabled') + '>' + (done === groups.length && done ? 'Checkout' : 'Choose a hotel in every city to check out') + '</button></section>';
+    return '<section class="tc-sum"><div class="tc-sum-head"><span>' + (done === groups.length ? 'Trip total' : 'Cart total · ' + done + ' of ' + groups.length + ' cities') + '</span>' + (done ? '<b>' + TT.money(TT.groupsTotal(groups), cur()) + '</b>' : '<small>Choose a hotel in each city to see your total · ' + done + ' of ' + groups.length + ' chosen</small>') + '</div><ul>' + rows + '</ul>' +
+      '<button type="button" class="tc-checkout" id="tcCheckout"' + (done ? '' : ' disabled') + '>' + (done ? 'View cart & checkout' : 'Choose a hotel to start your cart') + '</button></section>';
   }
 
   // ---- map
@@ -316,6 +317,8 @@
       '<div class="cc-list" id="ccList"></div><div id="sumHost"></div></div><div id="viewCity" hidden></div>' +
       disclaimerHtml().replace('<p class="tc-note"', '<p class="tc-note" id="tcNote"');
     drawList();
+    const navIn = TT.$('.nav-in');
+    if (navIn && !TT.$('#navCart')) { navIn.insertAdjacentHTML('beforeend', cartBtn('in-nav').replace('<a ', '<a id="navCart" ')); }
     const a = TT.$('#navWa');
     if (wa) a.href = 'https://wa.me/' + wa + '?text=' + encodeURIComponent('Hi, about my trip: ' + t.title); else a.hidden = true;
     route();
@@ -355,14 +358,25 @@
     const m = location.hash.match(/^#city\/(.+)$/), key = m ? decodeURIComponent(m[1]) : null;
     const gi = key ? groups.findIndex(g => g.key === key) : -1;
     const list = TT.$('#viewList'), city = TT.$('#viewCity');
-    document.body.classList.toggle('in-city', gi >= 0);
+    const wasCart = inCart;
+    inCart = location.hash === '#cart';
+    document.body.classList.toggle('in-city', gi >= 0 || inCart);
+    document.body.classList.toggle('in-cart', inCart);
+    if (inCart) {
+      if (current === null && !wasCart) listY = window.scrollY || listY;
+      else if (current !== null) unmountMap();
+      current = null; list.hidden = true; city.hidden = false; city.innerHTML = cartPage();
+      const tt = TT.$('#tcCartToast'); if (tt) tt.classList.remove('show');
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      return;
+    }
     if (gi < 0) {
       current = null; unmountMap(); city.hidden = true; city.innerHTML = ''; list.hidden = false;
       window.scrollTo({ top: listY, behavior: 'instant' });
       return;
     }
-    if (current === null) listY = window.scrollY || listY;
-    else unmountMap();
+    if (current === null && !wasCart) listY = window.scrollY || listY;
+    else if (current !== null) unmountMap();
     current = key; list.hidden = true; city.hidden = false;
     city.innerHTML = cityPage(groups[gi], gi);
     mountMap(groups[gi]);
@@ -411,7 +425,7 @@
   }
   function refresh() {
     groups = TT.groupQuotes(data.quotes, selection);
-    drawList();
+    drawList(); cartBadges(); drawCart();
     if (current !== null) {
       const g = groups.find(x => x.key === current), y = window.scrollY;
       if (g) {
@@ -435,9 +449,9 @@
       const r = TT.roomsOf(l), k = qty[l.id] || 0, meta = [l.room_size, l.meal_plan, l.cancellation].filter(Boolean).join(' · ');
       total += priceOf(l, k); n += k;
       return '<li class="rs-row' + (k ? ' on' : '') + '"><div class="rs-i"><b>' + TT.esc(l.room || 'Room ' + (i + 1)) + '</b>' + (meta ? '<small>' + TT.esc(meta) + '</small>' : '') +
-        '<em>' + TT.money(unitOf(l), cur()) + ' per room' + (l.nights ? ' for ' + plural(l.nights, 'night') : '') + (r > 1 ? ' · up to ' + r : '') + '</em></div>' +
+        '<em>' + TT.money(unitOf(l), cur()) + ' per room' + (l.nights ? ' for ' + plural(l.nights, 'night') : '') + '</em></div>' +
         '<div class="rs-step"><button type="button" data-rs="-" data-id="' + l.id + '" aria-label="Fewer ' + TT.esc(l.room || 'rooms') + '"' + (k <= 0 ? ' disabled' : '') + '>−</button><span aria-live="polite">' + k +
-        '</span><button type="button" data-rs="+" data-id="' + l.id + '" aria-label="More ' + TT.esc(l.room || 'rooms') + '"' + (k >= r ? ' disabled' : '') + '>+</button></div></li>';
+        '</span><button type="button" data-rs="+" data-id="' + l.id + '" aria-label="More ' + TT.esc(l.room || 'rooms') + '"' + (k >= TT.roomCap(l) ? ' disabled' : '') + '>+</button></div></li>';
     });
     return '<div class="rs-h"><div><b>Choose your rooms</b><small>' + TT.esc(o.hotel_name) + ' · ' + TT.esc(g.city || '') + '</small></div><button type="button" class="rs-x" aria-label="Close">' + CLOSE + '</button></div>' +
       '<ul class="rs-list">' + rows.join('') + '</ul><div class="rs-f"><div><small>' + (n ? plural(n, 'room') : 'Pick at least one room') + '</small><b>' + TT.money(total, cur()) + '</b></div>' +
@@ -445,7 +459,7 @@
   }
   function openRooms(g, o) {
     const cur0 = g.selectedOption && g.selected === o.key ? g.selectedOption : null, qty = {};
-    o.lines.forEach(l => { qty[l.id] = cur0 ? (cur0.qty ? cur0.qty[l.id] || 0 : TT.roomsOf(l)) : 0; });
+    o.lines.forEach(l => { qty[l.id] = cur0 ? (cur0.qty ? cur0.qty[l.id] || 0 : TT.roomsOf(l)) : (o.lines.length === 1 ? TT.roomsOf(l) : 0); });
     rs = { g, o, qty, had: !!cur0 };
     let dlg = TT.$('#rsDlg');
     if (!dlg) {
@@ -456,8 +470,8 @@
         if (e.target === dlg || e.target.closest('.rs-x')) { dlg.close(); return; }
         const st = e.target.closest('[data-rs]');
         if (st && rs) {
-          const l = rs.o.lines.find(x => String(x.id) === st.dataset.id), r = TT.roomsOf(l);
-          rs.qty[l.id] = Math.max(0, Math.min(r, (rs.qty[l.id] || 0) + (st.dataset.rs === '+' ? 1 : -1)));
+          const l = rs.o.lines.find(x => String(x.id) === st.dataset.id);
+          rs.qty[l.id] = Math.max(0, Math.min(TT.roomCap(l), (rs.qty[l.id] || 0) + (st.dataset.rs === '+' ? 1 : -1)));
           dlg.innerHTML = roomSheetHtml();
           return;
         }
@@ -470,7 +484,7 @@
   function startSelect(gk, ok) {
     const g = groups.find(x => x.key === gk), o = g && g.options.find(x => x.key === ok);
     if (!o) return;
-    if (o.lines.length > 1) openRooms(g, o); else choose(gk, ok);
+    openRooms(g, o);
   }
 
   // ---- cart: choosing a hotel adds it to the cart (a toast at the top right); Checkout sends the whole selection to the agent
@@ -485,23 +499,79 @@
   }
   function viewCart() {
     const el = TT.$('#tcCartToast'); if (el) el.classList.remove('show');
-    if (current !== null) location.hash = '';
-    setTimeout(() => { const t = TT.$('#sumHost'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 120);
+    location.hash = '#cart';
   }
   function checkout() {
     const lines = groups.filter(g => g.selectedOption).map((g, i) => (i + 1) + '. ' + (g.city || 'Stay') + ' (' + groupDates(g) + '): ' + g.selectedOption.hotel_name + (TT.qtyText(g.selectedOption) ? ' - ' + TT.qtyText(g.selectedOption) : '') + ' - ' + TT.money(g.selectedOption.total, cur()));
-    const msg = 'Hi, I would like to book this trip: ' + data.trip.title + '\n' + lines.join('\n') + '\nTotal: ' + TT.money(TT.groupsTotal(groups), cur());
+    const msg = 'Hi, I would like to book this trip: ' + data.trip.title + '\n' + lines.join('\n') + '\nTotal: ' + TT.money(TT.groupsTotal(groups), cur()) + (cartNote.trim() ? '\nNote: ' + cartNote.trim() : '');
     if (wa) { window.open('https://wa.me/' + wa + '?text=' + encodeURIComponent(msg), '_blank', 'noopener'); return; }
     cartToast('Your choices are saved', 'Your travel agent can see them on this trip.', false);
   }
 
-  async function choose(groupKey, optionKey, qty) {
+  // ---- the cart page: everything chosen, with room steppers, remove and a bill
+  const TRASH = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3"/></svg>';
+  const chosenGroups = () => groups.filter(g => g.selectedOption);
+  // rooms taken in a chosen hotel: { line, k }; a hotel chosen before room counts existed takes every quoted room
+  const takenOf = g => g.selectedOption.lines.map(l => ({ l, k: g.selectedOption.qty ? g.selectedOption.qty[l.id] || 0 : TT.roomsOf(l) })).filter(x => x.k > 0);
+  const roomCount = () => chosenGroups().reduce((n, g) => n + takenOf(g).reduce((a, x) => a + x.k, 0), 0);
+  const onlineLine = (l, k) => Math.round(l.online_total / TT.roomsOf(l) * k);
+  function cartBadges() {
+    const n = chosenGroups().length;
+    TT.$$('.cart-n').forEach(b => { b.textContent = n; b.hidden = !n; });
+  }
+  const cartBtn = cls => '<a class="cart-btn ' + cls + '" href="#cart" aria-label="Cart">' + CART + '<i class="cart-n"' + (chosenGroups().length ? '' : ' hidden') + '>' + chosenGroups().length + '</i></a>';
+
+  function cartPage() {
+    const items = chosenGroups(), cu = cur();
+    const bar = '<div class="cp-bar ca-bar"><a class="cp-back" href="#" aria-label="Back">' + BACK + '</a><div class="cp-mid"><h1>Your cart</h1><p>' + (items.length ? plural(items.length, 'hotel') + ' · ' + plural(roomCount(), 'room') : 'Nothing added yet') + '</p></div></div>';
+    if (!items.length) {
+      return bar + '<div class="ca-empty"><span class="ca-empty-ic">' + CART + '</span><h2>Your cart is empty</h2><p>Pick a hotel for any city and it will show up here.</p><a class="tc-checkout ca-browse" href="#">Browse hotels</a></div>';
+    }
+    let total = 0, online = 0, save = 0;
+    const cards = items.map(g => {
+      const so = g.selectedOption, taken = takenOf(g), photo = (so.lines.find(l => l.photos.length) || { photos: [] }).photos[0];
+      const sub = taken.reduce((a, x) => a + priceOf(x.l, x.k), 0), allOn = taken.every(x => x.l.online_total > 0), on = allOn ? taken.reduce((a, x) => a + onlineLine(x.l, x.k), 0) : 0;
+      total += sub; if (on > sub) { online += on; save += on - sub; } else online += sub;
+      const rows = taken.map(x => '<div class="ca-line"><div class="ca-li"><b>' + TT.esc(x.l.room || 'Room') + '</b><small>' + TT.esc([x.l.meal_plan, x.l.cancellation].filter(Boolean).join(' · ')) + '</small><em>' + TT.money(unitOf(x.l), cu) + ' per room · ' + plural(x.l.nights || g.nights || 0, 'night') + '</em></div>' +
+        '<div class="ca-r"><div class="ca-step"><button type="button" data-cs="-" data-g="' + TT.esc(g.key) + '" data-id="' + x.l.id + '" aria-label="Remove one room">' + (x.k === 1 ? TRASH : '−') + '</button><span>' + x.k + '</span><button type="button" data-cs="+" data-g="' + TT.esc(g.key) + '" data-id="' + x.l.id + '" aria-label="Add one room"' + (x.k >= TT.roomCap(x.l) ? ' disabled' : '') + '>+</button></div><b class="ca-p">' + TT.money(priceOf(x.l, x.k), cu) + '</b></div></div>').join('');
+      return '<section class="ca-card"><div class="ca-head"><div><h2>' + TT.esc(g.city || 'Your stay') + '</h2><p>' + TT.esc(groupDates(g)) + '</p></div><button type="button" class="ca-rm" data-rm="' + TT.esc(g.key) + '" aria-label="Remove ' + TT.esc(so.hotel_name) + '">' + TRASH + '<span>Remove</span></button></div>' +
+        '<div class="ca-hotel">' + (photo ? '<img src="' + photo + '" alt="" loading="lazy">' : '<span class="ca-ph">' + TT.esc((so.hotel_name || '?').slice(0, 1)) + '</span>') + '<div><b>' + TT.esc(so.hotel_name) + '</b><small>' + TT.esc([(so.lines.find(l => l.stars) || {}).stars ? (so.lines.find(l => l.stars) || {}).stars + ' star' : '', (so.lines.find(l => l.style) || {}).style].filter(Boolean).join(' · ')) + '</small></div></div>' +
+        rows + '<div class="ca-acts"><button type="button" class="ca-link" data-add="' + TT.esc(g.key) + '">+ Add another room</button><a class="ca-link" href="' + cityHref(g) + '">Change hotel</a></div>' +
+        '<div class="ca-sub"><span>Subtotal</span><b>' + TT.money(sub, cu) + '</b></div></section>';
+    }).join('');
+    const bill = items.map(g => { const taken = takenOf(g), n = taken.reduce((a, x) => a + x.k, 0), amt = taken.reduce((a, x) => a + priceOf(x.l, x.k), 0);
+      return '<div class="ca-row"><span>' + TT.esc(g.city || 'Stay') + ' · ' + TT.esc(g.selectedOption.hotel_name) + '<small>' + plural(n, 'room') + ' × ' + plural(g.nights || 0, 'night') + '</small></span><b>' + TT.money(amt, cu) + '</b></div>'; }).join('');
+    const policy = items.map(g => { const c = (g.selectedOption.lines.find(l => l.cancellation) || {}).cancellation; return c ? '<li><b>' + TT.esc(g.selectedOption.hotel_name) + '</b> ' + TT.esc(c) + '</li>' : ''; }).join('');
+    return bar + '<div class="ca-wrap">' + cards +
+      '<section class="ca-card ca-note"><label for="caNote">Anything we should know? <em>(optional)</em></label><textarea id="caNote" rows="2" placeholder="Early check-in, extra bed, anniversary, dietary needs…">' + TT.esc(cartNote) + '</textarea></section>' +
+      '<section class="ca-card ca-bill"><h3>Bill details</h3>' + bill +
+      (save > 0 ? '<div class="ca-row ca-mute"><span>Online price for the same rooms</span><s>' + TT.money(online, cu) + '</s></div>' : '') +
+      '<div class="ca-row ca-grand"><span>Grand total</span><b>' + TT.money(total, cu) + '</b></div>' +
+      (save > 0 ? '<div class="ca-save">You are saving ' + TT.money(save, cu) + ' with us</div>' : '') + '</section>' +
+      (policy ? '<section class="ca-card ca-pol"><h3>Cancellation policy</h3><ul>' + policy + '</ul></section>' : '') +
+      '<div class="ca-fine">' + disclaimerHtml() + '</div></div>' +
+      '<div class="ca-checkout"><div><b>' + TT.money(total, cu) + '</b><small>' + plural(items.length, 'hotel') + ' · ' + plural(roomCount(), 'room') + '</small></div><button type="button" class="ca-go" id="caGo">Checkout</button></div>';
+  }
+  function drawCart() { const v = TT.$('#viewCity'); if (v && inCart) { const y = window.scrollY, f = document.activeElement && document.activeElement.id === 'caNote'; v.innerHTML = cartPage(); window.scrollTo({ top: y, behavior: 'instant' }); if (f) TT.$('#caNote').focus(); } }
+  function cartStep(gk, id, d) {
+    const g = groups.find(x => x.key === gk); if (!g || !g.selectedOption) return;
+    const taken = {}; takenOf(g).forEach(x => { taken[x.l.id] = x.k; });
+    const l = g.selectedOption.lines.find(x => String(x.id) === String(id)); if (!l) return;
+    taken[l.id] = Math.max(0, Math.min(TT.roomCap(l), (taken[l.id] || 0) + d));
+    const qty = {}; let n = 0;
+    g.selectedOption.lines.forEach(x => { qty[x.id] = taken[x.id] || 0; n += qty[x.id]; });
+    if (!n) choose(gk, null); else choose(gk, g.selectedOption.key, qty, true);
+  }
+
+  async function choose(groupKey, optionKey, qty, quiet) {
     const before = Object.assign({}, selection);
     if (optionKey) selection[groupKey] = qty ? { o: optionKey, q: qty } : optionKey; else delete selection[groupKey];
     refresh();
     const gsel = groups.find(x => x.key === groupKey);
-    if (optionKey && gsel && gsel.selectedOption) cartToast('Added to cart', gsel.selectedOption.hotel_name + ' · ' + TT.money(gsel.selectedOption.total, cur()), true);
+    if (quiet) { /* stepping rooms inside the cart */ }
+    else if (optionKey && gsel && gsel.selectedOption) cartToast('Added to cart', gsel.selectedOption.hotel_name + ' · ' + TT.money(gsel.selectedOption.total, cur()), true);
     else if (!optionKey) cartToast('Removed from cart', '', false);
+    if (quiet && !optionKey) cartToast('Removed from cart', '', false);
     try {
       const r = await TT.api('/api/public/trips/' + encodeURIComponent(slug) + '/select', { method: 'POST', json: qty ? { group: groupKey, option: optionKey, qty } : { group: groupKey, option: optionKey } });
       selection = r.selection;
@@ -509,6 +579,8 @@
       selection = before; refresh(); TT.toast(err.message || 'Could not save your choice', 'err');
     }
   }
+
+  root.addEventListener('input', e => { if (e.target.id === 'caNote') cartNote = e.target.value; });
 
   root.addEventListener('click', e => {
     const spot = e.target.closest('[data-spot]');
@@ -532,7 +604,14 @@
     if (pick) { startSelect(pick.dataset.g, pick.dataset.o); return; }
     const chg = e.target.closest('.rs-change');
     if (chg) { startSelect(chg.dataset.g, chg.dataset.o); return; }
-    if (e.target.closest('.tc-checkout')) { checkout(); return; }
+    if (e.target.closest('#tcCheckout')) { location.hash = '#cart'; return; }
+    if (e.target.closest('#caGo')) { checkout(); return; }
+    const cs = e.target.closest('[data-cs]');
+    if (cs) { cartStep(cs.dataset.g, cs.dataset.id, cs.dataset.cs === '+' ? 1 : -1); return; }
+    const crm = e.target.closest('[data-rm]');
+    if (crm) { choose(crm.dataset.rm, null); return; }
+    const cadd = e.target.closest('[data-add]');
+    if (cadd) { const g = groups.find(x => x.key === cadd.dataset.add); if (g && g.selectedOption) startSelect(g.key, g.selectedOption.key); return; }
     const un = e.target.closest('.co-un');
     if (un) { choose(un.dataset.g, null); return; }
     if (e.target.closest('.cc')) { listY = window.scrollY; return; }  // remember where the list was; the link itself changes the page

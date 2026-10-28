@@ -362,3 +362,65 @@ dialog.rs{position:fixed;inset:0;margin:auto;height:fit-content}
 /* checkout */
 .tc-checkout{width:100%;height:50px;margin-top:16px;border-radius:99px;background:var(--cta-fg);color:var(--cta);font-weight:600;font-size:.95rem}
 .tc-checkout:disabled{opacity:.45;font-weight:500;font-size:.84rem}
+
+/* in the details: open the room window */
+.rs-in{align-self:flex-start;height:36px;padding:0 16px;border-radius:99px;border:1.5px solid var(--cta);color:var(--cta);text-decoration:none;font-weight:500;font-size:.82rem}
+
+/* cart button in the nav and the city bar */
+.cart-btn{position:relative;flex:0 0 auto;width:40px;height:40px;border-radius:50%;display:inline-grid;place-items:center;background:var(--surface-2);color:var(--text)}
+.cart-btn .cart-n{position:absolute;top:-3px;right:-3px;min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:var(--gold);color:#fff;font-style:normal;font-size:.68rem;font-weight:700;display:grid;place-items:center}
+.cart-btn .cart-n[hidden]{display:none}
+.cart-btn.in-nav{margin-left:8px}
+
+/* cart page */
+body.in-cart .nav,body.in-cart #tcNote{display:none}
+.ca-wrap{display:grid;gap:14px;padding:16px 0 120px;max-width:640px;margin:0 auto}
+.ca-bar{max-width:none}
+.ca-card{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:16px 16px 14px}
+.ca-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.ca-head h2{font-family:var(--serif);font-weight:500;font-size:1.25rem}
+.ca-head p{color:var(--mute);font-size:.8rem;margin-top:2px}
+.ca-rm{display:inline-flex;align-items:center;gap:5px;color:var(--mute);font-size:.78rem;font-weight:500;padding:6px 8px;border-radius:99px}
+.ca-rm:hover{background:var(--surface-2);color:var(--text)}
+.ca-hotel{display:flex;gap:12px;align-items:center;margin:14px 0 4px}
+.ca-hotel img,.ca-ph{flex:0 0 auto;width:58px;height:58px;border-radius:14px;object-fit:cover;background:var(--surface-2);display:grid;place-items:center;font-family:var(--serif);font-size:1.4rem;color:var(--faint)}
+.ca-hotel b{display:block;font-weight:600;font-size:.98rem;line-height:1.25}
+.ca-hotel small{color:var(--mute);font-size:.78rem}
+.ca-line{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 0;border-top:1px dashed var(--line)}
+.ca-li{min-width:0;display:flex;flex-direction:column;gap:2px}
+.ca-li b{font-weight:600;font-size:.92rem}
+.ca-li small{color:var(--mute);font-size:.74rem;line-height:1.35}
+.ca-li em{font-style:normal;color:var(--gold);font-size:.76rem;font-weight:500}
+.ca-r{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.ca-step{display:inline-flex;align-items:center;border:1.5px solid var(--cta);border-radius:10px;overflow:hidden}
+.ca-step button{width:34px;height:32px;display:grid;place-items:center;color:var(--cta);font-size:1.15rem;line-height:1}
+.ca-step button:disabled{opacity:.3}
+.ca-step span{min-width:26px;text-align:center;font-weight:700;font-size:.92rem}
+.ca-p{font-size:.92rem;font-weight:600}
+.ca-acts{display:flex;justify-content:space-between;gap:12px;padding:2px 0 10px}
+.ca-link{color:var(--gold);font-weight:600;font-size:.82rem;text-decoration:none;padding:4px 0}
+.ca-sub{display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:12px;font-size:.92rem}
+.ca-note label{display:block;font-weight:600;font-size:.9rem;margin-bottom:8px}
+.ca-note label em{font-style:normal;color:var(--mute);font-weight:400}
+.ca-note textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--surface-2);color:var(--text);font:inherit;font-size:.9rem;resize:vertical}
+.ca-bill h3,.ca-pol h3{font-size:.95rem;font-weight:600;margin-bottom:10px}
+.ca-row{display:flex;justify-content:space-between;gap:14px;padding:7px 0;font-size:.9rem}
+.ca-row span small{display:block;color:var(--mute);font-size:.74rem}
+.ca-mute{color:var(--mute)}
+.ca-grand{border-top:1px solid var(--line);margin-top:6px;padding-top:12px;font-weight:700;font-size:1.02rem}
+.ca-save{margin-top:10px;padding:9px 12px;border-radius:12px;background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok);font-weight:600;font-size:.82rem;text-align:center}
+.ca-pol ul{list-style:none;display:grid;gap:8px;color:var(--mute);font-size:.8rem;line-height:1.4}
+.ca-pol b{color:var(--text)}
+.ca-fine .tc-note{padding-bottom:0}
+.ca-checkout{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 20px calc(12px + env(safe-area-inset-bottom));background:var(--bg-glass);-webkit-backdrop-filter:saturate(180%) blur(22px);backdrop-filter:saturate(180%) blur(22px);border-top:1px solid var(--line)}
+.ca-checkout div{max-width:300px}
+.ca-checkout b{display:block;font-family:var(--serif);font-weight:500;font-size:1.35rem}
+.ca-checkout small{color:var(--mute);font-size:.76rem}
+.ca-go{height:50px;padding:0 34px;border-radius:14px;background:var(--cta);color:var(--cta-fg);font-weight:600;font-size:.98rem;flex:0 0 auto}
+.ca-empty{text-align:center;padding:70px 20px}
+.ca-empty-ic{width:78px;height:78px;border-radius:50%;background:var(--surface-2);display:inline-grid;place-items:center;color:var(--mute);margin-bottom:16px}
+.ca-empty-ic svg{width:34px;height:34px}
+.ca-empty h2{font-family:var(--serif);font-weight:500;font-size:1.4rem}
+.ca-empty p{color:var(--mute);margin:6px 0 22px}
+.ca-browse{display:inline-flex;align-items:center;justify-content:center;width:auto;padding:0 28px;text-decoration:none;margin-top:0}
+@media(min-width:900px){.ca-checkout{justify-content:center;gap:40px}}
