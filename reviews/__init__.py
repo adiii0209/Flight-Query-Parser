@@ -177,7 +177,8 @@ def create_reviews_app():
         prompt = f"Destination: {place}\nThings I liked: {', '.join(liked) or '(none listed)'}\nMy own note: {note or '(none)'}"
         try:
             text = llm_text(cfg, DRAFT_SYSTEM, prompt, max_tokens=220, temperature=0.8).strip().strip('"')
-        except Exception:
+        except Exception as exc:
+            app.logger.warning("review draft failed (%s %s): %s", cfg["ai_provider"], cfg["ai_model"], exc)
             return jsonify({"error": "Could not write a draft right now. Please write your review below."}), 502
         return jsonify({"text": text[:1000]})
 
