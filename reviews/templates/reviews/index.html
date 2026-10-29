@@ -49,29 +49,21 @@ textarea:focus{outline:2px solid var(--gold);outline-offset:2px}
   </section>
 
   <section id="s2" hidden>
-    {% if ai_ready %}
-    <div id="helper">
-      <label for="place">Where did you go?</label>
-      <input id="place" maxlength="80" placeholder="e.g. Bali, Kashmir, Dubai">
-      <p class="hint">What did you like? Tap any that apply.</p>
-      <div class="chips" id="topics">{% for t in topics %}<button type="button" class="chip" aria-pressed="false">{{ t }}</button>{% endfor %}</div>
-      <button class="btn alt" id="write" type="button">Write it for me</button>
-      <p class="hint" style="margin-top:10px">We'll write a first draft from your answers. You can change every word.</p>
+    <span class="stars" aria-hidden="true">★★★★★</span>
+    <h1 id="s2h">A review has been copied to your clipboard</h1>
+    <p class="lead" id="s2p">Thank you for reviewing Time Tours! Google will open in <b id="cd">5</b> seconds. Please paste the copied review in the review box (long-press, then choose Paste) and post it.</p>
+    <div id="manual" hidden>
+      <p class="note">We could not copy it automatically. Please select and copy the text below, then open Google.</p>
+      <textarea id="txt" readonly>{{ text }}</textarea>
     </div>
-    {% endif %}
-    <label for="txt">Your review</label>
-    <p class="hint">Write it in your own words, or use the microphone on your keyboard to speak.</p>
-    <textarea id="txt" placeholder="Tell other travellers about your trip: where you went, what you enjoyed, how we helped."></textarea>
-    <p class="note">Tapping the button below copies your text and opens Google. In the review box, long-press and choose Paste.</p>
-    <button class="btn" id="go" type="button">Copy and open Google</button>
-    <button class="btn ghost" id="skip" type="button">Skip, just open Google</button>
+    <button class="btn alt" id="now" type="button">Open Google now</button>
   </section>
 </main>
 <div class="toast" id="toast" role="status"></div>
 
 <script>
 (function(){
-  var LINK={{ link|tojson }}, SOURCE={{ source|tojson }};
+  var LINK={{ link|tojson }}, SOURCE={{ source|tojson }}, TEXT={{ text|tojson }};
   var $=function(id){return document.getElementById(id)};
 
   function ping(kind,copied){
@@ -81,44 +73,40 @@ textarea:focus{outline:2px solid var(--gold);outline-offset:2px}
       else{fetch('/e',{method:'POST',headers:{'Content-Type':'application/json'},body:body,keepalive:true})}
     }catch(e){}
   }
-  function toast(msg){var t=$('toast');t.textContent=msg;t.classList.add('on');setTimeout(function(){t.classList.remove('on')},2600)}
+  function legacy(text){
+    try{var ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.focus();ta.select();var ok=document.execCommand('copy');document.body.removeChild(ta);return ok}catch(e){return false}
+  }
   function copy(text){
     if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text).then(function(){return true},function(){return legacy(text)})}
     return Promise.resolve(legacy(text));
   }
-  function legacy(text){
-    try{var ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.focus();ta.select();var ok=document.execCommand('copy');document.body.removeChild(ta);return ok}catch(e){return false}
-  }
-  function openGoogle(copied){
+
+  var timer=null, copied=false, went=false;
+  function go(){
+    if(went)return;went=true;clearInterval(timer);
     ping('open',copied);
-    setTimeout(function(){window.location.href=LINK},copied?900:150);
+    setTimeout(function(){window.location.href=LINK},150);
   }
 
-  var txt=$('txt');
-  var topics=$('topics');
-  if(topics){topics.onclick=function(e){var b=e.target.closest('.chip');if(!b)return;b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')==='true'?'false':'true')}}
-  if($('write')){$('write').onclick=function(){
-    var place=$('place').value.trim();
-    var liked=[].slice.call(document.querySelectorAll('#topics .chip[aria-pressed="true"]')).map(function(b){return b.textContent});
-    if(!place||!liked.length){toast('Add where you went and tap at least one thing you liked');return}
-    var btn=$('write');btn.disabled=true;btn.textContent='Writing…';
-    fetch('/draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({place:place,liked:liked,note:txt.value})})
-      .then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j}})})
-      .then(function(x){if(x.ok){txt.value=x.j.text;txt.focus();toast('Draft ready. Change anything you like.')}else{toast(x.j.error||'Could not write a draft')}})
-      .catch(function(){toast('Could not write a draft. Please write your review below.')})
-      .then(function(){btn.disabled=false;btn.textContent='Write it for me'});
-  }}
-
-  $('start').onclick=function(){ping('start');$('s1').hidden=true;$('s2').hidden=false;txt.focus()};
-  $('go').onclick=function(){
-    var text=txt.value.trim();
-    if(!text){toast('Write a line or two first, or tap Skip');txt.focus();return}
-    copy(text).then(function(ok){
-      toast(ok?'Copied. Paste it in the Google review box.':'Could not copy. Select your text and copy it first.');
-      if(ok)openGoogle(true);
+  $('start').onclick=function(){
+    ping('start');
+    $('s1').hidden=true;$('s2').hidden=false;
+    copy(TEXT).then(function(ok){
+      copied=ok;
+      if(!ok){
+        $('s2h').textContent='Please copy your review';
+        $('s2p').textContent='Thank you for reviewing Time Tours! Copy the text below, then open Google and paste it in the review box.';
+        $('manual').hidden=false;$('txt').focus();$('txt').select();
+        return;
+      }
+      var left=5;
+      timer=setInterval(function(){
+        left-=1;$('cd').textContent=left;
+        if(left<=0)go();
+      },1000);
     });
   };
-  $('skip').onclick=function(){openGoogle(false)};
+  $('now').onclick=go;
 })();
 </script>
 </body>

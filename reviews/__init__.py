@@ -15,6 +15,7 @@ from hotel_offers.parser import llm_text
 from hotel_offers.standalone import _database_uri
 
 DEFAULT_REVIEW_LINK = "https://g.page/r/CVAJ_EaMmS9uEBM/review"
+DEFAULT_REVIEW_TEXT = "Had a wonderful trip planned by Time Tours. The team was helpful and quick to reply, and everything was arranged smoothly. Happy to recommend them for your next holiday."
 KINDS = ("view", "start", "open")  # page opened, Give review tapped, Google opened
 PROVIDERS = ("openrouter", "anthropic", "openai", "gemini")
 AI_ENV = {"openrouter": "OPENROUTER_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
@@ -50,6 +51,10 @@ def _get_settings():
 
 def _review_link():
     return (_get_settings().get("review_link") or os.getenv("GOOGLE_REVIEW_LINK") or DEFAULT_REVIEW_LINK).strip()
+
+
+def _review_text():
+    return (_get_settings().get("review_text") or DEFAULT_REVIEW_TEXT).strip()
 
 
 def _ai_config():
@@ -145,8 +150,7 @@ def create_reviews_app():
             _log("view", source)
         except Exception:
             db.session.rollback()
-        return render_template("reviews/index.html", link=_review_link(), source=_clean_source(source), topics=TOPICS,
-                               ai_ready=bool(_ai_config()["ai_api_key"]))
+        return render_template("reviews/index.html", link=_review_link(), source=_clean_source(source), text=_review_text())
 
     @app.route("/e", methods=["POST"])
     def event():
@@ -216,7 +220,7 @@ def create_reviews_app():
         since, stats = _stats()
         return render_template("reviews/admin.html", user=user, error="", csrf=session["csrf"], providers=PROVIDERS, stats=stats,
                                since=since.date().isoformat(), provider=cfg["ai_provider"], model=cfg["ai_model"],
-                               key_set=bool(cfg["ai_api_key"]), key_from_here=bool(st.get("ai_api_key")), link=_review_link())
+                               key_set=bool(cfg["ai_api_key"]), key_from_here=bool(st.get("ai_api_key")), link=_review_link(), text=_review_text())
 
     @app.route("/admin/save", methods=["POST"])
     def admin_save():
@@ -233,6 +237,8 @@ def create_reviews_app():
             if link and not link.startswith("https://"):
                 return jsonify({"error": "The review link must start with https://"}), 400
             updates["review_link"] = link
+        if isinstance(data.get("review_text"), str):
+            updates["review_text"] = data["review_text"].strip()[:1000]
         if data.get("clear_key"):
             updates["ai_api_key"] = ""
         elif isinstance(data.get("ai_api_key"), str) and data["ai_api_key"].strip():

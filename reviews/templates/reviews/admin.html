@@ -16,6 +16,7 @@ h1{font-size:1.5rem;margin-bottom:4px}h2{font-size:1.05rem;margin:28px 0 10px}
 p.sub{color:var(--mute);margin-bottom:18px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px}
 label{display:block;font-weight:600;font-size:.92rem;margin:14px 0 6px}label:first-child{margin-top:0}
+textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text);font:inherit;resize:vertical}
 input,select{width:100%;min-height:46px;padding:0 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text);font:inherit}
 .small{color:var(--mute);font-size:.84rem;margin-top:6px}
 button{min-height:46px;padding:0 20px;border:0;border-radius:99px;background:var(--cta);color:var(--cta-fg);font:600 1rem inherit;font-family:inherit;cursor:pointer;margin-top:16px}
@@ -53,6 +54,9 @@ td.n,th.n{text-align:right}
     {% if key_from_here %}<button class="plain" id="clear" type="button">Remove the key saved here</button>{% endif %}
     <label for="link">Google review link</label>
     <input id="link" value="{{ link }}">
+    <label for="rtext">Review text copied for the customer</label>
+    <textarea id="rtext" rows="5">{{ text }}</textarea>
+    <p class="small">This exact text is copied to the customer's clipboard when they tap Give review.</p>
     <button id="save" type="button">Save</button>
     <span id="msg" class="small" role="status"></span>
   </div>
@@ -70,7 +74,7 @@ td.n,th.n{text-align:right}
   var CSRF={{ csrf|tojson }};
   var $=function(i){return document.getElementById(i)};
   function save(extra){
-    var body={ai_provider:$('prov').value,ai_model:$('model').value,review_link:$('link').value};
+    var body={ai_provider:$('prov').value,ai_model:$('model').value,review_link:$('link').value,review_text:$('rtext').value};
     if($('key').value.trim())body.ai_api_key=$('key').value;
     for(var k in extra)body[k]=extra[k];
     $('msg').textContent='Saving…';
