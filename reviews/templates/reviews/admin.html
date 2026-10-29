@@ -56,7 +56,7 @@ td.n,th.n{text-align:right}
     <input id="link" value="{{ link }}">
     <label for="rtext">Review text copied for the customer</label>
     <textarea id="rtext" rows="5">{{ text }}</textarea>
-    <p class="small">This exact text is copied to the customer's clipboard when they tap Give review.</p>
+    <p class="small">With an AI key set, the page hands out pre-written reviews instead ({{ pool }} of 5 ready now); each one is removed once used and a new one is written. This text is the fallback when none are ready.</p>
     <button id="save" type="button">Save</button>
     <span id="msg" class="small" role="status"></span>
   </div>

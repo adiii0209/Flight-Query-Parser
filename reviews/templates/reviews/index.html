@@ -63,7 +63,7 @@ textarea:focus{outline:2px solid var(--gold);outline-offset:2px}
 
 <script>
 (function(){
-  var LINK={{ link|tojson }}, SOURCE={{ source|tojson }}, TEXT={{ text|tojson }};
+  var LINK={{ link|tojson }}, SOURCE={{ source|tojson }}, TEXT={{ text|tojson }}, RID={{ rid|tojson }};
   var $=function(id){return document.getElementById(id)};
 
   function ping(kind,copied){
@@ -90,6 +90,7 @@ textarea:focus{outline:2px solid var(--gold);outline-offset:2px}
 
   $('start').onclick=function(){
     ping('start');
+    if(RID!==null){try{navigator.sendBeacon('/used',new Blob([JSON.stringify({id:RID})],{type:'application/json'}))}catch(e){}}
     $('s1').hidden=true;$('s2').hidden=false;
     copy(TEXT).then(function(ok){
       copied=ok;

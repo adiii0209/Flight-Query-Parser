@@ -1,7 +1,9 @@
 """reviews.timetours.in: the QR lands here, the customer writes (or speaks) their own review, and Google's review panel opens."""
 import hashlib
 import os
+import random
 import secrets
+import threading
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
@@ -16,6 +18,15 @@ from hotel_offers.standalone import _database_uri
 
 DEFAULT_REVIEW_LINK = "https://g.page/r/CVAJ_EaMmS9uEBM/review"
 DEFAULT_REVIEW_TEXT = "Had a wonderful trip planned by Time Tours. The team was helpful and quick to reply, and everything was arranged smoothly. Happy to recommend them for your next holiday."
+POOL_SIZE = 5
+POOL_SYSTEM = (
+    "You write short, natural Google reviews for Time Tours, an Indian travel agency, as a happy customer would. "
+    "Write 2 to 3 sentences in the first person, plain and warm. Mention only general things (helpful team, quick replies, "
+    "smooth planning, hotels and flights arranged well, good value). Do not invent names, destinations, prices, dates or "
+    "specific incidents, and do not exaggerate. Output only the review text, no quotes or preamble."
+)
+POOL_ANGLES = ("how quickly the team replied", "how smoothly the whole trip was planned", "the hotels and flights being arranged well",
+               "good value for the money", "a friendly team that helped during the trip", "how easy it was to book")
 KINDS = ("view", "start", "open")  # page opened, Give review tapped, Google opened
 PROVIDERS = ("openrouter", "anthropic", "openai", "gemini")
 AI_ENV = {"openrouter": "OPENROUTER_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
@@ -37,6 +48,15 @@ class ReviewEvent(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 
+class ReviewPool(db.Model):
+    """Pre-generated reviews waiting to be handed out. A review is deleted once a customer uses it, then a new one is written."""
+    __tablename__ = "review_pool"
+
+    id = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class ReviewSetting(db.Model):
     """Key/value settings edited on the admin page: ai_provider, ai_model, ai_api_key, review_link."""
     __tablename__ = "review_setting"
@@ -55,6 +75,52 @@ def _review_link():
 
 def _review_text():
     return (_get_settings().get("review_text") or DEFAULT_REVIEW_TEXT).strip()
+
+
+_refill_lock = threading.Lock()
+_last_refill = {"t": 0.0}
+
+
+def _refill_pool(app):
+    """Top the pool back up to POOL_SIZE in the background; the page never waits for the AI."""
+    if time.time() - _last_refill["t"] < 60:
+        return
+    _last_refill["t"] = time.time()
+
+    def run():
+        if not _refill_lock.acquire(blocking=False):
+            return
+        try:
+            with app.app_context():
+                cfg = _ai_config()
+                if not cfg["ai_api_key"]:
+                    return
+                for _ in range(POOL_SIZE * 2):
+                    have = [r.text for r in ReviewPool.query.all()]
+                    if len(have) >= POOL_SIZE:
+                        break
+                    prompt = "Focus on: " + random.choice(POOL_ANGLES)
+                    if have:
+                        prompt += "\nWrite it differently from these existing reviews:\n- " + "\n- ".join(have)
+                    text = llm_text(cfg, POOL_SYSTEM, prompt, max_tokens=200, temperature=0.9).strip().strip('"')[:1000]
+                    if text and text not in have:
+                        db.session.add(ReviewPool(text=text))
+                        db.session.commit()
+        except Exception as exc:
+            app.logger.warning("review pool refill failed: %s", exc)
+        finally:
+            _refill_lock.release()
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _pick_review():
+    """A random pooled review (id, text), or (None, the fixed text) when the pool is empty."""
+    rows = ReviewPool.query.all()
+    if rows:
+        r = random.choice(rows)
+        return r.id, r.text
+    return None, _review_text()
 
 
 def _ai_config():
@@ -137,6 +203,7 @@ def create_reviews_app():
         if not ready["ok"]:
             ReviewEvent.__table__.create(db.engine, checkfirst=True)
             ReviewSetting.__table__.create(db.engine, checkfirst=True)
+            ReviewPool.__table__.create(db.engine, checkfirst=True)
             ready["ok"] = True
 
     def _log(kind, source, copied=False):
@@ -150,7 +217,14 @@ def create_reviews_app():
             _log("view", source)
         except Exception:
             db.session.rollback()
-        return render_template("reviews/index.html", link=_review_link(), source=_clean_source(source), text=_review_text())
+        rid, text = None, _review_text()
+        try:
+            rid, text = _pick_review()
+            if ReviewPool.query.count() < POOL_SIZE:
+                _refill_pool(app)
+        except Exception:
+            db.session.rollback()
+        return render_template("reviews/index.html", link=_review_link(), source=_clean_source(source), text=text, rid=rid)
 
     @app.route("/e", methods=["POST"])
     def event():
@@ -162,6 +236,20 @@ def create_reviews_app():
             _log(kind, data.get("source"), data.get("copied"))
         except Exception:
             db.session.rollback()
+        return jsonify({"ok": True})
+
+    @app.route("/used", methods=["POST"])
+    def used():
+        """The customer tapped Give review with this pooled review: retire it and write a new one."""
+        data = request.get_json(silent=True) or {}
+        if not _limited("used", 30, 600):
+            try:
+                rid = int(data.get("id"))
+                ReviewPool.query.filter_by(id=rid).delete()
+                db.session.commit()
+                _refill_pool(app)
+            except Exception:
+                db.session.rollback()
         return jsonify({"ok": True})
 
     @app.route("/draft", methods=["POST"])
@@ -220,7 +308,8 @@ def create_reviews_app():
         since, stats = _stats()
         return render_template("reviews/admin.html", user=user, error="", csrf=session["csrf"], providers=PROVIDERS, stats=stats,
                                since=since.date().isoformat(), provider=cfg["ai_provider"], model=cfg["ai_model"],
-                               key_set=bool(cfg["ai_api_key"]), key_from_here=bool(st.get("ai_api_key")), link=_review_link(), text=_review_text())
+                               key_set=bool(cfg["ai_api_key"]), key_from_here=bool(st.get("ai_api_key")), link=_review_link(), text=_review_text(),
+                               pool=ReviewPool.query.count())
 
     @app.route("/admin/save", methods=["POST"])
     def admin_save():
