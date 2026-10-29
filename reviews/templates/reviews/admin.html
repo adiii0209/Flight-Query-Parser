@@ -56,7 +56,7 @@ td.n,th.n{text-align:right}
     <input id="link" value="{{ link }}">
     <label for="rtext">Review text copied for the customer</label>
     <textarea id="rtext" rows="5">{{ text }}</textarea>
-    <p class="small">With an AI key set, the page hands out pre-written reviews instead ({{ pool }} of 5 ready now); each one is removed once used and a new one is written. This text is the fallback when none are ready.</p>
+    <p class="small">With an AI key set, the page hands out pre-written reviews instead ({{ pool }} of {{ pool_max }} ready now: 2 in each of Offsite, Luxury travel, Honeymoon and App Travixo); each one is removed once used and a new one is written. This text is the fallback when none are ready.</p>
     <button id="save" type="button">Save</button>
     <button class="plain" id="regen" type="button">Regenerate the {{ pool }} ready reviews</button>
     <span id="msg" class="small" role="status"></span>

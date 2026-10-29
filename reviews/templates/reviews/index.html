@@ -32,6 +32,12 @@ label{display:block;font-weight:600;margin-bottom:8px}
 textarea{width:100%;min-height:150px;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--text);font:inherit;resize:vertical;margin-bottom:6px}
 textarea:focus{outline:2px solid var(--gold);outline-offset:2px}
 .note{color:var(--mute);font-size:.82rem;text-align:center;margin:10px 0 14px}
+details.cat{border:1px solid var(--line);border-radius:14px;background:var(--surface-2);margin-bottom:10px;padding:0 10px}
+details.cat summary{cursor:pointer;font-weight:600;padding:13px 4px;list-style:none;display:flex;justify-content:space-between}
+details.cat summary::-webkit-details-marker{display:none}
+details.cat summary::after{content:"+";color:var(--mute)}
+details.cat[open] summary::after{content:"\2212"}
+details.cat[open]{padding-bottom:2px}
 .rv{display:block;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:14px;padding:10px 14px;margin-bottom:8px;font:inherit;font-size:.84rem;line-height:1.45;white-space:pre-line;cursor:pointer}
 .rv:active{background:var(--surface-2)}
 .toast{position:fixed;left:50%;bottom:max(24px,env(safe-area-inset-bottom));transform:translate(-50%,20px);opacity:0;background:var(--text);color:var(--bg);padding:12px 18px;border-radius:14px;font-size:.92rem;max-width:calc(100% - 32px);text-align:center;transition:.3s;pointer-events:none}
@@ -46,9 +52,9 @@ textarea:focus{outline:2px solid var(--gold);outline-offset:2px}
   <section id="s1">
     <span class="stars" aria-hidden="true">★★★★★</span>
     <h1>How was your trip with Time Tours?</h1>
-    {% if pool %}
-    <p class="lead">Tap the review you like. It is copied for you, then Google opens and you paste it.</p>
-    <div id="pool">{% for r in pool %}<button class="rv" type="button" data-id="{{ r.id }}" data-text="{{ r.text }}">{{ r.text }}</button>{% endfor %}</div>
+    {% if groups %}
+    <p class="lead">Open the kind of trip you took, then tap the review you like. It is copied for you, then Google opens and you paste it.</p>
+    <div id="pool">{% for g in groups %}<details class="cat"><summary>{{ g.label }}</summary>{% for r in g.cards %}<button class="rv" type="button" data-id="{{ r.id }}" data-text="{{ r.text }}">{{ r.text }}</button>{% endfor %}</details>{% endfor %}</div>
     {% else %}
     <p class="lead">Your honest review on Google helps other travellers, and it takes under a minute.</p>
     <button class="btn" id="start" type="button">Give review</button>
@@ -118,6 +124,7 @@ textarea:focus{outline:2px solid var(--gold);outline-offset:2px}
   }
   var chosen=false;
   var pool=$('pool');
+  if(pool){pool.addEventListener('toggle',function(e){if(e.target.open){[].forEach.call(pool.querySelectorAll('details'),function(d){if(d!==e.target)d.open=false})}},true)}
   if(pool){pool.onclick=function(e){var b=e.target.closest('.rv');if(b)choose(b.getAttribute('data-text'),parseInt(b.getAttribute('data-id'),10))}}
   if($('start')){$('start').onclick=function(){choose(TEXT,null)}}
   $('now').onclick=go;

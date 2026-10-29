@@ -21,27 +21,65 @@ DEFAULT_REVIEW_TEXT = ("We did our corporate offsite in Sri Lanka with Time Tour
                        "The welcome hampers were a thoughtful touch and even the transfers were fun. We did a Madu River boat ride, had the "
                        "evening gala dinner at Cinnamon City of Dreams, and the interactive games like polls, crosswords and a photography "
                        "competition kept everyone involved.")
-POOL_SIZE = 5
-POOL_SYSTEM = (
-    "You write short, natural Google reviews for Time Tours, an Indian travel agency, as a happy guest on a corporate offsite "
-    "to Sri Lanka organised by Time Tours. The trip included a Madu River boat ride and an evening gala dinner at Cinnamon "
-    "City of Dreams. Write about 70 to 110 words in the first person (\"we\" or \"our team\"), in the plain, slightly casual voice "
-    "of a real colleague typing a review on their phone: simple words, mixed sentence lengths, no marketing language, no "
-    "superlatives piled up, no phrases like \"highly recommend\", \"unforgettable\" or \"exceeded expectations\", no emojis or "
-    "exclamation marks. Layout: two short paragraphs separated by one blank line. Paragraph 1: say we did a corporate offsite "
-    "in Sri Lanka with Time Tours, and how it was planned and how collaborative it felt. Paragraph 2: the welcome hampers, "
-    "the transfers, the interactive games, the Madu River boat ride and the gala dinner at Cinnamon City of Dreams. "
-    "For search: use the name \"Time Tours\" once or twice, and the words \"corporate offsite\" and \"Sri Lanka\" naturally, "
-    "plus one of \"corporate tour\", \"team outing\" or \"group trip\"; never repeat a keyword in a stuffed way. "
-    "Every review MUST mention ALL of the facts you are given, each said in a natural way. Use only those "
-    "facts. Do not invent names, prices, dates, numbers or specific incidents, and do not exaggerate. "
+POOL_SIZE = 2  # ready reviews kept per category
+_STYLE = (
+    "You write short, natural Google reviews for Time Tours, an Indian travel agency, as a real happy customer would. "
+    "Write about 70 to 110 words in the first person, in the plain, slightly casual voice of someone typing a review on their "
+    "phone: simple words, mixed sentence lengths, no marketing language, no piled-up superlatives, no phrases like "
+    "\"unforgettable\" or \"exceeded expectations\", no emojis or exclamation marks. A single plain closing line such as "
+    "\"would recommend them\" is fine. Layout: two short paragraphs separated by one blank line. For search, use the name "
+    "\"Time Tours\" once or twice and work the given keywords in naturally; never repeat a keyword in a stuffed way. "
+    "Every review MUST mention ALL of the points you are given, each said in a natural way. Use only those points. "
+    "Do not invent names, prices, dates, numbers or specific incidents, and do not exaggerate. "
     "Output only the review text, no quotes or preamble."
 )
-POOL_ANGLES = ("it was very well planned", "it felt very collaborative", "the welcome hampers were a thoughtful touch",
-               "the transfers were fun and engaging", "the interactive games (polls, crosswords, a photography competition) were great",
-               "the Madu River boat ride", "the evening gala dinner at Cinnamon City of Dreams")
-POOL_OPENERS = ("the Sri Lanka trip itself", "how well it was planned", "the Madu River boat ride", "the welcome hampers",
-                "the gala dinner", "the transfers", "how the team worked together")  # varies how each review begins
+CATEGORIES = {
+    "offsite": {
+        "label": "Offsite",
+        "system": _STYLE + " This review is from a guest on a corporate offsite to Sri Lanka organised by Time Tours, which included "
+                  "a Madu River boat ride and an evening gala dinner at Cinnamon City of Dreams. Say \"we\" or \"our team\". "
+                  "Paragraph 1: we did a corporate offsite in Sri Lanka with Time Tours, how it was planned and how collaborative it "
+                  "felt. Paragraph 2: the rest of the points. Keywords: \"corporate offsite\", \"Sri Lanka\", and one of "
+                  "\"corporate tour\", \"team outing\" or \"group trip\".",
+        "points": ("it was very well planned", "it felt very collaborative", "the welcome hampers were a thoughtful touch",
+                   "the transfers were fun and engaging",
+                   "the interactive games (polls, crosswords, a photography competition) were great",
+                   "the Madu River boat ride", "the evening gala dinner at Cinnamon City of Dreams"),
+        "destinations": None,
+        "openers": ("the Sri Lanka trip itself", "how well it was planned", "the Madu River boat ride", "the welcome hampers",
+                    "the gala dinner", "the transfers", "how the team worked together"),
+    },
+    "luxury": {
+        "label": "Luxury travel",
+        "system": _STYLE + " This review is from a guest on a luxury holiday planned by Time Tours. Paragraph 1: which luxury "
+                  "holiday in the given destination we took with Time Tours and that it was planned around us. Paragraph 2: the rest "
+                  "of the points. Keywords: \"luxury holiday\" or \"luxury travel\", and the destination name.",
+        "points": ("the whole trip was tailor-made for us", "the premium stay was comfortable and well chosen",
+                   "private transfers made everything easy", "everything was coordinated smoothly", "the team replied quickly"),
+        "destinations": ("the Maldives", "Dubai", "Switzerland", "the Seychelles", "Mauritius", "Bali"),
+        "openers": ("the planning", "the stay", "the transfers", "how smoothly it ran", "how quickly the team replied"),
+    },
+    "honeymoon": {
+        "label": "Honeymoon",
+        "system": _STYLE + " This review is from a couple on their honeymoon planned by Time Tours. Say \"we\" meaning the couple. "
+                  "Paragraph 1: which honeymoon in the given destination we took with Time Tours and that it was planned around us. "
+                  "Paragraph 2: the rest of the points. Keywords: \"honeymoon\" or \"honeymoon package\", and the destination name.",
+        "points": ("the trip was planned around us as a couple", "the stay felt romantic and private",
+                   "everything was taken care of so we could relax", "the transfers were smooth", "the team replied quickly"),
+        "destinations": ("the Maldives", "Bali", "Santorini", "Mauritius", "Paris", "the Seychelles"),
+        "openers": ("the planning", "the stay", "how relaxed we felt", "the transfers", "how quickly the team replied"),
+    },
+    "travixo": {
+        "label": "App Travixo",
+        "system": _STYLE + " This review is from a traveller who used the Travixo app from Time Tours during their trip. "
+                  "Paragraph 1: Time Tours as a travel partner and the customised recommendations. Paragraph 2: the support, the "
+                  "quick responses and the Travixo app. Keywords: \"Travixo app\", \"travel partner\", \"personal travel assistant\".",
+        "points": ("a truly amazing travel partner", "customised recommendations", "continuous support throughout the trip",
+                   "prompt responses", "the Travixo app acts as a personal travel assistant for anything and everything during the trip"),
+        "destinations": None,
+        "openers": ("the recommendations", "the support", "the quick responses", "the app", "Time Tours as a travel partner"),
+    },
+}
 KINDS = ("view", "start", "open")  # page opened, Give review tapped, Google opened
 PROVIDERS = ("openrouter", "anthropic", "openai", "gemini")
 AI_ENV = {"openrouter": "OPENROUTER_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
@@ -69,6 +107,7 @@ class ReviewPool(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     text = db.Column(db.Text, nullable=False)
+    category = db.Column(db.String(20), nullable=False, default="offsite", index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -110,17 +149,22 @@ def _refill_pool(app):
                 cfg = _ai_config()
                 if not cfg["ai_api_key"]:
                     return
-                for _ in range(POOL_SIZE * 2):
-                    have = [r.text for r in ReviewPool.query.all()]
-                    if len(have) >= POOL_SIZE:
-                        break
-                    prompt = "Mention ALL of these points: " +"; ".join(POOL_ANGLES) + ". Start with: " + random.choice(POOL_OPENERS)
-                    if have:
-                        prompt += "\nWrite it differently from these existing reviews:\n- " + "\n- ".join(have)
-                    text = llm_text(cfg, POOL_SYSTEM, prompt, max_tokens=200, temperature=0.9).strip().strip('"')[:1000]
-                    if text and text not in have:
-                        db.session.add(ReviewPool(text=text))
-                        db.session.commit()
+                for key, cat in CATEGORIES.items():
+                    for _ in range(POOL_SIZE * 2):
+                        have = [r.text for r in ReviewPool.query.filter_by(category=key).all()]
+                        if len(have) >= POOL_SIZE:
+                            break
+                        prompt = "Mention ALL of these points: " + "; ".join(cat["points"])
+                        if cat["destinations"]:
+                            fresh = [d for d in cat["destinations"] if not any(d.lower() in t.lower() for t in have)]
+                            prompt += "\nDestination: " + random.choice(fresh or cat["destinations"])
+                        prompt += "\nStart with: " + random.choice(cat["openers"])
+                        if have:
+                            prompt += "\nWrite it differently from these existing reviews:\n- " + "\n- ".join(have)
+                        text = llm_text(cfg, cat["system"], prompt, max_tokens=260, temperature=0.9).strip().strip('"')[:1000]
+                        if text and text not in have:
+                            db.session.add(ReviewPool(text=text, category=key))
+                            db.session.commit()
         except Exception as exc:
             app.logger.warning("review pool refill failed: %s", exc)
         finally:
@@ -210,6 +254,14 @@ def create_reviews_app():
             ReviewEvent.__table__.create(db.engine, checkfirst=True)
             ReviewSetting.__table__.create(db.engine, checkfirst=True)
             ReviewPool.__table__.create(db.engine, checkfirst=True)
+            try:  # the pool table predates categories
+                from sqlalchemy import inspect, text as sql
+                if "category" not in {c["name"] for c in inspect(db.engine).get_columns("review_pool")}:
+                    with db.engine.begin() as conn:
+                        conn.execute(sql("ALTER TABLE review_pool ADD COLUMN category VARCHAR(20) NOT NULL DEFAULT 'offsite'"))
+                        conn.execute(sql("DELETE FROM review_pool"))  # reviews from before categories are outdated
+            except Exception as exc:
+                app.logger.warning("review_pool category column: %s", exc)
             ready["ok"] = True
 
     def _log(kind, source, copied=False):
@@ -223,14 +275,18 @@ def create_reviews_app():
             _log("view", source)
         except Exception:
             db.session.rollback()
-        pool = []
+        groups = []
         try:
-            pool = [{"id": r.id, "text": r.text} for r in ReviewPool.query.order_by(ReviewPool.id).limit(POOL_SIZE).all()]
-            if len(pool) < POOL_SIZE:
-                _refill_pool(app)
+            rows = ReviewPool.query.order_by(ReviewPool.id).all()
+            for key, cat in CATEGORIES.items():
+                items = [{"id": r.id, "text": r.text} for r in rows if r.category == key][:POOL_SIZE]
+                if items:
+                    groups.append({"key": key, "label": cat["label"], "cards": items})
+                if len(items) < POOL_SIZE:
+                    _refill_pool(app)
         except Exception:
             db.session.rollback()
-        return render_template("reviews/index.html", link=_review_link(), source=_clean_source(source), text=_review_text(), pool=pool)
+        return render_template("reviews/index.html", link=_review_link(), source=_clean_source(source), text=_review_text(), groups=groups)
 
     @app.route("/e", methods=["POST"])
     def event():
@@ -315,7 +371,7 @@ def create_reviews_app():
         return render_template("reviews/admin.html", user=user, error="", csrf=session["csrf"], providers=PROVIDERS, stats=stats,
                                since=since.date().isoformat(), provider=cfg["ai_provider"], model=cfg["ai_model"],
                                key_set=bool(cfg["ai_api_key"]), key_from_here=bool(st.get("ai_api_key")), link=_review_link(), text=_review_text(),
-                               pool=ReviewPool.query.count())
+                               pool=ReviewPool.query.count(), pool_max=POOL_SIZE * len(CATEGORIES))
 
     @app.route("/admin/save", methods=["POST"])
     def admin_save():
