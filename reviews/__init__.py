@@ -114,15 +114,6 @@ def _refill_pool(app):
     threading.Thread(target=run, daemon=True).start()
 
 
-def _pick_review():
-    """A random pooled review (id, text), or (None, the fixed text) when the pool is empty."""
-    rows = ReviewPool.query.all()
-    if rows:
-        r = random.choice(rows)
-        return r.id, r.text
-    return None, _review_text()
-
-
 def _ai_config():
     """AI settings: this page's admin first, then the ones already saved for Hotel Offers, then env vars."""
     st = _get_settings()
@@ -217,14 +208,14 @@ def create_reviews_app():
             _log("view", source)
         except Exception:
             db.session.rollback()
-        rid, text = None, _review_text()
+        pool = []
         try:
-            rid, text = _pick_review()
-            if ReviewPool.query.count() < POOL_SIZE:
+            pool = [{"id": r.id, "text": r.text} for r in ReviewPool.query.order_by(ReviewPool.id).limit(POOL_SIZE).all()]
+            if len(pool) < POOL_SIZE:
                 _refill_pool(app)
         except Exception:
             db.session.rollback()
-        return render_template("reviews/index.html", link=_review_link(), source=_clean_source(source), text=text, rid=rid)
+        return render_template("reviews/index.html", link=_review_link(), source=_clean_source(source), text=_review_text(), pool=pool)
 
     @app.route("/e", methods=["POST"])
     def event():

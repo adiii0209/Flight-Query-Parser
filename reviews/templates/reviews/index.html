@@ -32,6 +32,8 @@ label{display:block;font-weight:600;margin-bottom:8px}
 textarea{width:100%;min-height:150px;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--text);font:inherit;resize:vertical;margin-bottom:6px}
 textarea:focus{outline:2px solid var(--gold);outline-offset:2px}
 .note{color:var(--mute);font-size:.82rem;text-align:center;margin:10px 0 14px}
+.rv{display:block;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:14px;padding:10px 14px;margin-bottom:8px;font:inherit;font-size:.84rem;line-height:1.45;cursor:pointer}
+.rv:active{background:var(--surface-2)}
 .toast{position:fixed;left:50%;bottom:max(24px,env(safe-area-inset-bottom));transform:translate(-50%,20px);opacity:0;background:var(--text);color:var(--bg);padding:12px 18px;border-radius:14px;font-size:.92rem;max-width:calc(100% - 32px);text-align:center;transition:.3s;pointer-events:none}
 .toast.on{opacity:1;transform:translate(-50%,0)}
 [hidden]{display:none!important}
@@ -44,14 +46,19 @@ textarea:focus{outline:2px solid var(--gold);outline-offset:2px}
   <section id="s1">
     <span class="stars" aria-hidden="true">★★★★★</span>
     <h1>How was your trip with Time Tours?</h1>
+    {% if pool %}
+    <p class="lead">Tap the review you like. It is copied for you, then Google opens and you paste it.</p>
+    <div id="pool">{% for r in pool %}<button class="rv" type="button" data-id="{{ r.id }}" data-text="{{ r.text }}">{{ r.text }}</button>{% endfor %}</div>
+    {% else %}
     <p class="lead">Your honest review on Google helps other travellers, and it takes under a minute.</p>
     <button class="btn" id="start" type="button">Give review</button>
+    {% endif %}
   </section>
 
   <section id="s2" hidden>
     <span class="stars" aria-hidden="true">★★★★★</span>
     <h1 id="s2h">A review has been copied to your clipboard</h1>
-    <p class="lead" id="s2p">Thank you for reviewing Time Tours! Google will open in <b id="cd">5</b> seconds. Please paste the copied review in the review box (long-press, then choose Paste) and post it.</p>
+    <p class="lead" id="s2p">Thank you for reviewing Time Tours! Google will open in <b id="cd">2</b> seconds. Please paste the copied review in the review box (long-press, then choose Paste) and post it.</p>
     <div id="manual" hidden>
       <p class="note">We could not copy it automatically. Please select and copy the text below, then open Google.</p>
       <textarea id="txt" readonly>{{ text }}</textarea>
@@ -63,7 +70,7 @@ textarea:focus{outline:2px solid var(--gold);outline-offset:2px}
 
 <script>
 (function(){
-  var LINK={{ link|tojson }}, SOURCE={{ source|tojson }}, TEXT={{ text|tojson }}, RID={{ rid|tojson }};
+  var LINK={{ link|tojson }}, SOURCE={{ source|tojson }}, TEXT={{ text|tojson }}, SECS=2;
   var $=function(id){return document.getElementById(id)};
 
   function ping(kind,copied){
@@ -88,11 +95,13 @@ textarea:focus{outline:2px solid var(--gold);outline-offset:2px}
     setTimeout(function(){window.location.href=LINK},150);
   }
 
-  $('start').onclick=function(){
+  function choose(text,id){
+    if(went||chosen)return;chosen=true;
     ping('start');
-    if(RID!==null){try{navigator.sendBeacon('/used',new Blob([JSON.stringify({id:RID})],{type:'application/json'}))}catch(e){}}
+    if(id!==null){try{navigator.sendBeacon('/used',new Blob([JSON.stringify({id:id})],{type:'application/json'}))}catch(e){}}
+    $('txt').value=text;
     $('s1').hidden=true;$('s2').hidden=false;
-    copy(TEXT).then(function(ok){
+    copy(text).then(function(ok){
       copied=ok;
       if(!ok){
         $('s2h').textContent='Please copy your review';
@@ -100,13 +109,17 @@ textarea:focus{outline:2px solid var(--gold);outline-offset:2px}
         $('manual').hidden=false;$('txt').focus();$('txt').select();
         return;
       }
-      var left=5;
+      var left=SECS;
       timer=setInterval(function(){
         left-=1;$('cd').textContent=left;
         if(left<=0)go();
       },1000);
     });
-  };
+  }
+  var chosen=false;
+  var pool=$('pool');
+  if(pool){pool.onclick=function(e){var b=e.target.closest('.rv');if(b)choose(b.getAttribute('data-text'),parseInt(b.getAttribute('data-id'),10))}}
+  if($('start')){$('start').onclick=function(){choose(TEXT,null)}}
   $('now').onclick=go;
 })();
 </script>
