@@ -17,16 +17,26 @@ from hotel_offers.parser import llm_text
 from hotel_offers.standalone import _database_uri
 
 DEFAULT_REVIEW_LINK = "https://g.page/r/CVAJ_EaMmS9uEBM/review"
-DEFAULT_REVIEW_TEXT = "Had a wonderful trip planned by Time Tours. The team was helpful and quick to reply, and everything was arranged smoothly. Happy to recommend them for your next holiday."
+DEFAULT_REVIEW_TEXT = ("We went on our corporate offsite to Sri Lanka with Time Tours and it was well planned and felt very collaborative. "
+                       "The welcome hampers were a thoughtful touch and even the transfers were fun. We did a Madu River boat ride, had the "
+                       "evening gala dinner at Cinnamon City of Dreams, and the interactive games like polls, crosswords and a photography "
+                       "competition kept everyone involved.")
 POOL_SIZE = 5
 POOL_SYSTEM = (
-    "You write short, natural Google reviews for Time Tours, an Indian travel agency, as a happy customer would. "
-    "Write 2 to 3 sentences in the first person, plain and warm. Mention only general things (helpful team, quick replies, "
-    "smooth planning, hotels and flights arranged well, good value). Do not invent names, destinations, prices, dates or "
-    "specific incidents, and do not exaggerate. Output only the review text, no quotes or preamble."
+    "You write short, natural Google reviews for Time Tours, an Indian travel agency, as a happy guest on a corporate offsite "
+    "to Sri Lanka organised by Time Tours. The trip included a Madu River boat ride and an evening gala dinner at Cinnamon "
+    "City of Dreams. Write 4 to 6 sentences in the first person (\"we\" or \"our team\"), in the plain, slightly casual voice of a "
+    "real colleague typing a review on their phone: simple words, mixed sentence lengths, no marketing language, no "
+    "superlatives piled up, no phrases like \"highly recommend\", \"unforgettable\" or \"exceeded expectations\", no emojis or "
+    "exclamation marks. Every review MUST mention ALL of the facts you are given, each said in a natural way. Use only those "
+    "facts. Do not invent names, prices, dates, numbers or specific incidents, and do not exaggerate. "
+    "Output only the review text, no quotes or preamble."
 )
-POOL_ANGLES = ("how quickly the team replied", "how smoothly the whole trip was planned", "the hotels and flights being arranged well",
-               "good value for the money", "a friendly team that helped during the trip", "how easy it was to book")
+POOL_ANGLES = ("it was very well planned", "it felt very collaborative", "the welcome hampers were a thoughtful touch",
+               "the transfers were fun and engaging", "the interactive games (polls, crosswords, a photography competition) were great",
+               "the Madu River boat ride", "the evening gala dinner at Cinnamon City of Dreams")
+POOL_OPENERS = ("the Sri Lanka trip itself", "how well it was planned", "the Madu River boat ride", "the welcome hampers",
+                "the gala dinner", "the transfers", "how the team worked together")  # varies how each review begins
 KINDS = ("view", "start", "open")  # page opened, Give review tapped, Google opened
 PROVIDERS = ("openrouter", "anthropic", "openai", "gemini")
 AI_ENV = {"openrouter": "OPENROUTER_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
@@ -99,7 +109,7 @@ def _refill_pool(app):
                     have = [r.text for r in ReviewPool.query.all()]
                     if len(have) >= POOL_SIZE:
                         break
-                    prompt = "Focus on: " + random.choice(POOL_ANGLES)
+                    prompt = "Mention ALL of these points: " +"; ".join(POOL_ANGLES) + ". Start with: " + random.choice(POOL_OPENERS)
                     if have:
                         prompt += "\nWrite it differently from these existing reviews:\n- " + "\n- ".join(have)
                     text = llm_text(cfg, POOL_SYSTEM, prompt, max_tokens=200, temperature=0.9).strip().strip('"')[:1000]
