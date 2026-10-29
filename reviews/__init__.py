@@ -17,7 +17,7 @@ from hotel_offers.parser import llm_text
 from hotel_offers.standalone import _database_uri
 
 DEFAULT_REVIEW_LINK = "https://g.page/r/CVAJ_EaMmS9uEBM/review"
-DEFAULT_REVIEW_TEXT = ("We went on our corporate offsite to Sri Lanka with Time Tours and it was well planned and felt very collaborative. "
+DEFAULT_REVIEW_TEXT = ("We did our corporate offsite in Sri Lanka with Time Tours. It was well planned and the whole team outing felt very collaborative.\n\n"
                        "The welcome hampers were a thoughtful touch and even the transfers were fun. We did a Madu River boat ride, had the "
                        "evening gala dinner at Cinnamon City of Dreams, and the interactive games like polls, crosswords and a photography "
                        "competition kept everyone involved.")
@@ -25,10 +25,15 @@ POOL_SIZE = 5
 POOL_SYSTEM = (
     "You write short, natural Google reviews for Time Tours, an Indian travel agency, as a happy guest on a corporate offsite "
     "to Sri Lanka organised by Time Tours. The trip included a Madu River boat ride and an evening gala dinner at Cinnamon "
-    "City of Dreams. Write 4 to 6 sentences in the first person (\"we\" or \"our team\"), in the plain, slightly casual voice of a "
-    "real colleague typing a review on their phone: simple words, mixed sentence lengths, no marketing language, no "
+    "City of Dreams. Write about 70 to 110 words in the first person (\"we\" or \"our team\"), in the plain, slightly casual voice "
+    "of a real colleague typing a review on their phone: simple words, mixed sentence lengths, no marketing language, no "
     "superlatives piled up, no phrases like \"highly recommend\", \"unforgettable\" or \"exceeded expectations\", no emojis or "
-    "exclamation marks. Every review MUST mention ALL of the facts you are given, each said in a natural way. Use only those "
+    "exclamation marks. Layout: two short paragraphs separated by one blank line. Paragraph 1: say we did a corporate offsite "
+    "in Sri Lanka with Time Tours, and how it was planned and how collaborative it felt. Paragraph 2: the welcome hampers, "
+    "the transfers, the interactive games, the Madu River boat ride and the gala dinner at Cinnamon City of Dreams. "
+    "For search: use the name \"Time Tours\" once or twice, and the words \"corporate offsite\" and \"Sri Lanka\" naturally, "
+    "plus one of \"corporate tour\", \"team outing\" or \"group trip\"; never repeat a keyword in a stuffed way. "
+    "Every review MUST mention ALL of the facts you are given, each said in a natural way. Use only those "
     "facts. Do not invent names, prices, dates, numbers or specific incidents, and do not exaggerate. "
     "Output only the review text, no quotes or preamble."
 )
@@ -338,6 +343,19 @@ def create_reviews_app():
             row.value = v
             db.session.add(row)
         db.session.commit()
+        return jsonify({"ok": True})
+
+    @app.route("/admin/regenerate", methods=["POST"])
+    def admin_regenerate():
+        """Throw away the pooled reviews and write a fresh set (use after changing the prompt)."""
+        if not _admin_user() or not secrets.compare_digest(request.headers.get("X-CSRF", ""), session.get("csrf") or "-"):
+            abort(403)
+        if not _ai_config()["ai_api_key"]:
+            return jsonify({"error": "No AI key is set, so new reviews cannot be written."}), 400
+        ReviewPool.query.delete()
+        db.session.commit()
+        _last_refill["t"] = 0.0
+        _refill_pool(app)
         return jsonify({"ok": True})
 
     @app.route("/admin/logout", methods=["POST"])

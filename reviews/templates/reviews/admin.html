@@ -58,6 +58,7 @@ td.n,th.n{text-align:right}
     <textarea id="rtext" rows="5">{{ text }}</textarea>
     <p class="small">With an AI key set, the page hands out pre-written reviews instead ({{ pool }} of 5 ready now); each one is removed once used and a new one is written. This text is the fallback when none are ready.</p>
     <button id="save" type="button">Save</button>
+    <button class="plain" id="regen" type="button">Regenerate the {{ pool }} ready reviews</button>
     <span id="msg" class="small" role="status"></span>
   </div>
 
@@ -84,6 +85,14 @@ td.n,th.n{text-align:right}
       .catch(function(){$('msg').textContent='Could not save.';$('msg').className='small err'});
   }
   $('save').onclick=function(){save({})};
+  $('regen').onclick=function(){
+    if(!confirm('Delete the current reviews and write new ones? This takes about a minute.'))return;
+    $('msg').textContent='Writing new reviews…';$('msg').className='small';
+    fetch('/admin/regenerate',{method:'POST',headers:{'X-CSRF':CSRF}})
+      .then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j}})})
+      .then(function(x){if(x.ok){$('msg').textContent='Done. New reviews are being written; refresh in a minute to see the count.';$('msg').className='small ok'}else{$('msg').textContent=(x.j&&x.j.error)||'Could not regenerate.';$('msg').className='small err'}})
+      .catch(function(){$('msg').textContent='Could not regenerate.';$('msg').className='small err'});
+  };
   if($('clear'))$('clear').onclick=function(){if(confirm('Remove the saved key?'))save({clear_key:true})};
 })();
 </script>
