@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reviews settings</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/static/logo.png">
+<style>
+:root{--bg:#fbfaf7;--surface:#fff;--text:#1b1b1a;--mute:#74716a;--line:rgba(27,27,26,.12);--cta:#1d3a31;--cta-fg:#fbfaf7;--ok:#2f7d57;--err:#c0392b}
+@media (prefers-color-scheme:dark){:root{--bg:#0d0e0d;--surface:#171917;--text:#f2efe8;--mute:#a09c92;--line:rgba(255,255,255,.12);--cta:#f2efe8;--cta-fg:#111310;--ok:#5fc08f;--err:#ff7a68}}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--text);font:16px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px 16px;display:flex;justify-content:center}
+main{width:100%;max-width:560px}
+h1{font-size:1.5rem;margin-bottom:4px}h2{font-size:1.05rem;margin:28px 0 10px}
+p.sub{color:var(--mute);margin-bottom:18px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px}
+label{display:block;font-weight:600;font-size:.92rem;margin:14px 0 6px}label:first-child{margin-top:0}
+input,select{width:100%;min-height:46px;padding:0 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text);font:inherit}
+.small{color:var(--mute);font-size:.84rem;margin-top:6px}
+button{min-height:46px;padding:0 20px;border:0;border-radius:99px;background:var(--cta);color:var(--cta-fg);font:600 1rem inherit;font-family:inherit;cursor:pointer;margin-top:16px}
+button.plain{background:transparent;color:var(--mute);font-weight:500;padding:0;min-height:auto;margin:10px 0 0;text-decoration:underline}
+.err{color:var(--err);margin-bottom:12px}.ok{color:var(--ok)}
+table{width:100%;border-collapse:collapse;font-size:.92rem}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}th{color:var(--mute);font-weight:500}
+td.n,th.n{text-align:right}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px}
+</style>
+</head>
+<body>
+<main>
+{% if not user %}
+  <h1>Reviews settings</h1>
+  <p class="sub">Sign in with your Time Tours admin account.</p>
+  <form class="card" method="post" autocomplete="on">
+    {% if error %}<p class="err">{{ error }}</p>{% endif %}
+    <label for="u">Email or username</label><input id="u" name="user" required autocomplete="username">
+    <label for="p">Password</label><input id="p" name="password" type="password" required autocomplete="current-password">
+    <button type="submit">Sign in</button>
+  </form>
+{% else %}
+  <div class="row"><div><h1>Reviews settings</h1><p class="sub">Signed in as {{ user.email }}</p></div>
+    <form method="post" action="/admin/logout"><button class="plain" type="submit">Sign out</button></form></div>
+
+  <div class="card">
+    <label for="prov">AI provider</label>
+    <select id="prov">{% for p in providers %}<option value="{{ p }}" {{ 'selected' if p == provider }}>{{ p }}</option>{% endfor %}</select>
+    <label for="model">Model</label>
+    <input id="model" value="{{ model }}" placeholder="google/gemini-2.0-flash-001">
+    <label for="key">API key</label>
+    <input id="key" type="password" autocomplete="off" placeholder="{{ 'A key is saved. Paste a new one to replace it.' if key_set else 'Paste the API key' }}">
+    <p class="small">{% if key_from_here %}Saved here.{% elif key_set %}Using the key already set for Hotel Offers or the server.{% else %}No key yet, so the Write it for me button stays hidden.{% endif %}
+      The key is never shown again after saving.</p>
+    {% if key_from_here %}<button class="plain" id="clear" type="button">Remove the key saved here</button>{% endif %}
+    <label for="link">Google review link</label>
+    <input id="link" value="{{ link }}">
+    <button id="save" type="button">Save</button>
+    <span id="msg" class="small" role="status"></span>
+  </div>
+
+  <h2>Last 30 days (since {{ since }})</h2>
+  <div class="card">
+    {% if stats %}
+    <table><tr><th>QR source</th><th class="n">Opened page</th><th class="n">Tapped</th><th class="n">Opened Google</th></tr>
+    {% for s, c in stats.items() %}<tr><td>{{ s }}</td><td class="n">{{ c.view }}</td><td class="n">{{ c.start }}</td><td class="n">{{ c.open }}</td></tr>{% endfor %}</table>
+    {% else %}<p class="small">No scans yet. Add <b>?s=name</b> to a QR link to track where it was scanned.</p>{% endif %}
+  </div>
+
+<script>
+(function(){
+  var CSRF={{ csrf|tojson }};
+  var $=function(i){return document.getElementById(i)};
+  function save(extra){
+    var body={ai_provider:$('prov').value,ai_model:$('model').value,review_link:$('link').value};
+    if($('key').value.trim())body.ai_api_key=$('key').value;
+    for(var k in extra)body[k]=extra[k];
+    $('msg').textContent='Saving…';
+    fetch('/admin/save',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF':CSRF},body:JSON.stringify(body)})
+      .then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j}})})
+      .then(function(x){if(x.ok){$('msg').textContent='Saved.';$('msg').className='small ok';setTimeout(function(){location.reload()},600)}else{$('msg').textContent=(x.j&&x.j.error)||'Could not save.';$('msg').className='small err'}})
+      .catch(function(){$('msg').textContent='Could not save.';$('msg').className='small err'});
+  }
+  $('save').onclick=function(){save({})};
+  if($('clear'))$('clear').onclick=function(){if(confirm('Remove the saved key?'))save({clear_key:true})};
+})();
+</script>
+{% endif %}
+</main>
+</body>
+</html>

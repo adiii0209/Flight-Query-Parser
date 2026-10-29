@@ -134,12 +134,17 @@ def _extract_json(raw):
 
 
 def call_llm(cfg, text):
+    return _extract_json(llm_text(cfg, cfg.get("ai_system_prompt") or SYSTEM_PROMPT, text, json_mode=True))
+
+
+def llm_text(cfg, system, text, max_tokens=None, temperature=None, json_mode=False):
+    """One chat call to the configured provider; returns the raw text of the reply."""
     provider, key, model = cfg["ai_provider"], cfg["ai_api_key"], cfg["ai_model"]
     if not key:
         raise ValueError("No AI API key configured")
-    system = cfg.get("ai_system_prompt") or SYSTEM_PROMPT
     timeout = cfg.get("ai_timeout", 45)
-    temp, max_tokens = cfg.get("ai_temperature", 0.2), cfg.get("ai_max_tokens", 1500)
+    temp = cfg.get("ai_temperature", 0.2) if temperature is None else temperature
+    max_tokens = max_tokens or cfg.get("ai_max_tokens", 1500)
 
     if provider == "anthropic":
         r = requests.post(
@@ -166,12 +171,12 @@ def call_llm(cfg, text):
             json={"systemInstruction": {"parts": [{"text": system}]},
                   "contents": [{"role": "user", "parts": [{"text": text}]}],
                   "generationConfig": {"temperature": temp, "maxOutputTokens": max_tokens,
-                                       "responseMimeType": "application/json"}})
+                                       **({"responseMimeType": "application/json"} if json_mode else {})}})
         r.raise_for_status()
         raw = r.json()["candidates"][0]["content"]["parts"][0]["text"]
     else:
         raise ValueError(f"Unknown AI provider: {provider}")
-    return _extract_json(raw)
+    return raw
 
 
 # ---------------------------------------------------------------- pricing + normalise

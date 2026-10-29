@@ -1,15 +1,29 @@
 """reviews.timetours.in: the QR lands here, the customer writes (or speaks) their own review, and Google's review panel opens."""
+import hashlib
 import os
+import secrets
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timedelta
 
-from flask import Flask, abort, jsonify, redirect, render_template, request
-from sqlalchemy import func, inspect
+from flask import Flask, abort, jsonify, redirect, render_template, request, session
+from sqlalchemy import func, or_
 
 from extensions import db
+from hotel_offers.models import HotelOfferConfig
+from hotel_offers.parser import llm_text
 from hotel_offers.standalone import _database_uri
 
 DEFAULT_REVIEW_LINK = "https://g.page/r/CVAJ_EaMmS9uEBM/review"
 KINDS = ("view", "start", "open")  # page opened, Give review tapped, Google opened
+PROVIDERS = ("openrouter", "anthropic", "openai", "gemini")
+AI_ENV = {"openrouter": "OPENROUTER_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
+TOPICS = ("Hotels", "Flights", "Trip planning", "Quick replies", "Value for money", "Sightseeing", "Support during the trip")
+DRAFT_SYSTEM = (
+    "You help a travel-agency customer write their own Google review. Write 2 to 4 short sentences in the first person, "
+    "in a natural, plain voice, using ONLY the details the customer gave (destination, what they liked, their own note). "
+    "Do not invent facts, names, prices or dates, and do not exaggerate. Output only the review text, no quotes or preamble."
+)
 
 
 class ReviewEvent(db.Model):
@@ -22,12 +36,79 @@ class ReviewEvent(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 
+class ReviewSetting(db.Model):
+    """Key/value settings edited on the admin page: ai_provider, ai_model, ai_api_key, review_link."""
+    __tablename__ = "review_setting"
+
+    key = db.Column(db.String(40), primary_key=True)
+    value = db.Column(db.Text, nullable=False, default="")
+
+
+def _get_settings():
+    return {r.key: r.value for r in ReviewSetting.query.all()}
+
+
 def _review_link():
-    return (os.getenv("GOOGLE_REVIEW_LINK") or DEFAULT_REVIEW_LINK).strip()
+    return (_get_settings().get("review_link") or os.getenv("GOOGLE_REVIEW_LINK") or DEFAULT_REVIEW_LINK).strip()
+
+
+def _ai_config():
+    """AI settings: this page's admin first, then the ones already saved for Hotel Offers, then env vars."""
+    st = _get_settings()
+    cfg = {"ai_provider": st.get("ai_provider") or "", "ai_model": st.get("ai_model") or "", "ai_api_key": st.get("ai_api_key") or "", "ai_timeout": 30}
+    if not cfg["ai_api_key"]:
+        for row in HotelOfferConfig.query.all():
+            data = row.load()
+            if data.get("ai_api_key"):
+                cfg.update(ai_provider=data.get("ai_provider") or "openrouter", ai_model=data.get("ai_model") or cfg["ai_model"], ai_api_key=data["ai_api_key"])
+                break
+    cfg["ai_provider"] = cfg["ai_provider"] or "openrouter"
+    if not cfg["ai_api_key"]:
+        cfg["ai_api_key"] = os.getenv(AI_ENV.get(cfg["ai_provider"], ""), "")
+    cfg["ai_model"] = cfg["ai_model"] or "google/gemini-2.0-flash-001"
+    return cfg
 
 
 def _clean_source(raw):
     return "".join(c for c in (raw or "").lower() if c.isalnum() or c in "-_")[:40]
+
+
+_hits = defaultdict(deque)  # (bucket, ip) -> recent timestamps (per worker; blunts casual abuse)
+
+
+def _limited(bucket, limit, window):
+    ip = (request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0]).strip()
+    q, now = _hits[(bucket, ip)], time.time()
+    while q and now - q[0] > window:
+        q.popleft()
+    if len(q) >= limit:
+        return True
+    q.append(now)
+    return False
+
+
+def _is_admin(user):
+    from models_rbac import Membership, Role
+    return db.session.query(Membership.id).filter(
+        Membership.user_id == user.id, Membership.is_active.is_(True),
+        Membership.role.in_([Role.PLATFORM_SUPER_ADMIN, Role.AGENCY_ADMIN])).first() is not None
+
+
+def _admin_user():
+    from models import User
+    uid = session.get("admin_id")
+    user = db.session.get(User, uid) if uid else None
+    return user if user and _is_admin(user) else None
+
+
+def _stats(days=30):
+    since = datetime.utcnow() - timedelta(days=days)
+    rows = (db.session.query(ReviewEvent.source, ReviewEvent.kind, func.count())
+            .filter(ReviewEvent.created_at >= since).group_by(ReviewEvent.source, ReviewEvent.kind).all())
+    out = {}
+    for source, kind, n in rows:
+        out.setdefault(source or "(none)", {k: 0 for k in KINDS})[kind] = n
+    return since, out
 
 
 def create_reviews_app():
@@ -35,7 +116,14 @@ def create_reviews_app():
     app.config["SQLALCHEMY_DATABASE_URI"] = _database_uri()
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True, "pool_recycle": 300, "pool_size": 3, "max_overflow": 3}
+    app.config.update(
+        SECRET_KEY=os.getenv("SECRET_KEY") or hashlib.sha256(("reviews|" + app.config["SQLALCHEMY_DATABASE_URI"]).encode()).hexdigest(),
+        SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=bool(os.getenv("PORT")), PERMANENT_SESSION_LIFETIME=timedelta(hours=8))
     db.init_app(app)
+
+    import models  # noqa: F401  (User must be registered before the models that reference it)
+    import models_rbac  # noqa: F401
 
     ready = {"ok": False}
 
@@ -43,6 +131,7 @@ def create_reviews_app():
     def _tables():
         if not ready["ok"]:
             ReviewEvent.__table__.create(db.engine, checkfirst=True)
+            ReviewSetting.__table__.create(db.engine, checkfirst=True)
             ready["ok"] = True
 
     def _log(kind, source, copied=False):
@@ -56,7 +145,8 @@ def create_reviews_app():
             _log("view", source)
         except Exception:
             db.session.rollback()
-        return render_template("reviews/index.html", link=_review_link(), source=_clean_source(source))
+        return render_template("reviews/index.html", link=_review_link(), source=_clean_source(source), topics=TOPICS,
+                               ai_ready=bool(_ai_config()["ai_api_key"]))
 
     @app.route("/e", methods=["POST"])
     def event():
@@ -70,6 +160,27 @@ def create_reviews_app():
             db.session.rollback()
         return jsonify({"ok": True})
 
+    @app.route("/draft", methods=["POST"])
+    def draft():
+        """AI turns the customer's own picks into a first draft that they then edit."""
+        data = request.get_json(silent=True) or {}
+        place = str(data.get("place") or "").strip()[:80]
+        note = str(data.get("note") or "").strip()[:400]
+        liked = [t for t in (data.get("liked") or []) if t in TOPICS][:7]
+        if not place or not (liked or note):
+            return jsonify({"error": "Add where you went and at least one thing you liked."}), 400
+        if _limited("draft", 8, 600):
+            return jsonify({"error": "Too many requests. Please try again in a few minutes."}), 429
+        cfg = _ai_config()
+        if not cfg["ai_api_key"]:
+            return jsonify({"error": "Drafting is not switched on. Please write your review below."}), 503
+        prompt = f"Destination: {place}\nThings I liked: {', '.join(liked) or '(none listed)'}\nMy own note: {note or '(none)'}"
+        try:
+            text = llm_text(cfg, DRAFT_SYSTEM, prompt, max_tokens=220, temperature=0.8).strip().strip('"')
+        except Exception:
+            return jsonify({"error": "Could not write a draft right now. Please write your review below."}), 502
+        return jsonify({"text": text[:1000]})
+
     @app.route("/go")
     def go():
         """Plain redirect for a QR that should skip the helper page."""
@@ -79,17 +190,70 @@ def create_reviews_app():
             db.session.rollback()
         return redirect(_review_link(), code=302)
 
+    @app.route("/admin", methods=["GET", "POST"])
+    def admin():
+        """Settings for this page. Sign in with a Time Tours account that is an agency admin."""
+        from models import User
+        error = ""
+        if request.method == "POST":
+            if _limited("login", 8, 600):
+                error = "Too many attempts. Try again in a few minutes."
+            else:
+                ident = (request.form.get("user") or "").strip()
+                user = User.query.filter(or_(User.email == ident.lower(), User.username == ident)).first()
+                if user and user.check_password(request.form.get("password") or "") and _is_admin(user):
+                    session.clear()
+                    session.update(admin_id=user.id, csrf=secrets.token_urlsafe(24))
+                    session.permanent = True
+                    return redirect("/admin")
+                error = "Wrong login, or this account is not an admin."
+        user = _admin_user()
+        if not user:
+            session.clear()
+            return render_template("reviews/admin.html", user=None, error=error)
+        st, cfg = _get_settings(), _ai_config()
+        since, stats = _stats()
+        return render_template("reviews/admin.html", user=user, error="", csrf=session["csrf"], providers=PROVIDERS, stats=stats,
+                               since=since.date().isoformat(), provider=cfg["ai_provider"], model=cfg["ai_model"],
+                               key_set=bool(cfg["ai_api_key"]), key_from_here=bool(st.get("ai_api_key")), link=_review_link())
+
+    @app.route("/admin/save", methods=["POST"])
+    def admin_save():
+        if not _admin_user() or not secrets.compare_digest(request.headers.get("X-CSRF", ""), session.get("csrf") or "-"):
+            abort(403)
+        data = request.get_json(silent=True) or {}
+        updates = {}
+        if data.get("ai_provider") in PROVIDERS:
+            updates["ai_provider"] = data["ai_provider"]
+        if isinstance(data.get("ai_model"), str):
+            updates["ai_model"] = data["ai_model"].strip()[:120]
+        if isinstance(data.get("review_link"), str):
+            link = data["review_link"].strip()
+            if link and not link.startswith("https://"):
+                return jsonify({"error": "The review link must start with https://"}), 400
+            updates["review_link"] = link
+        if data.get("clear_key"):
+            updates["ai_api_key"] = ""
+        elif isinstance(data.get("ai_api_key"), str) and data["ai_api_key"].strip():
+            updates["ai_api_key"] = data["ai_api_key"].strip()
+        for k, v in updates.items():
+            row = db.session.get(ReviewSetting, k) or ReviewSetting(key=k)
+            row.value = v
+            db.session.add(row)
+        db.session.commit()
+        return jsonify({"ok": True})
+
+    @app.route("/admin/logout", methods=["POST"])
+    def admin_logout():
+        session.clear()
+        return redirect("/admin")
+
     @app.route("/stats")
     def stats():
         key = (os.getenv("REVIEWS_STATS_KEY") or "").strip()
         if not key or request.args.get("key") != key:
             abort(404)
-        since = datetime.utcnow() - timedelta(days=int(request.args.get("days", 30)))
-        rows = (db.session.query(ReviewEvent.source, ReviewEvent.kind, func.count())
-                .filter(ReviewEvent.created_at >= since).group_by(ReviewEvent.source, ReviewEvent.kind).all())
-        out = {}
-        for source, kind, n in rows:
-            out.setdefault(source or "(none)", {k: 0 for k in KINDS})[kind] = n
+        since, out = _stats(int(request.args.get("days", 30)))
         return jsonify({"since": since.date().isoformat(), "by_source": out})
 
     @app.route("/healthz")
