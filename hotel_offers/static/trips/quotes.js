@@ -2,7 +2,7 @@
    TT.quotes.mount(listEl, { currency(), onChange(quotes), onFocus(id) }) -> { set(list), add(list), all() } */
 (function (TT) {
   const SECTIONS = [
-    ['Stay', [['hotel_name', 'Hotel', 'wide'], ['city', 'City'], ['date', 'Check-in', '', 'date'], ['nights', 'Nights', '', 'number'], ['rooms', 'Rooms', '', 'number'],
+    ['Stay', [['hotel_name', 'Hotel', 'wide'], ['city', 'City'], ['date', 'Dates', '', 'dates'], ['rooms', 'Rooms', '', 'number'],
       ['guests', 'Guests'], ['guest_name', 'Guest name'], ['meal_plan', 'Meal plan'], ['website', 'Hotel website', 'wide', 'url']]],
     ['Room & price', [['room', 'Room', 'wide'], ['room_desc', 'Room description', 'wide', 'textarea'], ['room_size', 'Room size'], ['items', 'Room nights', '', 'number'],
       ['cost_per_item', 'Rate per room night', '', 'number'], ['total', 'Total', '', 'number'], ['cancellation', 'Cancellation policy', 'wide']]],
@@ -46,7 +46,10 @@
       || '<span class="ho-hint">No photos yet. Search the hotel under Location to pull its photos from Google, or add your own.</span>';
     const landList = q => (q.landmarks || []).map((l, i) =>
       '<span class="q-chip">' + TT.esc(l.name) + '<button type="button" data-act="rm-land" data-i="' + i + '" aria-label="Remove landmark">×</button></span>').join('');
-    const field = ([k, label, cls, type], q) => type === 'textarea' ?
+    const checkout = q => (q.date && q.nights ? TT.addDays(q.date, q.nights) : '');
+    const field = ([k, label, cls, type], q) => type === 'dates' ?
+      '<div class="q-f dates"><span>' + label + '</span><button type="button" class="dp-field" data-dates aria-haspopup="dialog" aria-expanded="false">' + TT.dates.label(q.date, checkout(q)) + '</button></div>' :
+      type === 'textarea' ?
       '<label class="q-f ' + (cls || '') + '"><span>' + label + '</span><textarea data-k="' + k + '" rows="2" maxlength="600" placeholder="e.g. King bed, balcony with sea view, walk-in shower">' + TT.esc(q[k] || '') + '</textarea></label>' :
       '<label class="q-f ' + (cls || '') + '"><span>' + label + '</span><input data-k="' + k + '" type="' + (type || 'text') + '" ' +
       (type === 'number' ? 'min="0" step="any" inputmode="decimal"' : '') + ' value="' + TT.esc(q[k] == null ? '' : q[k]) + '"></label>';
@@ -138,14 +141,32 @@
       const set = (key, v) => { q[key] = v; const f = cardOf(e.target).querySelector('[data-k="' + key + '"]'); if (f) f.value = v; };
       if (k === 'nights' || k === 'rooms') set('items', (q.rooms || 1) * (q.nights || 0));  // room nights = rooms x nights
       if (k === 'nights' || k === 'rooms' || k === 'items' || k === 'cost_per_item') set('total', Math.round((q.items || 0) * (q.cost_per_item || 0)));
-      if (k === 'date' && q.date) q.day = new Date(q.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' });
       refreshSummary(q); save(q);
-      if (['city', 'date', 'nights', 'hotel_name'].includes(k)) regroup = true;
+      if (['city', 'hotel_name'].includes(k)) regroup = true;
     });
     let regroup = false;
     root.addEventListener('change', e => { if (regroup && e.target.dataset.k) { regroup = false; render(); } });
 
+    // check-in and check-out come from the calendar; the nights, room nights and total follow
+    function applyDates(q, start, end, btn) {
+      q.date = start || null;
+      q.nights = start && end ? TT.dates.nights(start, end) : 0;
+      q.day = start ? new Date(start + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' }) : '';
+      const card = cardOf(btn), set = (key, v) => { q[key] = v; const f = card.querySelector('[data-k="' + key + '"]'); if (f) f.value = v; };
+      set('items', (q.rooms || 1) * q.nights);
+      set('total', Math.round(q.items * (q.cost_per_item || 0)));
+      btn.innerHTML = TT.dates.label(q.date, checkout(q));
+      regroup = true;  // the city's cards are re-sorted once the calendar closes
+      refreshSummary(q); save(q);
+    }
+
     root.addEventListener('click', async e => {
+      const dates = e.target.closest('[data-dates]');
+      if (dates) {
+        const q = byId(idOf(dates));
+        TT.dates.toggle(dates, { start: q.date, end: checkout(q), onChange: (s, en) => applyDates(q, s, en, dates), onClose: () => { if (regroup) { regroup = false; render(); } } });
+        return;
+      }
       const btn = e.target.closest('[data-act]');
       if (btn) {
         e.stopPropagation();  // the page-level handler also listens for data-act clicks

@@ -64,6 +64,9 @@
   document.addEventListener('click', e => { const c = e.target.closest('[data-close]'); if (c) c.closest('dialog').close(); });
   TT.$$('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));  // click on the backdrop closes it
 
+  TT.dates.bind(TT.$('#newTripForm'));
+  TT.dates.bind(TT.$('#detailForm'));
+
   TT.$('#btnNew').addEventListener('click', () => {
     TT.$('#newTripForm').reset(); TT.$('#tripErr').textContent = '';
     dlg('#tripDialog').showModal(); TT.$('#newTripForm [name=client_name]').focus();

@@ -114,6 +114,7 @@
       else if (act === 'edit') {
         const f = $('#detailForm');
         ['title', 'client_name', 'client_phone', 'destination', 'currency', 'start_date', 'end_date'].forEach(k => { f.elements[k].value = trip[k] || (k === 'currency' ? 'INR' : ''); });
+        TT.dates.sync(f);
         $('#detailDialog').showModal();
       } else if (act === 'share') { fillShare(); $('#shareDialog').showModal(); }
       else if (act === 'paste') { status('', ''); $('#pasteDialog').showModal(); $('#pasteBox').focus(); }

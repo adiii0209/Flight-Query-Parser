@@ -49,8 +49,7 @@
       <label class="t-fl wide"><span>Client name *</span><input name="client_name" required autocomplete="off"></label>
       <label class="t-fl"><span>Phone</span><input name="client_phone" inputmode="tel" autocomplete="off"></label>
       <label class="t-fl"><span>Destination</span><input name="destination" autocomplete="off"></label>
-      <label class="t-fl"><span>Start date</span><input name="start_date" type="date"></label>
-      <label class="t-fl"><span>End date</span><input name="end_date" type="date"></label>
+      <div class="t-fl wide"><span>Travel dates <em>(optional)</em></span><button type="button" class="dp-field" data-range="start_date,end_date" data-words="Start,End" data-empty="Choose start and end dates" aria-haspopup="dialog" aria-expanded="false"></button><input type="hidden" name="start_date"><input type="hidden" name="end_date"></div>
       <label class="t-fl wide"><span>Trip name <em>(optional)</em></span><input name="title" placeholder="Defaults to the client name" autocomplete="off"></label>
     </div>
     <footer><span class="ho-hint err" id="tripErr"></span><button type="button" class="pill ghost" data-close>Cancel</button><button type="submit" class="pill primary">Create trip</button></footer>
@@ -66,8 +65,7 @@
       <label class="t-fl"><span>Client phone</span><input name="client_phone" inputmode="tel" autocomplete="off"></label>
       <label class="t-fl"><span>Destination</span><input name="destination" autocomplete="off"></label>
       <label class="t-fl"><span>Currency</span><select name="currency"><option>INR</option><option>USD</option><option>EUR</option><option>GBP</option><option>THB</option><option>AED</option></select></label>
-      <label class="t-fl"><span>Start date</span><input name="start_date" type="date"></label>
-      <label class="t-fl"><span>End date</span><input name="end_date" type="date"></label>
+      <div class="t-fl wide"><span>Travel dates</span><button type="button" class="dp-field" data-range="start_date,end_date" data-words="Start,End" data-empty="Choose start and end dates" aria-haspopup="dialog" aria-expanded="false"></button><input type="hidden" name="start_date"><input type="hidden" name="end_date"></div>
     </div>
     <footer><button type="button" class="pill danger-ghost" id="btnDeleteTrip">Delete trip</button><span class="spacer"></span><button type="button" class="pill ghost" data-close>Cancel</button><button type="submit" class="pill primary">Save</button></footer>
   </form>
@@ -101,6 +99,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="{{ url_for('hotel_offers.static', filename='trips/tt.js') }}"></script>
+<script src="{{ url_for('hotel_offers.static', filename='trips/dates.js') }}"></script>
 <script src="{{ url_for('hotel_offers.static', filename='trips/groups.js') }}"></script>
 <script src="{{ url_for('hotel_offers.static', filename='trips/icons.js') }}"></script>
 <script src="{{ url_for('hotel_offers.static', filename='trips/hotel_info.js') }}"></script>
