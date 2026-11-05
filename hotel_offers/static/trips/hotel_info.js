@@ -24,7 +24,7 @@
       '<label class="q-f wide"><span>Where it is</span><input data-k="location_info" value="' + TT.esc(q.location_info || '') + '" placeholder="e.g. 2 km from the city centre, a short walk to Walking Street" maxlength="300"></label>' +
       '<label class="q-f wide"><span>Hotel in a nutshell</span><textarea data-k="brief" rows="2" maxlength="300" placeholder="About 20 words: location, standout features, the overall feel">' + TT.esc(q.brief || '') + '</textarea></label>' +
       '</div><div class="q-dist"><button type="button" class="ib" data-hi="facts">Auto-fill with AI</button></div><div class="q-dist"><input data-ref placeholder="Measure from: the city centre, or a lively spot (e.g. Walking Street)"><button type="button" class="ib" data-hi="distance">Calculate distance</button></div>' +
-      '<h4 class="sub">Perks <em>Up to ' + MAX_PERKS + '</em></h4><div class="q-perks">' + perks.map(perkRow).join('') + '</div>' +
+      '<h4 class="sub">Perks <em>Up to ' + MAX_PERKS + '. A perk on every room of the hotel shows for the hotel, any other shows under its room</em></h4><div class="q-perks">' + perks.map(perkRow).join('') + '</div>' +
       (perks.length < MAX_PERKS ? '<button type="button" class="ib" data-hi="add-perk">+ Add perk</button>' : '') +
       '<h4 class="sub">Google <em>Switch off what you do not want the client to see</em></h4><div class="q-checks">' +
       check('hide_rating', 'Show Google rating') + check('hide_reviews', 'Show review count and link') + '</div></div>';

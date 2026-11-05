@@ -333,6 +333,7 @@ dialog.rs::backdrop{background:rgba(0,0,0,.5)}
 .rs-i b{font-weight:600;font-size:.95rem}
 .rs-g{display:inline-flex;align-items:center;gap:5px;color:var(--text);font-size:.82rem;font-weight:500}
 .rs-g svg{flex:none;color:var(--gold)}
+.rs-p{color:var(--gold);font-size:.76rem;font-weight:500;letter-spacing:.04em;text-transform:uppercase}
 .rs-i small{color:var(--mute);font-size:.76rem;line-height:1.35}
 .rs-i em{font-style:normal;color:var(--gold);font-size:.8rem;font-weight:500}
 .rs-step{flex:0 0 auto;display:inline-flex;align-items:center;gap:10px}

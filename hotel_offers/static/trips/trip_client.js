@@ -48,6 +48,15 @@
     return '<ul class="tc-perks">' + perks.map(p => '<li><span class="pk-ic">' + TT.perkIcon(p.icon) + '</span><span class="pk-tx">' + TT.esc(p.label) + '</span></li>').join('') + '</ul>';
   }
 
+  // perks that every room of a hotel has belong to the hotel; a perk only some rooms have is shown under those rooms
+  const perkKey = p => String(p.label || '').trim().toLowerCase();
+  function perkSplit(o) {
+    const first = o.lines[0].perks || [];
+    if (o.lines.length < 2) return { shared: first, own: [[]] };
+    const common = new Set(first.map(perkKey).filter(k => k && o.lines.every(l => (l.perks || []).some(p => perkKey(p) === k))));
+    return { shared: first.filter(p => common.has(perkKey(p))), own: o.lines.map(l => (l.perks || []).filter(p => !common.has(perkKey(p)))) };
+  }
+
   // Google rating (opens the reviews on Google Maps) and the hotel's own website
   const safeUrl = u => (/^https?:\/\/[^\s<>"']+$/.test(u || '') ? u : '');
   function linksHtml(i) {
@@ -92,7 +101,7 @@
       ['Meal plan', o => first(o).meal_plan || ''],
       ['Cancellation', o => first(o).cancellation || ''],
       ['Google rating', o => { const l = o.lines.find(x => x.rating); return l ? '★ ' + l.rating.toFixed(1) + (l.rating_count ? ' (' + l.rating_count.toLocaleString('en-IN') + ')' : '') : ''; }],
-      ['Includes', o => ((o.lines.find(l => (l.perks || []).length) || { perks: [] }).perks.map(p => p.label).join(' · '))],
+      ['Includes', o => { const s = perkSplit(o); return s.shared.map(p => p.label).join(' · ') + (s.own.some(a => a.length) ? (s.shared.length ? ' · ' : '') + 'extras on some rooms' : ''); }],
     ].map(([label, fn]) => [label, opts.map(fn)]).filter(r => r[1].some(Boolean));
     const head = '<tr><th></th>' + opts.map(o => '<th' + (o.key === g.selected ? ' class="sel"' : '') + '><b>' + TT.esc(o.hotel_name) + '</b>' + (o.key === g.selected ? '<i>Selected</i>' : '') + '</th>').join('') + '</tr>';
     const body = rows.map(([label, vals]) => '<tr><th scope="row">' + label + '</th>' + vals.map(v => '<td>' + (v ? TT.esc(v) : '–') + '</td>').join('') + '</tr>').join('');
@@ -134,12 +143,12 @@
     const near = nearbyOf(g, o, located);
     const info = o.lines.find(l => l.rating || l.rating_count || l.website) || {};
     const hv = key => (o.lines.find(l => l[key]) || {})[key] || '';  // hotel-level details come from the first room that has them
-    const perks = (o.lines.find(l => (l.perks || []).length) || { perks: [] }).perks;
+    const split = perkSplit(o), perks = split.shared;
     const stay = [['Check-in', g.date ? (first.day ? first.day + ', ' : '') + TT.date(g.date) : ''], ['Check-out', g.checkout ? TT.date(g.checkout) : '']];
     const pick = '<button type="button" class="co-pick' + (isSel ? ' co-chg' : '') + '" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">' + (isSel ? 'Change rooms' : 'Select') + '</button>';
     const badges = (multi && g.options[0] === o ? '<span class="co-rec">Recommended</span>' : '') + (isSel ? '<button type="button" class="co-sel co-un" data-g="' + TT.esc(g.key) + '" title="Selected. Tap to unselect" aria-label="Selected. Tap to unselect">' + CHECK + '</button>' : '');
     const details = many
-      ? factsHtml(stay) + o.lines.map((l, i) => '<div class="co-room"><div class="co-room-h"><b>' + TT.esc(l.room || 'Room ' + (i + 1)) + '</b><span>' + TT.money(l.total, cur()) + '</span></div>' + factsHtml(lineFacts(l)) + roomDesc(l) + '<small>' + rateText(l) + '</small></div>').join('')
+      ? factsHtml(stay) + o.lines.map((l, i) => '<div class="co-room"><div class="co-room-h"><b>' + TT.esc(l.room || 'Room ' + (i + 1)) + '</b><span>' + TT.money(l.total, cur()) + '</span></div>' + factsHtml(lineFacts(l)) + roomDesc(l) + perksHtml(split.own[i]) + '<small>' + rateText(l) + '</small></div>').join('')
       : factsHtml(stay.concat(lineFacts(first))) + roomDesc(first);
     const roomBtn = '<button type="button" class="rs-change rs-in" data-g="' + TT.esc(g.key) + '" data-o="' + TT.esc(o.key) + '">' + (isSel ? 'Change rooms' : many ? 'Choose rooms' : 'Add rooms') + '</button>';
     const ck = g.key + '|' + o.key, open = openCards.has(ck);
@@ -444,13 +453,13 @@
   const priceOf = (l, k) => Math.round((l.total || 0) / TT.roomsOf(l) * k);
   const unitOf = l => priceOf(l, 1);
   function roomSheetHtml() {
-    const { g, o, qty } = rs;
+    const { g, o, qty } = rs, own = perkSplit(o).own;
     let total = 0, n = 0;
     const rows = o.lines.map((l, i) => {
       const r = TT.roomsOf(l), k = qty[l.id] || 0, meta = [l.room_size, l.meal_plan, l.cancellation].filter(Boolean).join(' · ');
       total += priceOf(l, k); n += k;
       return '<li class="rs-row' + (k ? ' on' : '') + '"><div class="rs-i"><b>' + TT.esc(l.room || 'Room ' + (i + 1)) + '</b>' +
-        (l.guests ? '<span class="rs-g">' + PERSON + TT.esc(l.guests) + '</span>' : '') + (meta ?'<small>' + TT.esc(meta) + '</small>' : '') +
+        (l.guests ? '<span class="rs-g">' + PERSON + TT.esc(l.guests) + '</span>' : '') + (own[i].length ? '<span class="rs-p">' + TT.esc(own[i].map(p => p.label).join(' · ')) + '</span>' : '') + (meta ? '<small>' + TT.esc(meta) + '</small>' : '') +
         '<em>' + TT.money(unitOf(l), cur()) + ' per room' + (l.nights ? ' for ' + plural(l.nights, 'night') : '') + '</em></div>' +
         '<div class="rs-step"><button type="button" data-rs="-" data-id="' + l.id + '" aria-label="Fewer ' + TT.esc(l.room || 'rooms') + '"' + (k <= 0 ? ' disabled' : '') + '>−</button><span aria-live="polite">' + k +
         '</span><button type="button" data-rs="+" data-id="' + l.id + '" aria-label="More ' + TT.esc(l.room || 'rooms') + '"' + (k >= TT.roomCap(l) ? ' disabled' : '') + '>+</button></div></li>';
