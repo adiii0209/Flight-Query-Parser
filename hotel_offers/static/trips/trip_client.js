@@ -440,6 +440,7 @@
 
   // ---- room categories: Select on a hotel with several of them opens this sheet (+ / − per category, then Confirm)
   let rs = null;
+  const PERSON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.6-3.6 3.4-5.5 7-5.5s6.4 1.9 7 5.5"/></svg>';
   const priceOf = (l, k) => Math.round((l.total || 0) / TT.roomsOf(l) * k);
   const unitOf = l => priceOf(l, 1);
   function roomSheetHtml() {
@@ -448,7 +449,8 @@
     const rows = o.lines.map((l, i) => {
       const r = TT.roomsOf(l), k = qty[l.id] || 0, meta = [l.room_size, l.meal_plan, l.cancellation].filter(Boolean).join(' · ');
       total += priceOf(l, k); n += k;
-      return '<li class="rs-row' + (k ? ' on' : '') + '"><div class="rs-i"><b>' + TT.esc(l.room || 'Room ' + (i + 1)) + '</b>' + (meta ? '<small>' + TT.esc(meta) + '</small>' : '') +
+      return '<li class="rs-row' + (k ? ' on' : '') + '"><div class="rs-i"><b>' + TT.esc(l.room || 'Room ' + (i + 1)) + '</b>' +
+        (l.guests ? '<span class="rs-g">' + PERSON + TT.esc(l.guests) + '</span>' : '') + (meta ?'<small>' + TT.esc(meta) + '</small>' : '') +
         '<em>' + TT.money(unitOf(l), cur()) + ' per room' + (l.nights ? ' for ' + plural(l.nights, 'night') : '') + '</em></div>' +
         '<div class="rs-step"><button type="button" data-rs="-" data-id="' + l.id + '" aria-label="Fewer ' + TT.esc(l.room || 'rooms') + '"' + (k <= 0 ? ' disabled' : '') + '>−</button><span aria-live="polite">' + k +
         '</span><button type="button" data-rs="+" data-id="' + l.id + '" aria-label="More ' + TT.esc(l.room || 'rooms') + '"' + (k >= TT.roomCap(l) ? ' disabled' : '') + '>+</button></div></li>';
