@@ -652,8 +652,27 @@
     for (const t of list) { await download(t); await new Promise(r => setTimeout(r, 350)); }
   }));
 
-  // Instagram ignores *bold* and ~strike~ markup, so its caption uses Unicode letters that look bold (Mathematical Sans-Serif Bold)
-  // and a combining stroke for the struck-through online rate. WhatsApp keeps its own markup.
+  function caption(d = state.data, b = brand(), style = 'wa') {
+    if (style === 'ig') return captionIG(d, b);
+    const dt = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+    const lines = [`*${[d.brand_line, d.place_line].filter(Boolean).join(' ') || d.hotel_name}*`];
+    if (d.offer_headline) lines.push(`*${d.offer_headline}*`);
+    if (d.tagline) lines.push(d.tagline);
+    lines.push('');
+    if (d.room) lines.push(d.room);
+    if (d.check_in && d.check_out) lines.push('(Sample Dates)', `${dt(d.check_in)} - ${dt(d.check_out)}${d.nights ? ' · ' + d.nights + ' nights' : ''}${d.adults ? ' · ' + d.adults + ' adults' : ''}`);
+    if (d.perks.length) { lines.push('', 'Your stay includes:'); d.perks.forEach(p => lines.push('- ' + p.label.replace(/\n/g, ' ').replace(/\*/g, ''))); }
+    if (d.our_deal) {
+      lines.push('');
+      if (d.online_rate) lines.push(`Online rate: ~${d.currency} ${fmtMoney(d.online_rate)}/-~`);
+      lines.push(`*Our deal: ${d.currency} ${fmtMoney(d.our_deal)}/-*`);
+    }
+    const tail = [b.availability, b.footer].filter(x => x && x.trim());
+    lines.push('', ...tail, ...(tail.length ? [''] : []), '🙌 Know someone heading there? Forward this to them');
+    return lines.join('\n');
+  }
+
+  // Instagram ignores *bold* markup, so its caption is short and uses Unicode letters that look bold (Mathematical Sans-Serif Bold)
   function uniBold(s) {
     return Array.from(String(s)).map(ch => {
       const c = ch.codePointAt(0);
@@ -663,28 +682,38 @@
       return ch;
     }).join('');
   }
-  const uniStrike = s => Array.from(String(s)).map(ch => (ch === ' ' ? ch : ch + '̶')).join('');
-
-  function caption(d = state.data, b = brand(), style = 'wa') {
-    const ig = style === 'ig';
-    const bold = s => (ig ? uniBold(s) : `*${s}*`), strike = s => (ig ? uniStrike(s) : `~${s}~`);
-    const dt = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
-    const lines = [bold([d.brand_line, d.place_line].filter(Boolean).join(' ') || d.hotel_name)];
-    if (d.offer_headline) lines.push(bold(d.offer_headline));
-    if (d.tagline) lines.push(d.tagline);
-    lines.push('');
-    if (d.room) lines.push(d.room);
-    if (d.check_in && d.check_out) lines.push(`${dt(d.check_in)} - ${dt(d.check_out)}${d.nights ? ' · ' + d.nights + ' nights' : ''}${d.adults ? ' · ' + d.adults + ' adults' : ''}`);
-    if (d.perks.length) { lines.push('', 'Your stay includes:'); d.perks.forEach(p => lines.push('- ' + p.label.replace(/\n/g, ' ').replace(/\*/g, ''))); }
+  const CUR_SYMBOL = { INR: '₹', USD: '$', EUR: '€', GBP: '£', THB: '฿' };
+  const titleCase = s => s.split(' ').map(w => (/^[A-Z0-9%$€₹]{2,}$/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())).join(' ');
+  // "Daily breakfast" -> "Breakfast", "USD 100 property credit" -> "USD 100 Credit"
+  const shortPerk = label => titleCase(String(label || '').replace(/\n/g, ' ').replace(/\*/g, '').replace(/\b(daily|property)\b/gi, '').replace(/\s+/g, ' ').trim());
+  function igDates(ci, co) {
+    const a = new Date(ci + 'T00:00:00'), z = new Date(co + 'T00:00:00'), mon = x => x.toLocaleDateString('en-GB', { month: 'short' });
+    if (isNaN(a) || isNaN(z)) return '';
+    const sameYear = a.getFullYear() === z.getFullYear(), thisYear = z.getFullYear() === new Date().getFullYear();
+    if (sameYear && a.getMonth() === z.getMonth()) return `${a.getDate()}–${z.getDate()} ${mon(z)}${thisYear ? '' : ' ' + z.getFullYear()}`;
+    return `${a.getDate()} ${mon(a)}${sameYear ? '' : ' ' + a.getFullYear()} – ${z.getDate()} ${mon(z)}${thisYear && sameYear ? '' : ' ' + z.getFullYear()}`;
+  }
+  function captionIG(d, b) {
+    const sym = d.currency in CUR_SYMBOL ? CUR_SYMBOL[d.currency] : (d.currency ? d.currency + ' ' : '');
+    const money = n => sym + Number(n || 0).toLocaleString(d.currency === 'INR' ? 'en-IN' : 'en-US');  // lakh grouping for rupees: 1,06,450
+    const lines = [uniBold([d.brand_line, d.place_line].filter(Boolean).join(' ') || d.hotel_name)];
+    if (d.offer_headline) lines.push(uniBold(d.offer_headline));
+    const nights = d.nights || (d.check_in && d.check_out ? Math.round((new Date(d.check_out) - new Date(d.check_in)) / 864e5) : 0);
+    const facts = [d.check_in && d.check_out ? igDates(d.check_in, d.check_out) : '', nights > 0 ? `${nights} ${nights === 1 ? 'Night' : 'Nights'}` : '',
+      d.adults ? `${d.adults} ${d.adults === 1 ? 'Adult' : 'Adults'}` : ''].filter(Boolean);
+    if (facts.length) lines.push('', facts.join(' | '));
+    const perks = (d.perks || []).map(p => shortPerk(p.label)).filter(Boolean);
+    if (perks.length) lines.push('', perks.join(' · '));
     if (d.our_deal) {
       lines.push('');
-      if (d.online_rate) lines.push(`Online rate: ${strike(`${d.currency} ${fmtMoney(d.online_rate)}/-`)}`);
-      lines.push(bold(`Our deal: ${d.currency} ${fmtMoney(d.our_deal)}/-`));
+      if (d.online_rate > d.our_deal) lines.push(`Online: ${money(d.online_rate)}`);
+      lines.push(uniBold(`Our Deal: ${money(d.our_deal)}`));
     }
-    const tail = [b.availability, b.footer].filter(x => x && x.trim()).map(x => (ig ? x.replace(/\*([^*\n]+)\*/g, (_, t) => uniBold(t)) : x));  // *bold* typed in Settings
-    lines.push('', ...tail, ...(tail.length ? [''] : []), ig ? '🙌 Know someone heading there? Tag them' : '🙌 Know someone heading there? Forward this to them');
+    const note = String(b.availability || '').replace(/^[\s*]+/, '').trim();
+    lines.push('', '*' + (/sample dates/i.test(note) ? note : ['Sample dates.', note].filter(Boolean).join(' ')));
     return lines.join('\n');
   }
+
   // Same text as Share: caption first, the live link at the very end (no link until the offer is live)
   async function copyCaption(btn, style) {
     const label = btn.textContent;

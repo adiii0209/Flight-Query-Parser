@@ -259,7 +259,7 @@
     if (o.tagline) lines.push(o.tagline);
     lines.push('');
     if (o.room) lines.push(o.room);
-    if (o.check_in && o.check_out) lines.push(`${fmt(o.check_in)} - ${fmt(o.check_out)}${nights(o) ? ' · ' + nights(o) + ' nights' : ''}${o.adults ? ' · ' + o.adults + ' adults' : ''}`);
+    if (o.check_in && o.check_out) lines.push('(Sample Dates)', `${fmt(o.check_in)} - ${fmt(o.check_out)}${nights(o) ? ' · ' + nights(o) + ' nights' : ''}${o.adults ? ' · ' + o.adults + ' adults' : ''}`);
     if ((o.perks || []).length) { lines.push('', 'Your stay includes:'); o.perks.forEach(p => lines.push('- ' + p.replace(/\*/g, '').trim())); }
     if (o.our_deal) {
       lines.push('');
