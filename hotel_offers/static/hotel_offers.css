@@ -491,3 +491,8 @@ input[type=date]{min-width:0;max-width:100%;box-sizing:border-box}
 
 #btnAddSample{margin:.2rem 0 .9rem}
 #sampleWarn{margin-bottom:.9rem}
+
+/* caption copy buttons: one per app */
+.cap-copy{display:inline-flex;align-items:center;gap:.35rem}
+.cap-copy>span{font-size:.8rem;color:var(--mute);margin-right:.1rem}
+@media(max-width:900px){.cap-copy>span{display:none}}

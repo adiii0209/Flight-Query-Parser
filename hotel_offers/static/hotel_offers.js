@@ -652,10 +652,25 @@
     for (const t of list) { await download(t); await new Promise(r => setTimeout(r, 350)); }
   }));
 
-  function caption(d = state.data, b = brand()) {
+  // Instagram ignores *bold* and ~strike~ markup, so its caption uses Unicode letters that look bold (Mathematical Sans-Serif Bold)
+  // and a combining stroke for the struck-through online rate. WhatsApp keeps its own markup.
+  function uniBold(s) {
+    return Array.from(String(s)).map(ch => {
+      const c = ch.codePointAt(0);
+      if (c >= 65 && c <= 90) return String.fromCodePoint(0x1D5D4 + c - 65);
+      if (c >= 97 && c <= 122) return String.fromCodePoint(0x1D5EE + c - 97);
+      if (c >= 48 && c <= 57) return String.fromCodePoint(0x1D7EC + c - 48);
+      return ch;
+    }).join('');
+  }
+  const uniStrike = s => Array.from(String(s)).map(ch => (ch === ' ' ? ch : ch + '̶')).join('');
+
+  function caption(d = state.data, b = brand(), style = 'wa') {
+    const ig = style === 'ig';
+    const bold = s => (ig ? uniBold(s) : `*${s}*`), strike = s => (ig ? uniStrike(s) : `~${s}~`);
     const dt = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
-    const lines = [`*${[d.brand_line, d.place_line].filter(Boolean).join(' ') || d.hotel_name}*`];
-    if (d.offer_headline) lines.push(`*${d.offer_headline}*`);
+    const lines = [bold([d.brand_line, d.place_line].filter(Boolean).join(' ') || d.hotel_name)];
+    if (d.offer_headline) lines.push(bold(d.offer_headline));
     if (d.tagline) lines.push(d.tagline);
     lines.push('');
     if (d.room) lines.push(d.room);
@@ -663,23 +678,25 @@
     if (d.perks.length) { lines.push('', 'Your stay includes:'); d.perks.forEach(p => lines.push('- ' + p.label.replace(/\n/g, ' ').replace(/\*/g, ''))); }
     if (d.our_deal) {
       lines.push('');
-      if (d.online_rate) lines.push(`Online rate: ~${d.currency} ${fmtMoney(d.online_rate)}/-~`);
-      lines.push(`*Our deal: ${d.currency} ${fmtMoney(d.our_deal)}/-*`);
+      if (d.online_rate) lines.push(`Online rate: ${strike(`${d.currency} ${fmtMoney(d.online_rate)}/-`)}`);
+      lines.push(bold(`Our deal: ${d.currency} ${fmtMoney(d.our_deal)}/-`));
     }
-    const tail = [b.availability, b.footer].filter(x => x && x.trim());
-    lines.push('', ...tail, ...(tail.length ? [''] : []), '🙌 Know someone heading there? Forward this to them');
+    const tail = [b.availability, b.footer].filter(x => x && x.trim()).map(x => (ig ? x.replace(/\*([^*\n]+)\*/g, (_, t) => uniBold(t)) : x));  // *bold* typed in Settings
+    lines.push('', ...tail, ...(tail.length ? [''] : []), ig ? '🙌 Know someone heading there? Tag them' : '🙌 Know someone heading there? Forward this to them');
     return lines.join('\n');
   }
   // Same text as Share: caption first, the live link at the very end (no link until the offer is live)
-  $('#btnCopyCaption').addEventListener('click', async e => {
-    const btn = e.currentTarget;
+  async function copyCaption(btn, style) {
+    const label = btn.textContent;
     try {
-      if (liveOn()) await copyShare(state.live.url, Promise.resolve(state.data));
-      else { await navigator.clipboard.writeText(caption()); toast('Caption copied'); }
+      if (liveOn()) await copyShare(state.live.url, Promise.resolve(state.data), style);
+      else { await navigator.clipboard.writeText(caption(state.data, brand(), style)); toast(style === 'ig' ? 'Instagram caption copied' : 'WhatsApp caption copied'); }
       btn.textContent = 'Copied';
     } catch (err) { alert('Could not copy. ' + err.message); }
-    setTimeout(() => { btn.textContent = 'Copy caption'; }, 1500);
-  });
+    setTimeout(() => { btn.textContent = label; }, 1500);
+  }
+  $('#btnCopyWA').addEventListener('click', e => copyCaption(e.currentTarget, 'wa'));
+  $('#btnCopyIG').addEventListener('click', e => copyCaption(e.currentTarget, 'ig'));
 
   // The sticky toolbar takes a lot of a phone screen: it can be hidden, and a floating button brings it back
   let barCollapsed = false;
@@ -723,12 +740,12 @@
   const dayLabel = iso => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   const copyText = async text => { try { await navigator.clipboard.writeText(text); return true; } catch (e) { window.prompt('Copy this link', text); return false; } };
   // Share = copy the caption with the link at the very end, ready to paste into WhatsApp
-  async function copyShare(url, dataPromise) {
-    const build = async () => caption(await dataPromise, brand()) + '\n\n' + url;
+  async function copyShare(url, dataPromise, style = 'wa') {
+    const build = async () => caption(await dataPromise, brand(), style) + '\n\n' + url;
     try {
       if (navigator.clipboard && window.ClipboardItem) await navigator.clipboard.write([new ClipboardItem({ 'text/plain': build().then(t => new Blob([t], { type: 'text/plain' })) })]);
       else await navigator.clipboard.writeText(await build());
-      toast('Link and caption copied');
+      toast(style === 'ig' ? 'Instagram link and caption copied' : 'Link and caption copied');
     } catch (e) { window.prompt('Copy this text', await build()); }
   }
   const offerData = id => api('/api/hotel-offers/offers/' + id).then(r => Object.assign(blank(), r.offer.data.data));

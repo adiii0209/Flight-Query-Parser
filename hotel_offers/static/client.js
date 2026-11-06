@@ -117,6 +117,7 @@
     if (range(o) && sampleList(o).length < 2) facts.push(['Sample dates', range(o) + (nights(o) ? ` · ${nights(o)} nights` : '')]);
     if (o.adults || o.rooms) facts.push(['Guests', [o.adults && `${o.adults} adults`, o.rooms && `${o.rooms} room${o.rooms > 1 ? 's' : ''}`].filter(Boolean).join(' · ')]);
     if (o.room) facts.push(['Room', o.room]);
+    if (o.cancellation) facts.push(['Cancellation', o.cancellation]);
     const book = windowText(o.booking_from, o.valid_till), travel = windowText(o.travel_from, o.travel_to);
     if (book) facts.push(['Book', book]);
     if (travel) facts.push(['Travel', travel]);

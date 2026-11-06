@@ -78,7 +78,10 @@
           <option value="1080x1080">Square 1080&times;1080</option>
         </select>
         <select id="outFmt" aria-label="Format"><option value="png">PNG</option><option value="jpeg">JPG</option></select>
-        <button class="pill ghost sm" id="btnCopyCaption">Copy caption</button>
+        <span class="cap-copy" role="group" aria-label="Copy caption"><span>Copy caption</span>
+          <button class="pill ghost sm" id="btnCopyWA" title="Caption with WhatsApp bold and strikethrough">WhatsApp</button>
+          <button class="pill ghost sm" id="btnCopyIG" title="Caption with Unicode bold for Instagram">Instagram</button>
+        </span>
         <button class="pill primary sm" id="btnDownloadSel">Download selected</button>
       </div>
     </div>

@@ -57,7 +57,7 @@ def _sample(check_in, check_out, deal, online):
 
 def build_snapshot(offer_json, title):
     d = (offer_json or {}).get("data") or {}
-    keep = ("hotel_name", "brand_line", "place_line", "city", "tagline", "offer_headline", "currency", "room", "check_in", "check_out")
+    keep = ("hotel_name", "brand_line", "place_line", "city", "tagline", "offer_headline", "currency", "room", "cancellation", "check_in", "check_out")
     snap = {k: str(d.get(k) or "")[:200] for k in keep}
     for k in ("online_rate", "our_deal", "nights", "adults", "rooms"):
         try:
