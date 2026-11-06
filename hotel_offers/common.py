@@ -1,4 +1,5 @@
 """Helpers shared by the admin routes and the public client page (this file must not import login code)."""
+import json
 import os
 
 from flask import request
@@ -38,7 +39,34 @@ def ensure_tables():
     if "guide" not in {c["name"] for c in inspect(db.engine).get_columns("hotel_trip")}:
         with db.engine.begin() as conn:
             conn.execute(text("ALTER TABLE hotel_trip ADD COLUMN guide TEXT"))
+    try:
+        _backfill_cancellation()
+    except Exception:  # a data fix must never take the pages down; it is retried on the next start
+        db.session.rollback()
     _tables_ready = True
+
+
+def _backfill_cancellation():
+    """Offers published before the public snapshot carried the cancellation get it from their saved offer, once.
+    updated_at is set to itself so the poster picture's cache-busting version does not change."""
+    pending = []
+    for live_id, offer_id, snapshot in db.session.query(HotelOfferLive.id, HotelOfferLive.offer_id, HotelOfferLive.snapshot).all():
+        try:
+            snap = json.loads(snapshot or "{}")
+        except ValueError:
+            continue
+        if isinstance(snap, dict) and "cancellation" not in snap:
+            pending.append((live_id, offer_id, snap))
+    for live_id, offer_id, snap in pending:
+        offer = db.session.get(HotelOffer, offer_id)
+        try:
+            saved = (json.loads(offer.data or "{}").get("data") or {}) if offer else {}
+        except ValueError:
+            saved = {}
+        snap["cancellation"] = str(saved.get("cancellation") or "")[:200]  # the key is always set, so an offer is never visited twice
+        HotelOfferLive.query.filter_by(id=live_id).update({"snapshot": json.dumps(snap), "updated_at": HotelOfferLive.updated_at}, synchronize_session=False)
+    if pending:
+        db.session.commit()
 
 
 def base_url():
