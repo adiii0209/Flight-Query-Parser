@@ -38,7 +38,6 @@ DEFAULTS = {
     "brand_header_note": "Exclusive offers\nat the world's finest\nhotels & resorts.",
     "brand_footer": "Curated by Time Tours",
     "brand_est": "EST. 1978",
-    "enquire_label": "Enquire now",
     "loyalty_note": "Earn your standard hotel loyalty points and elite night credits on eligible stays.",
     "availability_note": "*Subject to availability.",
     "inr_disclaimer": "INR rates are indicative and may change with the exchange rate on the day of payment. The final amount is confirmed at the time of booking.",

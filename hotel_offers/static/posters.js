@@ -17,7 +17,6 @@
     wifi: '<path d="M2 9a15 15 0 0 1 20 0"/><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r=".8"/>',
   };
   const svg = (name, extra) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.gift}${extra || ''}</svg>`;
-  const ARROW = '<svg viewBox="0 0 46 20"><path d="M1 10h42M35 2l8 8-8 8"/></svg>';
 
   const money = (d, n) => n ? `${esc(d.currency || 'INR')} ${Number(n).toLocaleString('en-US')}/-` : '';
   const fs = (text, base, maxChars) => Math.round(base * Math.min(1, maxChars / Math.max(String(text || '').length, 1)));
@@ -98,7 +97,6 @@
     return A(style, 'pricebar', `${old}<div class="pb-col"><div class="pb-l">OUR DEAL</div><div class="pb-new" style="${o.nw || ''}">${money(d, d.our_deal)}</div></div>`)
       .replace('class="a pricebar"', `class="a pricebar" ${o.attr || ''}`);
   };
-  const cta = (d, style) => has(d.brand.enquire) ? A(style, 'cta', `${esc(d.brand.enquire)} ${ARROW}`) : '';
   const avail = (d, style) => has(d.brand.availability) ? A(style, 'avail', esc(d.brand.availability)) : '';
   const curated = (d, style) => has(d.brand.footer) || has(d.brand.est) ? A(style, 'curated', `<i></i><div>${has(d.brand.footer) ? `<div class="cur-t">${esc(d.brand.footer)}</div>` : ''}${has(d.brand.est) ? `<div class="cur-e">${esc(d.brand.est)}</div>` : ''}</div>`) : '';
   const curInline = (d, style) => has(d.brand.footer) ? A(style, 'cur-inline', `${esc(d.brand.footer)} <i></i>`) : '';
@@ -197,7 +195,6 @@
         }).join('') +
         rule(648, 1092, 88) + note(d, 'left:648px;top:1128px;width:340px;font-size:24px') +
         pricebar(d, 'left:52px;top:1264px;width:922px;height:108px;background:#dcddd0;border-radius:0', { old: 'font-size:36px', nw: 'font-size:44px' }) +
-        cta(d, 'left:273px;top:1405px;width:308px;height:74px;font-size:21px') +
         curBlock(d, 'left:662px;top:1404px;width:2px;height:76px;background:#c9a56a', 'left:712px;top:1412px', 'left:712px;top:1452px;font-size:14px;letter-spacing:.3em') +
         avail(d, 'left:56px;top:1490px;font-size:17px;color:#6b6a5e'), 'background:#f4efe6');
     },
@@ -219,7 +216,6 @@
         perkList(d, { left: 142, top: 585, step: 96, w: 400, ico: 76, gap: 26, gap2: 26, fs: 19, maxBottom: 965 }) +
         rule(144, 983, 62) + note(d, 'left:146px;top:1006px;width:380px;font-size:21px') +
         pricebar(d, 'left:88px;top:1093px;width:478px;height:112px;border-radius:0 0 0 0', { old: 'font-size:26px', nw: 'font-size:32px' }) +
-        cta(d, 'left:128px;top:1220px;width:300px;height:58px;font-size:19px') +
         txt(d.brand.availability, 'left:138px;top:1292px;font-family:Newsreader,serif;font-size:15px') +
         curBlock(d, 'left:705px;top:1236px;width:2px;height:68px;background:#c9a56a', 'left:757px;top:1240px;font-size:23px', 'left:757px;top:1278px;font-size:13px;letter-spacing:.3em'), 'background:#e8dfd1');
     },
@@ -244,7 +240,7 @@
         A(`left:458px;top:748px;width:2px;height:${five ? 272 : 258}px;background:#c9a56a`) + cells +
         A('left:65px;top:1043px;width:992px;height:2px;background:#d3b98a') +
         pricebar(d, 'left:65px;top:1070px;width:992px;height:140px;border-radius:30px;background:linear-gradient(90deg,#ece4d6 50%,#dfe0d2 50%)', { old: 'font-size:40px', nw: 'font-size:56px' }) +
-        cta(d, 'left:71px;top:1240px;width:428px;height:78px;font-size:21px') + avail(d, 'left:74px;top:1334px') +
+        avail(d, 'left:74px;top:1334px') +
         curBlock(d, 'left:592px;top:1248px;width:2px;height:74px;background:#c9a56a', 'left:680px;top:1252px', 'left:682px;top:1292px;font-size:15px;letter-spacing:.3em'), 'background:#f6f0e6');
     },
   });
@@ -273,7 +269,7 @@
         divs + per + note(d, 'left:0;top:1000px;width:1024px;text-align:center;font-size:24px') +
         PH(d, 'g1', 'left:0;top:1052px;width:355px;height:232px') + PH(d, 'g2', 'left:363px;top:1052px;width:312px;height:232px') + PH(d, 'g3', 'left:683px;top:1052px;width:341px;height:232px') +
         pricebar(d, 'left:83px;top:1297px;width:857px;height:140px', { old: 'font-size:38px', nw: 'font-size:46px' }) +
-        avail(d, 'left:80px;top:1452px;font-size:18px') + cta(d, 'left:387px;top:1425px;width:278px;height:66px;font-size:19px;background:#14231f') +
+        avail(d, 'left:80px;top:1452px;font-size:18px') +
         curBlock(d, 'left:718px;top:1425px;width:2px;height:72px;background:#c9a56a', 'left:756px;top:1432px;font-size:22px', 'left:757px;top:1468px;font-size:12px;letter-spacing:.3em'), 'background:#f6efe3');
     },
   });
@@ -296,8 +292,7 @@
         brandBig(d, 64, 172, 160, 7) + placeSmall(d, 68, 338, 40, 9) + tagline(d, 'left:68px;top:392px;font-size:18px') + head +
         pricebar(d, 'left:67px;top:1066px;width:890px;height:136px;background:rgba(244,240,230,.97)', { old: 'font-size:38px', nw: 'font-size:52px' }) +
         A('left:67px;top:1226px;font-size:17px;letter-spacing:.32em;text-transform:uppercase;color:#f1e9da', '', 'Your stay includes') + A('left:366px;top:1236px;width:591px;height:1px;background:#6f8a78') +
-        divs + per + availBlock(d, 'left:67px;top:1448px;width:112px;height:1px;background:#8aa190', 'left:67px;top:1462px;font-family:Newsreader,serif;font-size:17px;color:#e5dccb') +
-        cta(d, 'right:66px;top:1414px;width:338px;height:68px;font-size:19px;background:#b98f45;color:#14231f').replace('<svg', '<svg style="stroke:#14231f"'), 'background:#14281f');
+        divs + per + availBlock(d, 'left:67px;top:1448px;width:112px;height:1px;background:#8aa190', 'left:67px;top:1462px;font-family:Newsreader,serif;font-size:17px;color:#e5dccb'), 'background:#14281f');
     },
   });
 
@@ -315,7 +310,7 @@
         perkList(d, { left: 76, top: 575, step: 102, w: 440, ico: 86, gap: 40, gap2: 42, fs: 20, color: '#f4eee4', maxBottom: 985 }) +
         rule(76, 996, 86, '#b98f45') + note(d, 'left:76px;top:1018px;width:420px;font-size:25px;color:#f4eee4') +
         pricebar(d, 'left:68px;top:1103px;width:987px;height:120px;background:rgba(14,14,14,.94);border:1.5px solid #b98f45;border-radius:22px', { old: 'font-size:38px', nw: 'font-size:48px' }) +
-        cta(d, 'left:68px;top:1242px;width:428px;height:72px;font-size:21px') + avail(d, 'left:74px;top:1332px;color:#f4eee4') +
+        avail(d, 'left:74px;top:1332px;color:#f4eee4') +
         curBlock(d, 'left:719px;top:1250px;width:2px;height:80px;background:#b98f45', 'left:787px;top:1260px;font-size:25px;color:#f4eee4', 'left:790px;top:1300px;font-size:14px;letter-spacing:.3em'), '');
     },
   });

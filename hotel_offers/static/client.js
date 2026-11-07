@@ -176,7 +176,7 @@
     inr.textContent = inrText; inr.hidden = !(inrText && (o.currency || 'INR').toUpperCase() === 'INR' && o.our_deal > 0);
     $('#bSub').textContent = `Share your details and our team will contact you about ${o.title || o.hotel_name}.`;
     const mem = store.get('ho_client') || {};
-    $('#inName').value = mem.name || ''; $('#inPhone').value = mem.phone || '';
+    $('#inName').value = mem.name || ''; window.HO_PHONE.set(mem.phone, mem.cc);
     $$('.field,.field-dates').forEach(f => f.classList.remove('bad'));
     calInit(o);
     $('#bSubmit').classList.remove('busy'); $('#bSubmit').disabled = false;
@@ -376,12 +376,11 @@
   $('#pBook').addEventListener('submit', async e => {
     e.preventDefault();
     if (!current) return;
-    const name = $('#inName').value.trim().replace(/\s+/g, ' '), phone = $('#inPhone').value.trim();
-    const digits = phone.replace(/\D/g, '');
+    const name = $('#inName').value.trim().replace(/\s+/g, ' '), ph = window.HO_PHONE.read();
     flag('#fName'); flag('#fPhone'); flag('#fDates');
     let bad = false;
     if (name.length < 2) { flag('#fName', 'Please enter your name'); bad = true; }
-    if (digits.length < 8 || digits.length > 15) { flag('#fPhone', 'Please enter a valid phone number'); bad = true; }
+    if (!ph.ok) { flag('#fPhone', ph.error); bad = true; }
     if (cal.from && !cal.to) { flag('#fDates', 'Please choose your check-out date'); setOpen(true); bad = true; }
     if (bad) { const f = $('.field.bad input'); if (f) f.focus(); return; }
     const btn = $('#bSubmit');
@@ -389,7 +388,7 @@
     try {
       const res = await fetch(`/api/public/offers/${encodeURIComponent(current.slug)}/lead`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, phone, stay_from: cal.from, stay_to: cal.to, website: $('#inHp').value }),
+        body: JSON.stringify({ name, phone: ph.e164, stay_from: cal.from, stay_to: cal.to, website: $('#inHp').value }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -397,8 +396,8 @@
         else if (body.field === 'dates') { flag('#fDates', body.error); setOpen(true); } else toast(body.error || 'Something went wrong. Please try again.');
         btn.classList.remove('busy'); btn.disabled = false; return;
       }
-      store.set('ho_client', { name, phone });
-      $('#dMsg').textContent = `Thank you, ${name.split(' ')[0]}. Our team will contact you shortly on ${phone}.`;
+      store.set('ho_client', { name, phone: ph.national, cc: ph.iso });
+      $('#dMsg').textContent = `Thank you, ${name.split(' ')[0]}. Our team will contact you shortly on ${ph.display}.`;
       const st = $('#dStay'); st.textContent = cal.to ? 'Stay: ' + stayText() : ''; st.hidden = !cal.to;
       btn.classList.remove('busy'); btn.disabled = false;
       setStep('done');

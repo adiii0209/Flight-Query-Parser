@@ -42,7 +42,7 @@
   function brand() {
     const s = state.settings || {}, pick = (v, d) => (v == null ? d : v);  // "" stays "", only a missing value uses the default
     return { name: pick(s.brand_name, 'Time Elevate'), tagline: pick(s.brand_tagline, 'Luxury stays.\nMore to enjoy.'), header_note: pick(s.brand_header_note, ''),
-      footer: pick(s.brand_footer, 'Curated by Time Tours'), est: pick(s.brand_est, 'EST. 1978'), enquire: pick(s.enquire_label, 'Enquire now'),
+      footer: pick(s.brand_footer, 'Curated by Time Tours'), est: pick(s.brand_est, 'EST. 1978'),
       loyalty: pick(s.loyalty_note, ''), availability: pick(s.availability_note, '') };
   }
   const posterData = () => Object.assign({}, state.data, { photos: state.photos, brand: brand(), layout: state.layout });
@@ -411,7 +411,7 @@
 
   // ---------- direct editing: click a part of any poster to select it, drag to move, corner dot to resize
   const PART_NAMES = { logo: 'Time Elevate logo', 't-brand': 'Hotel name', 't-place': 'Place', 't-tag': 'Hotel tagline', 'po-badge': 'Offer badge',
-    headline: 'Offer text', perk: 'Perk', note: 'Loyalty note', pricebar: 'Price bar', cta: 'Enquire button', avail: 'Availability note',
+    headline: 'Offer text', perk: 'Perk', note: 'Loyalty note', pricebar: 'Price bar', avail: 'Availability note',
     curated: 'Curated by', 'cur-inline': 'Curated by', 'hdr-note': 'Header note', 'cur-t': 'Curated by', 'cur-e': 'Established', ph: 'Photo' };
   let activeEditor = null;
   const touchLikeMQ = window.matchMedia('(max-width: 700px), (pointer: coarse)');

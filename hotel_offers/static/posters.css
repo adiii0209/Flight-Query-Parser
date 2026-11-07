@@ -40,8 +40,6 @@
 .po .pb-sep{flex:none;width:2px;height:62%;background:#c9a56a}
 
 /* footer bits */
-.po .cta{display:flex;align-items:center;justify-content:center;gap:18px;border-radius:999px;background:#1d3a31;color:#f4eee4;font-size:23px;letter-spacing:.3em;text-transform:uppercase;font-weight:400}
-.po .cta svg{width:46px;height:20px;fill:none;stroke:#d3a95f;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .po .avail{font-family:'Newsreader',serif;font-size:20px}
 .po .curated{display:flex;align-items:center;gap:26px}
 .po .curated i{display:block;width:2px;height:74px;background:#c9a56a}
@@ -56,5 +54,3 @@
 .po.dark .vr,.po.dark .curated i{background:#b98f45}
 .po.dark .pb-new{color:#d9ae5f}
 .po.dark .pb-l{color:#f4eee4}
-.po.dark .cta{background:#d3a95f;color:#16231f}
-.po.dark .cta svg{stroke:#16231f}
