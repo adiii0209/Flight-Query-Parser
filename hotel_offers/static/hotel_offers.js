@@ -1199,11 +1199,38 @@
     } catch (e) { say(msg, e.message, 'err'); }
   }));
 
+  // ---------- published pictures drawn by an older version of the posters (matches POSTER_VERSION on the server)
+  // Each one is redrawn with the current templates and swapped in quietly, so no offer has to be taken live again by hand.
+  // Offers edited after they were published are left alone: they would otherwise show edits that the page's text does not have.
+  const POSTER_V = 2;
+  async function refreshOldPosters() {
+    const { offers } = await api('/api/hotel-offers/offers');
+    const old = offers.filter(o => {
+      const lv = o.live;
+      if (!lv || (lv.poster_v || 1) >= POSTER_V || !TEMPLATES.some(t => t.id === lv.template_id)) return false;
+      return !(lv.published_at && o.updated_at && new Date(o.updated_at) - new Date(lv.published_at) > 60000);
+    });
+    let done = 0;
+    for (const o of old) {
+      try {
+        const sv = (await api('/api/hotel-offers/offers/' + o.id)).offer.data;
+        const t = TEMPLATES.find(x => x.id === o.live.template_id);
+        const data = Object.assign({}, Object.assign(blank(), sv.data), { photos: sv.photos || {}, brand: brand(), layout: sv.layout || {} });
+        const canvas = await renderCanvas(t, data, { size: 'native', scale: 1.5 });
+        const image = await toJpegDataUrl(canvas);
+        await api(`/api/hotel-offers/offers/${o.id}/live/poster`, { method: 'POST', body: { template_id: t.id, image, width: canvas.width, height: canvas.height } });
+        done++;
+      } catch (e) { /* tried again the next time the studio opens */ }
+    }
+    if (done) toast(`Refreshed the picture of ${done} live offer${done === 1 ? '' : 's'}`);
+  }
+
   // ---------- init
   buildGallery();
   (async function init() {
     try { await loadSettings(); } catch (e) { state.settings = {}; }
     try { localStorage.removeItem('ho_draft'); } catch (e) { /* old drafts are no longer used */ }
     fillForm(); refresh();
+    setTimeout(() => refreshOldPosters().catch(() => {}), 2500);  // after the page has settled
   })();
 })();

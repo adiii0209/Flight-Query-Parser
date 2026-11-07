@@ -19,6 +19,7 @@ from .routes import _err, _org, hotel_offers_bp as bp
 
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 LEAD_STATUSES = ("new", "contacted", "won", "lost")
+POSTER_VERSION = 2  # bump when the poster drawing changes; the studio redraws older published pictures by itself (v2: no Enquire button)
 
 
 def _slugify(text):
@@ -29,6 +30,7 @@ def live_info(row):
     return {
         "is_live": bool(row.is_live), "slug": row.slug, "template_id": row.template_id,
         "valid_till": row.valid_till.isoformat() if row.valid_till else None,
+        "poster_v": row.snap().get("poster_v", 1), "published_at": row.published_at.isoformat() if row.published_at else None,
         "views": row.views, "url": f"{public_base(row.organization_id)}/o/{row.slug}",
         "expired": bool(row.valid_till and row.valid_till < date.today()),
     }
@@ -66,6 +68,7 @@ def build_snapshot(offer_json, title):
             snap[k] = 0
     snap["perks"] = [str(p.get("label") or "").replace("\n", " ")[:60] for p in (d.get("perks") or [])[:6] if isinstance(p, dict) and p.get("label")]
     snap["title"] = title
+    snap["poster_v"] = POSTER_VERSION
     # the booking and travel windows, and the sample dates: the poster's own dates first, then the extra samples (each priced)
     for k in ("booking_from", "travel_from", "travel_to"):
         snap[k] = _iso(d.get(k))
@@ -174,6 +177,30 @@ def go_online_again(offer_id):
         except ValueError:
             return _err("The valid-till date is not valid.")
     row.is_live = True
+    db.session.commit()
+    return jsonify({"live": live_info(row)})
+
+
+@bp.route("/api/hotel-offers/offers/<int:offer_id>/live/poster", methods=["POST"])
+@login_required
+def refresh_poster(offer_id):
+    """Swap in a freshly drawn picture for a published offer and leave everything else as it is (on or off, dates, text)."""
+    row = HotelOfferLive.query.filter_by(offer_id=offer_id, organization_id=_org()).first()
+    if not row:
+        return _err("This offer is not published.", 404)
+    body = request.get_json(silent=True) or {}
+    if str(body.get("template_id") or "") != row.template_id:
+        return _err("The template changed in the meantime.", 409)
+    try:
+        image, mime = parse_data_url(body.get("image"))
+    except ValueError as exc:
+        return _err(str(exc))
+    snap = row.snap()
+    snap["poster_v"] = POSTER_VERSION
+    row.snapshot = json.dumps(snap)
+    row.image, row.image_mime = image, mime
+    row.image_w, row.image_h = max(0, min(int(body.get("width") or 0), 6000)), max(0, min(int(body.get("height") or 0), 12000))
+    row.updated_at = datetime.utcnow()  # the picture's address carries this, so browsers fetch the new one
     db.session.commit()
     return jsonify({"live": live_info(row)})
 
