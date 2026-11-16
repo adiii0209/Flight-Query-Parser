@@ -70,6 +70,9 @@ CRITICAL RULES:
 - check_in_date MUST be before check_out_date — if they appear swapped, correct them
 - amenities MUST always be an array of strings (use [] if none found)
 - num_guests and room_count MUST be integers
+- booking_id is the booking / confirmation / reservation / hotel PNR reference
+- the text may be a table copied from a portal: a row of column names followed by a row of values. Match each value to its column by position
+- guests may be numbered ("1. Mr KARTIK JAIN"): keep the name with its title, drop the number. Guests listed under one room belong to that room
 - extract all rooms and all guests when present
 - if guest-to-room segmentation is unclear, still keep the room and guest information in the rooms array using guest_summary or a best-effort guests list
 - total_amount MUST be a plain number (no currency symbols, commas, or spaces)
@@ -205,9 +208,11 @@ class HotelParser:
         if not text:
             return None, None
 
+        # Only real currencies count. A bare "three capital letters" rule read the PNR "TNHAPI00379053" as "API 379053".
+        cur = r"(?:INR|USD|AED|SGD|EUR|GBP|CAD|AUD|THB|MYR|JPY|CHF|Rs\.?|RS\.?|\u20B9|\$|\u20AC|\u00A3)"
         patterns = [
-            r"(?is)\b(?:total\s*(?:amount|amt)?|amount\s*payable|grand\s*total|total\s*charges|booking\s*amount)\b[^0-9A-Z$\u20B9\u20AC\u00A3]{0,20}([A-Z]{3}|Rs\.?|\u20B9|\$|\u20AC|\u00A3|AED|SGD|USD|EUR|GBP)?\s*([0-9][0-9,\s]*(?:\.\d{1,2})?)",
-            r"(?is)([A-Z]{3}|Rs\.?|\u20B9|\$|\u20AC|\u00A3|AED|SGD|USD|EUR|GBP)\s*([0-9][0-9,\s]*(?:\.\d{1,2})?)",
+            r"(?is)\b(?:total\s*(?:amount|amt)?|amount\s*payable|grand\s*total|total\s*charges|booking\s*amount)\b[^0-9A-Z$\u20B9\u20AC\u00A3]{0,20}(" + cur + r")?\s*([0-9][0-9,\s]*(?:\.\d{1,2})?)",
+            r"(?s)(?<![A-Za-z0-9])(" + cur + r")\s*([0-9][0-9,\s]*(?:\.\d{1,2})?)",
         ]
 
         for pattern in patterns:
@@ -267,6 +272,21 @@ class HotelParser:
             "guests": guest_values if i == 0 else [],
             "guest_summary": summary if i == 0 else None,
         } for i in range(fallback_rooms)]
+
+    @staticmethod
+    def _fit(text: Optional[str], limit: int) -> Optional[str]:
+        """Shorten to the database column size at a natural break. Suppliers put the whole room description in one line
+        ("ARTIST ROOM - COMP WIFI/ESPRESSO/... - 35 SQM"); the full text stays in the rooms list."""
+        s = (text or "").strip()
+        if len(s) <= limit:
+            return s or None
+        head = re.split(r"\s+[-–—]\s+", s, maxsplit=1)[0].strip(" -")
+        if 8 <= len(head) <= limit:
+            return head
+        cut = s[: limit - 1]
+        if " " in cut:
+            cut = cut.rsplit(" ", 1)[0]
+        return cut.rstrip(" -/,") + "…"
 
     @staticmethod
     def _rooms_guest_count(rooms) -> Optional[int]:
@@ -382,7 +402,7 @@ class HotelParser:
         )
         derived_guest_name = self._primary_guest_name(rooms)
         derived_num_guests = self._rooms_guest_count(rooms)
-        primary_room_type = next((room.get("room_type") for room in rooms if room.get("room_type")), raw_room_type)
+        primary_room_type = self._fit(next((room.get("room_type") for room in rooms if room.get("room_type")), raw_room_type), 100)  # the column holds 100 characters
 
         return {
             "booking_id":            booking_id or str(uuid.uuid4())[:8].upper(),

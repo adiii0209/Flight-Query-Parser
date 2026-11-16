@@ -505,9 +505,9 @@ async function parseFile(file) {
     const fd = new FormData();
     fd.append('file', file);
     const r = await fetch('/api/hotels/parse', { method: 'POST', body: fd });
-    const json = await r.json();
+    const json = await r.json().catch(() => ({}));
     if (!r.ok || !json.success) {
-      showToast(json.error || 'Parse failed', 'error');
+      showToast(json.error || ('Parse failed (server error ' + r.status + ')'), 'error');
       closeImportModal();
       return;
     }
@@ -533,9 +533,9 @@ async function parseBookingText() {
     const fd = new FormData();
     fd.append('text', rawText);
     const r = await fetch('/api/hotels/parse', { method: 'POST', body: fd });
-    const json = await r.json();
+    const json = await r.json().catch(() => ({}));
     if (!r.ok || !json.success) {
-      showToast(json.error || 'Parse failed', 'error');
+      showToast(json.error || ('Parse failed (server error ' + r.status + ')'), 'error');
       closeImportModal();
       return;
     }
@@ -552,9 +552,9 @@ async function saveParsedBooking(payload) {
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify(payload)
   });
-  const saved = await saveR.json();
+  const saved = await saveR.json().catch(() => ({}));
   if (!saveR.ok) {
-    showToast(saved.error || 'Save failed', 'error');
+    showToast(saved.error || ('Save failed (server error ' + saveR.status + ')'), 'error');
     closeImportModal();
     return;
   }

@@ -4295,38 +4295,54 @@ def hotel_upload_image():
         return jsonify({"error": f"Upload failed: {exc}"}), 500
 
 
+def _hotel_fit(field, value):
+    """Cut a text value to its column size. Postgres refuses an over-long string (a supplier's whole room description in
+    one line, for instance) and the save then failed with a server error instead of storing the booking."""
+    from models import HotelBooking
+    col = HotelBooking.__table__.columns.get(field)
+    size = getattr(getattr(col, "type", None), "length", None)
+    if size and isinstance(value, str) and len(value) > size:
+        return value[: size - 1].rstrip() + "…"
+    return value
+
+
 @app.route("/api/hotels", methods=["POST"])
 @login_required
 def hotel_create():
     """Save a hotel booking to the database."""
     from models import HotelBooking
     data = request.get_json(silent=True) or {}
+    fit = _hotel_fit
     booking = HotelBooking(
         user_id=session["user_id"],
         organization_id=session.get("organization_id"),
-        booking_id=data.get("booking_id"),
-        hotel_name=data.get("hotel_name"),
+        booking_id=fit("booking_id", data.get("booking_id")),
+        hotel_name=fit("hotel_name", data.get("hotel_name")),
         hotel_address=data.get("hotel_address"),
-        hotel_phone=data.get("hotel_phone"),
-        guest_name=data.get("guest_name"),
+        hotel_phone=fit("hotel_phone", data.get("hotel_phone")),
+        guest_name=fit("guest_name", data.get("guest_name")),
         num_guests=data.get("num_guests"),
-        check_in_date=data.get("check_in_date"),
-        check_out_date=data.get("check_out_date"),
-        check_in_time=data.get("check_in_time"),
-        check_out_time=data.get("check_out_time"),
-        room_type=data.get("room_type"),
+        check_in_date=fit("check_in_date", data.get("check_in_date")),
+        check_out_date=fit("check_out_date", data.get("check_out_date")),
+        check_in_time=fit("check_in_time", data.get("check_in_time")),
+        check_out_time=fit("check_out_time", data.get("check_out_time")),
+        room_type=fit("room_type", data.get("room_type")),
         room_count=data.get("room_count") or 1,
         rooms_json=json.dumps(data.get("rooms") or []),
         amenities_json=json.dumps(data.get("amenities") or []),
-        meal_plan=data.get("meal_plan"),
+        meal_plan=fit("meal_plan", data.get("meal_plan")),
         total_amount=data.get("total_amount"),
-        currency=data.get("currency"),
+        currency=fit("currency", data.get("currency")),
         special_instructions=data.get("special_instructions"),
         image_url=data.get("image_url"),
         raw_text=data.get("raw_text", ""),
     )
     db.session.add(booking)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception as exc:  # answer in JSON so the page can show the reason instead of "Network error"
+        db.session.rollback()
+        return jsonify({"error": f"Could not save the booking ({exc.__class__.__name__})."}), 500
     return jsonify({"success": True, "id": booking.id}), 201
 
 
@@ -4391,13 +4407,17 @@ def hotel_update(booking_id):
         "special_instructions", "image_url", "booking_id", "show_paid_logo",
     ):
         if field in data:
-            setattr(b, field, data[field])
+            setattr(b, field, _hotel_fit(field, data[field]))
     if "amenities" in data:
         b.amenities_json = json.dumps(data["amenities"] or [])
     if "rooms" in data:
         b.rooms_json = json.dumps(data["rooms"] or [])
-    db.session.commit()
-    
+    try:
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"error": f"Could not save the changes ({exc.__class__.__name__})."}), 500
+
     _dashboard_cache.set_json(f"hotels_list_{org_id}", None, 1)
     _dashboard_cache.set_json(f"hotel_{booking_id}_{org_id}", None, 1)
     
