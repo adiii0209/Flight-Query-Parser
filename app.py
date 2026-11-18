@@ -389,6 +389,8 @@ from hotel_offers import hotel_offers_bp
 app.register_blueprint(hotel_offers_bp)
 from hr import hr_bp
 app.register_blueprint(hr_bp)
+from project_routes import projects_bp
+app.register_blueprint(projects_bp)
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):

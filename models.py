@@ -497,6 +497,72 @@ class OwnershipEmployee(db.Model):
         }
 
 
+class OwnershipProject(db.Model):
+    """A developer project card owned by one employee profile."""
+    __tablename__ = "ownership_project"
+    __table_args__ = (
+        db.Index("ix_ownership_project_employee", "employee_id"),
+    )
+
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    employee_id = db.Column(db.String, db.ForeignKey("ownership_employee.id", ondelete="CASCADE"), nullable=False)
+    organization_id = db.Column(db.String(36), db.ForeignKey("organizations.id"), nullable=True, index=True)
+    name = db.Column(db.String(160), nullable=False)
+    description = db.Column(db.Text, default="")
+    color = db.Column(db.String(20), default="")
+    status = db.Column(db.String(20), default="active", nullable=False)  # active | paused | done
+    row_order = db.Column(db.Integer, default=0)
+
+    tasks = db.relationship(
+        "OwnershipProjectTask",
+        backref="project",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        order_by="OwnershipProjectTask.row_order",
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "employeeId": self.employee_id,
+            "name": self.name or "",
+            "description": self.description or "",
+            "color": self.color or "",
+            "status": self.status or "active",
+            "order": self.row_order or 0,
+            "createdAt": self.created_at.isoformat() if self.created_at else "",
+            "tasks": [t.to_dict() for t in self.tasks or []],
+        }
+
+
+class OwnershipProjectTask(db.Model):
+    __tablename__ = "ownership_project_task"
+    __table_args__ = (
+        db.Index("ix_ownership_project_task_project", "project_id"),
+    )
+
+    id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    project_id = db.Column(db.String, db.ForeignKey("ownership_project.id", ondelete="CASCADE"), nullable=False)
+    text = db.Column(db.Text, nullable=False)
+    done = db.Column(db.Boolean, default=False, nullable=False)
+    done_at = db.Column(db.DateTime, nullable=True)
+    row_order = db.Column(db.Integer, default=0)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "projectId": self.project_id,
+            "text": self.text or "",
+            "done": bool(self.done),
+            "doneAt": self.done_at.isoformat() if self.done_at else "",
+            "order": self.row_order or 0,
+        }
+
+
 class OwnershipSyncState(db.Model):
     """Singleton row that tracks the latest ownership sync version."""
     __tablename__ = "ownership_sync_state"

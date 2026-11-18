@@ -1033,6 +1033,7 @@ function showView(view) {
   currentView = view;
   
   if (view === 'picker') {
+    if (window.EWProjects) window.EWProjects.reset();
     setTimeout(renderPicker, 0);
   } else if (view === 'workspace') {
     setTimeout(renderWorkspace, 0);
@@ -1539,12 +1540,21 @@ function getEmployeeData() {
 // WORKSPACE RENDERERS
 // ============================================================================
 
+function syncProjectsTab() {
+  const isTech = !!(window.EWProjects && window.EWProjects.isTech(activeEmployee));
+  const tabBtn = document.getElementById('ewProjectsTab');
+  if (tabBtn) tabBtn.style.display = isTech ? '' : 'none';
+  if (!isTech && currentTab === 'projects') currentTab = 'subtasks';
+  if (window.EWProjects) window.EWProjects.activate(activeEmployee);
+}
+
 function renderWorkspace() {
+  syncProjectsTab();
   const data = getEmployeeData();
   renderStatsRow(data.stats);
   syncWorkspaceTopStrip();
   syncActiveTabButtons();
-  
+
   const container = document.getElementById('ewViewContainer');
   const openSubtaskCards = currentTab === 'subtasks'
     ? [...container.querySelectorAll('details.ew-subtask-card[open]')].map(card => card.dataset.subtaskId).filter(Boolean)
@@ -1554,6 +1564,7 @@ function renderWorkspace() {
   else if (currentTab === 'subtasks') container.innerHTML = renderSubtasks(data.subtasks, data.recurringSubtasks);
   else if (currentTab === 'timeline') container.innerHTML = renderTimeline(data.tasks);
   else if (currentTab === 'calendar') container.innerHTML = renderEmployeeCalendar(data.tasks);
+  else if (currentTab === 'projects' && window.EWProjects) window.EWProjects.render(container, activeEmployee, empSearchQuery);
 
   if (currentTab === 'subtasks' && openSubtaskCards.length) {
     openSubtaskCards.forEach(id => {
@@ -1655,8 +1666,15 @@ function syncWorkspaceTopStrip() {
   const statsRow = document.getElementById('ewStatsRow');
   const banner = document.getElementById('ewSubtasksBanner');
   const showBanner = currentView === 'workspace' && currentTab === 'subtasks' && !!activeEmployee;
-  if (statsRow) statsRow.style.display = showBanner ? 'none' : 'grid';
+  const onProjects = currentView === 'workspace' && currentTab === 'projects';
+  if (statsRow) statsRow.style.display = (showBanner || onProjects) ? 'none' : 'grid';
   if (banner) banner.style.display = showBanner ? 'flex' : 'none';
+  const addSubtaskBtn = document.getElementById('ewAddSubtaskBtn');
+  const addProjectBtn = document.getElementById('ewAddProjectBtn');
+  if (addSubtaskBtn) addSubtaskBtn.style.display = onProjects ? 'none' : '';
+  if (addProjectBtn) addProjectBtn.style.display = onProjects ? '' : 'none';
+  const searchInput = document.getElementById('ewSearchInput');
+  if (searchInput) searchInput.placeholder = onProjects ? 'Search projects and tasks...' : 'Search tasks, trips, destinations...';
 }
 
 window.openAddSubtaskModal = openAddSubtaskModal;
@@ -2789,6 +2807,10 @@ document.querySelectorAll('.ew-tab').forEach(btn => {
     currentTab = e.target.getAttribute('data-view');
     renderWorkspace();
   });
+});
+
+document.getElementById('ewAddProjectBtn')?.addEventListener('click', () => {
+  if (window.EWProjects) window.EWProjects.openNewProject();
 });
 
 document.getElementById('ewSearchInput')?.addEventListener('input', (e) => {
